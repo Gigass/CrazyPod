@@ -7,6 +7,13 @@
 #include "crazypod_music.h"
 
 #define CRAZYPOD_ARTWORK_SLOTS 20
+#define CRAZYPOD_COVERFLOW_ARTWORK_SIZE 128
+
+enum crazypod_artwork_state {
+    CRAZYPOD_ARTWORK_PENDING,
+    CRAZYPOD_ARTWORK_IMAGE,
+    CRAZYPOD_ARTWORK_EMPTY,
+};
 
 void crazypod_artwork_init(void);
 void crazypod_artwork_prime_library(void);
@@ -22,6 +29,11 @@ const lv_image_dsc_t *crazypod_artwork_load(int slot,
 const lv_image_dsc_t *crazypod_artwork_load_priority(
     int slot, const struct crazypod_track *track, int target_size,
     int priority);
+const lv_image_dsc_t *crazypod_artwork_load_cached_priority(
+    int slot, const struct crazypod_track *track, int target_size,
+    int priority);
+enum crazypod_artwork_state crazypod_artwork_state(
+    int slot, const struct crazypod_track *track, int target_size);
 unsigned crazypod_artwork_generation(void);
 unsigned crazypod_artwork_slot_generation(int slot);
 bool crazypod_artwork_busy(void);

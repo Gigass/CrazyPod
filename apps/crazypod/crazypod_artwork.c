@@ -26,10 +26,10 @@
 #define CRAZYPOD_ARTWORK_WAKE 1
 #define CRAZYPOD_ARTWORK_DEFAULT_PRIORITY 100
 #define CRAZYPOD_CACHE_MAGIC 0x43504632u
-#define CRAZYPOD_CACHE_VERSION 5
+#define CRAZYPOD_CACHE_VERSION 6
 #define CRAZYPOD_DIRECTORY "/.crazypod"
 #define CRAZYPOD_CACHE_DIRECTORY CRAZYPOD_DIRECTORY "/cache"
-#define CRAZYPOD_COVER_CACHE_DIRECTORY CRAZYPOD_CACHE_DIRECTORY "/CV5"
+#define CRAZYPOD_COVER_CACHE_DIRECTORY CRAZYPOD_CACHE_DIRECTORY "/CV6"
 #define CRAZYPOD_COVER_CACHE_SHARDS 16
 
 struct artwork_slot {
@@ -54,6 +54,9 @@ struct artwork_slot {
     int active_bank;
     uint8_t requested_artwork_type;
     bool requested_artwork_embedded;
+    bool requested_cache_only;
+    bool decoded_cache_only;
+    bool decoded_cache_miss;
     bool valid;
 };
 
@@ -69,6 +72,7 @@ struct artwork_decode_request {
     uint32_t source_mtime;
     uint8_t type;
     bool embedded;
+    bool cache_only;
 };
 
 struct artwork_cache_header {
@@ -456,6 +460,7 @@ static bool find_pending_request(int *slot_index, unsigned *serial,
         request->source_mtime = slot->requested_source_mtime;
         request->type = slot->requested_artwork_type;
         request->embedded = slot->requested_artwork_embedded;
+        request->cache_only = slot->requested_cache_only;
         snprintf(request->track_path, sizeof(request->track_path),
                  "%s", slot->requested_path);
         snprintf(request->album, sizeof(request->album),
@@ -525,13 +530,14 @@ static bool prime_request(int *album_index,
     track = crazypod_music_album_track(*album_index, 0);
     if(track == NULL)
         return true;
-    request->target_size = 120;
+    request->target_size = CRAZYPOD_COVERFLOW_ARTWORK_SIZE;
     request->offset = track->artwork_offset;
     request->size = track->artwork_size;
     request->source_size = track->source_size;
     request->source_mtime = track->source_mtime;
     request->type = track->artwork_type;
     request->embedded = track->artwork_embedded;
+    request->cache_only = false;
     snprintf(request->track_path, sizeof(request->track_path),
              "%s", track->path);
     snprintf(request->album, sizeof(request->album),
@@ -590,6 +596,7 @@ static void artwork_thread(void)
                 valid = cache_result == ARTWORK_CACHE_IMAGE;
 
                 if(cache_result == ARTWORK_CACHE_MISS &&
+                   !request.cache_only &&
                    request_is_current(slot_index, serial)) {
                     valid = decode_artwork(&request,
                                            &decoded_descriptor);
@@ -616,6 +623,10 @@ static void artwork_thread(void)
                              "%s", request.track_path);
                     slot->decoded_size = request.target_size;
                     slot->decoded_serial = serial;
+                    slot->decoded_cache_only = request.cache_only;
+                    slot->decoded_cache_miss =
+                        request.cache_only &&
+                        cache_result == ARTWORK_CACHE_MISS;
                     slot->valid = valid;
                     if(valid)
                         slot->active_bank = bank;
@@ -786,9 +797,9 @@ void crazypod_artwork_resume(void)
     queue_post(&artwork_queue, CRAZYPOD_ARTWORK_WAKE, 0);
 }
 
-const lv_image_dsc_t *crazypod_artwork_load_priority(
+static const lv_image_dsc_t *artwork_load_priority(
     int slot_index, const struct crazypod_track *track, int target_size,
-    int priority)
+    int priority, bool cache_only)
 {
     struct artwork_slot *slot;
     const lv_image_dsc_t *result = NULL;
@@ -808,12 +819,17 @@ const lv_image_dsc_t *crazypod_artwork_load_priority(
     slot = &artwork_slots[slot_index];
     if(slot->decoded_serial == slot->request_serial &&
        slot->decoded_size == target_size &&
-       strcmp(slot->decoded_path, track->path) == 0) {
+       strcmp(slot->decoded_path, track->path) == 0 &&
+       (!slot->decoded_cache_only || cache_only) &&
+       !(cache_only && slot->decoded_cache_miss)) {
         if(slot->valid)
             result = &slot->descriptor[slot->active_bank];
     }
     else if(slot->requested_size != target_size ||
-            strcmp(slot->requested_path, track->path) != 0) {
+            strcmp(slot->requested_path, track->path) != 0 ||
+            slot->requested_cache_only != cache_only ||
+            (cache_only && slot->decoded_cache_miss &&
+             slot->decoded_serial == slot->request_serial)) {
         snprintf(slot->requested_path, sizeof(slot->requested_path),
                  "%s", track->path);
         snprintf(slot->requested_album, sizeof(slot->requested_album),
@@ -831,6 +847,7 @@ const lv_image_dsc_t *crazypod_artwork_load_priority(
         slot->requested_source_mtime = track->source_mtime;
         slot->requested_artwork_type = track->artwork_type;
         slot->requested_artwork_embedded = track->artwork_embedded;
+        slot->requested_cache_only = cache_only;
         ++slot->request_serial;
         if(slot->request_serial == 0)
             ++slot->request_serial;
@@ -850,12 +867,54 @@ const lv_image_dsc_t *crazypod_artwork_load_priority(
     return result;
 }
 
+const lv_image_dsc_t *crazypod_artwork_load_priority(
+    int slot_index, const struct crazypod_track *track, int target_size,
+    int priority)
+{
+    return artwork_load_priority(slot_index, track, target_size,
+                                 priority, false);
+}
+
+const lv_image_dsc_t *crazypod_artwork_load_cached_priority(
+    int slot_index, const struct crazypod_track *track, int target_size,
+    int priority)
+{
+    return artwork_load_priority(slot_index, track, target_size,
+                                 priority, true);
+}
+
 const lv_image_dsc_t *crazypod_artwork_load(
     int slot_index, const struct crazypod_track *track, int target_size)
 {
     return crazypod_artwork_load_priority(
         slot_index, track, target_size,
         CRAZYPOD_ARTWORK_DEFAULT_PRIORITY);
+}
+
+enum crazypod_artwork_state crazypod_artwork_state(
+    int slot_index, const struct crazypod_track *track, int target_size)
+{
+    struct artwork_slot *slot;
+    enum crazypod_artwork_state state = CRAZYPOD_ARTWORK_PENDING;
+
+    if(slot_index < 0 || slot_index >= CRAZYPOD_ARTWORK_SLOTS ||
+       track == NULL)
+        return CRAZYPOD_ARTWORK_EMPTY;
+    if(target_size < 16)
+        target_size = 16;
+    if(target_size > CRAZYPOD_ARTWORK_MAX_SIZE)
+        target_size = CRAZYPOD_ARTWORK_MAX_SIZE;
+
+    mutex_lock(&artwork_mutex);
+    slot = &artwork_slots[slot_index];
+    if(slot->decoded_serial == slot->request_serial &&
+       slot->decoded_size == target_size &&
+       strcmp(slot->decoded_path, track->path) == 0) {
+        state = slot->valid
+            ? CRAZYPOD_ARTWORK_IMAGE : CRAZYPOD_ARTWORK_EMPTY;
+    }
+    mutex_unlock(&artwork_mutex);
+    return state;
 }
 
 unsigned crazypod_artwork_generation(void)

@@ -102,8 +102,6 @@ struct crazypod_app {
     lv_obj_t *cell;
     lv_obj_t *tile;
     lv_obj_t *image;
-    lv_obj_t *reflection_clip;
-    lv_obj_t *reflection_image;
     lv_obj_t *symbol_label;
 };
 
@@ -137,20 +135,20 @@ struct menu_view_state {
 };
 
 static struct crazypod_app apps[CRAZYPOD_APP_COUNT] = {
-    { "Music",       LV_SYMBOL_AUDIO,      0xFF2E54, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Podcasts",    LV_SYMBOL_VOLUME_MAX, 0xA95BDE, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Mini Apps",   LV_SYMBOL_LIST,       0xFF9F0A, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Shuffle",     LV_SYMBOL_SHUFFLE,    0xFF375F, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Lock",        LV_SYMBOL_EYE_CLOSE,  0x59606B, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Camera",      LV_SYMBOL_IMAGE,      0x18B8EF, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Photos",      LV_SYMBOL_IMAGE,      0x3478F6, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Customize",   LV_SYMBOL_EDIT,       0xBF5AF2, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Fitness",     LV_SYMBOL_CHARGE,     0x30D158, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Voice Memos", LV_SYMBOL_VOLUME_MAX, 0xFF453A, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Books",       LV_SYMBOL_FILE,       0xFF9F0A, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Notes",       LV_SYMBOL_EDIT,       0xFFD60A, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Extras",      LV_SYMBOL_DIRECTORY,  0x64D2FF, NULL, NULL, NULL, NULL, NULL, NULL },
-    { "Settings",    LV_SYMBOL_SETTINGS,   0x8E8E93, NULL, NULL, NULL, NULL, NULL, NULL },
+    { "Music",       LV_SYMBOL_AUDIO,      0xFF2E54, NULL, NULL, NULL, NULL },
+    { "Podcasts",    LV_SYMBOL_VOLUME_MAX, 0xA95BDE, NULL, NULL, NULL, NULL },
+    { "Mini Apps",   LV_SYMBOL_LIST,       0xFF9F0A, NULL, NULL, NULL, NULL },
+    { "Shuffle",     LV_SYMBOL_SHUFFLE,    0xFF375F, NULL, NULL, NULL, NULL },
+    { "Lock",        LV_SYMBOL_EYE_CLOSE,  0x59606B, NULL, NULL, NULL, NULL },
+    { "Camera",      LV_SYMBOL_IMAGE,      0x18B8EF, NULL, NULL, NULL, NULL },
+    { "Photos",      LV_SYMBOL_IMAGE,      0x3478F6, NULL, NULL, NULL, NULL },
+    { "Customize",   LV_SYMBOL_EDIT,       0xBF5AF2, NULL, NULL, NULL, NULL },
+    { "Fitness",     LV_SYMBOL_CHARGE,     0x30D158, NULL, NULL, NULL, NULL },
+    { "Voice Memos", LV_SYMBOL_VOLUME_MAX, 0xFF453A, NULL, NULL, NULL, NULL },
+    { "Books",       LV_SYMBOL_FILE,       0xFF9F0A, NULL, NULL, NULL, NULL },
+    { "Notes",       LV_SYMBOL_EDIT,       0xFFD60A, NULL, NULL, NULL, NULL },
+    { "Extras",      LV_SYMBOL_DIRECTORY,  0x64D2FF, NULL, NULL, NULL, NULL },
+    { "Settings",    LV_SYMBOL_SETTINGS,   0x8E8E93, NULL, NULL, NULL, NULL },
 };
 
 static const char *music_menu_titles[] = {
@@ -217,6 +215,7 @@ static struct album_flow_card
 static lv_obj_t *album_flow_title;
 static lv_obj_t *album_flow_artist;
 static lv_obj_t *album_flow_position;
+static int album_flow_displayed_album = -1;
 static lv_obj_t *now_progress_fill;
 static lv_obj_t *now_elapsed;
 static lv_obj_t *now_remaining;
@@ -405,17 +404,12 @@ static void refresh_desktop_appearance(void)
             continue;
         if(descriptor != NULL && apps[i].image != NULL) {
             lv_image_set_src(apps[i].image, descriptor);
-            lv_image_set_src(apps[i].reflection_image, descriptor);
             lv_obj_remove_flag(apps[i].image, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(apps[i].reflection_clip,
-                               LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(apps[i].symbol_label, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_bg_opa(apps[i].tile, LV_OPA_TRANSP, 0);
         }
         else {
             lv_obj_add_flag(apps[i].image, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(apps[i].reflection_clip,
-                            LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(apps[i].symbol_label, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_bg_opa(apps[i].tile, LV_OPA_COVER, 0);
         }
@@ -729,49 +723,6 @@ static void draw_desktop_icon(int app_index, int center_x, int center_y,
         source_y_q16 += source_y_step;
     }
 
-    {
-        int reflection_height = size > 80 ? 12 : 9;
-        int reflection_top = center_y + size / 2 + 2;
-        int reflection_y;
-        for(reflection_y = 0;
-            reflection_y < reflection_height;
-            ++reflection_y) {
-            int py = reflection_top + reflection_y;
-            int source_y_reflected_q16 =
-                ((source_height - 1) << 16) -
-                ((reflection_y * source_height) << 16) /
-                    (reflection_height * 2);
-            int source_x_q16 =
-                ((source_width << 15) / size) - 32768;
-            int source_x_step = (source_width << 16) / size;
-            int fade = (reflection_height - reflection_y) * 42 /
-                       reflection_height;
-            int x;
-            if(py < CRAZYPOD_DESKTOP_NATIVE_TOP ||
-               py >= CRAZYPOD_DESKTOP_NATIVE_BOTTOM)
-                continue;
-            for(x = 0; x < size; ++x) {
-                int px = left + x;
-                uint8_t filtered[4];
-                fb_data *destination;
-                if(px >= 0 && px < LCD_WIDTH) {
-                    sample_icon_bilinear(
-                        source, source_width, source_height,
-                        source_stride, source_x_q16,
-                        source_y_reflected_q16, filtered);
-                    if(filtered[3] > 0) {
-                        destination =
-                            pixels + py * LCD_WIDTH + px;
-                        *destination =
-                            blend_icon_premultiplied(
-                                filtered, *destination,
-                                opacity * fade >> 8);
-                    }
-                }
-                source_x_q16 += source_x_step;
-            }
-        }
-    }
 }
 
 static void render_desktop_carousel_native(void)
@@ -937,16 +888,6 @@ static void create_launcher_app(int index)
     lv_obj_center(app->image);
     lv_obj_remove_flag(app->image, LV_OBJ_FLAG_CLICKABLE);
 
-    app->reflection_clip = lv_obj_create(app->cell);
-    set_plain_object(app->reflection_clip);
-    lv_obj_set_style_bg_opa(app->reflection_clip, LV_OPA_TRANSP, 0);
-    lv_obj_remove_flag(app->reflection_clip, LV_OBJ_FLAG_CLICKABLE);
-    app->reflection_image = lv_image_create(app->reflection_clip);
-    if(descriptor != NULL)
-        lv_image_set_src(app->reflection_image, descriptor);
-    lv_image_set_rotation(app->reflection_image, 1800);
-    lv_obj_remove_flag(app->reflection_image, LV_OBJ_FLAG_CLICKABLE);
-
     app->symbol_label = make_label(
         app->tile, app->symbol, &lv_font_montserrat_16,
         COLOR_WHITE, LV_OPA_COVER);
@@ -956,7 +897,6 @@ static void create_launcher_app(int index)
     }
     else {
         lv_obj_add_flag(app->image, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(app->reflection_clip, LV_OBJ_FLAG_HIDDEN);
     }
 
     lv_group_add_obj(desktop_group, app->cell);
@@ -2328,6 +2268,7 @@ static void render_album_flow(const struct route_state *state)
     snprintf(position, sizeof(position), "%d / %d",
              state->selected + 1, count);
     lv_label_set_text(album_flow_position, position);
+    album_flow_displayed_album = state->selected;
     crazypod_coverflow_enter(state->selected);
 }
 
@@ -2444,6 +2385,7 @@ static void render_current_route(bool transition)
     album_flow_title = NULL;
     album_flow_artist = NULL;
     album_flow_position = NULL;
+    album_flow_displayed_album = -1;
     for(i = 0; i < CRAZYPOD_ALBUM_FLOW_CARD_COUNT; ++i) {
         album_flow_cards[i].root = NULL;
         album_flow_cards[i].cover = NULL;
@@ -2524,7 +2466,8 @@ static void render_loading(void)
 
 static void begin_music_scan(void)
 {
-    if(crazypod_music_is_scanning() ||
+    if(music_scan_pending ||
+       crazypod_music_is_scanning() ||
        music_artwork_preparing ||
        crazypod_music_scan_generation() !=
            music_scan_generation_seen) {
@@ -2537,9 +2480,12 @@ static void begin_music_scan(void)
     }
     if(!crazypod_music_is_scanning() &&
        crazypod_music_track_count() > 0) {
-        music_library_loaded = true;
-        music_scan_screen = false;
-        render_current_route(true);
+        music_library_loaded = false;
+        music_scan_screen = true;
+        music_artwork_preparing = true;
+        crazypod_artwork_prime_library();
+        render_loading();
+        lv_refr_now(NULL);
         return;
     }
 
@@ -2583,12 +2529,6 @@ static void open_music(void)
     route_stack[0].route = MUSIC_ROUTE_MENU;
     route_stack[0].selected = 0;
     route_stack[0].group = -1;
-    if(!crazypod_music_is_scanning() &&
-       !music_artwork_preparing &&
-       crazypod_music_scan_generation() ==
-           music_scan_generation_seen &&
-       crazypod_music_track_count() > 0)
-        music_library_loaded = true;
     if(!music_library_loaded) {
         begin_music_scan();
         return;
@@ -2951,19 +2891,10 @@ static void move_selection(int direction)
         return;
     keep_cpu_boosted(HZ / 3);
     if(state->route == MUSIC_ROUTE_ALBUM_FLOW) {
-        const struct crazypod_album *album;
-        char position[32];
         int next = crazypod_coverflow_step(direction);
         if(next == state->selected)
             return;
         state->selected = next;
-        album = crazypod_music_album(next);
-        lv_label_set_text(album_flow_title,
-                          album != NULL ? album->title : "");
-        lv_label_set_text(album_flow_artist,
-                          album != NULL ? album->artist : "");
-        snprintf(position, sizeof(position), "%d / %d", next + 1, count);
-        lv_label_set_text(album_flow_position, position);
         return;
     }
     state->selected = (state->selected + direction) % count;
@@ -3033,7 +2964,6 @@ static void update_playback_ui(lv_timer_t *timer)
         if(crazypod_music_track_count() > 0) {
             music_artwork_preparing = true;
             crazypod_artwork_prime_library();
-            crazypod_coverflow_warm(initial_album_index());
             if(music_scan_screen)
                 render_loading();
         }
@@ -3055,10 +2985,11 @@ static void update_playback_ui(lv_timer_t *timer)
             lv_label_set_text(music_loading_detail, progress);
         }
         if(!crazypod_artwork_library_priming()) {
+            if(!crazypod_coverflow_warm(initial_album_index()))
+                return;
             music_artwork_preparing = false;
             music_library_loaded =
                 crazypod_music_track_count() > 0;
-            crazypod_coverflow_warm(initial_album_index());
             if(music_scan_screen) {
                 music_scan_screen = false;
                 if(product_active && route_depth > 0)
@@ -3286,11 +3217,11 @@ static void handle_button(long button, intptr_t data)
     if(base == BUTTON_SCROLL_FWD)
         move_selection(wheel_step(
             data,
-            current_route()->route == MUSIC_ROUTE_ALBUM_FLOW ? 4 : 12));
+            current_route()->route == MUSIC_ROUTE_ALBUM_FLOW ? 8 : 12));
     else if(base == BUTTON_SCROLL_BACK)
         move_selection(-wheel_step(
             data,
-            current_route()->route == MUSIC_ROUTE_ALBUM_FLOW ? 4 : 12));
+            current_route()->route == MUSIC_ROUTE_ALBUM_FLOW ? 8 : 12));
     else if(base == BUTTON_RIGHT) {
         if(current_route()->route == MUSIC_ROUTE_NOW_PLAYING)
             audio_next();
@@ -3404,9 +3335,19 @@ static void display_flush(lv_display_t *display, const lv_area_t *area,
      * with one LCD transfer.
     */
     if(lv_display_flush_is_last(display)) {
-        lcd_update_rect(dirty_x1, dirty_y1,
-                        dirty_x2 - dirty_x1 + 1,
-                        dirty_y2 - dirty_y1 + 1);
+        if(crazypod_coverflow_active()) {
+            /*
+             * CoverFlow presents the complete screen after its native
+             * compositor runs. Holding LVGL's partial update here prevents
+             * metadata and covers from reaching the panel as separate frames.
+             */
+            crazypod_coverflow_invalidate();
+        }
+        else {
+            lcd_update_rect(dirty_x1, dirty_y1,
+                            dirty_x2 - dirty_x1 + 1,
+                            dirty_y2 - dirty_y1 + 1);
+        }
         dirty_valid = false;
     }
 
@@ -3422,6 +3363,37 @@ static void process_deferred_route_render(void)
         render_current_route(false);
     else
         route_render_pending = false;
+}
+
+static void sync_album_flow_metadata(void)
+{
+    const struct route_state *state;
+    const struct crazypod_album *album;
+    char position[32];
+    int album_index;
+    int count;
+
+    if(!product_active || route_depth <= 0 ||
+       !crazypod_coverflow_active() ||
+       album_flow_title == NULL || album_flow_artist == NULL ||
+       album_flow_position == NULL)
+        return;
+    state = current_route();
+    if(state->route != MUSIC_ROUTE_ALBUM_FLOW)
+        return;
+    album_index = crazypod_coverflow_center_album();
+    if(album_index == album_flow_displayed_album)
+        return;
+    count = crazypod_music_album_count();
+    album = crazypod_music_album(album_index);
+    lv_label_set_text(album_flow_title,
+                      album != NULL ? album->title : "");
+    lv_label_set_text(album_flow_artist,
+                      album != NULL ? album->artist : "");
+    snprintf(position, sizeof(position), "%d / %d",
+             album_index + 1, count);
+    lv_label_set_text(album_flow_position, position);
+    album_flow_displayed_album = album_index;
 }
 
 void crazypod_ui_run(void)
@@ -3489,6 +3461,7 @@ void crazypod_ui_run(void)
         lv_timer_handler();
         render_desktop_carousel_native();
         crazypod_coverflow_tick();
+        sync_album_flow_metadata();
         if(crazypod_artwork_busy())
             keep_cpu_boosted(HZ / 10);
         if(!lv_anim_count_running() &&
