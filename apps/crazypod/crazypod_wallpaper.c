@@ -6,7 +6,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "buflib.h"
+#include "core_alloc.h"
 #include "file.h"
+#include "lcd.h"
 #include "system.h"
 
 #include "crazypod_wallpaper.h"
@@ -20,24 +23,26 @@
 #define FROSTED_CAPSULE_Y 174
 #define FROSTED_CAPSULE_WIDTH 304
 #define FROSTED_CAPSULE_HEIGHT 58
-#define FROSTED_CAPSULE_RADIUS 7
+#define FROSTED_BLUR_RADIUS 7
+#define FROSTED_CORNER_RADIUS 29
+#define FROSTED_SAMPLE_COUNT (FROSTED_BLUR_RADIUS * 2 + 1)
 #define FROSTED_WORK_HEIGHT \
-    (FROSTED_CAPSULE_HEIGHT + FROSTED_CAPSULE_RADIUS * 2)
-#define FROSTED_CAPSULE_ROW_BYTES (FROSTED_CAPSULE_WIDTH * 4)
+    (FROSTED_CAPSULE_HEIGHT + FROSTED_BLUR_RADIUS * 2)
+#define FROSTED_CAPSULE_ROW_BYTES \
+    (FROSTED_CAPSULE_WIDTH * sizeof(fb_data))
 #define FROSTED_CAPSULE_BYTES \
     (FROSTED_CAPSULE_ROW_BYTES * FROSTED_CAPSULE_HEIGHT)
+#define FROSTED_RING_ROW_BYTES (FROSTED_CAPSULE_WIDTH * 3)
+#define FROSTED_RING_BYTES \
+    (FROSTED_RING_ROW_BYTES * FROSTED_SAMPLE_COUNT)
 
 static uint8_t wallpaper_pixels[WALLPAPER_BYTES]
-    CACHEALIGN_AT_LEAST_ATTR(16);
-static uint8_t frosted_capsule_pixels[FROSTED_CAPSULE_BYTES]
-    CACHEALIGN_AT_LEAST_ATTR(16);
-static uint8_t frosted_horizontal[
-    FROSTED_CAPSULE_WIDTH * FROSTED_WORK_HEIGHT * 3]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static lv_image_dsc_t wallpaper_descriptor;
 static lv_image_dsc_t frosted_capsule_descriptor;
 static bool wallpaper_valid;
 static bool frosted_capsule_valid;
+static int frosted_capsule_handle;
 
 static uint16_t read_le16(const uint8_t *value)
 {
@@ -73,94 +78,64 @@ static int clamp_coordinate(int value, int maximum)
     return value;
 }
 
-static void prepare_frosted_capsule(void)
+static uint8_t rounded_capsule_alpha(int x, int y)
 {
-    const int sample_count = FROSTED_CAPSULE_RADIUS * 2 + 1;
-    int work_y;
-    int y;
+    const int inner_radius = FROSTED_CORNER_RADIUS - 1;
+    const int inner_squared = inner_radius * inner_radius;
+    const int outer_squared =
+        FROSTED_CORNER_RADIUS * FROSTED_CORNER_RADIUS;
+    int dx = 0;
+    int dy = 0;
+    int distance_squared;
 
-    /*
-     * LVGL has no backdrop-filter on this target. Build a real two-pass box
-     * blur from the wallpaper pixels behind the capsule once at startup.
-     * Sampling outside the capsule bounds prevents hard seams at its edges.
-     */
-    for(work_y = 0; work_y < FROSTED_WORK_HEIGHT; ++work_y) {
-        int source_y = clamp_coordinate(
-            FROSTED_CAPSULE_Y - FROSTED_CAPSULE_RADIUS + work_y,
-            WALLPAPER_HEIGHT);
-        int x;
+    if(x < FROSTED_CORNER_RADIUS)
+        dx = inner_radius - x;
+    else if(x >= FROSTED_CAPSULE_WIDTH - FROSTED_CORNER_RADIUS)
+        dx = x - (FROSTED_CAPSULE_WIDTH - FROSTED_CORNER_RADIUS);
+    if(y < FROSTED_CORNER_RADIUS)
+        dy = inner_radius - y;
+    else if(y >= FROSTED_CAPSULE_HEIGHT - FROSTED_CORNER_RADIUS)
+        dy = y - (FROSTED_CAPSULE_HEIGHT - FROSTED_CORNER_RADIUS);
 
-        for(x = 0; x < FROSTED_CAPSULE_WIDTH; ++x) {
-            unsigned blue = 0;
-            unsigned green = 0;
-            unsigned red = 0;
-            int offset;
-            uint8_t *destination =
-                frosted_horizontal +
-                (work_y * FROSTED_CAPSULE_WIDTH + x) * 3;
+    distance_squared = dx * dx + dy * dy;
+    if(distance_squared <= inner_squared)
+        return 255;
+    if(distance_squared >= outer_squared)
+        return 0;
+    return (uint8_t)(
+        (outer_squared - distance_squared) * 255 /
+        (outer_squared - inner_squared));
+}
 
-            for(offset = -FROSTED_CAPSULE_RADIUS;
-                offset <= FROSTED_CAPSULE_RADIUS; ++offset) {
-                int source_x = clamp_coordinate(
-                    FROSTED_CAPSULE_X + x + offset,
-                    WALLPAPER_WIDTH);
-                const uint8_t *source =
-                    wallpaper_pixels +
-                    source_y * WALLPAPER_ROW_BYTES + source_x * 4;
+static void blur_wallpaper_row(uint8_t *destination, int work_y)
+{
+    int source_y = clamp_coordinate(
+        FROSTED_CAPSULE_Y - FROSTED_BLUR_RADIUS + work_y,
+        WALLPAPER_HEIGHT);
+    int x;
 
-                blue += source[0];
-                green += source[1];
-                red += source[2];
-            }
-            destination[0] = blue / sample_count;
-            destination[1] = green / sample_count;
-            destination[2] = red / sample_count;
+    for(x = 0; x < FROSTED_CAPSULE_WIDTH; ++x) {
+        unsigned blue = 0;
+        unsigned green = 0;
+        unsigned red = 0;
+        int offset;
+
+        for(offset = -FROSTED_BLUR_RADIUS;
+            offset <= FROSTED_BLUR_RADIUS; ++offset) {
+            int source_x = clamp_coordinate(
+                FROSTED_CAPSULE_X + x + offset, WALLPAPER_WIDTH);
+            const uint8_t *source =
+                wallpaper_pixels +
+                source_y * WALLPAPER_ROW_BYTES + source_x * 4;
+
+            blue += source[0];
+            green += source[1];
+            red += source[2];
         }
+        destination[x * 3] = blue / FROSTED_SAMPLE_COUNT;
+        destination[x * 3 + 1] = green / FROSTED_SAMPLE_COUNT;
+        destination[x * 3 + 2] = red / FROSTED_SAMPLE_COUNT;
     }
-
-    for(y = 0; y < FROSTED_CAPSULE_HEIGHT; ++y) {
-        int x;
-        for(x = 0; x < FROSTED_CAPSULE_WIDTH; ++x) {
-            unsigned channel_sum[3] = { 0, 0, 0 };
-            uint8_t *destination =
-                frosted_capsule_pixels +
-                y * FROSTED_CAPSULE_ROW_BYTES + x * 4;
-            int sample_y;
-            int channel;
-
-            for(sample_y = y; sample_y < y + sample_count; ++sample_y) {
-                const uint8_t *source =
-                    frosted_horizontal +
-                    (sample_y * FROSTED_CAPSULE_WIDTH + x) * 3;
-                channel_sum[0] += source[0];
-                channel_sum[1] += source[1];
-                channel_sum[2] += source[2];
-            }
-            for(channel = 0; channel < 3; ++channel) {
-                unsigned blurred = channel_sum[channel] / sample_count;
-                unsigned sheen =
-                    (unsigned)(FROSTED_CAPSULE_HEIGHT - y) * 8 /
-                    FROSTED_CAPSULE_HEIGHT;
-
-                /* Dark material tint keeps white metadata readable. */
-                destination[channel] =
-                    (uint8_t)((blurred * 168 + sheen * 256) >> 8);
-            }
-            destination[3] = 255;
-        }
-    }
-
-    memset(&frosted_capsule_descriptor, 0,
-           sizeof(frosted_capsule_descriptor));
-    frosted_capsule_descriptor.header.magic = LV_IMAGE_HEADER_MAGIC;
-    frosted_capsule_descriptor.header.cf = LV_COLOR_FORMAT_ARGB8888;
-    frosted_capsule_descriptor.header.w = FROSTED_CAPSULE_WIDTH;
-    frosted_capsule_descriptor.header.h = FROSTED_CAPSULE_HEIGHT;
-    frosted_capsule_descriptor.header.stride =
-        FROSTED_CAPSULE_ROW_BYTES;
-    frosted_capsule_descriptor.data_size = FROSTED_CAPSULE_BYTES;
-    frosted_capsule_descriptor.data = frosted_capsule_pixels;
-    frosted_capsule_valid = true;
 }
 
 void crazypod_wallpaper_init(void)
@@ -220,7 +195,110 @@ void crazypod_wallpaper_init(void)
     wallpaper_descriptor.data_size = WALLPAPER_BYTES;
     wallpaper_descriptor.data = wallpaper_pixels;
     wallpaper_valid = true;
-    prepare_frosted_capsule();
+}
+
+bool crazypod_wallpaper_prepare_frosted_capsule(void)
+{
+    fb_data *frosted_capsule_pixels;
+    uint8_t *frosted_ring;
+    int ring_handle;
+    int work_y;
+    int y;
+
+    if(frosted_capsule_valid)
+        return true;
+    if(!wallpaper_valid)
+        return false;
+
+    frosted_capsule_handle = core_alloc_ex(
+        FROSTED_CAPSULE_BYTES, &buflib_ops_locked);
+    if(frosted_capsule_handle < 0)
+        return false;
+    ring_handle = core_alloc(FROSTED_RING_BYTES);
+    if(ring_handle < 0) {
+        frosted_capsule_handle = core_free(frosted_capsule_handle);
+        return false;
+    }
+
+    frosted_capsule_pixels = core_get_data(frosted_capsule_handle);
+    frosted_ring = core_get_data(ring_handle);
+    for(work_y = 0; work_y < FROSTED_SAMPLE_COUNT; ++work_y) {
+        blur_wallpaper_row(
+            frosted_ring +
+                (work_y % FROSTED_SAMPLE_COUNT) * FROSTED_RING_ROW_BYTES,
+            work_y);
+    }
+
+    for(y = 0; y < FROSTED_CAPSULE_HEIGHT; ++y) {
+        int x;
+
+        for(x = 0; x < FROSTED_CAPSULE_WIDTH; ++x) {
+            unsigned channel_sum[3] = { 0, 0, 0 };
+            const uint8_t *background =
+                wallpaper_pixels +
+                (FROSTED_CAPSULE_Y + y) * WALLPAPER_ROW_BYTES +
+                (FROSTED_CAPSULE_X + x) * 4;
+            unsigned material[3];
+            unsigned composited[3];
+            unsigned alpha = rounded_capsule_alpha(x, y);
+            unsigned inverse_alpha = 255 - alpha;
+            unsigned sheen =
+                (unsigned)(FROSTED_CAPSULE_HEIGHT - y) * 8 /
+                FROSTED_CAPSULE_HEIGHT;
+            int sample;
+            int channel;
+
+            for(sample = 0; sample < FROSTED_SAMPLE_COUNT; ++sample) {
+                const uint8_t *source =
+                    frosted_ring +
+                    ((y + sample) % FROSTED_SAMPLE_COUNT) *
+                        FROSTED_RING_ROW_BYTES +
+                    x * 3;
+                channel_sum[0] += source[0];
+                channel_sum[1] += source[1];
+                channel_sum[2] += source[2];
+            }
+            for(channel = 0; channel < 3; ++channel) {
+                unsigned blurred =
+                    channel_sum[channel] / FROSTED_SAMPLE_COUNT;
+
+                material[channel] =
+                    (blurred * 168 + sheen * 256) >> 8;
+                composited[channel] =
+                    (material[channel] * alpha +
+                     background[channel] * inverse_alpha + 127) / 255;
+            }
+            frosted_capsule_pixels[
+                y * FROSTED_CAPSULE_WIDTH + x] =
+                    LCD_RGBPACK(composited[2],
+                                composited[1],
+                                composited[0]);
+        }
+
+        work_y = y + FROSTED_SAMPLE_COUNT;
+        if(work_y < FROSTED_WORK_HEIGHT) {
+            blur_wallpaper_row(
+                frosted_ring +
+                    (y % FROSTED_SAMPLE_COUNT) *
+                        FROSTED_RING_ROW_BYTES,
+                work_y);
+        }
+    }
+    core_free(ring_handle);
+
+    memset(&frosted_capsule_descriptor, 0,
+           sizeof(frosted_capsule_descriptor));
+    frosted_capsule_descriptor.header.magic = LV_IMAGE_HEADER_MAGIC;
+    frosted_capsule_descriptor.header.cf = LV_COLOR_FORMAT_RGB565;
+    frosted_capsule_descriptor.header.w = FROSTED_CAPSULE_WIDTH;
+    frosted_capsule_descriptor.header.h = FROSTED_CAPSULE_HEIGHT;
+    frosted_capsule_descriptor.header.stride =
+        FROSTED_CAPSULE_ROW_BYTES;
+    frosted_capsule_descriptor.data_size = FROSTED_CAPSULE_BYTES;
+    frosted_capsule_descriptor.data =
+        (const uint8_t *)frosted_capsule_pixels;
+    frosted_capsule_valid = true;
+    return true;
 }
 
 const lv_image_dsc_t *crazypod_default_wallpaper(void)

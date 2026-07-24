@@ -149,11 +149,11 @@ static void draw_glyph(const lv_font_t *font, uint32_t codepoint,
     }
 }
 
-void crazypod_lcd_show_panic(const char *message)
+static void show_message(const char *title, const char *message,
+                         fb_data background)
 {
     const lv_font_t *title_font = &lv_font_montserrat_12;
     const lv_font_t *body_font = &lv_font_montserrat_8;
-    const fb_data background = LCD_RGBPACK(132, 20, 35);
     const fb_data foreground = LCD_RGBPACK(255, 255, 255);
     const char *cursor = message;
     int x = 14;
@@ -161,16 +161,13 @@ void crazypod_lcd_show_panic(const char *message)
 
     fill_screen(background);
 
-    {
-        const char *title = "CRAZYPOD PANIC";
-        while(*title != '\0') {
-            lv_font_glyph_dsc_t glyph;
-            unsigned char codepoint = (unsigned char)*title++;
+    while(*title != '\0') {
+        lv_font_glyph_dsc_t glyph;
+        unsigned char codepoint = (unsigned char)*title++;
 
-            if(lv_font_get_glyph_dsc(title_font, &glyph, codepoint, 0)) {
-                draw_glyph(title_font, codepoint, x, y, foreground);
-                x += glyph.adv_w;
-            }
+        if(lv_font_get_glyph_dsc(title_font, &glyph, codepoint, 0)) {
+            draw_glyph(title_font, codepoint, x, y, foreground);
+            x += glyph.adv_w;
         }
     }
 
@@ -215,6 +212,12 @@ void crazypod_lcd_show_panic(const char *message)
     }
 
     lcd_update();
+}
+
+void crazypod_lcd_show_panic(const char *message)
+{
+    show_message("CRAZYPOD PANIC", message,
+                 LCD_RGBPACK(132, 20, 35));
 }
 
 #endif

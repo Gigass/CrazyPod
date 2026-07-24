@@ -354,16 +354,25 @@ static void refresh_desktop_capsule_material(void)
     const lv_image_dsc_t *glass =
         crazypod_frosted_wallpaper_capsule();
 
-    if(desktop_capsule == NULL || desktop_capsule_glass == NULL)
+    if(desktop_capsule == NULL)
         return;
     if(crazypod_appearance_get()->home_background == 0 &&
        glass != NULL) {
+        if(desktop_capsule_glass == NULL) {
+            desktop_capsule_glass = lv_image_create(desktop_capsule);
+            lv_obj_set_pos(desktop_capsule_glass, 0, 0);
+            lv_obj_remove_flag(
+                desktop_capsule_glass, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_move_to_index(desktop_capsule_glass, 0);
+        }
         lv_image_set_src(desktop_capsule_glass, glass);
         lv_obj_remove_flag(desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_bg_opa(desktop_capsule, LV_OPA_TRANSP, 0);
     }
     else {
-        lv_obj_add_flag(desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
+        if(desktop_capsule_glass != NULL)
+            lv_obj_add_flag(
+                desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_bg_color(
             desktop_capsule, lv_color_hex(COLOR_WHITE), 0);
         lv_obj_set_style_bg_opa(desktop_capsule, 34, 0);
@@ -963,13 +972,8 @@ static void create_now_playing_capsule(void)
     lv_obj_t *wave;
 
     desktop_capsule = make_box(desktop_screen, 8, 174, 304, 58, 29,
-                               COLOR_WHITE, LV_OPA_TRANSP);
+                               COLOR_WHITE, 34);
     capsule = desktop_capsule;
-    lv_obj_set_style_clip_corner(capsule, true, 0);
-    desktop_capsule_glass = lv_image_create(capsule);
-    lv_obj_set_pos(desktop_capsule_glass, 0, 0);
-    lv_obj_remove_flag(desktop_capsule_glass, LV_OBJ_FLAG_CLICKABLE);
-    refresh_desktop_capsule_material();
 
     desktop_capsule_artwork = make_box(
         capsule, 9, 8, 42, 42, 9, 0x941FFC, LV_OPA_COVER);
@@ -3398,7 +3402,7 @@ static void display_flush(lv_display_t *display, const lv_area_t *area,
      * visible at several positions in the same physical frame.  Compose all
      * areas in Rockbox's framebuffer first, then present the completed frame
      * with one LCD transfer.
-     */
+    */
     if(lv_display_flush_is_last(display)) {
         lcd_update_rect(dirty_x1, dirty_y1,
                         dirty_x2 - dirty_x1 + 1,
@@ -3449,6 +3453,10 @@ void crazypod_ui_run(void)
     lv_refr_now(display);
     set_cpu_boost(true);
     boost_until = current_tick + HZ / 2;
+    if(crazypod_wallpaper_prepare_frosted_capsule()) {
+        refresh_desktop_capsule_material();
+        lv_refr_now(display);
+    }
     preview_artwork_generation_seen =
         crazypod_artwork_slot_generation(CRAZYPOD_PREVIEW_ARTWORK_SLOT);
     now_artwork_generation_seen =
