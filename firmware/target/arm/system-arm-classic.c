@@ -22,11 +22,17 @@
 #include "system.h"
 #include <stdio.h>
 #include "lcd.h"
+#ifndef IPOD_6G
 #include "font.h"
+#else
+#include "crazypod/crazypod_lcd.h"
+#endif
 #include "gcc_extensions.h"
 
+#ifndef IPOD_6G
 #include <get_sp.h>
 #include <backtrace.h>
+#endif
 
 static const char* const uiename[] = {
     "Undefined instruction",
@@ -91,6 +97,13 @@ void __attribute__((weak,naked)) undef_instr_handler(void)
  */
 void NORETURN_ATTR UIE(unsigned int pc, unsigned int num)
 {
+#ifdef IPOD_6G
+    char report[96];
+
+    snprintf(report, sizeof(report), "%s\nPC %08x",
+             uiename[num], pc);
+    crazypod_lcd_show_panic(report);
+#else
     /* safe guard variable - we call backtrace() only on first
      * UIE call. This prevent endless loop if backtrace() touches
      * memory regions which cause abort
@@ -154,6 +167,7 @@ void NORETURN_ATTR UIE(unsigned int pc, unsigned int num)
 #endif
 
     lcd_update();
+#endif
 
     disable_interrupt(IRQ_FIQ_STATUS);
 

@@ -67,6 +67,9 @@ void button_queue_init(void);
 void button_queue_post(long id, intptr_t data);
 void button_queue_post_remove_head(long id, intptr_t data);
 bool button_queue_try_post(long button, int data);
+#ifdef HAVE_SCROLLWHEEL
+bool button_queue_replace_scroll(long button, intptr_t data);
+#endif
 int button_queue_count(void);
 bool button_queue_empty(void);
 bool button_queue_full(void);

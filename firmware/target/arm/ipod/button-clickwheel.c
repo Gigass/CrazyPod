@@ -78,6 +78,7 @@ bool wheel_is_touched = false;
 unsigned int  accumulated_wheel_delta = 0;
 static unsigned int  wheel_repeat            = 0;
 unsigned int  wheel_velocity          = 0;
+static unsigned int queued_wheel_steps;
 static unsigned long last_wheel_usec         = 0;
 
 /* Variable to use for setting button status in interrupt handler */
@@ -181,6 +182,8 @@ static inline int ipod_4g_button_read(void)
                     if (wheel_keycode != BUTTON_NONE)
                     {
                         long v = (usec - last_wheel_usec) & 0x7fffffff;
+                        bool direction_changed =
+                            wheel_keycode != wheel_repeat;
                         
                         /* undo signedness */
                         wheel_delta = (wheel_delta>0) ? wheel_delta : -wheel_delta;
@@ -201,7 +204,7 @@ static inline int ipod_4g_button_read(void)
                         repeat = 0;
                         
                         /* direction reversals must nullify acceleration and accumulator */
-                        if (wheel_keycode != wheel_repeat)
+                        if (direction_changed)
                         {
                             wheel_repeat            = wheel_keycode;
                             wheel_velocity          = 0;
@@ -222,25 +225,47 @@ static inline int ipod_4g_button_read(void)
 #ifdef HAVE_WHEEL_POSITION
                         if (send_events) 
 #endif
+#ifdef HAVE_SCROLLWHEEL
+                        {
+                            bool queue_was_empty = button_queue_empty();
+                            unsigned int steps =
+                                accumulated_wheel_delta /
+                                WHEEL_SENSITIVITY;
+                            unsigned int data;
+
+                            if(steps < 1)
+                                steps = 1;
+                            if(direction_changed || queue_was_empty)
+                                queued_wheel_steps = steps;
+                            else
+                                queued_wheel_steps += steps;
+                            if(queued_wheel_steps > 0x7f)
+                                queued_wheel_steps = 0x7f;
+
+                            /* use data-format for HAVE_SCROLLWHEEL */
+                            /* always use acceleration mode (1<<31) */
+                            data = (1u << 31) |
+                                   (queued_wheel_steps << 24) |
+                                   wheel_velocity;
+                            if(queue_was_empty)
+                                button_queue_post(
+                                    wheel_keycode | repeat, data);
+                            else
+                                button_queue_replace_scroll(
+                                    wheel_keycode | repeat, data);
+                            accumulated_wheel_delta = 0;
+                        }
+#else
                         /* The queue should have no other events when scrolling */
                         if (button_queue_empty())
                         {
                             /* each WHEEL_SENSITIVITY clicks = scrolling 1 item */
                             accumulated_wheel_delta /= WHEEL_SENSITIVITY;
-#ifdef HAVE_SCROLLWHEEL
-                            /* use data-format for HAVE_SCROLLWHEEL */
-                            /* always use acceleration mode (1<<31) */
-                            /* always set message post count to (1<<24) for iPod */
-                            /* this way the scrolling is always calculated from wheel_velocity */
-                            button_queue_post(wheel_keycode | repeat, 
-                                       (1<<31) | (1 << 24) | wheel_velocity);
-                                       
-#else
                             button_queue_post(wheel_keycode | repeat, 
                                        (accumulated_wheel_delta << 16) | new_wheel_value);
-#endif
                             accumulated_wheel_delta = 0;
                         }
+#endif
                         last_wheel_usec = usec;
                         old_wheel_value = new_wheel_value;
                     }

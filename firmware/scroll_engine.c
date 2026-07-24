@@ -33,8 +33,10 @@
 #include "lcd.h"
 #include "font.h"
 #if !defined(BOOTLOADER)
+#ifndef IPOD_6G
 #include "misc.h"
 #include "settings.h"
+#endif
 #endif
 #ifdef HAVE_REMOTE_LCD
 #include "lcd-remote.h"

@@ -20,9 +20,9 @@
 
 #include <SDL.h>
 #include "sim-ui-defines.h"
+#include "system-sdl.h"
 #include "window-sdl.h"
 #include "lcd-sdl.h"
-#include "misc.h"
 #include "panic.h"
 
 extern SDL_Surface *lcd_surface;

@@ -23,7 +23,6 @@
 #include "powermgmt.h"
 #include "pmu-target.h"
 #include "power.h"
-#include "audiohw.h"
 #include "adc-target.h"
 
 unsigned short battery_level_disksafe = 3500;
@@ -63,13 +62,5 @@ void accessory_supply_set(bool enable)
         /* Accessory voltage supply off */
         pmu_ldo_power_off(6);
     }
-}
-#endif
-
-#ifdef HAVE_LINEOUT_POWEROFF
-void lineout_set(bool enable)
-{
-    /* Call audio hardware driver implementation */
-    audiohw_enable_lineout(enable);
 }
 #endif

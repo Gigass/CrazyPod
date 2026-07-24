@@ -1,411 +1,134 @@
 #!/bin/sh
+set -eu
+
 cd "$(dirname "$0")"
-APPLE2026_THEME_VERSION="Update3"
 
 detect_jobs() {
     if [ -n "${JOBS:-}" ]; then
-        echo "$JOBS"
+        printf '%s\n' "$JOBS"
     elif command -v getconf >/dev/null 2>&1; then
-        getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4
-    elif command -v nproc >/dev/null 2>&1; then
-        nproc 2>/dev/null || echo 4
+        getconf _NPROCESSORS_ONLN 2>/dev/null || printf '%s\n' 4
     elif command -v sysctl >/dev/null 2>&1; then
-        sysctl -n hw.ncpu 2>/dev/null || echo 4
+        sysctl -n hw.ncpu 2>/dev/null || printf '%s\n' 4
     else
-        echo 4
+        printf '%s\n' 4
     fi
 }
 
 require_tools() {
     missing=0
-    for tool in make gcc perl python3; do
+    for tool in make gcc perl sdl2-config pkg-config; do
         if ! command -v "$tool" >/dev/null 2>&1; then
-            echo "Error: missing required tool '$tool' on PATH."
+            echo "Error: missing required simulator tool '$tool' on PATH." >&2
             missing=1
         fi
     done
-
-    for tool in sdl2-config pkg-config; do
-        if ! command -v "$tool" >/dev/null 2>&1; then
-            echo "Error: missing simulator prerequisite '$tool' on PATH."
-            missing=1
-        fi
-    done
-
-    if [ "$missing" -ne 0 ]; then
-        exit 2
-    fi
+    [ "$missing" -eq 0 ] || exit 2
 }
 
-# Copy every .fnt in repo/fonts/ into the runtime fonts dir, skipping files that are
-# already up-to-date.  make install (wpsbuild.pl) only copies %Fl-referenced fonts;
-# this ensures PictureFlow, fallback skins, and future WPS can also find their fonts.
-sync_all_fonts() {
-    local builddir="$1"
-    local simfonts="$builddir/simdisk/.rockbox/fonts"
-    local repofonts="../fonts"
-    local copied=0
+usage() {
+    cat <<'EOF'
+Usage: build-sim.sh [-i|--incremental]
 
-    if [ ! -d "$simfonts" ]; then
-        echo "RockPod: [SKIP] sync_all_fonts: $simfonts does not exist."
-        return
-    fi
+Builds the CrazyPod iPod 6G simulator. It does not install Rockbox themes,
+skins, fonts, or plugins.
 
-    for src in "$repofonts"/*.fnt; do
-        [ -f "$src" ] || continue
-        fname=$(basename "$src")
-        dst="$simfonts/$fname"
-        if [ ! -f "$dst" ] || [ "$src" -nt "$dst" ]; then
-            cp "$src" "$dst"
-            copied=$((copied + 1))
-        fi
-    done
-
-    if [ "$copied" -gt 0 ]; then
-        echo "RockPod: [sync] Copied $copied font(s) from repo/fonts/ to runtime (wpsbuild.pl gap)."
-    fi
-}
-
-sync_apple2026_theme_payload() {
-    local builddir="$1"
-    local simroot="$builddir/simdisk/.rockbox"
-    local repowps="../wps"
-    local copied=0
-
-    if [ ! -d "$simroot" ]; then
-        echo "RockPod: [SKIP] sync_apple2026_theme_payload: $simroot does not exist."
-        return
-    fi
-
-    mkdir -p "$simroot/wps/Apple2026"
-    for src in \
-        "$repowps/Apple2026.sbs" \
-        "$repowps/Apple2026.wps" \
-        "$repowps/Apple2026"/*.bmp; do
-        [ -f "$src" ] || continue
-        rel="${src#"$repowps"/}"
-        dst="$simroot/wps/$rel"
-        mkdir -p "$(dirname "$dst")"
-        if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst"; then
-            cp "$src" "$dst"
-            copied=$((copied + 1))
-        fi
-    done
-
-    if [ "$copied" -gt 0 ]; then
-        echo "RockPod: [sync] Copied $copied Apple2026 theme payload file(s) to simulator runtime."
-    else
-        echo "RockPod: [ok] Apple2026 theme payload already current in simulator runtime."
-    fi
-}
-
-check_asset_freshness() {
-    local simfonts="$1/simdisk/.rockbox/fonts"
-    local repofonts="../fonts"
-    local stale=0
-
-    # All Apple2026 fonts from apple2026_rebuild_fonts_from_otf.py JOBS list
-    # plus 15-Adobe-Helvetica (upstream fallback used by default failsafe theme)
-    for fname in \
-        35-SFProDisplay-Bold.fnt \
-        28-SFProDisplay-Bold.fnt \
-        25-SFProDisplay-Bold.fnt \
-        22-SFProText-Regular.fnt \
-        22-SFProText-Medium.fnt \
-        22-SFCompactDisplay-Semibold.fnt \
-        20-SFProText-Regular.fnt \
-        20-SFProText-Medium.fnt \
-        19-SFProText-Medium.fnt \
-        19-SFProText-Semibold.fnt \
-        18-SFProText-Regular.fnt \
-        17-SFProText-Bold.fnt \
-        16-SFProText-Medium.fnt \
-        16-SFProText-Semibold.fnt \
-        15-SFProText-Medium.fnt \
-        15-SFProText-Semibold.fnt \
-        14-SFProText-Regular.fnt \
-        13-SFCompactText-Regular.fnt; do
-        repo="$repofonts/$fname"
-        runtime="$simfonts/$fname"
-        if [ -f "$repo" ] && [ -f "$runtime" ] && [ "$repo" -nt "$runtime" ]; then
-            echo "RockPod: [STALE] fonts/$fname is newer than runtime — run 'make install' inside build-sim/."
-            stale=1
-        elif [ -f "$repo" ] && [ ! -f "$runtime" ]; then
-            echo "RockPod: [MISS]  fonts/$fname exists in repo but not in runtime — run 'make install' inside build-sim/."
-            stale=1
-        fi
-    done
-
-    if [ "$stale" -eq 0 ]; then
-        echo "RockPod: [ok] Apple2026 runtime fonts are current."
-    else
-        echo "RockPod: [NOTE] Font sync: cd build-sim && make install   (or .\build-sim.ps1 -Incremental -SkipDep)"
-    fi
-}
-
-write_sim_config() {
-    local simdisk="$1"
-
-    if [ ! -d "$simdisk" ]; then
-        return
-    fi
-
-    mkdir -p "$simdisk/themes"
-    cat > "$simdisk/config.cfg" <<'ROCKPOD_CFG'
-wps: /.rockbox/wps/Apple2026.wps
-fms: -
-sbs: /.rockbox/wps/Apple2026.sbs
-selector type: bar (color)
-foreground color: 000000
-background color: ffffff
-line selector start color: E5E5EA
-line selector end color: E5E5EA
-line selector text color: 000000
-list separator height: 1
-list separator color: C6C6C8
-font: /.rockbox/fonts/18-SFProText-Regular.fnt
-statusbar: top
-iconset: /.rockbox/icons/Apple2026Icons.bmp
-viewers iconset: -
-show icons: on
-ui viewport: -
-scrollbar: right
-scrollbar width: 2
-disable main menu scrolling: on
-dynamic colors: off
-backlight on button hold: normal
-qs top: brightness
-qs left: shuffle
-qs right: repeat
-qs bottom: brightness
-ROCKPOD_CFG
-    cat > "$simdisk/themes/Apple2026.cfg" <<'ROCKPOD_THEME'
-#
-# Apple2026.cfg generated by build-sim.sh staging
-#
-fms: -
-wps: /.rockbox/wps/Apple2026.wps
-sbs: /.rockbox/wps/Apple2026.sbs
-selector type: bar (color)
-foreground color: 000000
-background color: ffffff
-line selector start color: E5E5EA
-line selector end color: E5E5EA
-line selector text color: 000000
-list separator height: 1
-list separator color: C6C6C8
-font: /.rockbox/fonts/18-SFProText-Regular.fnt
-statusbar: top
-iconset: /.rockbox/icons/Apple2026Icons.bmp
-viewers iconset: -
-show icons: on
-ui viewport: -
-scrollbar: right
-scrollbar width: 2
-disable main menu scrolling: on
-dynamic colors: off
-backlight on button hold: normal
-qs top: brightness
-qs left: shuffle
-qs right: repeat
-qs bottom: brightness
-ROCKPOD_THEME
-    echo "RockPod: config.cfg written to simdisk."
-    printf '%s\n' "$APPLE2026_THEME_VERSION" > "$simdisk/.apple2026_version"
-    echo "RockPod: .apple2026_version written to simdisk."
-}
-
-prepare_core_generated_headers() {
-    builddir_unix=$(pwd)
-
-    make -j1 \
-        "$builddir_unix/sysfont.h" \
-        "$builddir_unix/lang/lang.h" \
-        "$builddir_unix/lang_enum.h" \
-        "$builddir_unix/lang/max_language_size.h" \
-        "$builddir_unix/apps/core_asmdefs.h" \
-        "$builddir_unix/rbversion.h" \
-        "$builddir_unix/lib/rbcodec/codecs/ape-pre.map" \
-        "$builddir_unix/lib/rbcodec/codecs/ape_free_iram.h" \
-        "$builddir_unix/bitmaps/rockboxlogo.h" \
-        "$builddir_unix/bitmaps/default_icons.h"
-}
-
-case "$(uname -s)" in
-    MSYS_NT*)
-        echo "Error: run this from a MinGW-family MSYS2 shell or use build-sim.ps1."
-        exit 1
-        ;;
-esac
-
-INCREMENTAL=0
-INSTALL_ONLY=0
-case "${ROCKPOD_INCREMENTAL:-}" in
-    1|yes|true|YES|TRUE) INCREMENTAL=1 ;;
-esac
-case "${ROCKPOD_INSTALL_ONLY:-}" in
-    1|yes|true|YES|TRUE) INSTALL_ONLY=1 ;;
-esac
-while [ $# -gt 0 ]; do
-    case "$1" in
-        -i|--incremental)
-            INCREMENTAL=1
-            shift
-            ;;
-        --install-only)
-            INSTALL_ONLY=1
-            shift
-            ;;
-        -h|--help)
-            cat <<'EOF'
-Usage: build-sim.sh [-i|--incremental] [--install-only]
-
-  -i, --incremental   Reuse build-sim/ when already configured (faster iteration).
-  --install-only      Skip configure/dep/compile; run only make install + freshness check.
-                      Use after font/WPS/icon changes when the binary is already current.
-                      (Sets INCREMENTAL=1 implicitly.)
+  -i, --incremental   Reuse build-sim/ when already configured.
 
 Environment:
-  ROCKPOD_INCREMENTAL=1    same as -i
-  ROCKPOD_SKIP_DEP=1       skip make dep when make.dep exists
-  ROCKPOD_INSTALL_ONLY=1   same as --install-only
-  JOBS=N                   parallel job count
-
-Default: remove build-sim/, full configure, make dep, build, make install.
+  ROCKPOD_INCREMENTAL=1   same as --incremental
+  ROCKPOD_SKIP_DEP=1      skip make dep when make.dep exists
+  JOBS=N                  parallel job count
 EOF
+}
+
+incremental=0
+case "${ROCKPOD_INCREMENTAL:-}" in
+    1|yes|true|YES|TRUE) incremental=1 ;;
+esac
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -i|--incremental)
+            incremental=1
+            ;;
+        -h|--help)
+            usage
             exit 0
             ;;
         *)
             echo "Unknown option: $1" >&2
-            echo "Try: build-sim.sh --help" >&2
-            exit 1
+            usage >&2
+            exit 2
             ;;
     esac
+    shift
 done
 
 require_tools
 
-BUILDDIR="build-sim"
-WANT_STAMP="simulator ipod6g"
+builddir="build-sim"
+configure_stamp="crazypod simulator ipod6g lvgl sdl-threads"
 
-run_configure() {
-    ../tools/configure --target=ipod6g --type=s
-    printf '%s\n' "$WANT_STAMP" > .rockpod_configure_stamp
+configure_build() {
+    ../tools/configure --target=ipod6g --type=s --sdl-threads
+    printf '%s\n' "$configure_stamp" > .crazypod-configure
 }
 
-# --install-only: skip configure/dep/compile; sync assets only
-if [ "$INSTALL_ONLY" -eq 1 ]; then
-    echo "RockPod: install-only mode (font/theme sync without recompile)..."
-    mkdir -p "$BUILDDIR"
-    cd "$BUILDDIR" || exit 1
-    if [ ! -f Makefile ]; then
-        echo "Error: $BUILDDIR/Makefile not found — run a full build first."
-        exit 1
-    fi
-    if ! make install; then
-        echo "Warning: make install failed; simdisk install may be incomplete."
-        if [ -n "${ROCKPOD_STRICT_INSTALL:-}" ]; then
-            echo "RockPod: ROCKPOD_STRICT_INSTALL is set; failing the script."
-            exit 1
-        fi
-    else
-        touch .rockpod_install_stamp
-    fi
-    sync_all_fonts "$(pwd)"
-    sync_apple2026_theme_payload "$(pwd)"
-    check_asset_freshness "$(pwd)"
-    write_sim_config "$(pwd)/simdisk/.rockbox"
-    echo "RockPod: auditing Apple2026 source vs simulator install..."
-    python3 ../tools/apple2026_skin_audit.py --package-root "$(pwd)/simdisk/.rockbox"
-    echo "RockPod: auditing packaged simulator plugins..."
-    python3 ../tools/verify_plugin_package.py \
-        --build-dir "$(pwd)" \
-        --package-root "$(pwd)/simdisk/.rockbox"
-    exit 0
-fi
-
-if [ "$INCREMENTAL" -eq 0 ]; then
-    echo "RockPod: clean simulator build (removing ${BUILDDIR}/)..."
-    rm -rf "$BUILDDIR"
-    mkdir "$BUILDDIR"
-    cd "$BUILDDIR" || exit 1
-    run_configure
+if [ "$incremental" -eq 0 ]; then
+    echo "CrazyPod: clean iPod 6G simulator build"
+    rm -rf "$builddir"
+    mkdir "$builddir"
+    cd "$builddir"
+    configure_build
 else
-    echo "RockPod: incremental simulator build..."
-    mkdir -p "$BUILDDIR"
-    cd "$BUILDDIR" || exit 1
-    if [ ! -f Makefile ]; then
-        echo "RockPod: configuring (no Makefile)..."
-        run_configure
-    elif [ ! -f .rockpod_configure_stamp ] || [ "$(cat .rockpod_configure_stamp)" != "$WANT_STAMP" ]; then
-        echo "RockPod: re-configuring (stamp mismatch or missing)..."
-        run_configure
-    else
-        echo "RockPod: using existing configure in $(pwd)"
+    echo "CrazyPod: incremental iPod 6G simulator build"
+    mkdir -p "$builddir"
+    cd "$builddir"
+    if [ ! -f Makefile ] || [ ! -f .crazypod-configure ] ||
+       [ "$(cat .crazypod-configure 2>/dev/null || true)" != "$configure_stamp" ]; then
+        configure_build
     fi
 fi
 
-if [ -n "${ROCKPOD_SKIP_DEP:-}" ] && [ -f make.dep ]; then
-    echo "RockPod: ROCKPOD_SKIP_DEP set; skipping make dep."
-else
+if [ -z "${ROCKPOD_SKIP_DEP:-}" ] || [ ! -f make.dep ]; then
     make dep
 fi
 
-# Pre-build generated headers (serial; guards against parallel header-before-use races).
-# Skipped when all targets are demonstrably current (stamp matches source hash).
-HEADERS_STAMP=".rockpod_headers_stamp"
-HEADERS_NEED_REBUILD=1
-if [ -f "$HEADERS_STAMP" ]; then
-    # Sources that drive header generation: lang files, configure outputs, rbversion
-    STAMP_DEPS="../apps/lang/ ../firmware/export/ ../tools/configure"
-    newest=$(find $STAMP_DEPS -maxdepth 1 -name '*.c' -o -name '*.h' -o -name '*.lang' \
-             -o -name '*.make' -o -name 'configure' 2>/dev/null \
-             | xargs ls -t 2>/dev/null | head -n 1)
-    if [ -z "$newest" ] || [ "$HEADERS_STAMP" -nt "$newest" ]; then
-        HEADERS_NEED_REBUILD=0
-    fi
-fi
-if [ "$HEADERS_NEED_REBUILD" -eq 1 ]; then
-    prepare_core_generated_headers
-    touch "$HEADERS_STAMP"
-else
-    echo "RockPod: generated headers stamp current — skipping prepare_core_generated_headers."
-fi
+make -j"$(detect_jobs)"
 
-JOBS="$(detect_jobs)"
-make -j"$JOBS"
-if ! make install; then
-    echo "Warning: make install failed; simulator binary was built, but simdisk install is incomplete."
-    if [ -n "${ROCKPOD_STRICT_INSTALL:-}" ]; then
-        echo "RockPod: ROCKPOD_STRICT_INSTALL is set; failing the script."
-        exit 1
-    fi
-else
-    touch .rockpod_install_stamp
+codec_dir="lib/rbcodec/codecs"
+sim_codec_dir="simdisk/.rockbox/codecs"
+mkdir -p "$sim_codec_dir"
+find "$sim_codec_dir" -type f -name '*.codec' -delete
+for codec in "$codec_dir"/*.codec; do
+    [ -f "$codec" ] || continue
+    case "$codec" in
+        *_enc.codec) continue ;;
+    esac
+    cp "$codec" "$sim_codec_dir/"
+done
+icon_dir="simdisk/.rockbox/crazypod/icons"
+if [ ! -d ../assets/crazypod-icons ]; then
+    echo "Error: missing generated CrazyPod icon assets." >&2
+    exit 1
 fi
-# Sync all repo fonts to runtime — make install (wpsbuild.pl) only copies %Fl-referenced
-# fonts; any font used by PictureFlow, WPS fallback, or future skins must also be present.
-sync_all_fonts "$(pwd)"
-sync_apple2026_theme_payload "$(pwd)"
-check_asset_freshness "$(pwd)"
-
-# Write config.cfg so Apple2026 theme loads automatically on simulator start.
-SIMDISK="$(pwd)/simdisk/.rockbox"
-write_sim_config "$SIMDISK"
-
-# Normalize line endings in all text theme files to LF.
-# Rockbox skin parser is LF-only; CRLF (Windows default) causes silent parse failure.
-if command -v sed >/dev/null 2>&1; then
-    find "$SIMDISK" -name "*.wps" -o -name "*.sbs" -o -name "*.fms" -o -name "*.cfg" \
-        -o -name "*.theme" | while read -r tf; do
-        sed -i 's/\r//' "$tf"
-    done
-    echo "RockPod: theme files normalized to LF."
+if [ ! -f ../assets/crazypod/default-home.bmp ]; then
+    echo "Error: missing generated CrazyPod default wallpaper." >&2
+    exit 1
 fi
+rm -rf "$icon_dir"
+mkdir -p "$icon_dir"
+cp -R ../assets/crazypod-icons/. "$icon_dir/"
+cp ../assets/crazypod/default-home.bmp \
+   simdisk/.rockbox/crazypod/default-home.bmp
 
-echo "RockPod: auditing Apple2026 source vs simulator install..."
-python3 ../tools/apple2026_skin_audit.py --package-root "$SIMDISK"
-echo "RockPod: auditing packaged simulator plugins..."
-python3 ../tools/verify_plugin_package.py \
-    --build-dir "$(pwd)" \
-    --package-root "$SIMDISK"
+app_bundle="CrazyPod Simulator.app"
+mkdir -p "$app_bundle/Contents/MacOS"
+cp ../tools/crazypod-simulator/Info.plist "$app_bundle/Contents/Info.plist"
+cp ../tools/crazypod-simulator/launch.sh \
+   "$app_bundle/Contents/MacOS/CrazyPod Simulator"
+chmod +x "$app_bundle/Contents/MacOS/CrazyPod Simulator"
+
+echo "CrazyPod: simulator $(pwd)/rockboxui"
+echo "CrazyPod: app bundle $(pwd)/$app_bundle"

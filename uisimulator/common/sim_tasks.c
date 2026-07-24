@@ -24,7 +24,9 @@
 
 #include "config.h"
 #include "kernel.h"
+#ifndef IPOD_6G
 #include "screendump.h"
+#endif
 #include "thread.h"
 #include "debug.h"
 #include "usb.h"
@@ -72,9 +74,11 @@ void sim_thread(void)
                 break;
 
             case SIM_SCREENDUMP:
+#ifndef IPOD_6G
                 screen_dump();
 #ifdef HAVE_REMOTE_LCD
                 remote_screen_dump();
+#endif
 #endif
                 break;
             case SIM_USB_INSERTED:

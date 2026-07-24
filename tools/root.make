@@ -67,11 +67,15 @@ ifeq (,$(findstring checkwps,$(APP_TYPE)))
   ifeq (,$(findstring database,$(APP_TYPE)))
     ifeq (,$(findstring warble,$(APP_TYPE)))
       include $(FIRMDIR)/firmware.make
-      include $(ROOTDIR)/apps/bitmaps/bitmaps.make
+      ifneq ($(MODELNAME),ipod6g)
+        include $(ROOTDIR)/apps/bitmaps/bitmaps.make
+      endif
       ifeq (arch_arm,$(ARCH))
           # some targets don't use the unwarminder because they have the glibc backtrace
           ifeq (,$(filter sonynwz,$(APP_TYPE)))
+            ifneq ($(MODELNAME),ipod6g)
             include $(ROOTDIR)/lib/unwarminder/unwarminder.make
+            endif
           endif
       endif
       ifeq (arch_mips,$(ARCH))
@@ -81,8 +85,12 @@ ifeq (,$(findstring checkwps,$(APP_TYPE)))
           endif
       endif
       ifeq (,$(findstring bootloader,$(APPSDIR)))
-        include $(ROOTDIR)/lib/skin_parser/skin_parser.make
         include $(ROOTDIR)/lib/tlsf/libtlsf.make
+        ifneq ($(MODELNAME),ipod6g)
+          include $(ROOTDIR)/lib/skin_parser/skin_parser.make
+        else
+          INCLUDES += -I$(ROOTDIR)/lib/skin_parser
+        endif
       endif
     endif
   endif
@@ -126,9 +134,15 @@ else ifneq (,$(findstring warble,$(APP_TYPE)))
   include $(ROOTDIR)/lib/tlsf/libtlsf.make
   include $(ROOTDIR)/lib/rbcodec/rbcodec.make
 else # core
-  include $(APPSDIR)/lang/lang.make
-  include $(APPSDIR)/apps.make
-  include $(ROOTDIR)/lib/rbcodec/rbcodec.make
+  ifeq ($(MODELNAME),ipod6g)
+    include $(APPSDIR)/lang/lang.make
+    include $(APPSDIR)/apps.make
+    include $(ROOTDIR)/lib/rbcodec/rbcodec.make
+  else
+    include $(APPSDIR)/lang/lang.make
+    include $(APPSDIR)/apps.make
+    include $(ROOTDIR)/lib/rbcodec/rbcodec.make
+  endif
 
   ifeq ($(ENABLEDPLUGINS),yes)
     include $(APPSDIR)/plugins/bitmaps/pluginbitmaps.make
@@ -243,6 +257,13 @@ clean::
 ifeq (,$(findstring bootloader,$(APPSDIR)))
 # not bootloader
 
+ifeq ($(MODELNAME),ipod6g)
+CORE_COMPILE_GENERATED_HEADERS := $(BUILDDIR)/lang/lang.h \
+	$(BUILDDIR)/lang_enum.h \
+	$(BUILDDIR)/lang/max_language_size.h \
+	$(BUILDDIR)/apps/core_asmdefs.h \
+	$(BUILDDIR)/rbversion.h
+else
 CORE_COMPILE_GENERATED_HEADERS := $(BUILDDIR)/sysfont.h \
 	$(BUILDDIR)/lang/lang.h $(BUILDDIR)/lang_enum.h \
 	$(BUILDDIR)/lang/max_language_size.h \
@@ -251,6 +272,7 @@ CORE_COMPILE_GENERATED_HEADERS := $(BUILDDIR)/sysfont.h \
 	$(BMPHFILES) \
 	$(PBMPHFILES)
 OBJ += $(LANG_O)
+endif
 
 ifndef APP_TYPE
 

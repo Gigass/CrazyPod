@@ -10,6 +10,10 @@
 INCLUDES += -I$(APPSDIR) $(patsubst %,-I$(APPSDIR)/%,$(subst :, ,$(APPEXTRA)))
 SRC += $(call preprocess, $(APPSDIR)/SOURCES)
 
+ifeq ($(MODELNAME),ipod6g)
+  include $(ROOTDIR)/lib/lvgl/lvgl-rockbox.make
+endif
+
 # apps/features.txt is a file that (is preprocessed and) lists named features
 # based on defines in the config-*.h files. The named features will be passed
 # to genlang and thus (translated) phrases can be used based on those names.

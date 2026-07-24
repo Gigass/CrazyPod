@@ -109,4 +109,24 @@
 
 #define uintmax_t   unsigned long long
 #define intmax_t    long long
+
+/* C99 minimum-width and fastest-width integer types. */
+#define int_least8_t    int8_t
+#define uint_least8_t   uint8_t
+#define int_least16_t   int16_t
+#define uint_least16_t  uint16_t
+#define int_least32_t   int32_t
+#define uint_least32_t  uint32_t
+#define int_least64_t   int64_t
+#define uint_least64_t  uint64_t
+
+#define int_fast8_t     int8_t
+#define uint_fast8_t    uint8_t
+#define int_fast16_t    int16_t
+#define uint_fast16_t   uint16_t
+#define int_fast32_t    int32_t
+#define uint_fast32_t   uint32_t
+#define int_fast64_t    int64_t
+#define uint_fast64_t   uint64_t
+
 #endif /* __STDINT_H__ */

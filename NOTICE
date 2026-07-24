@@ -1,79 +1,27 @@
 NOTICE
 ======
 
-This project (Rockpod UI/UX Overhaul) is an open-source, educational research
-project and is not affiliated with, endorsed by, or sponsored by Apple Inc.
+CrazyPod is an open-source firmware project and is not affiliated with,
+endorsed by, or sponsored by Apple Inc.
 
-------------------------------------------------------------------------------
-UPSTREAM PROJECT
-------------------------------------------------------------------------------
+UPSTREAM
+--------
 
-This project is based on Rockpod by nuxcodes:
+CrazyPod is based on Rockpod by nuxcodes, which is based on Rockbox:
+
   https://github.com/nuxcodes/rockpod
-
-Rockpod is itself a fork of Rockbox:
   https://www.rockbox.org
   https://gerrit.rockbox.org
 
-All Rockbox and Rockpod source files retain their original copyright notices
-and are distributed under the GNU General Public License v2.0 (GPLv2).
-See LICENSE for the full license text.
+Upstream source files retain their original copyright notices and are
+distributed under the GNU General Public License v2.0. See LICENSE.
 
-------------------------------------------------------------------------------
-FONT LICENSING NOTICE — EDUCATIONAL USE
-------------------------------------------------------------------------------
-
-The compiled bitmap font files included under fonts/ that are derived from
-Apple typefaces (SF Pro Text, SF Pro Display, SF Compact Text, SF Compact
-Display) are included in this repository FOR EDUCATIONAL AND RESEARCH PURPOSES
-ONLY.
-
-  fonts/13-SFCompactText-Regular.fnt
-  fonts/14-SFProText-Regular.fnt
-  fonts/15-SFProText-Medium.fnt
-  fonts/15-SFProText-Semibold.fnt
-  fonts/16-SFProText-Medium.fnt
-  fonts/16-SFProText-Regular.fnt
-  fonts/16-SFProText-Semibold.fnt
-  fonts/17-SFProText-Bold.fnt
-  fonts/18-SFProText-Regular.fnt
-  fonts/19-SFProText-Medium.fnt
-  fonts/19-SFProText-Semibold.fnt
-  fonts/20-SFProText-Medium.fnt
-  fonts/20-SFProText-Regular.fnt
-  fonts/22-SFCompactDisplay-Semibold.fnt
-  fonts/22-SFProText-Medium.fnt
-  fonts/22-SFProText-Regular.fnt
-  fonts/25-SFProDisplay-Bold.fnt
-  fonts/28-SFProDisplay-Bold.fnt
-  fonts/35-SFProDisplay-Bold.fnt
-
-These files are derived from typefaces owned by Apple Inc. Apple's fonts are
-proprietary and subject to Apple's Font License Agreement. They are included
-here solely to demonstrate UI/UX research techniques for iPod firmware
-development and are NOT licensed for commercial use, redistribution in
-commercial products, or use outside of educational/research contexts.
-
-If you intend to build this project for personal use, you are strongly
-encouraged to regenerate these font files yourself from Apple fonts obtained
-directly from Apple (free download at developer.apple.com/fonts), using the
-included tool:
-
-  python tools/apple2026_rebuild_fonts_from_otf.py
-
-The Inter-based font files (13-Inter-SemiBold.fnt, 16-Inter-SemiBold.fnt,
-19-Inter-V-padded.fnt, 20-Inter-SemiBold.fnt) are derived from the Inter
-typeface by Rasmus Andersson, released under the SIL Open Font License 1.1.
-These are freely redistributable. See https://rsms.me/inter/
-
-------------------------------------------------------------------------------
 THIRD-PARTY COMPONENTS
-------------------------------------------------------------------------------
+----------------------
 
-This repository includes third-party components documented in:
-  docs/LICENSES
-  wps/COPYING
-  wps/AUTHORS
-  fonts/COPYING
+LVGL 9.5.0 is vendored under lib/lvgl and retains its upstream license.
+Additional inherited third-party components are documented in docs/LICENSES
+and their respective source directories.
 
-See those files for individual component licenses (BSD, MIT, ISC, SIL OFL).
+The former Apple2026 UI and Apple-derived SF bitmap fonts are not included in
+the CrazyPod product revision.

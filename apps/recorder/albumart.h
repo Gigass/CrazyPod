@@ -26,7 +26,7 @@
 
 #include <stdbool.h>
 #include "metadata.h"
-#include "skin_engine/skin_engine.h"
+#include "bmp.h"
 
 /* Look for albumart bitmap in the same dir as the track and in its parent dir.
  * Calls size_func to get the dimensions to look for

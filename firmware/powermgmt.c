@@ -65,8 +65,10 @@ extern unsigned short percent_to_volt_charge[11];
 #endif
 
 #ifndef BOOTLOADER
+#ifndef IPOD_6G
 #include "misc.h"
 #include "splash.h"
+#endif
 
 struct battery_tables_t device_battery_tables =
 {
@@ -222,7 +224,7 @@ int battery_current(void)
         current += CURRENT_BACKLIGHT;
 #endif
 
-#if defined(HAVE_RECORDING) && defined(CURRENT_RECORD)
+#if defined(HAVE_RECORDING) && defined(CURRENT_RECORD) && !defined(IPOD_6G)
     if (audio_status() & AUDIO_STATUS_RECORD)
         current += CURRENT_RECORD;
 #endif
@@ -834,7 +836,7 @@ static void power_thread(void)
     }
 } /* power_thread */
 
-#if (BATTERY_CAPACITY_DEFAULT > 0) && !defined(BOOTLOADER)
+#if (BATTERY_CAPACITY_DEFAULT > 0) && !defined(BOOTLOADER) && !defined(IPOD_6G)
 static bool battery_table_readln(int fd, char * buf, size_t bufsz,
                         const char *name, char **value, int* linect) INIT_ATTR;
 static bool battery_table_readln(int fd, char * buf, size_t bufsz,
@@ -882,7 +884,7 @@ static bool battery_table_readln(int fd, char * buf, size_t bufsz,
 
 void init_battery_tables(void)
 {
-#if (BATTERY_CAPACITY_DEFAULT > 0) && !defined(BOOTLOADER)
+#if (BATTERY_CAPACITY_DEFAULT > 0) && !defined(BOOTLOADER) && !defined(IPOD_6G)
     /* parse and load user battery levels file */
 #define PWRELEMS (ARRAYLEN(percent_to_volt_discharge))
 
@@ -1024,10 +1026,14 @@ void powermgmt_init(void)
 void shutdown_hw(enum shutdown_type sd_type)
 {
     charging_algorithm_close();
+#ifndef IPOD_6G
     audio_stop();
+#endif
 
     if (battery_level_safe()) { /* do not save on critical battery */
+#ifndef IPOD_6G
         font_unload_all();
+#endif
 
 /* Commit pending writes if needed. Even though we don't do write caching,
    things like flash translation layers may need this to commit scattered
@@ -1040,7 +1046,9 @@ void shutdown_hw(enum shutdown_type sd_type)
             storage_spindown(1);
     }
 
+#ifndef IPOD_6G
     audiohw_close();
+#endif
 
     /* If HD is still active we try to wait for spindown, otherwise the
        shutdown_timeout in power_thread_step will force a power off */
@@ -1095,7 +1103,7 @@ static void sys_shutdown_common(void)
 #if (defined(IAUDIO_X5) || defined(IAUDIO_M5) || defined(COWON_D2)) && !defined(SIMULATOR)
         pcf50606_reset_timeout(); /* Reset timer on first attempt only */
 #endif
-#ifdef HAVE_RECORDING
+#if defined(HAVE_RECORDING) && !defined(IPOD_6G)
         if (audio_status() & AUDIO_STATUS_RECORD)
             shutdown_timeout += HZ*8;
 #endif
@@ -1187,7 +1195,9 @@ static void handle_sleep_timer(void)
 #endif
         ) {
             DEBUGF("Sleep timer timeout. Stopping...\n");
+#ifndef IPOD_6G
             audio_pause();
+#endif
             set_sleep_timer(0);
             backlight_off(); /* Nighty, nighty... */
         }
@@ -1215,7 +1225,11 @@ void handle_auto_poweroff(void)
 {
 #ifndef BOOTLOADER
     long timeout = poweroff_timeout*60*HZ;
+#ifdef IPOD_6G
+    int audio_stat = 0;
+#else
     int audio_stat = audio_status();
+#endif
     long tick = current_tick;
 
     /*

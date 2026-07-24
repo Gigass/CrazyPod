@@ -1,311 +1,36 @@
-#ifdef ROCKBOX_HAS_LOGF
-logfdisp.c
-#endif
-action.c
-#ifdef HAVE_RTC_ALARM
-alarm_menu.c
-#endif
-abrepeat.c
-apple2026_shell.c
-bookmark.c
-core_keymap.c
-debug_menu.c
-filetypes.c
-fileop.c
-#ifdef HAVE_TOUCHSCREEN
-gesture.c
-#endif
-language.c
-main.c
-menu.c
-menus/menu_common.c
-menus/display_menu.c
-menus/theme_menu.c
-menus/plugin_menu.c
-#if CONFIG_TUNER
-menus/radio_menu.c
-#endif
-#ifdef HAVE_WM8978
-menus/audiohw_eq_menu.c
-#endif
-menus/eq_menu.c
-buffering.c
-voice_thread.c
-rbcodec_helpers.c
-menus/main_menu.c
-menus/playback_menu.c
-menus/playlist_menu.c
-#ifdef HAVE_RECORDING
-menus/recording_menu.c
-#endif
-menus/settings_menu.c
-menus/sound_menu.c
-#if CONFIG_RTC
-menus/time_menu.c
-#endif
-misc.c
-open_plugin.c
-onplay.c
-playlist.c
-playlist_catalog.c
-playlist_viewer.c
-plugin.c
-root_menu.c
-screens.c
-settings.c
-settings_list.c
-shortcuts.c
-status.c
-cuesheet.c
-talk.c
-tree.c
-#ifdef HAVE_TAGCACHE
-tagtree.c
-#endif
-filetree.c
-#ifdef IPOD_ACCESSORY_PROTOCOL
-iap/iap-core.c
-iap/iap-lingo0.c
-#ifdef HAVE_LINE_REC
-iap/iap-lingo1.c
-#endif
-iap/iap-lingo2.c
-iap/iap-lingo3.c
-iap/iap-lingo4.c
-#if CONFIG_TUNER
-iap/iap-lingo7.c
-#endif
-#endif
-screen_access.c
-gui/icon.c
-gui/list.c
-gui/line.c
-gui/bitmap/list.c
-gui/bitmap/list-skinned.c
-gui/option_select.c
-#ifdef HAVE_PITCHCONTROL
-gui/pitchscreen.c
-#endif
-#ifdef HAVE_QUICKSCREEN
-gui/quickscreen.c
-#endif
-gui/folder_select.c
-#if defined(HAVE_BACKLIGHT) || !defined(HAS_BUTTON_HOLD)
-gui/mask_select.c
-#endif
-
-gui/wps.c
-gui/scrollbar.c
-gui/splash.c
-gui/statusbar.c
-gui/statusbar-skinned.c
-#if (CONFIG_PLATFORM&PLATFORM_ANDROID)
-hosted/android/yesno.c
-hosted/android/notification.c
-#else
-gui/yesno.c
-#endif
-gui/viewport.c
-
-gui/skin_engine/skin_backdrops.c
-gui/skin_engine/skin_display.c
-gui/skin_engine/skin_engine.c
-gui/skin_engine/skin_parser.c
-gui/skin_engine/skin_render.c
-gui/skin_engine/skin_tokens.c
-#ifdef HAVE_TOUCHSCREEN
-gui/skin_engine/skin_touchsupport.c
-#endif
-
-#if (LCD_DEPTH > 1) || (defined(HAVE_REMOTE_LCD) && (LCD_REMOTE_DEPTH > 1))
-gui/backdrop.c
-#endif
-
-recorder/bmp.c
-recorder/icons.c
-#if (CONFIG_PLATFORM&PLATFORM_ANDROID)
-hosted/android/keyboard.c
-#else
-recorder/keyboard.c
-#endif
-recorder/peakmeter.c
-#if defined(HAVE_ALBUMART) || defined(HAVE_JPEG)
-recorder/resize.c
-#endif
-#ifdef HAVE_JPEG
-recorder/jpeg_load.c
-#ifdef CPU_ARM
-recorder/jpeg_idct_arm.S
-#endif
-#endif
-#ifdef HAVE_ALBUMART
-recorder/albumart.c
-#endif
-#ifdef HAVE_LCD_COLOR
-gui/color_picker.c
-#ifdef HAVE_ALBUMART
-gui/skin_engine/skin_albumart_color.c
-#endif
-#endif
-
-#ifdef HAVE_RECORDING
-recorder/recording.c
-#endif
-
-#if CONFIG_TUNER
-radio/radio.c
-radio/presets.c
-radio/radio_skin.c
-#ifdef HAVE_ALBUMART
-radio/radioart.c
-#endif
-#endif
+crazypod/crazypod_main.c
+crazypod/crazypod_lcd.c
+crazypod/crazypod_artwork.c
+crazypod/crazypod_coverflow.c
+crazypod/crazypod_music.c
+crazypod/crazypod_playlist.c
+crazypod/crazypod_audio_shims.c
+crazypod/crazypod_state.c
+crazypod/crazypod_appearance.c
+crazypod/crazypod_presets.c
+crazypod/crazypod_icons.c
+crazypod/crazypod_wallpaper.c
+crazypod/crazypod_ui.c
 
 #if INPUT_SRC_CAPS != 0
 audio_path.c
-#endif /* INPUT_SRC_CAPS != 0 */
+#endif
+buffering.c
+rbcodec_helpers.c
 audio_thread.c
 pcmbuf.c
 codec_thread.c
 playback.c
 codecs.c
-#ifndef HAVE_HARDWARE_BEEP
+
 beep.c
+
+#ifdef HAVE_ALBUMART
+recorder/bmp.c
+recorder/resize.c
+recorder/jpeg_load.c
+#ifdef CPU_ARM
+recorder/jpeg_idct_arm.S
 #endif
-#ifdef HAVE_RECORDING
-enc_config.c
-recorder/pcm_record.c
-#endif
-#ifdef USB_ENABLE_HID
-usb_keymaps.c
-#endif
-#ifndef USB_NONE
-gui/usb_screen.c
-#endif
-#ifdef HAVE_TAGCACHE
-tagcache.c
-#endif
-#ifdef HAVE_TOUCHSCREEN
-keymaps/keymap-touchscreen.c
-#endif
-#if (CONFIG_KEYPAD == IRIVER_H100_PAD) \
-    || (CONFIG_KEYPAD == IRIVER_H300_PAD)
-keymaps/keymap-h1x0_h3x0.c
-#elif ((CONFIG_KEYPAD == IPOD_4G_PAD) \
-    || (CONFIG_KEYPAD == IPOD_3G_PAD) \
-    || (CONFIG_KEYPAD == IPOD_1G2G_PAD))
-keymaps/keymap-ipod.c
-#elif CONFIG_KEYPAD == IAUDIO_X5M5_PAD
-keymaps/keymap-x5.c
-#elif CONFIG_KEYPAD == IAUDIO_M3_PAD
-keymaps/keymap-m3.c
-#elif CONFIG_KEYPAD == GIGABEAT_PAD
-keymaps/keymap-gigabeat.c
-#elif CONFIG_KEYPAD == GIGABEAT_S_PAD
-keymaps/keymap-gigabeat-s.c
-#elif CONFIG_KEYPAD == IRIVER_H10_PAD
-keymaps/keymap-h10.c
-#elif CONFIG_KEYPAD == SANSA_E200_PAD
-keymaps/keymap-e200.c
-#elif CONFIG_KEYPAD == SANSA_C200_PAD
-keymaps/keymap-c200.c
-#elif CONFIG_KEYPAD == SANSA_M200_PAD
-keymaps/keymap-m200.c
-#elif CONFIG_KEYPAD == SANSA_CLIP_PAD
-keymaps/keymap-clip.c
-#elif CONFIG_KEYPAD == MROBE500_PAD
-keymaps/keymap-mr500.c
-#elif CONFIG_KEYPAD == MROBE100_PAD
-keymaps/keymap-mr100.c
-#elif CONFIG_KEYPAD == COWON_D2_PAD
-keymaps/keymap-cowond2.c
-#elif CONFIG_KEYPAD == CREATIVE_ZENXFI2_PAD
-keymaps/keymap-zenxfi2.c
-#elif CONFIG_KEYPAD == CREATIVE_ZENXFI3_PAD
-keymaps/keymap-zenxfi3.c
-#elif CONFIG_KEYPAD == PHILIPS_SA9200_PAD
-keymaps/keymap-sa9200.c
-#elif CONFIG_KEYPAD == PHILIPS_HDD1630_PAD
-keymaps/keymap-hdd1630.c
-#elif CONFIG_KEYPAD == PHILIPS_HDD6330_PAD
-keymaps/keymap-hdd6330.c
-#elif CONFIG_KEYPAD == SANSA_FUZE_PAD
-keymaps/keymap-fuze.c
-#elif CONFIG_KEYPAD == ONDAVX747_PAD
-keymaps/keymap-ondavx747.c
-#elif CONFIG_KEYPAD == ONDAVX777_PAD
-keymaps/keymap-ondavx777.c
-#elif CONFIG_KEYPAD == ONDAVX767_PAD
-keymaps/keymap-ondavx767.c
-#elif (CONFIG_KEYPAD == SAMSUNG_YH820_PAD) \
-    || (CONFIG_KEYPAD == SAMSUNG_YH92X_PAD)
-keymaps/keymap-yh8xx_yh9xx.c
-#elif CONFIG_KEYPAD == PBELL_VIBE500_PAD
-keymaps/keymap-vibe500.c
-#elif CONFIG_KEYPAD == MPIO_HD200_PAD
-keymaps/keymap-mpio-hd200.c
-#elif CONFIG_KEYPAD == MPIO_HD300_PAD
-keymaps/keymap-mpio-hd300.c
-#elif CONFIG_KEYPAD == ANDROID_PAD
-keymaps/keymap-android.c
-#elif CONFIG_KEYPAD == SDL_PAD
-keymaps/keymap-sdl.c
-#elif CONFIG_KEYPAD == SANSA_FUZEPLUS_PAD
-keymaps/keymap-fuzeplus.c
-#elif CONFIG_KEYPAD == RK27XX_GENERIC_PAD
-keymaps/keymap-rk27xx-generic.c
-#elif CONFIG_KEYPAD == HM60X_PAD
-keymaps/keymap-hm60x.c
-#elif CONFIG_KEYPAD == HM801_PAD
-keymaps/keymap-hm801.c
-#elif CONFIG_KEYPAD == SANSA_CONNECT_PAD
-keymaps/keymap-sansa-connect.c
-#elif CONFIG_KEYPAD == SAMSUNG_YPR0_PAD
-keymaps/keymap-ypr0.c
-#elif CONFIG_KEYPAD == CREATIVE_ZEN_PAD
-keymaps/keymap-zen.c
-#elif CONFIG_KEYPAD == CREATIVE_ZENV_PAD
-keymaps/keymap-zenv.c
-#elif CONFIG_KEYPAD == MA_PAD
-keymaps/keymap-ma.c
-#elif CONFIG_KEYPAD == SONY_NWZ_PAD
-keymaps/keymap-nwz.c
-#elif CONFIG_KEYPAD == SONY_NWZA860_PAD
-keymaps/keymap-nwza860.c
-#elif CONFIG_KEYPAD == IHIFI_PAD
-keymaps/keymap-ihifi.c
-#elif CONFIG_KEYPAD == IHIFI_770_PAD
-keymaps/keymap-ihifi770.c
-#elif CONFIG_KEYPAD == IHIFI_800_PAD
-keymaps/keymap-ihifi800.c
-#elif CONFIG_KEYPAD == SAMSUNG_YPR1_PAD
-keymaps/keymap-ypr1.c
-#elif CONFIG_KEYPAD == DX50_PAD
-keymaps/keymap-dx50.c
-#elif CONFIG_KEYPAD == AGPTEK_ROCKER_PAD
-keymaps/keymap-agptekrocker.c
-#elif CONFIG_KEYPAD == XDUOO_X3_PAD
-keymaps/keymap-xduoox3.c
-#elif CONFIG_KEYPAD == XDUOO_X3II_PAD
-keymaps/keymap-xduoox3ii.c
-#elif CONFIG_KEYPAD == XDUOO_X20_PAD
-keymaps/keymap-xduoox20.c
-#elif CONFIG_KEYPAD == FIIO_M3K_LINUX_PAD
-keymaps/keymap-fiiom3klinux.c
-#elif CONFIG_KEYPAD == FIIO_M3K_PAD
-keymaps/keymap-fiiom3k.c
-#elif CONFIG_KEYPAD == EROSQ_PAD
-keymaps/keymap-erosq.c
-#elif CONFIG_KEYPAD == SHANLING_Q1_PAD
-keymaps/keymap-shanlingq1.c
-#elif CONFIG_KEYPAD == ECHO_R1_PAD
-keymaps/keymap-echor1.c
-#elif CONFIG_KEYPAD == SURFANS_F28_PAD
-keymaps/keymap-surfansf28.c
-#elif CONFIG_KEYPAD == RG_NANO_PAD
-keymaps/keymap-rgnano.c
-#elif CONFIG_KEYPAD == CTRU_PAD
-keymaps/keymap-ctru.c
-#elif CONFIG_KEYPAD == HIBY_R3PROII_PAD
-keymaps/keymap-hibyr3proii.c
+recorder/albumart.c
 #endif

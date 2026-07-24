@@ -407,9 +407,25 @@ simcc () {
    sigaltstack=`check_sigaltstack`
    echo "Darwin host detected"
    if $CC --version | grep -q "clang"; then
-    CC=gcc-15
-    AR=gcc-ar-15
-    CPP=cpp-15
+    if command -v gcc-15 >/dev/null 2>&1; then
+     CC=gcc-15
+     AR=gcc-ar-15
+     CPP=cpp-15
+    elif command -v gcc-14 >/dev/null 2>&1; then
+     CC=gcc-14
+     AR=gcc-ar-14
+     CPP=cpp-14
+    else
+     echo "[ERROR] Simulator builds on Darwin require Homebrew GCC 14 or 15."
+     exit 1
+    fi
+    macos_sdk=`xcrun --show-sdk-path 2>/dev/null`
+    if test -z "$macos_sdk"; then
+     echo "[ERROR] Unable to locate the active macOS SDK with xcrun."
+     exit 1
+    fi
+    GCCOPTS="$GCCOPTS -isysroot $macos_sdk -mmacosx-version-min=15.0"
+    LDOPTS="$LDOPTS -isysroot $macos_sdk -mmacosx-version-min=15.0"
    fi
    LDOPTS="$LDOPTS -ldl"
    SHARED_LDFLAGS="-dynamiclib -Wl,-no_warn_duplicate_libraries"
@@ -2140,7 +2156,7 @@ fi
     bmp2rb_native="$rootdir/tools/bmp2rb -f 4"
     output="rockbox.ipod"
     appextra="recorder:gui:radio"
-    plugins="yes"
+    plugins="no"
     bootoutput="bootloader-$modelname.ipod"
     # toolset is the tools within the tools directory that we build for
     # this particular target.

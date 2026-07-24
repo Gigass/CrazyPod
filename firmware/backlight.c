@@ -22,8 +22,10 @@
  ****************************************************************************/
 #include "config.h"
 #if !defined(BOOTLOADER)
+#ifndef IPOD_6G
 #include "settings.h"
 #include "action.h"
+#endif
 #endif
 #include <stdlib.h>
 #include "cpu.h"
@@ -684,8 +686,10 @@ void backlight_thread(void)
 #if defined(HAVE_LCD_SLEEP) /* bugfix ipod Video, 6G crashes if screen off at shutdown */
                 lcd_awake();
 #endif
+#ifndef IPOD_6G
                 if (!global_settings.show_shutdown_message)
                     break;
+#endif
 #endif
                 /* else fall through */
 #if CONFIG_CHARGING

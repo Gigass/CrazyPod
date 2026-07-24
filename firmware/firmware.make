@@ -8,9 +8,14 @@
 #
 
 INCLUDES += -I$(FIRMDIR) -I$(FIRMDIR)/export -I$(FIRMDIR)/drivers \
-			-I$(FIRMDIR)/include -I$(FIRMDIR)/kernel/include
+			-I$(FIRMDIR)/include -I$(FIRMDIR)/kernel \
+			-I$(FIRMDIR)/kernel/include
 ifndef APP_TYPE
 INCLUDES += -I$(FIRMDIR)/libc/include
+else
+# Dependency generation uses -MG. Give it Rockbox's libc headers as concrete
+# dependency paths even though hosted compilation itself uses the macOS SDK.
+OTHER_INC += -isystem $(FIRMDIR)/libc/include
 endif
 
 ifneq ($(filter reggen,$(TOOLSET)),)
@@ -20,7 +25,9 @@ endif
 FIRMLIB_SRC += $(call preprocess, $(FIRMDIR)/asm/SOURCES)
 FIRMLIB_SRC += $(call preprocess, $(FIRMDIR)/SOURCES)
 FIRMLIB_OBJ := $(call c2obj, $(FIRMLIB_SRC))
+ifneq ($(MODELNAME),ipod6g)
 FIRMLIB_OBJ += $(BUILDDIR)/sysfont.o
+endif
 OTHER_SRC += $(FIRMLIB_SRC)
 
 FIRMLIB = $(BUILDDIR)/firmware/libfirmware.a

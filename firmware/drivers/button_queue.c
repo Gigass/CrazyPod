@@ -167,6 +167,27 @@ bool button_queue_try_post(long button, int data)
     return true;
 }
 
+#ifdef HAVE_SCROLLWHEEL
+bool button_queue_replace_scroll(long button, intptr_t data)
+{
+    struct queue_event event;
+    long base;
+
+    if(!queue_peek(&button_queue, &event)) {
+        queue_post(&button_queue, button, data);
+        return true;
+    }
+
+    base = event.id & ~BUTTON_REPEAT;
+    if(base != BUTTON_SCROLL_FWD && base != BUTTON_SCROLL_BACK)
+        return false;
+
+    queue_remove_from_head(&button_queue, event.id);
+    queue_post(&button_queue, button, data);
+    return true;
+}
+#endif
+
 int button_queue_count(void)
 {
     return queue_count(&button_queue);

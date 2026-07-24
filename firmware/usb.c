@@ -40,22 +40,26 @@
 #include "usb_core.h"
 #endif
 #include "logf.h"
+#ifndef IPOD_6G
 #include "screendump.h"
+#endif
 #include "powermgmt.h"
 
 #ifndef BOOTLOADER
+#ifndef IPOD_6G
 #include "misc.h"
 #include "gui/yesno.h"
 #include "settings.h"
 #include "lang_enum.h"
 #include "gui/skin_engine/skin_engine.h"
 #endif
+#endif
 
 #if defined(HIBY_R3PROII) || defined(HIBY_R1)
 #include "usb-hiby-gadget.h"
 #endif
 
-#if defined(IPOD_ACCESSORY_PROTOCOL)
+#if defined(IPOD_ACCESSORY_PROTOCOL) && !defined(IPOD_6G)
 #include "iap.h"
 #endif
 
@@ -86,7 +90,12 @@ static int usb_mmc_countdown = 0;
 #ifndef USB_EXTRA_STACK
 #   define USB_EXTRA_STACK 0x0 /*Define in firmware/export/config/[target].h*/
 #endif
-static long usb_stack[(DEFAULT_STACK_SIZE*4 + DUMP_BMP_LINESIZE + USB_EXTRA_STACK)/sizeof(long)];
+#ifdef IPOD_6G
+#define CRAZYPOD_USB_DUMP_STACK 0
+#else
+#define CRAZYPOD_USB_DUMP_STACK DUMP_BMP_LINESIZE
+#endif
+static long usb_stack[(DEFAULT_STACK_SIZE*4 + CRAZYPOD_USB_DUMP_STACK + USB_EXTRA_STACK)/sizeof(long)];
 static const char usb_thread_name[] = "usb";
 static unsigned int usb_thread_entry = 0;
 static bool usb_monitor_enabled = false;
@@ -134,6 +143,9 @@ static void try_reboot(void)
 /* Screen dump */
 static inline bool usb_do_screendump(void)
 {
+#ifdef IPOD_6G
+    return false;
+#else
     if(do_screendump_instead_of_usb)
     {
         screen_dump();
@@ -143,6 +155,7 @@ static inline bool usb_do_screendump(void)
         return true;
     }
     return false;
+#endif
 }
 
 #ifdef HAVE_USB_POWER
@@ -195,8 +208,12 @@ static inline void usb_handle_hotswap(long id)
 static inline void usb_configure_drivers(int for_state)
 {
 #ifdef USB_ENABLE_AUDIO
+#ifdef IPOD_6G
+    usb_audio = 0;
+#else
     // FIXME: doesn't seem to get set when loaded at boot...
     usb_audio = global_settings.usb_audio;
+#endif
 #endif
     switch(for_state)
     {
@@ -511,7 +528,7 @@ static void NORETURN_ATTR usb_thread(void)
             if(usb_state == USB_POWERED || usb_state == USB_INSERTED)
                 usb_stack_enable(false);
 
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#if defined(IPOD_ACCESSORY_PROTOCOL) && !defined(IPOD_6G)
             iap_reset_state(IF_IAP_MP(0));
 #endif
 

@@ -177,7 +177,11 @@ struct audio_resume_info
 static struct mutex id3_mutex SHAREDBSS_ATTR; /* (A,O)*/
 
 /** For album art support **/
+#ifdef IPOD_6G
+#define MAX_MULTIPLE_AA 1
+#else
 #define MAX_MULTIPLE_AA SKINNABLE_SCREENS_COUNT
+#endif
 #ifdef HAVE_ALBUMART
 
 static int albumart_mode = -1;

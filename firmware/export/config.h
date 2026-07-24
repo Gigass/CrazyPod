@@ -1396,6 +1396,18 @@ Lyre prototype 1 */
 
 #endif /* HAVE_USBSTACK */
 
+#ifdef IPOD_6G
+/*
+ * CrazyPod exposes only mass storage. Audio, HID and iPod accessory
+ * transports belong to the removed Rockbox application layer.
+ */
+#undef USB_ENABLE_AUDIO
+#undef USB_ENABLE_HID
+#undef USB_ENABLE_IAP_HID
+#undef IPOD_ACCESSORY_PROTOCOL
+#undef HAVE_DIRCACHE
+#endif
+
 /* This attribute can be used to enable to detection of plugin file handles leaks.
  * When enabled, the plugin core will monitor open/close/creat and when the plugin exits
  * will display an error message if the plugin leaked some file handles */

@@ -44,8 +44,13 @@
 /* Diagnostic counter: incomplete isochronous IN transfers */
 static volatile int iisoixfr_count = 0;
 
+#ifdef USB_ENABLE_AUDIO
 /* Forward declaration — defined in usb_audio.c */
 extern bool usb_audio_source_streaming(void);
+#define USB_AUDIO_SOURCE_STREAMING() usb_audio_source_streaming()
+#else
+#define USB_AUDIO_SOURCE_STREAMING() false
+#endif
 
 
 /* The ARM940T uses a subset of the ARMv4 functions, not
@@ -941,7 +946,7 @@ static void usb_dw_control_received(struct usb_ctrlrequest* req)
         /* Skip EP0 IN flush during ISO streaming — the flush calls
          * usb_dw_wait_for_ahb_idle() which busy-waits for all DMA to
          * stop, potentially disrupting active ISO IN transfers. */
-        if (!usb_audio_source_streaming())
+        if (!USB_AUDIO_SOURCE_STREAMING())
             usb_dw_flush_endpoint(0, USB_DW_EPDIR_IN);
         usb_core_control_request(req, NULL);
         break;

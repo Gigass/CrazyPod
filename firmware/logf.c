@@ -263,6 +263,10 @@ void _logf(const char *fmt, ...)
 
 void logf_panic_dump(int *y)
 {
+#ifdef IPOD_6G
+    (void)y;
+    DEBUGF("CrazyPod panic: logf buffer retained in memory\n");
+#else
     int i;
     /* nothing to print ? */
     if(logfindex == 0 && !logfwrap)
@@ -313,6 +317,7 @@ void logf_panic_dump(int *y)
 
     lcd_puts(1, (*y)++, "end of logf data");
     lcd_update();
+#endif
 }
 #endif
 

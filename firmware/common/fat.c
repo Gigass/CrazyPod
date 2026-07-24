@@ -606,6 +606,29 @@ static void create_dos_name(unsigned char *basisname,
         *np = 0; /* extension too long */
 }
 
+static bool name_is_exact_dos_name(const unsigned char *name,
+                                   const unsigned char *dosname)
+{
+    unsigned int name_index = 0;
+
+    for (unsigned int i = 0; i < 8 && dosname[i] != ' '; ++i)
+    {
+        if (name[name_index++] != dosname[i])
+            return false;
+    }
+    if (dosname[8] != ' ')
+    {
+        if (name[name_index++] != '.')
+            return false;
+        for (unsigned int i = 8; i < 11 && dosname[i] != ' '; ++i)
+        {
+            if (name[name_index++] != dosname[i])
+                return false;
+        }
+    }
+    return name[name_index] == '\0';
+}
+
 static void randomize_dos_name(unsigned char *dosname,
                                const unsigned char *basisname,
                                int *np)
@@ -1621,7 +1644,7 @@ static int write_longname(struct bpb *fat_bpb, struct fat_filestr *parentstr,
     /* we need to convert the name first since the entries are written in
        reverse order */
     unsigned long ucspadlen = ALIGN_UP(ucslen, FATLONG_NAME_CHARS);
-    uint16_t ucsname[ucspadlen];
+    uint16_t ucsname[ucspadlen > 0 ? ucspadlen : 1];
 
     for (unsigned long i = 0; i < ucspadlen; i++)
     {
@@ -1770,19 +1793,27 @@ static int add_dir_entry(struct bpb *fat_bpb, struct fat_filestr *parentstr,
             FAT_ERROR(rc * 10 - 1); /* filename is invalid */
 
         create_dos_name(basisname, name, &n);
-        randomize_dos_name(shortname, basisname, &n);
+        if (n < 0 && name_is_exact_dos_name(name, basisname))
+        {
+            memcpy(shortname, basisname, sizeof(shortname));
+            entries_needed = 1;
+        }
+        else
+        {
+            randomize_dos_name(shortname, basisname, &n);
 
-        /* one dir entry needed for every 13 utf16 "code units"
-           of filename, plus one entry for the short name.
-           Keep in mind that a unicode character can take up to
-           two code units!
-        */
-        ucslen = utf16len_utf8(name);
-        if (ucslen > 255)
-            FAT_ERROR(-2); /* name is too long */
+            /* one dir entry needed for every 13 utf16 "code units"
+               of filename, plus one entry for the short name.
+               Keep in mind that a unicode character can take up to
+               two code units!
+            */
+            ucslen = utf16len_utf8(name);
+            if (ucslen > 255)
+                FAT_ERROR(-2); /* name is too long */
 
-        entries_needed = (ucslen + FATLONG_NAME_CHARS - 1)
-                            / FATLONG_NAME_CHARS + 1;
+            entries_needed = (ucslen + FATLONG_NAME_CHARS - 1)
+                                / FATLONG_NAME_CHARS + 1;
+        }
     }
 
     int entry = 0, entries_found = 0, firstentry = -1;

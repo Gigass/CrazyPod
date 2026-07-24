@@ -58,12 +58,14 @@ int key_to_button(int keyboard_button)
             break;
         case SDLK_KP_5:
         case SDLK_RETURN:
+        case SDLK_s:
             new_btn = BUTTON_SELECT;
             break;
         case SDLK_ESCAPE:
         case SDLK_BACKSPACE:
         case SDLK_KP_PERIOD:
         case SDLK_INSERT:
+        case SDLK_m:
             new_btn = BUTTON_MENU;
             break;
     }

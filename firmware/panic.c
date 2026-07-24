@@ -25,7 +25,11 @@
 #include <string.h>
 #include "panic.h"
 #include "lcd.h"
+#ifndef IPOD_6G
 #include "font.h"
+#else
+#include "crazypod/crazypod_lcd.h"
+#endif
 #include "debug.h"
 #include "led.h"
 #include "power.h"
@@ -45,7 +49,9 @@ char panic_buf[128];
 static char panic_buf[128];
 #endif
 
+#ifndef IPOD_6G
 #define LINECHARS (LCD_WIDTH/SYSFONT_WIDTH) - 2
+#endif
 
 #if defined(CPU_ARM) && defined(HAVE_RB_BACKTRACE)
 void panicf_f( const char *fmt, ...) USED_ATTR;
@@ -97,8 +103,14 @@ void panicf( const char *fmt, ...)
     vsnprintf( panic_buf, sizeof(panic_buf), fmt, ap );
     va_end( ap );
 
+#ifdef IPOD_6G
+#if defined(HAVE_RB_BACKTRACE)
+    (void)pc;
+    (void)sp;
+#endif
+    crazypod_lcd_show_panic(panic_buf);
+#else
     lcd_set_viewport(NULL);
-
     int y = 1;
 
 #if LCD_DEPTH > 1
@@ -128,6 +140,7 @@ void panicf( const char *fmt, ...)
 #endif
 
     lcd_update();
+#endif
     DEBUGF("%s", panic_buf);
 
 #ifdef HAVE_ADJUSTABLE_CPU_FREQ

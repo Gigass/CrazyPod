@@ -21,14 +21,12 @@
 /* define this if the ATA controller and method of USB access support LBA48 */
 #define HAVE_LBA48
 
-/* define this if you have recording possibility */
-#define HAVE_RECORDING
-//#define HAVE_AGC
-//#define HAVE_HISTOGRAM
-
-/* Define bitmask of input sources - recordable bitmask can be defined
-   explicitly if different */
-#define INPUT_SRC_CAPS (SRC_CAP_MIC | SRC_CAP_LINEIN)
+/*
+ * CrazyPod does not expose recording yet. Voice Memos is a placeholder, so
+ * do not pull the Rockbox recording core and encoder codecs into the 6G
+ * firmware.
+ */
+#define INPUT_SRC_CAPS 0
 
 /* define the bitmask of hardware sample rates */
 #define HW_SAMPR_CAPS   (SAMPR_CAP_44 | SAMPR_CAP_22 | SAMPR_CAP_11 \

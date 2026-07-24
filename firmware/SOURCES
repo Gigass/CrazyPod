@@ -361,6 +361,9 @@ libc/gmtime.c
 #endif /* CONFIG_PLATFORM || HAVE_ROCKBOX_C_LIBRARY */
 
 /* Display */
+#ifdef IPOD_6G
+/* CrazyPod owns its RGB565 framebuffer and LVGL rendering path. */
+#else
 scroll_engine.c
 
 arabjoin.c
@@ -392,6 +395,7 @@ drivers/lcd-16bit.c
 drivers/lcd-24bit.c
 #endif /* LCD_DEPTH */
 common/diacritic.c
+#endif /* IPOD_6G */
 
 #ifdef HAVE_REMOTE_LCD
 #if LCD_REMOTE_DEPTH == 1
@@ -1665,7 +1669,7 @@ target/arm/s5l8702/ipod6g/serial-6g.c
 #ifndef BOOTLOADER
 target/arm/s5l8702/ipod6g/audio-6g.c
 target/arm/s5l8702/ipod6g/cscodec-6g.c
-#endif /* BOOTLOADER */
+#endif
 #endif /* IPOD_6G */
 
 #if CONFIG_CPU == RK27XX
