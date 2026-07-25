@@ -31,6 +31,14 @@
 #define CRAZYPOD_CACHE_DIRECTORY CRAZYPOD_DIRECTORY "/cache"
 #define CRAZYPOD_COVER_CACHE_DIRECTORY CRAZYPOD_CACHE_DIRECTORY "/CV6"
 #define CRAZYPOD_COVER_CACHE_SHARDS 16
+#define CRAZYPOD_COVER_PACK_DIRECTORY CRAZYPOD_CACHE_DIRECTORY "/CF7"
+#define CRAZYPOD_COVER_PACK_INDEX CRAZYPOD_COVER_PACK_DIRECTORY "/covers.idx"
+#define CRAZYPOD_COVER_PACK_INDEX_TMP CRAZYPOD_COVER_PACK_DIRECTORY "/covers.tmp"
+#define CRAZYPOD_COVER_PACK_DATA CRAZYPOD_COVER_PACK_DIRECTORY "/covers.dat"
+#define CRAZYPOD_COVER_PACK_MAGIC 0x43465037u
+#define CRAZYPOD_COVER_PACK_VERSION 1
+#define CRAZYPOD_COVER_PACK_IMAGE 1
+#define CRAZYPOD_COVER_PACK_EMPTY 2
 
 struct artwork_slot {
     fb_data pixels[CRAZYPOD_ARTWORK_BANKS][CRAZYPOD_ARTWORK_PIXELS]
@@ -87,6 +95,26 @@ struct artwork_cache_header {
     uint16_t reserved;
 };
 
+struct cover_pack_header {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t entry_count;
+    uint32_t entry_size;
+    uint32_t artwork_size;
+    uint32_t data_size;
+};
+
+struct cover_pack_entry {
+    uint32_t key_a;
+    uint32_t key_b;
+    uint32_t offset;
+    uint32_t data_size;
+    uint16_t width;
+    uint16_t height;
+    uint8_t state;
+    uint8_t reserved[3];
+};
+
 enum artwork_cache_result {
     ARTWORK_CACHE_MISS,
     ARTWORK_CACHE_IMAGE,
@@ -105,9 +133,20 @@ static bool artwork_suspended;
 static bool artwork_wake_queued;
 static bool artwork_prime_active;
 static bool artwork_prime_processing;
+static bool artwork_prime_failed;
 static int artwork_prime_next;
 static int artwork_prime_completed;
 static int artwork_prime_total;
+static struct cover_pack_entry
+    cover_pack_entries[CRAZYPOD_MAX_TRACKS];
+static struct cover_pack_entry
+    cover_pack_build_entries[CRAZYPOD_MAX_TRACKS];
+static int cover_pack_entry_count;
+static int cover_pack_build_count;
+static uint32_t cover_pack_data_size;
+static uint32_t cover_pack_build_data_size;
+static int cover_pack_data_fd = -1;
+static bool cover_pack_building;
 
 static const char *file_extension(const char *path)
 {
@@ -233,6 +272,258 @@ static bool configure_descriptor(lv_image_dsc_t *descriptor,
     return true;
 }
 
+static void cover_pack_close_data(void)
+{
+    if(cover_pack_data_fd >= 0) {
+        close(cover_pack_data_fd);
+        cover_pack_data_fd = -1;
+    }
+}
+
+static int cover_pack_find(const struct cover_pack_entry *entries,
+                           int count, uint32_t key_a, uint32_t key_b)
+{
+    int i;
+
+    for(i = 0; i < count; ++i) {
+        if(entries[i].key_a == key_a &&
+           entries[i].key_b == key_b)
+            return i;
+    }
+    return -1;
+}
+
+static bool cover_pack_entry_valid(
+    const struct cover_pack_entry *entry, uint32_t data_size)
+{
+    if(entry->state == CRAZYPOD_COVER_PACK_EMPTY)
+        return entry->data_size == 0;
+    if(entry->state != CRAZYPOD_COVER_PACK_IMAGE ||
+       entry->width == 0 || entry->height == 0 ||
+       entry->width > CRAZYPOD_ARTWORK_MAX_SIZE ||
+       entry->height > CRAZYPOD_ARTWORK_MAX_SIZE ||
+       entry->data_size !=
+           (uint32_t)entry->width * entry->height * sizeof(fb_data))
+        return false;
+    return entry->offset <= data_size &&
+           entry->data_size <= data_size - entry->offset;
+}
+
+static bool cover_pack_load_index(void)
+{
+    struct cover_pack_header header;
+    off_t data_file_size;
+    int index_fd;
+    int data_fd;
+    int i;
+
+    cover_pack_close_data();
+    cover_pack_entry_count = 0;
+    cover_pack_data_size = 0;
+    index_fd = open(CRAZYPOD_COVER_PACK_INDEX, O_RDONLY);
+    if(index_fd < 0)
+        return false;
+    if(!read_exact(index_fd, &header, sizeof(header)) ||
+       header.magic != CRAZYPOD_COVER_PACK_MAGIC ||
+       header.version != CRAZYPOD_COVER_PACK_VERSION ||
+       header.entry_count > CRAZYPOD_MAX_TRACKS ||
+       header.entry_size != sizeof(struct cover_pack_entry) ||
+       header.artwork_size != CRAZYPOD_COVERFLOW_ARTWORK_SIZE ||
+       !read_exact(index_fd, cover_pack_entries,
+                   header.entry_count * sizeof(cover_pack_entries[0]))) {
+        close(index_fd);
+        return false;
+    }
+    close(index_fd);
+
+    data_fd = open(CRAZYPOD_COVER_PACK_DATA, O_RDONLY);
+    if(data_fd < 0)
+        return false;
+    data_file_size = lseek(data_fd, 0, SEEK_END);
+    if(data_file_size < 0 ||
+       (uint64_t)data_file_size < header.data_size) {
+        close(data_fd);
+        return false;
+    }
+    for(i = 0; i < (int)header.entry_count; ++i) {
+        if(!cover_pack_entry_valid(&cover_pack_entries[i],
+                                   header.data_size)) {
+            close(data_fd);
+            return false;
+        }
+    }
+    cover_pack_entry_count = header.entry_count;
+    cover_pack_data_size = header.data_size;
+    cover_pack_data_fd = data_fd;
+    return true;
+}
+
+static enum artwork_cache_result cover_pack_load(
+    const struct artwork_decode_request *request, fb_data *pixels,
+    lv_image_dsc_t *descriptor)
+{
+    struct cover_pack_entry *entry;
+    uint32_t key_a;
+    uint32_t key_b;
+    int index;
+
+    if(request->target_size != CRAZYPOD_COVERFLOW_ARTWORK_SIZE)
+        return ARTWORK_CACHE_MISS;
+    artwork_cache_keys(request, &key_a, &key_b);
+    index = cover_pack_find(cover_pack_entries,
+                            cover_pack_entry_count, key_a, key_b);
+    if(index < 0)
+        return ARTWORK_CACHE_MISS;
+    entry = &cover_pack_entries[index];
+    if(entry->state == CRAZYPOD_COVER_PACK_EMPTY)
+        return ARTWORK_CACHE_EMPTY;
+    if(cover_pack_data_fd < 0) {
+        cover_pack_data_fd =
+            open(CRAZYPOD_COVER_PACK_DATA, O_RDONLY);
+        if(cover_pack_data_fd < 0)
+            return ARTWORK_CACHE_MISS;
+    }
+    if(lseek(cover_pack_data_fd, entry->offset, SEEK_SET) < 0 ||
+       !read_exact(cover_pack_data_fd, pixels, entry->data_size))
+        return ARTWORK_CACHE_MISS;
+    configure_descriptor(descriptor, pixels,
+                         entry->width, entry->height);
+    return ARTWORK_CACHE_IMAGE;
+}
+
+static bool cover_pack_begin(void)
+{
+    off_t end;
+    int flags = O_RDWR | O_CREAT;
+
+    cover_pack_close_data();
+    if(cover_pack_entry_count == 0)
+        flags |= O_TRUNC;
+    cover_pack_data_fd =
+        open(CRAZYPOD_COVER_PACK_DATA, flags, 0666);
+    if(cover_pack_data_fd < 0)
+        return false;
+    end = lseek(cover_pack_data_fd, 0, SEEK_END);
+    if(end < 0 || (uint64_t)end > UINT32_MAX) {
+        cover_pack_close_data();
+        return false;
+    }
+    cover_pack_build_count = 0;
+    cover_pack_build_data_size = (uint32_t)end;
+    cover_pack_building = true;
+    return true;
+}
+
+static bool cover_pack_contains(
+    const struct artwork_decode_request *request)
+{
+    uint32_t key_a;
+    uint32_t key_b;
+
+    artwork_cache_keys(request, &key_a, &key_b);
+    return cover_pack_find(cover_pack_entries,
+                           cover_pack_entry_count,
+                           key_a, key_b) >= 0;
+}
+
+static bool cover_pack_append(
+    const struct artwork_decode_request *request,
+    const lv_image_dsc_t *descriptor)
+{
+    struct cover_pack_entry *entry;
+    uint32_t key_a;
+    uint32_t key_b;
+    int existing;
+
+    if(!cover_pack_building ||
+       cover_pack_build_count >= CRAZYPOD_MAX_TRACKS)
+        return false;
+    artwork_cache_keys(request, &key_a, &key_b);
+    entry = &cover_pack_build_entries[cover_pack_build_count];
+    memset(entry, 0, sizeof(*entry));
+    existing = cover_pack_find(cover_pack_entries,
+                               cover_pack_entry_count, key_a, key_b);
+    if(existing >= 0) {
+        *entry = cover_pack_entries[existing];
+        ++cover_pack_build_count;
+        return true;
+    }
+
+    entry->key_a = key_a;
+    entry->key_b = key_b;
+    if(descriptor == NULL) {
+        entry->state = CRAZYPOD_COVER_PACK_EMPTY;
+        ++cover_pack_build_count;
+        return true;
+    }
+    if(descriptor->header.cf != LV_COLOR_FORMAT_RGB565 ||
+       descriptor->header.w == 0 || descriptor->header.h == 0 ||
+       descriptor->data_size >
+           UINT32_MAX - cover_pack_build_data_size ||
+       lseek(cover_pack_data_fd, cover_pack_build_data_size,
+             SEEK_SET) < 0 ||
+       !write_exact(cover_pack_data_fd, descriptor->data,
+                    descriptor->data_size))
+        return false;
+    entry->offset = cover_pack_build_data_size;
+    entry->data_size = descriptor->data_size;
+    entry->width = descriptor->header.w;
+    entry->height = descriptor->header.h;
+    entry->state = CRAZYPOD_COVER_PACK_IMAGE;
+    cover_pack_build_data_size += descriptor->data_size;
+    ++cover_pack_build_count;
+    return true;
+}
+
+static bool cover_pack_finish(void)
+{
+    struct cover_pack_header header;
+    int index_fd;
+
+    if(!cover_pack_building || cover_pack_data_fd < 0)
+        return false;
+    if(fsync(cover_pack_data_fd) < 0)
+        return false;
+    memset(&header, 0, sizeof(header));
+    header.magic = CRAZYPOD_COVER_PACK_MAGIC;
+    header.version = CRAZYPOD_COVER_PACK_VERSION;
+    header.entry_count = cover_pack_build_count;
+    header.entry_size = sizeof(struct cover_pack_entry);
+    header.artwork_size = CRAZYPOD_COVERFLOW_ARTWORK_SIZE;
+    header.data_size = cover_pack_build_data_size;
+
+    remove(CRAZYPOD_COVER_PACK_INDEX_TMP);
+    index_fd = open(CRAZYPOD_COVER_PACK_INDEX_TMP,
+                    O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(index_fd < 0)
+        return false;
+    if(!write_exact(index_fd, &header, sizeof(header)) ||
+       !write_exact(index_fd, cover_pack_build_entries,
+                    cover_pack_build_count *
+                    sizeof(cover_pack_build_entries[0])) ||
+       fsync(index_fd) < 0) {
+        close(index_fd);
+        remove(CRAZYPOD_COVER_PACK_INDEX_TMP);
+        return false;
+    }
+    close(index_fd);
+    if(rename(CRAZYPOD_COVER_PACK_INDEX_TMP,
+              CRAZYPOD_COVER_PACK_INDEX) < 0) {
+        remove(CRAZYPOD_COVER_PACK_INDEX_TMP);
+        return false;
+    }
+    cover_pack_building = false;
+    return cover_pack_load_index();
+}
+
+static void cover_pack_abort(void)
+{
+    cover_pack_building = false;
+    cover_pack_build_count = 0;
+    cover_pack_close_data();
+    (void)cover_pack_load_index();
+}
+
 static enum artwork_cache_result artwork_cache_load(
     const struct artwork_decode_request *request, fb_data *pixels,
     lv_image_dsc_t *descriptor)
@@ -271,44 +562,6 @@ static enum artwork_cache_result artwork_cache_load(
     }
     close(fd);
     configure_descriptor(descriptor, pixels, header.width, header.height);
-    return ARTWORK_CACHE_IMAGE;
-}
-
-static enum artwork_cache_result artwork_cache_probe(
-    const struct artwork_decode_request *request)
-{
-    struct artwork_cache_header header;
-    char path[MAX_PATH];
-    uint32_t key_a;
-    uint32_t key_b;
-    off_t file_size;
-    int fd;
-
-    artwork_cache_path(request, path, sizeof(path), &key_a, &key_b,
-                       false);
-    fd = open(path, O_RDONLY);
-    if(fd < 0)
-        return ARTWORK_CACHE_MISS;
-    if(!read_exact(fd, &header, sizeof(header)) ||
-       header.magic != CRAZYPOD_CACHE_MAGIC ||
-       header.version != CRAZYPOD_CACHE_VERSION ||
-       header.key_a != key_a || header.key_b != key_b ||
-       header.requested_size != request->target_size) {
-        close(fd);
-        return ARTWORK_CACHE_MISS;
-    }
-    file_size = lseek(fd, 0, SEEK_END);
-    close(fd);
-    if(header.width == 0 || header.height == 0 ||
-       header.data_size == 0)
-        return file_size == (off_t)sizeof(header)
-            ? ARTWORK_CACHE_EMPTY : ARTWORK_CACHE_MISS;
-    if(header.width > CRAZYPOD_ARTWORK_MAX_SIZE ||
-       header.height > CRAZYPOD_ARTWORK_MAX_SIZE ||
-       header.data_size !=
-           (uint32_t)header.width * header.height * sizeof(fb_data) ||
-       file_size != (off_t)(sizeof(header) + header.data_size))
-        return ARTWORK_CACHE_MISS;
     return ARTWORK_CACHE_IMAGE;
 }
 
@@ -563,6 +816,15 @@ static void finish_prime_request(int album_index, bool completed)
     mutex_unlock(&artwork_mutex);
 }
 
+static void fail_prime_request(void)
+{
+    mutex_lock(&artwork_mutex);
+    artwork_prime_active = false;
+    artwork_prime_processing = false;
+    artwork_prime_failed = true;
+    mutex_unlock(&artwork_mutex);
+}
+
 static void artwork_thread(void)
 {
     struct queue_event event;
@@ -590,9 +852,16 @@ static void artwork_thread(void)
                        sizeof(decoded_descriptor));
                 memset(&published_descriptor, 0,
                        sizeof(published_descriptor));
-                cache_result = artwork_cache_load(
+                cache_result = cover_pack_load(
                     &request, artwork_slots[slot_index].pixels[bank],
                     &published_descriptor);
+                if(cache_result == ARTWORK_CACHE_MISS &&
+                   !request.cache_only) {
+                    cache_result = artwork_cache_load(
+                        &request,
+                        artwork_slots[slot_index].pixels[bank],
+                        &published_descriptor);
+                }
                 valid = cache_result == ARTWORK_CACHE_IMAGE;
 
                 if(cache_result == ARTWORK_CACHE_MISS &&
@@ -642,6 +911,8 @@ static void artwork_thread(void)
 
             {
                 int album_index;
+                bool completed = true;
+                bool last_album;
 
                 if(!prime_request(&album_index, &request))
                     break;
@@ -649,19 +920,42 @@ static void artwork_thread(void)
                     finish_prime_request(album_index, false);
                     break;
                 }
-                if(request.track_path[0] != '\0' &&
-                   artwork_cache_probe(&request) ==
-                       ARTWORK_CACHE_MISS) {
-                    memset(&decoded_descriptor, 0,
-                           sizeof(decoded_descriptor));
-                    valid = decode_artwork(&request,
-                                           &decoded_descriptor);
-                    artwork_cache_store(
-                        &request,
-                        valid ? &decoded_descriptor : NULL);
+                if(!cover_pack_building)
+                    completed = cover_pack_begin();
+                if(completed && request.track_path[0] != '\0') {
+                    if(cover_pack_contains(&request)) {
+                        completed =
+                            cover_pack_append(&request, NULL);
+                    }
+                    else {
+                        memset(&decoded_descriptor, 0,
+                               sizeof(decoded_descriptor));
+                        cache_result = artwork_cache_load(
+                            &request, (fb_data *)decode_buffer,
+                            &decoded_descriptor);
+                        valid =
+                            cache_result == ARTWORK_CACHE_IMAGE;
+                        if(cache_result == ARTWORK_CACHE_MISS)
+                            valid = decode_artwork(
+                                &request, &decoded_descriptor);
+                        completed = cover_pack_append(
+                            &request,
+                            valid ? &decoded_descriptor : NULL);
+                    }
                 }
+                last_album =
+                    album_index + 1 >= crazypod_music_album_count();
+                if(completed && last_album)
+                    completed = cover_pack_finish();
+                if(!completed)
+                    cover_pack_abort();
                 end_disk_work();
-                finish_prime_request(album_index, true);
+                if(completed)
+                    finish_prime_request(album_index, true);
+                else {
+                    fail_prime_request();
+                    break;
+                }
             }
             yield();
         }
@@ -682,6 +976,7 @@ void crazypod_artwork_init(void)
     mkdir(CRAZYPOD_DIRECTORY);
     mkdir(CRAZYPOD_CACHE_DIRECTORY);
     mkdir(CRAZYPOD_COVER_CACHE_DIRECTORY);
+    mkdir(CRAZYPOD_COVER_PACK_DIRECTORY);
     for(i = 0; i < CRAZYPOD_COVER_CACHE_SHARDS; ++i) {
         snprintf(shard_directory, sizeof(shard_directory), "%s/%X",
                  CRAZYPOD_COVER_CACHE_DIRECTORY, i);
@@ -693,9 +988,16 @@ void crazypod_artwork_init(void)
     artwork_wake_queued = false;
     artwork_prime_active = false;
     artwork_prime_processing = false;
+    artwork_prime_failed = false;
     artwork_prime_next = 0;
     artwork_prime_completed = 0;
     artwork_prime_total = 0;
+    cover_pack_building = false;
+    cover_pack_build_count = 0;
+    cover_pack_entry_count = 0;
+    cover_pack_data_size = 0;
+    cover_pack_data_fd = -1;
+    (void)cover_pack_load_index();
     mutex_init(&artwork_mutex);
     queue_init(&artwork_queue, false);
     create_thread(artwork_thread, artwork_stack, sizeof(artwork_stack), 0,
@@ -713,6 +1015,7 @@ void crazypod_artwork_prime_library(void)
     artwork_prime_next = 0;
     artwork_prime_completed = 0;
     artwork_prime_total = total;
+    artwork_prime_failed = false;
     artwork_prime_active = total > 0;
     if(artwork_prime_active)
         artwork_wake_queued = true;
@@ -735,10 +1038,13 @@ void crazypod_artwork_cancel_library_prime(void)
         if(processing)
             yield();
     } while(processing);
+    if(cover_pack_building)
+        cover_pack_abort();
     mutex_lock(&artwork_mutex);
     artwork_prime_next = 0;
     artwork_prime_completed = 0;
     artwork_prime_total = 0;
+    artwork_prime_failed = false;
     mutex_unlock(&artwork_mutex);
 }
 
@@ -750,6 +1056,16 @@ bool crazypod_artwork_library_priming(void)
     priming = artwork_prime_active || artwork_prime_processing;
     mutex_unlock(&artwork_mutex);
     return priming;
+}
+
+bool crazypod_artwork_library_prime_failed(void)
+{
+    bool failed;
+
+    mutex_lock(&artwork_mutex);
+    failed = artwork_prime_failed;
+    mutex_unlock(&artwork_mutex);
+    return failed;
 }
 
 int crazypod_artwork_library_prime_completed(void)
@@ -786,10 +1102,12 @@ void crazypod_artwork_suspend(void)
         if(busy)
             yield();
     } while(busy);
+    cover_pack_close_data();
 }
 
 void crazypod_artwork_resume(void)
 {
+    (void)cover_pack_load_index();
     mutex_lock(&artwork_mutex);
     artwork_suspended = false;
     artwork_wake_queued = true;

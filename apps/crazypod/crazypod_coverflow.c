@@ -26,8 +26,14 @@
 #define FLOW_FRAME_PHASES 3
 #define FLOW_SPRING_STIFFNESS 144
 #define FLOW_SPRING_DAMPING 22
+#define FLOW_RELEASE_STIFFNESS 400
+#define FLOW_RELEASE_DAMPING 40
+#define FLOW_RELEASE_MOMENTUM_DIVISOR 3
+#define FLOW_RELEASE_GRACE_TICKS \
+    (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
 #define FLOW_INPUT_IMPULSE 3
 #define FLOW_MAX_VELOCITY 6
+#define FLOW_MAX_TARGET_LEAD (FLOW_POSITION_ONE * 3 / 2)
 #define FLOW_SNAP_POSITION (FLOW_POSITION_ONE / 512)
 #define FLOW_SNAP_VELOCITY (FLOW_POSITION_ONE / 20)
 #define FLOW_PREFETCH_TICKS ((HZ / 10) > 0 ? (HZ / 10) : 1)
@@ -54,9 +60,11 @@ static int flow_direction;
 static int prefetched_visual_album;
 static long last_physics;
 static long last_prefetch;
+static long last_input;
 static long next_render;
 static int frame_phase;
 static bool cache_initialized;
+static bool release_brake_applied;
 
 extern struct frame_buffer_t lcd_framebuffer_default;
 
@@ -672,8 +680,10 @@ void crazypod_coverflow_enter(int selected)
     prefetched_visual_album = -1;
     last_physics = current_tick;
     last_prefetch = current_tick;
+    last_input = current_tick;
     next_render = current_tick;
     frame_phase = 0;
+    release_brake_applied = true;
     flow_active = true;
     flow_dirty = true;
     prefetch_pending = !prefetch_covers();
@@ -718,6 +728,7 @@ int crazypod_coverflow_step(int direction)
 {
     int count = crazypod_music_album_count();
     int next = selected_album + direction;
+    int32_t proposed_target_q16;
     int32_t impulse_q16;
     int32_t maximum_velocity_q16 =
         FLOW_MAX_VELOCITY * FLOW_POSITION_ONE;
@@ -728,9 +739,19 @@ int crazypod_coverflow_step(int direction)
         next = count - 1;
     if(next == selected_album)
         return selected_album;
+    last_input = current_tick;
+    release_brake_applied = false;
+    proposed_target_q16 = next * FLOW_POSITION_ONE;
+    if((direction > 0 &&
+        proposed_target_q16 - position_q16 >
+            FLOW_MAX_TARGET_LEAD) ||
+       (direction < 0 &&
+        position_q16 - proposed_target_q16 >
+            FLOW_MAX_TARGET_LEAD))
+        return selected_album;
 
     flow_direction = direction < 0 ? -1 : 1;
-    target_position_q16 = next * FLOW_POSITION_ONE;
+    target_position_q16 = proposed_target_q16;
     selected_album = next;
     if((direction > 0 && velocity_q16 < 0) ||
        (direction < 0 && velocity_q16 > 0))
@@ -770,6 +791,13 @@ static void advance_position(long now)
         (count > 0 ? count - 1 : 0) * FLOW_POSITION_ONE;
     int32_t maximum_velocity_q16 =
         FLOW_MAX_VELOCITY * FLOW_POSITION_ONE;
+    bool released =
+        !TIME_BEFORE(now, last_input + FLOW_RELEASE_GRACE_TICKS);
+
+    if(released && !release_brake_applied) {
+        velocity_q16 /= FLOW_RELEASE_MOMENTUM_DIVISOR;
+        release_brake_applied = true;
+    }
 
     if(elapsed < 1)
         elapsed = 1;
@@ -779,8 +807,12 @@ static void advance_position(long now)
         int32_t error_q16 =
             target_position_q16 - position_q16;
         int64_t acceleration_q16 =
-            (int64_t)error_q16 * FLOW_SPRING_STIFFNESS -
-            (int64_t)velocity_q16 * FLOW_SPRING_DAMPING;
+            (int64_t)error_q16 *
+                (released ? FLOW_RELEASE_STIFFNESS
+                          : FLOW_SPRING_STIFFNESS) -
+            (int64_t)velocity_q16 *
+                (released ? FLOW_RELEASE_DAMPING
+                          : FLOW_SPRING_DAMPING);
 
         velocity_q16 +=
             (int32_t)(acceleration_q16 / HZ);

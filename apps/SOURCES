@@ -9,6 +9,7 @@ crazypod/crazypod_state.c
 crazypod/crazypod_appearance.c
 crazypod/crazypod_presets.c
 crazypod/crazypod_icons.c
+crazypod/crazypod_lyrics.c
 crazypod/crazypod_wallpaper.c
 crazypod/crazypod_ui.c
 

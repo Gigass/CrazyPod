@@ -15,11 +15,23 @@
 #define PRESET_PATH PRESET_DIRECTORY "/presets.bin"
 #define PRESET_TEMP_PATH PRESET_DIRECTORY "/presets.tmp"
 #define PRESET_MAGIC 0x43505052u
-#define PRESET_VERSION 1u
+#define PRESET_VERSION 2u
 #define THEME_IMPORT_PATH PRESET_DIRECTORY "/import.upodtheme"
 #define THEME_EXPORT_DIRECTORY PRESET_DIRECTORY "/export"
 #define THEME_MAGIC 0x43505448u
-#define THEME_VERSION 1u
+#define THEME_VERSION 2u
+
+struct crazypod_appearance_v1 {
+    int icon_theme;
+    int icon_scale;
+    int player_style;
+    int glow;
+    int highlight_style;
+    int primary_color;
+    int secondary_color;
+    int home_background;
+    int menu_background;
+};
 
 struct preset_disk_entry {
     char name[CRAZYPOD_PRESET_NAME_SIZE];
@@ -36,12 +48,36 @@ struct preset_disk {
     uint32_t checksum;
 };
 
+struct preset_disk_entry_v1 {
+    char name[CRAZYPOD_PRESET_NAME_SIZE];
+    struct crazypod_appearance_v1 appearance;
+};
+
+struct preset_disk_v1 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    uint32_t user_count;
+    struct preset_disk_entry_v1 users[
+        CRAZYPOD_PRESET_COUNT_MAX - CRAZYPOD_BUILTIN_PRESET_COUNT];
+    uint32_t checksum;
+};
+
 struct portable_theme {
     uint32_t magic;
     uint32_t version;
     uint32_t size;
     char name[CRAZYPOD_PRESET_NAME_SIZE];
     struct crazypod_appearance appearance;
+    uint32_t checksum;
+};
+
+struct portable_theme_v1 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    char name[CRAZYPOD_PRESET_NAME_SIZE];
+    struct crazypod_appearance_v1 appearance;
     uint32_t checksum;
 };
 
@@ -73,6 +109,38 @@ static uint32_t theme_checksum(const struct portable_theme *theme)
     struct portable_theme copy = *theme;
     copy.checksum = 0;
     return hash_bytes(&copy, sizeof(copy));
+}
+
+static uint32_t disk_v1_checksum(const struct preset_disk_v1 *disk)
+{
+    struct preset_disk_v1 copy = *disk;
+    copy.checksum = 0;
+    return hash_bytes(&copy, sizeof(copy));
+}
+
+static uint32_t theme_v1_checksum(const struct portable_theme_v1 *theme)
+{
+    struct portable_theme_v1 copy = *theme;
+    copy.checksum = 0;
+    return hash_bytes(&copy, sizeof(copy));
+}
+
+static struct crazypod_appearance migrate_appearance_v1(
+    const struct crazypod_appearance_v1 *source)
+{
+    struct crazypod_appearance result;
+
+    memset(&result, 0, sizeof(result));
+    result.icon_theme = source->icon_theme;
+    result.icon_scale = source->icon_scale;
+    result.player_style = source->player_style;
+    result.glow = source->glow;
+    result.highlight_style = source->highlight_style;
+    result.primary_color = source->primary_color;
+    result.secondary_color = source->secondary_color;
+    result.home_background = source->home_background;
+    result.menu_background = source->menu_background;
+    return result;
 }
 
 static bool valid_name(const char *name)
@@ -124,7 +192,7 @@ static void seed_builtins(void)
 
 static void save_presets(void)
 {
-    struct preset_disk disk;
+    static struct preset_disk disk;
     int user_count = preset_count - CRAZYPOD_BUILTIN_PRESET_COUNT;
     int fd;
     int i;
@@ -160,7 +228,11 @@ static void save_presets(void)
 
 void crazypod_presets_load(void)
 {
-    struct preset_disk disk;
+    static struct preset_disk disk;
+    static struct preset_disk_v1 disk_v1;
+    uint32_t header[3];
+    int user_count = 0;
+    bool migrated = false;
     int fd;
     int i;
 
@@ -168,31 +240,56 @@ void crazypod_presets_load(void)
     fd = open(PRESET_PATH, O_RDONLY);
     if(fd < 0)
         return;
-    if(read(fd, &disk, sizeof(disk)) != (ssize_t)sizeof(disk) ||
-       disk.magic != PRESET_MAGIC ||
-       disk.version != PRESET_VERSION ||
-       disk.size != sizeof(disk) ||
-       disk.user_count >
-           CRAZYPOD_PRESET_COUNT_MAX - CRAZYPOD_BUILTIN_PRESET_COUNT ||
-       disk.checksum != disk_checksum(&disk)) {
+    if(read(fd, header, sizeof(header)) != (ssize_t)sizeof(header) ||
+       lseek(fd, 0, SEEK_SET) < 0) {
+        close(fd);
+        return;
+    }
+    if(header[0] == PRESET_MAGIC &&
+       header[1] == PRESET_VERSION &&
+       header[2] == sizeof(disk) &&
+       read(fd, &disk, sizeof(disk)) == (ssize_t)sizeof(disk) &&
+       disk.user_count <=
+           CRAZYPOD_PRESET_COUNT_MAX - CRAZYPOD_BUILTIN_PRESET_COUNT &&
+       disk.checksum == disk_checksum(&disk))
+        user_count = (int)disk.user_count;
+    else if(header[0] == PRESET_MAGIC &&
+            header[1] == 1u &&
+            header[2] == sizeof(disk_v1) &&
+            lseek(fd, 0, SEEK_SET) >= 0 &&
+            read(fd, &disk_v1, sizeof(disk_v1)) ==
+                (ssize_t)sizeof(disk_v1) &&
+            disk_v1.user_count <=
+                CRAZYPOD_PRESET_COUNT_MAX -
+                    CRAZYPOD_BUILTIN_PRESET_COUNT &&
+            disk_v1.checksum == disk_v1_checksum(&disk_v1)) {
+        user_count = (int)disk_v1.user_count;
+        migrated = true;
+    }
+    else {
         close(fd);
         return;
     }
     close(fd);
 
-    for(i = 0; i < (int)disk.user_count; ++i) {
+    for(i = 0; i < user_count; ++i) {
         struct crazypod_preset *target = &presets[preset_count];
-        if(!valid_name(disk.users[i].name))
+        const char *name = migrated
+            ? disk_v1.users[i].name : disk.users[i].name;
+        if(!valid_name(name))
             continue;
-        target->appearance = disk.users[i].appearance;
+        target->appearance = migrated
+            ? migrate_appearance_v1(&disk_v1.users[i].appearance)
+            : disk.users[i].appearance;
         if(!crazypod_appearance_valid(&target->appearance))
             continue;
         snprintf(target->name, sizeof(target->name), "%s",
-                 disk.users[i].name);
+                 name);
         target->builtin = false;
         ++preset_count;
     }
-
+    if(migrated)
+        save_presets();
 }
 
 int crazypod_preset_count(void)
@@ -336,7 +433,10 @@ bool crazypod_preset_export(int index)
 int crazypod_preset_import(void)
 {
     struct portable_theme theme;
+    struct portable_theme_v1 theme_v1;
     struct crazypod_preset *target;
+    uint32_t header[3];
+    bool migrated = false;
     int fd;
 
     if(preset_count >= CRAZYPOD_PRESET_COUNT_MAX)
@@ -344,17 +444,40 @@ int crazypod_preset_import(void)
     fd = open(THEME_IMPORT_PATH, O_RDONLY);
     if(fd < 0)
         return -1;
-    if(read(fd, &theme, sizeof(theme)) != (ssize_t)sizeof(theme) ||
-       theme.magic != THEME_MAGIC ||
-       theme.version != THEME_VERSION ||
-       theme.size != sizeof(theme) ||
-       theme.checksum != theme_checksum(&theme) ||
-       !valid_name(theme.name) ||
-       !crazypod_appearance_valid(&theme.appearance)) {
+    if(read(fd, header, sizeof(header)) != (ssize_t)sizeof(header) ||
+       lseek(fd, 0, SEEK_SET) < 0) {
+        close(fd);
+        return -1;
+    }
+    if(header[0] == THEME_MAGIC &&
+       header[1] == THEME_VERSION &&
+       header[2] == sizeof(theme) &&
+       read(fd, &theme, sizeof(theme)) == (ssize_t)sizeof(theme) &&
+       theme.checksum == theme_checksum(&theme)) {
+        migrated = false;
+    }
+    else if(header[0] == THEME_MAGIC &&
+            header[1] == 1u &&
+            header[2] == sizeof(theme_v1) &&
+            lseek(fd, 0, SEEK_SET) >= 0 &&
+            read(fd, &theme_v1, sizeof(theme_v1)) ==
+                (ssize_t)sizeof(theme_v1) &&
+            theme_v1.checksum == theme_v1_checksum(&theme_v1)) {
+        memset(&theme, 0, sizeof(theme));
+        snprintf(theme.name, sizeof(theme.name), "%s", theme_v1.name);
+        theme.appearance =
+            migrate_appearance_v1(&theme_v1.appearance);
+        migrated = true;
+    }
+    else {
         close(fd);
         return -1;
     }
     close(fd);
+    (void)migrated;
+    if(!valid_name(theme.name) ||
+       !crazypod_appearance_valid(&theme.appearance))
+        return -1;
 
     target = &presets[preset_count];
     memset(target, 0, sizeof(*target));

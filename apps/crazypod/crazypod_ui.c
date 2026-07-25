@@ -9,6 +9,7 @@
 #include "audio.h"
 #include "backlight.h"
 #include "button.h"
+#include "dir.h"
 #include "file.h"
 #include "kernel.h"
 #include "lcd.h"
@@ -21,11 +22,13 @@
 #include "usb.h"
 
 #include "lvgl.h"
+#include "src/misc/cache/instance/lv_image_cache.h"
 
 #include "crazypod_artwork.h"
 #include "crazypod_appearance.h"
 #include "crazypod_coverflow.h"
 #include "crazypod_icons.h"
+#include "crazypod_lyrics.h"
 #include "crazypod_music.h"
 #include "crazypod_playlist.h"
 #include "crazypod_presets.h"
@@ -43,13 +46,36 @@
 #define CRAZYPOD_ALBUM_FLOW_CARD_COUNT 5
 #define CRAZYPOD_ALBUM_FLOW_COVER_SIZE 120
 #define CRAZYPOD_PREVIEW_ARTWORK_SLOT 16
+#define CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT 17
 #define CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT 18
 #define CRAZYPOD_CAPSULE_ARTWORK_SLOT 19
+#define CRAZYPOD_NOW_ARTWORK_CACHE_SIZE \
+    CRAZYPOD_COVERFLOW_ARTWORK_SIZE
+#define CRAZYPOD_NOW_LYRICS_COVER_SIZE 108
+#define CRAZYPOD_NOW_POPUP_X 35
+#define CRAZYPOD_NOW_POPUP_Y 32
+#define CRAZYPOD_NOW_POPUP_WIDTH 250
+#define CRAZYPOD_NOW_POPUP_HEIGHT 176
+#define CRAZYPOD_NOW_POPUP_RADIUS 18
+#define CRAZYPOD_NOW_GLASS_SCALE 4
+#define CRAZYPOD_NOW_GLASS_WIDTH 63
+#define CRAZYPOD_NOW_GLASS_HEIGHT 44
+#define CRAZYPOD_NOW_BACKDROP_WIDTH 40
+#define CRAZYPOD_NOW_BACKDROP_HEIGHT 30
+#define CRAZYPOD_NOW_PRESENTATION_BANKS 2
+#define CRAZYPOD_NOW_SPECTRUM_BAR_COUNT 72
+#define CRAZYPOD_NOW_SHADE_COLOR 0x050508
+#define CRAZYPOD_NOW_SHADE_OPA 118
+#define CRAZYPOD_WALLPAPER_DIRECTORY "/Pictures"
+#define CRAZYPOD_WALLPAPER_FILE_COUNT 128
+#define CRAZYPOD_SCREEN_RADIUS_MAX 32
 #define CRAZYPOD_METADATA_FONT (&lv_font_source_han_sans_sc_14_cjk)
 #define CRAZYPOD_GESTURE_SETTLE_TICKS \
     ((HZ * 80 / 1000) > 0 ? (HZ * 80 / 1000) : 1)
 #define CRAZYPOD_MOTION_FRAME_TICKS \
     ((HZ / 30) > 0 ? (HZ / 30) : 1)
+#define CRAZYPOD_NOW_WAVE_FRAME_TICKS \
+    ((HZ / 5) > 0 ? (HZ / 5) : 1)
 #define CRAZYPOD_DESKTOP_NATIVE_TOP 40
 #define CRAZYPOD_DESKTOP_NATIVE_BOTTOM 143
 #define CRAZYPOD_DESKTOP_NATIVE_HEIGHT \
@@ -86,7 +112,11 @@ enum crazypod_route {
     DIY_ROUTE_PRESET_RENAME,
     DIY_ROUTE_ICONS,
     DIY_ROUTE_DETAILS,
+    DIY_ROUTE_CHOICES,
     DIY_ROUTE_BACKGROUNDS,
+    DIY_ROUTE_BACKGROUND_CHOICES,
+    DIY_ROUTE_WALLPAPER_FILES,
+    DIY_ROUTE_LAYOUT,
 };
 
 struct route_state {
@@ -134,6 +164,47 @@ struct menu_view_state {
     lv_obj_t *scroll_thumb;
 };
 
+enum now_playing_overlay {
+    NOW_OVERLAY_NONE,
+    NOW_OVERLAY_ACTIONS,
+    NOW_OVERLAY_QUEUE,
+    NOW_OVERLAY_VOLUME,
+};
+
+enum now_playing_action {
+    NOW_ACTION_QUEUE,
+    NOW_ACTION_PLAYBACK,
+    NOW_ACTION_LYRICS,
+    NOW_ACTION_VOLUME,
+    NOW_ACTION_COUNT,
+};
+
+struct now_queue_popup_view {
+    lv_obj_t *mode;
+    lv_obj_t *count;
+    lv_obj_t *empty;
+    lv_obj_t *rows[3];
+    lv_obj_t *icons[3];
+    lv_obj_t *titles[3];
+    lv_obj_t *artists[3];
+};
+
+struct now_actions_popup_view {
+    lv_obj_t *queue_row;
+    lv_obj_t *queue_icon;
+    lv_obj_t *queue_label;
+    lv_obj_t *cells[3];
+    lv_obj_t *cell_icons[3];
+    lv_obj_t *cell_labels[3];
+    lv_obj_t *detail;
+};
+
+struct now_volume_popup_view {
+    lv_obj_t *fill;
+    lv_obj_t *percent;
+    lv_obj_t *icon;
+};
+
 static struct crazypod_app apps[CRAZYPOD_APP_COUNT] = {
     { "Music",       LV_SYMBOL_AUDIO,      0xFF2E54, NULL, NULL, NULL, NULL },
     { "Podcasts",    LV_SYMBOL_VOLUME_MAX, 0xA95BDE, NULL, NULL, NULL, NULL },
@@ -162,11 +233,12 @@ static const char *music_menu_symbols[] = {
 };
 
 static const char *const diy_menu_titles[] = {
-    "Presets", "Icons", "Details", "Backgrounds"
+    "Presets", "Icons", "Details", "Backgrounds", "Layout"
 };
 
 static const char *const diy_menu_symbols[] = {
-    LV_SYMBOL_SAVE, LV_SYMBOL_IMAGE, LV_SYMBOL_SETTINGS, LV_SYMBOL_DIRECTORY
+    LV_SYMBOL_SAVE, LV_SYMBOL_IMAGE, LV_SYMBOL_SETTINGS,
+    LV_SYMBOL_DIRECTORY, LV_SYMBOL_SHUFFLE
 };
 
 static const char *const editor_characters[CRAZYPOD_EDITOR_CHAR_COUNT] = {
@@ -185,8 +257,28 @@ static const char *const preset_edit_actions[] = {
 };
 
 static const char *const diy_detail_titles[] = {
-    "Player", "Icon Size", "Glow", "Highlight",
-    "Primary", "Secondary"
+    "Icon Size", "Glow", "Highlight", "Primary", "Secondary"
+};
+
+static const enum crazypod_appearance_field diy_detail_fields[] = {
+    CRAZYPOD_APPEARANCE_ICON_SCALE,
+    CRAZYPOD_APPEARANCE_GLOW,
+    CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE,
+    CRAZYPOD_APPEARANCE_PRIMARY,
+    CRAZYPOD_APPEARANCE_SECONDARY,
+};
+
+static const char *const diy_layout_titles[] = {
+    "Screen Top", "Screen Bottom"
+};
+
+static const enum crazypod_appearance_field diy_layout_fields[] = {
+    CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS,
+    CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS,
+};
+
+static const int diy_screen_radius_values[] = {
+    0, 4, 8, 12, 16, 20, 24, 32
 };
 
 static const char *const diy_background_titles[] = {
@@ -219,6 +311,10 @@ static int album_flow_displayed_album = -1;
 static lv_obj_t *now_progress_fill;
 static lv_obj_t *now_elapsed;
 static lv_obj_t *now_remaining;
+static lv_obj_t *now_wave_surface;
+static lv_obj_t *now_lyrics_previous;
+static lv_obj_t *now_lyrics_current;
+static lv_obj_t *now_lyrics_next;
 static lv_obj_t *music_loading_title;
 static lv_obj_t *music_loading_detail;
 static lv_group_t *desktop_group;
@@ -228,6 +324,7 @@ static bool product_active;
 static bool music_library_loaded;
 static bool music_scan_screen;
 static bool music_scan_start_failed;
+static bool music_artwork_cache_failed;
 static bool music_scan_pending;
 static bool music_artwork_preparing;
 static bool usb_storage_active;
@@ -238,6 +335,7 @@ static bool desktop_native_dirty;
 static bool desktop_native_backdrop_ready;
 static unsigned music_scan_generation_seen;
 static unsigned preview_artwork_generation_seen;
+static unsigned now_prefetch_artwork_generation_seen;
 static unsigned now_artwork_generation_seen;
 static unsigned capsule_artwork_generation_seen;
 static long route_render_due;
@@ -247,21 +345,84 @@ static long last_desktop_motion_tick;
 static int desktop_position_q8;
 static int desktop_velocity_q8;
 static struct menu_view_state menu_view;
+static struct now_queue_popup_view now_queue_view;
+static struct now_actions_popup_view now_actions_view;
+static struct now_volume_popup_view now_volume_view;
+static enum now_playing_overlay now_overlay;
+static int now_action_selected;
+static int now_queue_selected;
+static unsigned now_queue_generation_seen;
+static lv_obj_t *now_overlay_root;
+static lv_obj_t *now_overlay_panel;
 static char search_query[CRAZYPOD_SEARCH_QUERY_SIZE];
 static char preset_name_editor[CRAZYPOD_PRESET_NAME_SIZE];
 static char rendered_track_path[MAX_PATH];
+static char now_prefetch_track_path[MAX_PATH];
+static char now_presentation_track_path[
+    CRAZYPOD_NOW_PRESENTATION_BANKS][MAX_PATH];
 static char desktop_capsule_artwork_path[MAX_PATH];
+static char diy_wallpaper_files[CRAZYPOD_WALLPAPER_FILE_COUNT][MAX_PATH];
+static int diy_wallpaper_file_count;
+static lv_obj_t *screen_corner_masks[CRAZYPOD_SCREEN_COUNT][4];
+static uint8_t screen_corner_pixels[4][
+    CRAZYPOD_SCREEN_RADIUS_MAX * CRAZYPOD_SCREEN_RADIUS_MAX * 4]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static lv_image_dsc_t screen_corner_descriptors[4];
 static fb_data draw_buffer[LCD_WIDTH * CRAZYPOD_DRAW_ROWS]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static fb_data desktop_native_backdrop[
     LCD_WIDTH * CRAZYPOD_DESKTOP_NATIVE_HEIGHT]
     CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data now_glass_pixels[
+    CRAZYPOD_NOW_GLASS_WIDTH * CRAZYPOD_NOW_GLASS_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data now_glass_scratch[
+    CRAZYPOD_NOW_GLASS_WIDTH * CRAZYPOD_NOW_GLASS_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data now_glass_render_pixels[
+    CRAZYPOD_NOW_POPUP_WIDTH * CRAZYPOD_NOW_POPUP_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static lv_image_dsc_t now_glass_descriptor;
+static bool now_glass_valid;
+static fb_data now_backdrop_pixels[
+    CRAZYPOD_NOW_BACKDROP_WIDTH * CRAZYPOD_NOW_BACKDROP_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data now_backdrop_scratch[
+    CRAZYPOD_NOW_BACKDROP_WIDTH * CRAZYPOD_NOW_BACKDROP_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data now_backdrop_render_pixels[
+    CRAZYPOD_NOW_PRESENTATION_BANKS][LCD_WIDTH * LCD_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static lv_image_dsc_t now_backdrop_descriptor[
+    CRAZYPOD_NOW_PRESENTATION_BANKS];
+static fb_data now_lyrics_cover_pixels[
+    CRAZYPOD_NOW_PRESENTATION_BANKS]
+    [CRAZYPOD_NOW_LYRICS_COVER_SIZE * CRAZYPOD_NOW_LYRICS_COVER_SIZE]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static lv_image_dsc_t now_lyrics_cover_descriptor[
+    CRAZYPOD_NOW_PRESENTATION_BANKS];
+static uint32_t now_presentation_text_color[
+    CRAZYPOD_NOW_PRESENTATION_BANKS];
+static bool now_presentation_valid[
+    CRAZYPOD_NOW_PRESENTATION_BANKS];
+static int now_presentation_active_bank = -1;
+static int now_wave_phase;
+static long last_now_wave_tick;
+static bool now_wave_playing_seen;
+static bool now_lyrics_mode;
 
 extern struct frame_buffer_t lcd_framebuffer_default;
 
 static int appearance_tile_size(void);
 static void layout_desktop_carousel(bool animated);
 static void refresh_menu_rows(const struct route_state *state);
+static struct route_state *current_route(void);
+static void render_current_route(bool transition);
+static void cycle_playback_mode(void);
+static void show_now_actions_popup(void);
+static void show_now_queue_popup(void);
+static void show_now_volume_popup(void);
+static void dismiss_now_overlay(bool refresh_now_playing);
 
 static void set_cpu_boost(bool enabled)
 {
@@ -348,6 +509,295 @@ static uint32_t highlight_secondary(void)
         crazypod_appearance_get()->secondary_color);
 }
 
+static int appearance_field_value(enum crazypod_appearance_field field)
+{
+    const struct crazypod_appearance *value = crazypod_appearance_get();
+
+    switch(field) {
+    case CRAZYPOD_APPEARANCE_ICON_THEME: return value->icon_theme;
+    case CRAZYPOD_APPEARANCE_ICON_SCALE: return value->icon_scale;
+    case CRAZYPOD_APPEARANCE_GLOW: return value->glow;
+    case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE:
+        return value->highlight_style;
+    case CRAZYPOD_APPEARANCE_PRIMARY: return value->primary_color;
+    case CRAZYPOD_APPEARANCE_SECONDARY: return value->secondary_color;
+    case CRAZYPOD_APPEARANCE_HOME_BACKGROUND:
+        return value->home_background;
+    case CRAZYPOD_APPEARANCE_MENU_BACKGROUND:
+        return value->menu_background;
+    case CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS:
+        return value->screen_top_radius;
+    case CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS:
+        return value->screen_bottom_radius;
+    }
+    return 0;
+}
+
+static int appearance_choice_count(enum crazypod_appearance_field field)
+{
+    switch(field) {
+    case CRAZYPOD_APPEARANCE_ICON_SCALE: return 5;
+    case CRAZYPOD_APPEARANCE_GLOW: return 4;
+    case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE: return 2;
+    case CRAZYPOD_APPEARANCE_PRIMARY:
+    case CRAZYPOD_APPEARANCE_SECONDARY:
+        return CRAZYPOD_APPEARANCE_COLOR_COUNT;
+    case CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS:
+    case CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS:
+        return (int)(sizeof(diy_screen_radius_values) /
+                     sizeof(diy_screen_radius_values[0]));
+    default:
+        return 0;
+    }
+}
+
+static int appearance_choice_value(enum crazypod_appearance_field field,
+                                   int index)
+{
+    if(field == CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS ||
+       field == CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS)
+        return diy_screen_radius_values[index];
+    return index;
+}
+
+static int appearance_choice_index(enum crazypod_appearance_field field)
+{
+    int current = appearance_field_value(field);
+    int count = appearance_choice_count(field);
+    int index;
+
+    for(index = 0; index < count; ++index) {
+        if(appearance_choice_value(field, index) == current)
+            return index;
+    }
+    return 0;
+}
+
+static const char *appearance_choice_title(
+    enum crazypod_appearance_field field, int index)
+{
+    static char radius_text[16];
+    static const char *const icon_sizes[] = {
+        "80%", "90%", "100%", "110%", "120%"
+    };
+    static const char *const glows[] = {
+        "Off", "Low", "Medium", "High"
+    };
+    static const char *const highlights[] = {
+        "Solid", "Gradient"
+    };
+
+    switch(field) {
+    case CRAZYPOD_APPEARANCE_ICON_SCALE:
+        return index >= 0 && index < 5 ? icon_sizes[index] : "";
+    case CRAZYPOD_APPEARANCE_GLOW:
+        return index >= 0 && index < 4 ? glows[index] : "";
+    case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE:
+        return index >= 0 && index < 2 ? highlights[index] : "";
+    case CRAZYPOD_APPEARANCE_PRIMARY:
+    case CRAZYPOD_APPEARANCE_SECONDARY:
+        return crazypod_appearance_color_name(index);
+    case CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS:
+    case CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS:
+        snprintf(radius_text, sizeof(radius_text), "%d px",
+                 appearance_choice_value(field, index));
+        return radius_text;
+    default:
+        return "";
+    }
+}
+
+static const char *appearance_field_title(
+    enum crazypod_appearance_field field)
+{
+    switch(field) {
+    case CRAZYPOD_APPEARANCE_ICON_SCALE: return "ICON SIZE";
+    case CRAZYPOD_APPEARANCE_GLOW: return "GLOW";
+    case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE: return "HIGHLIGHT";
+    case CRAZYPOD_APPEARANCE_PRIMARY: return "PRIMARY";
+    case CRAZYPOD_APPEARANCE_SECONDARY: return "SECONDARY";
+    case CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS: return "SCREEN TOP";
+    case CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS: return "SCREEN BOTTOM";
+    default: return "OPTIONS";
+    }
+}
+
+static const char *path_basename(const char *path)
+{
+    const char *name;
+
+    if(path == NULL)
+        return "";
+    name = strrchr(path, '/');
+    return name != NULL ? name + 1 : path;
+}
+
+static bool wallpaper_file_supported(const char *name)
+{
+    size_t length = name != NULL ? strlen(name) : 0;
+    const char *extension;
+
+    if(length < 4)
+        return false;
+    extension = strrchr(name, '.');
+    return extension != NULL &&
+           (strcasecmp(extension, ".jpg") == 0 ||
+            strcasecmp(extension, ".jpeg") == 0 ||
+            strcasecmp(extension, ".bmp") == 0);
+}
+
+static void scan_wallpaper_files(void)
+{
+    DIR *directory;
+    struct DIRENT *entry;
+    int i;
+
+    diy_wallpaper_file_count = 0;
+    mkdir(CRAZYPOD_WALLPAPER_DIRECTORY);
+    directory = opendir(CRAZYPOD_WALLPAPER_DIRECTORY);
+    if(directory == NULL)
+        return;
+    while(diy_wallpaper_file_count < CRAZYPOD_WALLPAPER_FILE_COUNT &&
+          (entry = readdir(directory)) != NULL) {
+        struct dirinfo info = dir_get_info(directory, entry);
+        size_t directory_length =
+            strlen(CRAZYPOD_WALLPAPER_DIRECTORY);
+        size_t name_length = strlen(entry->d_name);
+        char *path;
+
+        if((info.attribute & ATTR_DIRECTORY) ||
+           !wallpaper_file_supported(entry->d_name))
+            continue;
+        if(directory_length + 1 + name_length >= MAX_PATH)
+            continue;
+        path = diy_wallpaper_files[diy_wallpaper_file_count];
+        memcpy(path, CRAZYPOD_WALLPAPER_DIRECTORY, directory_length);
+        path[directory_length] = '/';
+        memcpy(path + directory_length + 1,
+               entry->d_name, name_length + 1);
+        ++diy_wallpaper_file_count;
+    }
+    closedir(directory);
+
+    for(i = 1; i < diy_wallpaper_file_count; ++i) {
+        char current[MAX_PATH];
+        int position = i;
+
+        snprintf(current, sizeof(current), "%s",
+                 diy_wallpaper_files[i]);
+        while(position > 0 &&
+              strcasecmp(path_basename(diy_wallpaper_files[position - 1]),
+                         path_basename(current)) > 0) {
+            snprintf(diy_wallpaper_files[position], MAX_PATH, "%s",
+                     diy_wallpaper_files[position - 1]);
+            --position;
+        }
+        snprintf(diy_wallpaper_files[position], MAX_PATH, "%s", current);
+    }
+}
+
+static void rebuild_screen_corner_descriptors(void)
+{
+    const struct crazypod_appearance *appearance =
+        crazypod_appearance_get();
+    int corner;
+
+    for(corner = 0; corner < 4; ++corner) {
+        int radius = corner < 2
+            ? appearance->screen_top_radius
+            : appearance->screen_bottom_radius;
+        lv_image_dsc_t *descriptor = &screen_corner_descriptors[corner];
+        uint8_t *pixels = screen_corner_pixels[corner];
+        int center_x = (corner == 0 || corner == 2) ? radius - 1 : 0;
+        int center_y = corner < 2 ? radius - 1 : 0;
+        int inner_radius = radius > 0 ? radius - 1 : 0;
+        int inner_squared = inner_radius * inner_radius;
+        int outer_squared = radius * radius;
+        int y;
+
+        if(descriptor->header.magic == LV_IMAGE_HEADER_MAGIC)
+            lv_image_cache_drop(descriptor);
+        memset(descriptor, 0, sizeof(*descriptor));
+        if(radius <= 0)
+            continue;
+        for(y = 0; y < radius; ++y) {
+            int x;
+            for(x = 0; x < radius; ++x) {
+                int dx = x - center_x;
+                int dy = y - center_y;
+                int distance_squared = dx * dx + dy * dy;
+                unsigned alpha;
+                uint8_t *pixel = pixels + (y * radius + x) * 4;
+
+                if(distance_squared <= inner_squared)
+                    alpha = 0;
+                else if(distance_squared >= outer_squared)
+                    alpha = 255;
+                else
+                    alpha = (unsigned)(distance_squared - inner_squared) *
+                            255 / (outer_squared - inner_squared);
+                pixel[0] = 0;
+                pixel[1] = 0;
+                pixel[2] = 0;
+                pixel[3] = alpha;
+            }
+        }
+        descriptor->header.magic = LV_IMAGE_HEADER_MAGIC;
+        descriptor->header.cf = LV_COLOR_FORMAT_ARGB8888;
+        descriptor->header.w = radius;
+        descriptor->header.h = radius;
+        descriptor->header.stride = radius * 4;
+        descriptor->data_size = radius * radius * 4;
+        descriptor->data = pixels;
+    }
+}
+
+static void refresh_screen_corner_masks(void)
+{
+    const struct crazypod_appearance *appearance =
+        crazypod_appearance_get();
+    int screen;
+
+    rebuild_screen_corner_descriptors();
+    for(screen = 0; screen < CRAZYPOD_SCREEN_COUNT; ++screen) {
+        int corner;
+        for(corner = 0; corner < 4; ++corner) {
+            lv_obj_t *mask = screen_corner_masks[screen][corner];
+            int radius = corner < 2
+                ? appearance->screen_top_radius
+                : appearance->screen_bottom_radius;
+
+            if(mask == NULL)
+                continue;
+            if(radius <= 0) {
+                lv_obj_add_flag(mask, LV_OBJ_FLAG_HIDDEN);
+                continue;
+            }
+            lv_image_set_src(mask, &screen_corner_descriptors[corner]);
+            lv_obj_set_size(mask, radius, radius);
+            lv_obj_set_pos(mask,
+                           (corner == 0 || corner == 2)
+                               ? 0 : LCD_WIDTH - radius,
+                           corner < 2 ? 0 : LCD_HEIGHT - radius);
+            lv_obj_remove_flag(mask, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(mask);
+            lv_obj_invalidate(mask);
+        }
+    }
+}
+
+static void create_screen_corner_masks(lv_obj_t *screen, int screen_index)
+{
+    int corner;
+
+    for(corner = 0; corner < 4; ++corner) {
+        lv_obj_t *mask = lv_image_create(screen);
+        screen_corner_masks[screen_index][corner] = mask;
+        lv_obj_remove_flag(mask, LV_OBJ_FLAG_CLICKABLE);
+    }
+    refresh_screen_corner_masks();
+}
+
 static void refresh_desktop_capsule_material(void)
 {
     const lv_image_dsc_t *glass =
@@ -355,7 +805,8 @@ static void refresh_desktop_capsule_material(void)
 
     if(desktop_capsule == NULL)
         return;
-    if(crazypod_appearance_get()->home_background == 0 &&
+    if(crazypod_appearance_get()->home_wallpaper[0] == '\0' &&
+       crazypod_appearance_get()->home_background == 0 &&
        glass != NULL) {
         if(desktop_capsule_glass == NULL) {
             desktop_capsule_glass = lv_image_create(desktop_capsule);
@@ -380,12 +831,23 @@ static void refresh_desktop_capsule_material(void)
 
 static void refresh_desktop_appearance(void)
 {
+    const lv_image_dsc_t *custom =
+        crazypod_custom_home_wallpaper();
     int i;
 
     if(desktop_screen == NULL)
         return;
-    if(crazypod_appearance_get()->home_background == 0 &&
-       crazypod_default_wallpaper() != NULL) {
+    if(custom != NULL) {
+        lv_image_set_src(desktop_wallpaper, custom);
+        lv_obj_remove_flag(desktop_wallpaper, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_bg_color(desktop_screen,
+                                  lv_color_hex(0x141419), 0);
+    }
+    else if(crazypod_appearance_get()->home_wallpaper[0] == '\0' &&
+            crazypod_appearance_get()->home_background == 0 &&
+            crazypod_default_wallpaper() != NULL) {
+        lv_image_set_src(desktop_wallpaper,
+                         crazypod_default_wallpaper());
         lv_obj_remove_flag(desktop_wallpaper, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_bg_color(desktop_screen,
                                   lv_color_hex(0x141419), 0);
@@ -417,6 +879,7 @@ static void refresh_desktop_appearance(void)
     refresh_desktop_capsule_material();
     desktop_native_backdrop_ready = false;
     layout_desktop_carousel(false);
+    refresh_screen_corner_masks();
     lv_obj_invalidate(desktop_screen);
 }
 
@@ -434,6 +897,31 @@ static const struct crazypod_track *current_track(void)
     const char *path = crazypod_queue_path(crazypod_queue_index());
     int index = crazypod_music_find_track(path);
     return crazypod_music_track(index);
+}
+
+static const struct crazypod_track *queue_track(int queue_index)
+{
+    const char *path = crazypod_queue_path(queue_index);
+    int library_index = crazypod_music_find_track(path);
+
+    return crazypod_music_track(library_index);
+}
+
+static void prefetch_now_queue_artwork(int queue_index)
+{
+    const struct crazypod_track *track = queue_track(queue_index);
+
+    if(track == NULL) {
+        now_prefetch_track_path[0] = '\0';
+        return;
+    }
+    snprintf(now_prefetch_track_path,
+             sizeof(now_prefetch_track_path),
+             "%s", track->path);
+    (void)crazypod_artwork_load_priority(
+        CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT,
+        track, CRAZYPOD_NOW_ARTWORK_CACHE_SIZE, 0);
+    keep_cpu_boosted(HZ / 5);
 }
 
 static int initial_album_index(void)
@@ -569,6 +1057,590 @@ static fb_data desktop_blend565(fb_data foreground, fb_data background,
         (fr * alpha + br * (256 - alpha)) >> 8,
         (fg * alpha + bg * (256 - alpha)) >> 8,
         (fb * alpha + bb * (256 - alpha)) >> 8);
+}
+
+static void scale_rgb565_bilinear(const fb_data *source,
+                                  int source_width, int source_height,
+                                  fb_data *destination,
+                                  int destination_width,
+                                  int destination_height)
+{
+    int y;
+
+    for(y = 0; y < destination_height; ++y) {
+        int source_y_q8 =
+            y * (source_height - 1) * 256 /
+            (destination_height - 1);
+        int y0 = source_y_q8 >> 8;
+        int y1 = y0 + 1 < source_height ? y0 + 1 : y0;
+        int fy = source_y_q8 & 255;
+        int x;
+        for(x = 0; x < destination_width; ++x) {
+            int source_x_q8 =
+                x * (source_width - 1) * 256 /
+                (destination_width - 1);
+            int x0 = source_x_q8 >> 8;
+            int x1 = x0 + 1 < source_width ? x0 + 1 : x0;
+            int fx = source_x_q8 & 255;
+            fb_data p00 = source[y0 * source_width + x0];
+            fb_data p10 = source[y0 * source_width + x1];
+            fb_data p01 = source[y1 * source_width + x0];
+            fb_data p11 = source[y1 * source_width + x1];
+            unsigned red0 =
+                RGB_UNPACK_RED(p00) * (256 - fx) +
+                RGB_UNPACK_RED(p10) * fx;
+            unsigned red1 =
+                RGB_UNPACK_RED(p01) * (256 - fx) +
+                RGB_UNPACK_RED(p11) * fx;
+            unsigned green0 =
+                RGB_UNPACK_GREEN(p00) * (256 - fx) +
+                RGB_UNPACK_GREEN(p10) * fx;
+            unsigned green1 =
+                RGB_UNPACK_GREEN(p01) * (256 - fx) +
+                RGB_UNPACK_GREEN(p11) * fx;
+            unsigned blue0 =
+                RGB_UNPACK_BLUE(p00) * (256 - fx) +
+                RGB_UNPACK_BLUE(p10) * fx;
+            unsigned blue1 =
+                RGB_UNPACK_BLUE(p01) * (256 - fx) +
+                RGB_UNPACK_BLUE(p11) * fx;
+            destination[y * destination_width + x] =
+                LCD_RGBPACK(
+                    (red0 * (256 - fy) + red1 * fy) >> 16,
+                    (green0 * (256 - fy) + green1 * fy) >> 16,
+                    (blue0 * (256 - fy) + blue1 * fy) >> 16);
+        }
+    }
+}
+
+static void configure_rgb565_descriptor(lv_image_dsc_t *descriptor,
+                                        const fb_data *pixels,
+                                        int width, int height)
+{
+    memset(descriptor, 0, sizeof(*descriptor));
+    descriptor->header.magic = LV_IMAGE_HEADER_MAGIC;
+    descriptor->header.cf = LV_COLOR_FORMAT_RGB565;
+    descriptor->header.w = width;
+    descriptor->header.h = height;
+    descriptor->header.stride = width * sizeof(fb_data);
+    descriptor->data_size =
+        (size_t)width * height * sizeof(fb_data);
+    descriptor->data = (const uint8_t *)pixels;
+}
+
+static bool prepare_now_cover(const lv_image_dsc_t *source, int bank)
+{
+    const fb_data *source_pixels;
+    int width;
+    int height;
+
+    if(source == NULL || source->data == NULL ||
+       bank < 0 || bank >= CRAZYPOD_NOW_PRESENTATION_BANKS ||
+       source->header.cf != LV_COLOR_FORMAT_RGB565)
+        return false;
+    width = source->header.w;
+    height = source->header.h;
+    if(width <= 1 || height <= 1 ||
+       source->header.stride != width * sizeof(fb_data))
+        return false;
+
+    if(now_lyrics_cover_descriptor[bank].header.magic ==
+       LV_IMAGE_HEADER_MAGIC)
+        lv_image_cache_drop(&now_lyrics_cover_descriptor[bank]);
+
+    source_pixels = (const fb_data *)source->data;
+    scale_rgb565_bilinear(
+        source_pixels, width, height,
+        now_lyrics_cover_pixels[bank],
+        CRAZYPOD_NOW_LYRICS_COVER_SIZE,
+        CRAZYPOD_NOW_LYRICS_COVER_SIZE);
+    configure_rgb565_descriptor(
+        &now_lyrics_cover_descriptor[bank],
+        now_lyrics_cover_pixels[bank],
+        CRAZYPOD_NOW_LYRICS_COVER_SIZE,
+        CRAZYPOD_NOW_LYRICS_COVER_SIZE);
+    return true;
+}
+
+static void prepare_now_overlay_glass(void)
+{
+    const fb_data *framebuffer =
+        (const fb_data *)lcd_framebuffer_default.data;
+    int y;
+
+    keep_cpu_boosted(HZ / 2);
+    /*
+     * Capture the already-rendered Now Playing surface at quarter size.
+     * The popup reuses this frozen material; no blur work runs while the
+     * wheel is moving and the full 250x176 source never needs a second copy.
+     */
+    lv_refr_now(NULL);
+    for(y = 0; y < CRAZYPOD_NOW_GLASS_HEIGHT; ++y) {
+        int source_y = CRAZYPOD_NOW_POPUP_Y +
+                       y * CRAZYPOD_NOW_GLASS_SCALE;
+        int x;
+        for(x = 0; x < CRAZYPOD_NOW_GLASS_WIDTH; ++x) {
+            int source_x = CRAZYPOD_NOW_POPUP_X +
+                           x * CRAZYPOD_NOW_GLASS_SCALE;
+            unsigned red = 0;
+            unsigned green = 0;
+            unsigned blue = 0;
+            unsigned samples = 0;
+            int sy;
+
+            for(sy = 0; sy < CRAZYPOD_NOW_GLASS_SCALE; ++sy) {
+                int py = source_y + sy;
+                int sx;
+                if(py >= LCD_HEIGHT)
+                    break;
+                for(sx = 0; sx < CRAZYPOD_NOW_GLASS_SCALE; ++sx) {
+                    int px = source_x + sx;
+                    fb_data pixel;
+                    if(px >= LCD_WIDTH)
+                        break;
+                    pixel = framebuffer[py * LCD_WIDTH + px];
+                    red += RGB_UNPACK_RED(pixel);
+                    green += RGB_UNPACK_GREEN(pixel);
+                    blue += RGB_UNPACK_BLUE(pixel);
+                    ++samples;
+                }
+            }
+            if(samples == 0)
+                samples = 1;
+            now_glass_pixels[
+                y * CRAZYPOD_NOW_GLASS_WIDTH + x] =
+                    LCD_RGBPACK(red / samples,
+                                green / samples,
+                                blue / samples);
+        }
+    }
+
+    for(y = 0; y < CRAZYPOD_NOW_GLASS_HEIGHT; ++y) {
+        int x;
+        for(x = 0; x < CRAZYPOD_NOW_GLASS_WIDTH; ++x) {
+            unsigned red = 0;
+            unsigned green = 0;
+            unsigned blue = 0;
+            unsigned samples = 0;
+            int offset;
+
+            for(offset = -2; offset <= 2; ++offset) {
+                int sample_x = x + offset;
+                fb_data pixel;
+                if(sample_x < 0)
+                    sample_x = 0;
+                if(sample_x >= CRAZYPOD_NOW_GLASS_WIDTH)
+                    sample_x = CRAZYPOD_NOW_GLASS_WIDTH - 1;
+                pixel = now_glass_pixels[
+                    y * CRAZYPOD_NOW_GLASS_WIDTH + sample_x];
+                red += RGB_UNPACK_RED(pixel);
+                green += RGB_UNPACK_GREEN(pixel);
+                blue += RGB_UNPACK_BLUE(pixel);
+                ++samples;
+            }
+            now_glass_scratch[
+                y * CRAZYPOD_NOW_GLASS_WIDTH + x] =
+                    LCD_RGBPACK(red / samples,
+                                green / samples,
+                                blue / samples);
+        }
+    }
+
+    for(y = 0; y < CRAZYPOD_NOW_GLASS_HEIGHT; ++y) {
+        int x;
+        for(x = 0; x < CRAZYPOD_NOW_GLASS_WIDTH; ++x) {
+            unsigned red = 0;
+            unsigned green = 0;
+            unsigned blue = 0;
+            unsigned samples = 0;
+            int offset;
+            fb_data blurred;
+            fb_data tint = LCD_RGBPACK(18, 19, 27);
+
+            for(offset = -2; offset <= 2; ++offset) {
+                int sample_y = y + offset;
+                fb_data pixel;
+                if(sample_y < 0)
+                    sample_y = 0;
+                if(sample_y >= CRAZYPOD_NOW_GLASS_HEIGHT)
+                    sample_y = CRAZYPOD_NOW_GLASS_HEIGHT - 1;
+                pixel = now_glass_scratch[
+                    sample_y * CRAZYPOD_NOW_GLASS_WIDTH + x];
+                red += RGB_UNPACK_RED(pixel);
+                green += RGB_UNPACK_GREEN(pixel);
+                blue += RGB_UNPACK_BLUE(pixel);
+                ++samples;
+            }
+            blurred = LCD_RGBPACK(red / samples,
+                                  green / samples,
+                                  blue / samples);
+            now_glass_pixels[
+                y * CRAZYPOD_NOW_GLASS_WIDTH + x] =
+                    desktop_blend565(tint, blurred, 104);
+        }
+    }
+
+    scale_rgb565_bilinear(
+        now_glass_pixels,
+        CRAZYPOD_NOW_GLASS_WIDTH, CRAZYPOD_NOW_GLASS_HEIGHT,
+        now_glass_render_pixels,
+        CRAZYPOD_NOW_POPUP_WIDTH, CRAZYPOD_NOW_POPUP_HEIGHT);
+
+    memset(&now_glass_descriptor, 0, sizeof(now_glass_descriptor));
+    now_glass_descriptor.header.magic = LV_IMAGE_HEADER_MAGIC;
+    now_glass_descriptor.header.cf = LV_COLOR_FORMAT_RGB565;
+    now_glass_descriptor.header.w = CRAZYPOD_NOW_POPUP_WIDTH;
+    now_glass_descriptor.header.h = CRAZYPOD_NOW_POPUP_HEIGHT;
+    now_glass_descriptor.header.stride =
+        CRAZYPOD_NOW_POPUP_WIDTH * sizeof(fb_data);
+    now_glass_descriptor.data_size = sizeof(now_glass_render_pixels);
+    now_glass_descriptor.data =
+        (const uint8_t *)now_glass_render_pixels;
+    now_glass_valid = true;
+}
+
+static bool prepare_now_backdrop(const lv_image_dsc_t *artwork, int bank)
+{
+    const fb_data *source;
+    int source_stride;
+    int crop_x;
+    int crop_y;
+    int crop_width;
+    int crop_height;
+    int y;
+
+    if(artwork == NULL ||
+       bank < 0 || bank >= CRAZYPOD_NOW_PRESENTATION_BANKS ||
+       artwork->header.cf != LV_COLOR_FORMAT_RGB565 ||
+       artwork->header.w <= 0 || artwork->header.h <= 0)
+        return false;
+
+    source = (const fb_data *)artwork->data;
+    source_stride = artwork->header.stride / sizeof(fb_data);
+    crop_x = 0;
+    crop_y = 0;
+    crop_width = artwork->header.w;
+    crop_height = artwork->header.h;
+    if(crop_width * 3 > crop_height * 4) {
+        int target_width = crop_height * 4 / 3;
+        crop_x = (crop_width - target_width) / 2;
+        crop_width = target_width;
+    }
+    else {
+        int target_height = crop_width * 3 / 4;
+        crop_y = (crop_height - target_height) / 2;
+        crop_height = target_height;
+    }
+
+    for(y = 0; y < CRAZYPOD_NOW_BACKDROP_HEIGHT; ++y) {
+        int sy0 = crop_y +
+                  y * crop_height / CRAZYPOD_NOW_BACKDROP_HEIGHT;
+        int sy1 = crop_y +
+                  (y + 1) * crop_height /
+                      CRAZYPOD_NOW_BACKDROP_HEIGHT;
+        int x;
+        if(sy1 <= sy0)
+            sy1 = sy0 + 1;
+        for(x = 0; x < CRAZYPOD_NOW_BACKDROP_WIDTH; ++x) {
+            int sx0 = crop_x +
+                      x * crop_width / CRAZYPOD_NOW_BACKDROP_WIDTH;
+            int sx1 = crop_x +
+                      (x + 1) * crop_width /
+                          CRAZYPOD_NOW_BACKDROP_WIDTH;
+            unsigned red = 0;
+            unsigned green = 0;
+            unsigned blue = 0;
+            unsigned samples = 0;
+            int sy;
+            if(sx1 <= sx0)
+                sx1 = sx0 + 1;
+            for(sy = sy0; sy < sy1; ++sy) {
+                int sx;
+                for(sx = sx0; sx < sx1; ++sx) {
+                    fb_data pixel = source[sy * source_stride + sx];
+                    red += RGB_UNPACK_RED(pixel);
+                    green += RGB_UNPACK_GREEN(pixel);
+                    blue += RGB_UNPACK_BLUE(pixel);
+                    ++samples;
+                }
+            }
+            if(samples == 0)
+                samples = 1;
+            now_backdrop_pixels[
+                y * CRAZYPOD_NOW_BACKDROP_WIDTH + x] =
+                    LCD_RGBPACK(red / samples,
+                                green / samples,
+                                blue / samples);
+        }
+    }
+
+    for(y = 0; y < CRAZYPOD_NOW_BACKDROP_HEIGHT; ++y) {
+        int x;
+        for(x = 0; x < CRAZYPOD_NOW_BACKDROP_WIDTH; ++x) {
+            unsigned red = 0;
+            unsigned green = 0;
+            unsigned blue = 0;
+            int offset;
+            for(offset = -2; offset <= 2; ++offset) {
+                int sample_x = x + offset;
+                fb_data pixel;
+                if(sample_x < 0)
+                    sample_x = 0;
+                if(sample_x >= CRAZYPOD_NOW_BACKDROP_WIDTH)
+                    sample_x = CRAZYPOD_NOW_BACKDROP_WIDTH - 1;
+                pixel = now_backdrop_pixels[
+                    y * CRAZYPOD_NOW_BACKDROP_WIDTH + sample_x];
+                red += RGB_UNPACK_RED(pixel);
+                green += RGB_UNPACK_GREEN(pixel);
+                blue += RGB_UNPACK_BLUE(pixel);
+            }
+            now_backdrop_scratch[
+                y * CRAZYPOD_NOW_BACKDROP_WIDTH + x] =
+                    LCD_RGBPACK(red / 5, green / 5, blue / 5);
+        }
+    }
+
+    for(y = 0; y < CRAZYPOD_NOW_BACKDROP_HEIGHT; ++y) {
+        int x;
+        for(x = 0; x < CRAZYPOD_NOW_BACKDROP_WIDTH; ++x) {
+            unsigned red = 0;
+            unsigned green = 0;
+            unsigned blue = 0;
+            int offset;
+            for(offset = -2; offset <= 2; ++offset) {
+                int sample_y = y + offset;
+                fb_data pixel;
+                if(sample_y < 0)
+                    sample_y = 0;
+                if(sample_y >= CRAZYPOD_NOW_BACKDROP_HEIGHT)
+                    sample_y = CRAZYPOD_NOW_BACKDROP_HEIGHT - 1;
+                pixel = now_backdrop_scratch[
+                    sample_y * CRAZYPOD_NOW_BACKDROP_WIDTH + x];
+                red += RGB_UNPACK_RED(pixel);
+                green += RGB_UNPACK_GREEN(pixel);
+                blue += RGB_UNPACK_BLUE(pixel);
+            }
+            now_backdrop_pixels[
+                y * CRAZYPOD_NOW_BACKDROP_WIDTH + x] =
+                    LCD_RGBPACK(red / 5, green / 5, blue / 5);
+        }
+    }
+
+    scale_rgb565_bilinear(
+        now_backdrop_pixels,
+        CRAZYPOD_NOW_BACKDROP_WIDTH, CRAZYPOD_NOW_BACKDROP_HEIGHT,
+        now_backdrop_render_pixels[bank], LCD_WIDTH, LCD_HEIGHT);
+    if(now_backdrop_descriptor[bank].header.magic ==
+       LV_IMAGE_HEADER_MAGIC)
+        lv_image_cache_drop(&now_backdrop_descriptor[bank]);
+    configure_rgb565_descriptor(
+        &now_backdrop_descriptor[bank],
+        now_backdrop_render_pixels[bank],
+        LCD_WIDTH, LCD_HEIGHT);
+    return true;
+}
+
+static unsigned now_shaded_luminance(unsigned red,
+                                     unsigned green,
+                                     unsigned blue)
+{
+    red = (red * (255 - CRAZYPOD_NOW_SHADE_OPA) +
+           5 * CRAZYPOD_NOW_SHADE_OPA + 127) / 255;
+    green = (green * (255 - CRAZYPOD_NOW_SHADE_OPA) +
+             5 * CRAZYPOD_NOW_SHADE_OPA + 127) / 255;
+    blue = (blue * (255 - CRAZYPOD_NOW_SHADE_OPA) +
+            8 * CRAZYPOD_NOW_SHADE_OPA + 127) / 255;
+    return (54 * red + 183 * green + 19 * blue) >> 8;
+}
+
+static uint32_t now_contrast_color(unsigned luminance)
+{
+    return luminance >= 118 ? 0x09090D : COLOR_WHITE;
+}
+
+static uint32_t now_presentation_contrast_color(int bank)
+{
+    const fb_data *pixels = now_backdrop_render_pixels[bank];
+    unsigned long luminance = 0;
+    unsigned samples = 0;
+    int y;
+
+    /*
+     * Sample the actual right-side information region after applying the
+     * same dark shade used by the LVGL tree. The blurred backdrop is already
+     * spatially smooth, so a small fixed grid is enough and runs only once
+     * when a new presentation is published.
+     */
+    for(y = 68; y <= 148; y += 8) {
+        int x;
+        for(x = 144; x <= 296; x += 8) {
+            fb_data pixel = pixels[y * LCD_WIDTH + x];
+            unsigned red = RGB_UNPACK_RED(pixel);
+            unsigned green = RGB_UNPACK_GREEN(pixel);
+            unsigned blue = RGB_UNPACK_BLUE(pixel);
+
+            luminance += now_shaded_luminance(red, green, blue);
+            ++samples;
+        }
+    }
+    if(samples == 0)
+        return COLOR_WHITE;
+    return now_contrast_color(luminance / samples);
+}
+
+static uint32_t now_fallback_contrast_color(
+    const struct crazypod_track *track)
+{
+    uint32_t first = artwork_color(
+        track != NULL ? track->album : "", 0);
+    uint32_t second = artwork_color(
+        track != NULL ? track->artist : "", 1);
+    unsigned red =
+        (((first >> 16) & 0xff) + ((second >> 16) & 0xff)) / 2;
+    unsigned green =
+        (((first >> 8) & 0xff) + ((second >> 8) & 0xff)) / 2;
+    unsigned blue =
+        ((first & 0xff) + (second & 0xff)) / 2;
+
+    return now_contrast_color(
+        now_shaded_luminance(red, green, blue));
+}
+
+static bool prepare_now_presentation(
+    const lv_image_dsc_t *artwork, const char *track_path)
+{
+    int bank;
+
+    if(artwork == NULL || track_path == NULL)
+        return false;
+    bank = now_presentation_active_bank == 0 ? 1 : 0;
+    now_presentation_valid[bank] = false;
+    keep_cpu_boosted(HZ / 2);
+    if(!prepare_now_cover(artwork, bank) ||
+       !prepare_now_backdrop(artwork, bank))
+        return false;
+
+    now_presentation_text_color[bank] =
+        now_presentation_contrast_color(bank);
+    snprintf(now_presentation_track_path[bank],
+             sizeof(now_presentation_track_path[bank]),
+             "%s", track_path);
+    now_presentation_valid[bank] = true;
+    now_presentation_active_bank = bank;
+    return true;
+}
+
+static void draw_now_wave_event(lv_event_t *event)
+{
+    static const uint8_t bar_height[
+        CRAZYPOD_NOW_SPECTRUM_BAR_COUNT] = {
+         2,  4,  3,  7,  5, 10,  4, 13,  6, 18,  8, 12,
+        22,  7, 15, 10, 24, 12,  8, 17,  6, 20, 11,  5,
+        14,  9, 23, 13,  7, 19, 10, 16,  6, 21, 12,  8,
+        18,  5, 14,  9, 24, 11, 17,  7, 20, 13,  6, 15,
+        10, 22,  8, 16,  5, 19, 12,  7, 23,  9, 14,  6,
+        18, 11,  4, 15,  8, 12,  5, 10,  3,  7,  4,  2
+    };
+    lv_obj_t *surface = lv_event_get_target(event);
+    lv_layer_t *layer;
+    lv_area_t area;
+    lv_draw_rect_dsc_t bar;
+    bool playing;
+    int index;
+
+    if(lv_event_get_code(event) != LV_EVENT_DRAW_MAIN)
+        return;
+    layer = lv_event_get_layer(event);
+    lv_obj_get_coords(surface, &area);
+    playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
+              (audio_status() & AUDIO_STATUS_PAUSE) == 0;
+
+    lv_draw_rect_dsc_init(&bar);
+    bar.bg_color = lv_color_hex(COLOR_WHITE);
+    bar.bg_opa = playing ? 220 : 120;
+    bar.radius = 0;
+    for(index = 0;
+        index < CRAZYPOD_NOW_SPECTRUM_BAR_COUNT;
+        ++index) {
+        lv_area_t bar_area;
+        int height;
+
+        if(playing) {
+            int modulation =
+                ((index * 13 + now_wave_phase * 7) ^
+                 (index * 3 + now_wave_phase)) % 5;
+            height = bar_height[index] + modulation - 2;
+            if(height < 2)
+                height = 2;
+            if(height > 25)
+                height = 25;
+        }
+        else {
+            height = 2 + bar_height[index] % 3;
+        }
+        bar_area.x1 = area.x1 + index * 4;
+        bar_area.x2 = bar_area.x1 + 1;
+        bar_area.y2 = area.y2;
+        bar_area.y1 = bar_area.y2 - height + 1;
+        lv_draw_rect(layer, &bar, &bar_area);
+    }
+}
+
+static void tick_now_playing_wave(void)
+{
+    bool playing;
+
+    if(!product_active || route_depth <= 0 ||
+       current_route()->route != MUSIC_ROUTE_NOW_PLAYING ||
+       now_wave_surface == NULL || now_overlay != NOW_OVERLAY_NONE)
+        return;
+    playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
+              (audio_status() & AUDIO_STATUS_PAUSE) == 0;
+    if(!playing && !now_wave_playing_seen)
+        return;
+    if(TIME_BEFORE(current_tick,
+                   last_now_wave_tick + CRAZYPOD_NOW_WAVE_FRAME_TICKS))
+        return;
+    last_now_wave_tick = current_tick;
+    now_wave_playing_seen = playing;
+    if(playing)
+        now_wave_phase = (now_wave_phase + 1) & 0x7fff;
+    lv_obj_invalidate(now_wave_surface);
+}
+
+static lv_obj_t *make_now_glass_panel(int x, int y, int width, int height)
+{
+    lv_obj_t *panel = make_box(
+        now_overlay_root, x, y, width, height,
+        CRAZYPOD_NOW_POPUP_RADIUS, COLOR_PANEL, LV_OPA_COVER);
+    lv_obj_t *tint;
+    lv_obj_t *border;
+
+    lv_obj_set_style_clip_corner(panel, true, 0);
+    lv_obj_set_style_shadow_width(panel, 12, 0);
+    lv_obj_set_style_shadow_offset_y(panel, 6, 0);
+    lv_obj_set_style_shadow_color(panel, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_shadow_opa(panel, 92, 0);
+
+    if(now_glass_valid) {
+        lv_obj_t *image = lv_image_create(panel);
+        lv_image_set_src(image, &now_glass_descriptor);
+        lv_obj_center(image);
+        lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
+    }
+
+    tint = make_box(panel, 0, 0, width, height,
+                    CRAZYPOD_NOW_POPUP_RADIUS, 0x11131A, 92);
+    lv_obj_remove_flag(tint, LV_OBJ_FLAG_CLICKABLE);
+    border = make_box(panel, 0, 0, width, height,
+                      CRAZYPOD_NOW_POPUP_RADIUS,
+                      COLOR_WHITE, LV_OPA_TRANSP);
+    lv_obj_set_style_border_width(border, 1, 0);
+    lv_obj_set_style_border_color(
+        border, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(border, 38, 0);
+    lv_obj_remove_flag(border, LV_OBJ_FLAG_CLICKABLE);
+    return panel;
 }
 
 static void draw_desktop_placeholder(int app_index, int center_x,
@@ -728,7 +1800,6 @@ static void draw_desktop_icon(int app_index, int center_x, int center_y,
 static void render_desktop_carousel_native(void)
 {
     static const int size_percent[] = { 100, 72, 56, 44 };
-    static const int opacity_pose[] = { 255, 220, 150, 80 };
     fb_data *framebuffer =
         (fb_data *)lcd_framebuffer_default.data;
     int base_size = appearance_tile_size();
@@ -765,7 +1836,6 @@ static void render_desktop_carousel_native(void)
             int center_x;
             int center_y;
             int icon_size;
-            int opacity;
 
             if(absolute_q8 > 640 ||
                rounded_distance != distance_layer)
@@ -777,9 +1847,8 @@ static void render_desktop_carousel_native(void)
             center_y = 91 + 4 * absolute_q8 / 256;
             icon_size = base_size *
                 interpolate_pose(size_percent, absolute_q8) / 100;
-            opacity = interpolate_pose(opacity_pose, absolute_q8);
             draw_desktop_icon(i, center_x, center_y,
-                              icon_size, opacity);
+                              icon_size, 255);
         }
     }
 
@@ -1032,7 +2101,8 @@ static void update_desktop_capsule_artwork(
 
 static void create_desktop(void)
 {
-    const lv_image_dsc_t *wallpaper;
+    const lv_image_dsc_t *wallpaper =
+        crazypod_custom_home_wallpaper();
     int i;
 
     desktop_screen = lv_obj_create(NULL);
@@ -1041,12 +2111,14 @@ static void create_desktop(void)
         desktop_screen,
         lv_color_hex(crazypod_appearance_home_color()), 0);
     lv_obj_set_style_bg_opa(desktop_screen, LV_OPA_COVER, 0);
-    wallpaper = crazypod_default_wallpaper();
+    if(wallpaper == NULL &&
+       crazypod_appearance_get()->home_wallpaper[0] == '\0' &&
+       crazypod_appearance_get()->home_background == 0)
+        wallpaper = crazypod_default_wallpaper();
     desktop_wallpaper = lv_image_create(desktop_screen);
     if(wallpaper != NULL)
         lv_image_set_src(desktop_wallpaper, wallpaper);
-    if(wallpaper == NULL ||
-       crazypod_appearance_get()->home_background != 0)
+    if(wallpaper == NULL)
         lv_obj_add_flag(desktop_wallpaper, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_pos(desktop_wallpaper, 0, 0);
     lv_obj_remove_flag(desktop_wallpaper, LV_OBJ_FLAG_CLICKABLE);
@@ -1080,6 +2152,7 @@ static void create_desktop(void)
     desktop_native_backdrop_ready = false;
     layout_desktop_carousel(false);
     lv_group_focus_obj(apps[0].cell);
+    create_screen_corner_masks(desktop_screen, 0);
 }
 
 static void create_product_screen(void)
@@ -1097,6 +2170,7 @@ static void create_product_screen(void)
     lv_obj_set_size(product_content, LCD_WIDTH, LCD_HEIGHT);
     lv_obj_set_style_bg_opa(product_content, LV_OPA_TRANSP, 0);
     create_status_bar(product_screen, &status_bars[1]);
+    create_screen_corner_masks(product_screen, 1);
 
     lv_obj_add_flag(product_screen, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_background(product_screen);
@@ -1140,7 +2214,7 @@ static int route_item_count(const struct route_state *state)
     case MUSIC_ROUTE_NOW_PLAYING:
         return 1;
     case DIY_ROUTE_MENU:
-        return 4;
+        return 5;
     case DIY_ROUTE_PRESETS:
         return 3;
     case DIY_ROUTE_PRESET_LIBRARY:
@@ -1157,9 +2231,20 @@ static int route_item_count(const struct route_state *state)
     case DIY_ROUTE_ICONS:
         return CRAZYPOD_ICON_THEME_COUNT;
     case DIY_ROUTE_DETAILS:
-        return 6;
+        return (int)(sizeof(diy_detail_titles) /
+                     sizeof(diy_detail_titles[0]));
+    case DIY_ROUTE_CHOICES:
+        return appearance_choice_count(
+            (enum crazypod_appearance_field)state->group);
     case DIY_ROUTE_BACKGROUNDS:
         return 2;
+    case DIY_ROUTE_BACKGROUND_CHOICES:
+        return CRAZYPOD_APPEARANCE_COLOR_COUNT + 2;
+    case DIY_ROUTE_WALLPAPER_FILES:
+        return diy_wallpaper_file_count;
+    case DIY_ROUTE_LAYOUT:
+        return (int)(sizeof(diy_layout_titles) /
+                     sizeof(diy_layout_titles[0]));
     }
     return 0;
 }
@@ -1236,7 +2321,10 @@ static const char *route_item_title(const struct route_state *state, int index)
         return album_label;
     }
     case DIY_ROUTE_MENU:
-        return index >= 0 && index < 4 ? diy_menu_titles[index] : "";
+        return index >= 0 &&
+               index < (int)(sizeof(diy_menu_titles) /
+                             sizeof(diy_menu_titles[0]))
+            ? diy_menu_titles[index] : "";
     case DIY_ROUTE_PRESETS:
         return index == 0 ? "Save" :
                index == 1 ? "Saved" :
@@ -1269,10 +2357,35 @@ static const char *route_item_title(const struct route_state *state, int index)
     case DIY_ROUTE_ICONS:
         return crazypod_icon_theme_name(index);
     case DIY_ROUTE_DETAILS:
-        return index >= 0 && index < 6 ? diy_detail_titles[index] : "";
+        return index >= 0 &&
+               index < (int)(sizeof(diy_detail_titles) /
+                             sizeof(diy_detail_titles[0]))
+            ? diy_detail_titles[index] : "";
+    case DIY_ROUTE_CHOICES:
+        return index >= 0 &&
+               index < appearance_choice_count(
+                   (enum crazypod_appearance_field)state->group)
+            ? appearance_choice_title(
+                  (enum crazypod_appearance_field)state->group, index)
+            : "";
     case DIY_ROUTE_BACKGROUNDS:
         return index >= 0 && index < 2
             ? diy_background_titles[index] : "";
+    case DIY_ROUTE_BACKGROUND_CHOICES:
+        if(index == 0)
+            return "Default";
+        if(index <= CRAZYPOD_APPEARANCE_COLOR_COUNT)
+            return crazypod_appearance_color_name(index - 1);
+        return index == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1
+            ? "Choose Picture" : "";
+    case DIY_ROUTE_WALLPAPER_FILES:
+        return index >= 0 && index < diy_wallpaper_file_count
+            ? path_basename(diy_wallpaper_files[index]) : "";
+    case DIY_ROUTE_LAYOUT:
+        return index >= 0 &&
+               index < (int)(sizeof(diy_layout_titles) /
+                             sizeof(diy_layout_titles[0]))
+            ? diy_layout_titles[index] : "";
     default:
         track = route_track(state, index);
         return track != NULL ? track->title : "";
@@ -1317,15 +2430,61 @@ static const char *route_title(const struct route_state *state)
     case DIY_ROUTE_PRESET_RENAME: return "RENAME";
     case DIY_ROUTE_ICONS: return "ICONS";
     case DIY_ROUTE_DETAILS: return "DETAILS";
+    case DIY_ROUTE_CHOICES:
+        return appearance_field_title(
+            (enum crazypod_appearance_field)state->group);
     case DIY_ROUTE_BACKGROUNDS: return "BACKGROUNDS";
+    case DIY_ROUTE_BACKGROUND_CHOICES:
+        return state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
+            ? "HOME" : "MENU";
+    case DIY_ROUTE_WALLPAPER_FILES: return "PICTURES";
+    case DIY_ROUTE_LAYOUT: return "LAYOUT";
     }
     return "";
 }
 
-static lv_obj_t *create_artwork_cached(lv_obj_t *parent,
-                                       const struct crazypod_track *track,
-                                       int x, int y, int display_size,
-                                       int cache_size, int slot)
+static bool route_item_is_current(const struct route_state *state, int index)
+{
+    const struct crazypod_appearance *appearance =
+        crazypod_appearance_get();
+
+    switch(state->route) {
+    case DIY_ROUTE_ICONS:
+        return index == appearance->icon_theme;
+    case DIY_ROUTE_CHOICES: {
+        enum crazypod_appearance_field field =
+            (enum crazypod_appearance_field)state->group;
+        return appearance_choice_value(field, index) ==
+               appearance_field_value(field);
+    }
+    case DIY_ROUTE_BACKGROUND_CHOICES: {
+        const char *path =
+            state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
+                ? appearance->home_wallpaper
+                : appearance->menu_wallpaper;
+        if(index == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1)
+            return path[0] != '\0';
+        return path[0] == '\0' &&
+               index == appearance_field_value(
+                   (enum crazypod_appearance_field)state->group);
+    }
+    case DIY_ROUTE_WALLPAPER_FILES: {
+        const char *path =
+            state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
+                ? appearance->home_wallpaper
+                : appearance->menu_wallpaper;
+        return index >= 0 && index < diy_wallpaper_file_count &&
+               strcmp(path, diy_wallpaper_files[index]) == 0;
+    }
+    default:
+        return false;
+    }
+}
+
+static lv_obj_t *create_artwork_descriptor(
+    lv_obj_t *parent, const struct crazypod_track *track,
+    int x, int y, int display_size,
+    const lv_image_dsc_t *descriptor, bool scale_descriptor)
 {
     lv_obj_t *card = make_box(parent, x, y,
                               display_size, display_size,
@@ -1333,9 +2492,6 @@ static lv_obj_t *create_artwork_cached(lv_obj_t *parent,
                               artwork_color(track != NULL ? track->album : "",
                                             0),
                               LV_OPA_COVER);
-    const lv_image_dsc_t *descriptor =
-        track != NULL
-            ? crazypod_artwork_load(slot, track, cache_size) : NULL;
 
     lv_obj_set_style_bg_grad_color(
         card, lv_color_hex(artwork_color(track != NULL ? track->artist : "",
@@ -1353,7 +2509,7 @@ static lv_obj_t *create_artwork_cached(lv_obj_t *parent,
     if(descriptor != NULL) {
         lv_obj_t *image = lv_image_create(card);
         lv_image_set_src(image, descriptor);
-        if(descriptor->header.w != display_size)
+        if(scale_descriptor && descriptor->header.w != display_size)
             lv_image_set_scale(
                 image,
                 (uint32_t)display_size * LV_SCALE_NONE /
@@ -1369,6 +2525,19 @@ static lv_obj_t *create_artwork_cached(lv_obj_t *parent,
         lv_obj_center(symbol);
     }
     return card;
+}
+
+static lv_obj_t *create_artwork_cached(lv_obj_t *parent,
+                                       const struct crazypod_track *track,
+                                       int x, int y, int display_size,
+                                       int cache_size, int slot)
+{
+    const lv_image_dsc_t *descriptor =
+        track != NULL
+            ? crazypod_artwork_load(slot, track, cache_size) : NULL;
+
+    return create_artwork_descriptor(
+        parent, track, x, y, display_size, descriptor, true);
 }
 
 static lv_obj_t *create_artwork(lv_obj_t *parent,
@@ -1587,36 +2756,61 @@ static void render_item_preview(const struct route_state *state)
 static const char *diy_current_value(const struct route_state *state)
 {
     const struct crazypod_appearance *value = crazypod_appearance_get();
-    static const char *const icon_sizes[] = {
-        "80%", "90%", "100%", "110%", "120%"
-    };
-    static const char *const glows[] = {
-        "Off", "Low", "Medium", "High"
-    };
+    enum crazypod_appearance_field field;
+    int current;
+    int index;
 
     if(state->route == DIY_ROUTE_ICONS)
         return state->selected == value->icon_theme
             ? "Current selection" : "Select to switch now";
     if(state->route == DIY_ROUTE_DETAILS) {
-        switch(state->selected) {
-        case 0:
-            return value->player_style == 0
-                ? "Liquid Glass" : "Gaussian Blur";
-        case 1: return icon_sizes[value->icon_scale];
-        case 2: return glows[value->glow];
-        case 3:
-            return value->highlight_style == 0 ? "Solid" : "Gradient";
-        case 4:
-            return crazypod_appearance_color_name(value->primary_color);
-        case 5:
-            return crazypod_appearance_color_name(value->secondary_color);
-        }
+        field = diy_detail_fields[state->selected];
+        current = appearance_field_value(field);
+        return appearance_choice_title(field, current);
+    }
+    if(state->route == DIY_ROUTE_LAYOUT) {
+        static char radius_text[16];
+        field = diy_layout_fields[state->selected];
+        snprintf(radius_text, sizeof(radius_text), "%d px",
+                 appearance_field_value(field));
+        return radius_text;
+    }
+    if(state->route == DIY_ROUTE_CHOICES) {
+        field = (enum crazypod_appearance_field)state->group;
+        current = appearance_field_value(field);
+        index = appearance_choice_value(field, state->selected);
+        return index == current
+            ? "Current selection" : "Select to apply";
     }
     if(state->route == DIY_ROUTE_BACKGROUNDS) {
+        const char *path = state->selected == 0
+            ? value->home_wallpaper : value->menu_wallpaper;
         int color = state->selected == 0
             ? value->home_background : value->menu_background;
+        if(path[0] != '\0')
+            return path_basename(path);
         return color == 0 ? "Default"
                           : crazypod_appearance_color_name(color - 1);
+    }
+    if(state->route == DIY_ROUTE_BACKGROUND_CHOICES) {
+        const char *path =
+            state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
+                ? value->home_wallpaper : value->menu_wallpaper;
+        int color = appearance_field_value(
+            (enum crazypod_appearance_field)state->group);
+        if(state->selected == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1)
+            return path[0] != '\0'
+                ? path_basename(path) : "Open /Pictures";
+        return path[0] == '\0' && state->selected == color
+            ? "Current selection" : "Select to apply";
+    }
+    if(state->route == DIY_ROUTE_WALLPAPER_FILES) {
+        const char *current_path =
+            state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
+                ? value->home_wallpaper : value->menu_wallpaper;
+        return strcmp(current_path,
+                      diy_wallpaper_files[state->selected]) == 0
+            ? "Current picture" : "Select to apply";
     }
     return "";
 }
@@ -1667,8 +2861,9 @@ static void render_diy_preview(const struct route_state *state)
         symbol = diy_menu_symbols[state->selected];
         detail = state->selected == 0 ? "Save and reuse appearances" :
                  state->selected == 1 ? "16 complete icon themes" :
-                 state->selected == 2 ? "Player, glow and highlights" :
-                                        "Home and menu surfaces";
+                 state->selected == 2 ? "Size, glow and highlights" :
+                 state->selected == 3 ? "Home and menu pictures" :
+                                        "Screen corner geometry";
     }
     else if(state->route == DIY_ROUTE_PRESETS) {
         symbol = state->selected == 0 ? LV_SYMBOL_SAVE :
@@ -1709,6 +2904,14 @@ static void render_diy_preview(const struct route_state *state)
     else if(state->route == DIY_ROUTE_ICONS) {
         symbol = LV_SYMBOL_IMAGE;
     }
+    else if(state->route == DIY_ROUTE_CHOICES) {
+        enum crazypod_appearance_field field =
+            (enum crazypod_appearance_field)state->group;
+        int value = appearance_choice_value(field, state->selected);
+        if(field == CRAZYPOD_APPEARANCE_PRIMARY ||
+           field == CRAZYPOD_APPEARANCE_SECONDARY)
+            swatch_color = crazypod_appearance_color(value);
+    }
     else if(state->route == DIY_ROUTE_BACKGROUNDS) {
         int surface = state->selected == 0
             ? crazypod_appearance_get()->home_background
@@ -1718,7 +2921,22 @@ static void render_diy_preview(const struct route_state *state)
             ? (state->selected == 0 ? 0x141419 : 0x08080D)
             : crazypod_appearance_color(surface - 1);
     }
-    else if(state->route == DIY_ROUTE_DETAILS && state->selected == 5) {
+    else if(state->route == DIY_ROUTE_BACKGROUND_CHOICES) {
+        if(state->selected > 0 &&
+           state->selected <= CRAZYPOD_APPEARANCE_COLOR_COUNT)
+            swatch_color =
+                crazypod_appearance_color(state->selected - 1);
+        symbol = state->selected ==
+                 CRAZYPOD_APPEARANCE_COLOR_COUNT + 1
+            ? LV_SYMBOL_IMAGE : LV_SYMBOL_DIRECTORY;
+    }
+    else if(state->route == DIY_ROUTE_WALLPAPER_FILES) {
+        symbol = LV_SYMBOL_IMAGE;
+    }
+    else if(state->route == DIY_ROUTE_LAYOUT) {
+        symbol = LV_SYMBOL_SHUFFLE;
+    }
+    else if(state->route == DIY_ROUTE_DETAILS && state->selected == 4) {
         swatch_color = highlight_secondary();
     }
 
@@ -1768,16 +2986,25 @@ static void render_menu_screen(const struct route_state *state)
     lv_label_set_long_mode(header, LV_LABEL_LONG_MODE_DOTS);
 
     if(count <= 0) {
-        render_empty_state("Nothing Here", "Add local music and rescan.");
+        if(state->route == DIY_ROUTE_WALLPAPER_FILES)
+            render_empty_state("No Pictures",
+                               "Add JPG or BMP files to /Pictures.");
+        else
+            render_empty_state("Nothing Here",
+                               "Add local music and rescan.");
         return;
     }
 
-    start = count <= CRAZYPOD_VISIBLE_ROWS ? 0 :
-            state->selected - CRAZYPOD_VISIBLE_ROWS / 2;
-    if(start < 0)
+    if(count <= CRAZYPOD_VISIBLE_ROWS) {
         start = 0;
-    if(start > count - CRAZYPOD_VISIBLE_ROWS)
-        start = count - CRAZYPOD_VISIBLE_ROWS;
+    }
+    else {
+        start = state->selected - CRAZYPOD_VISIBLE_ROWS / 2;
+        if(start < 0)
+            start = 0;
+        if(start > count - CRAZYPOD_VISIBLE_ROWS)
+            start = count - CRAZYPOD_VISIBLE_ROWS;
+    }
 
     for(row = 0; row < CRAZYPOD_VISIBLE_ROWS; ++row) {
         int index = start + row;
@@ -1837,8 +3064,7 @@ static void render_menu_screen(const struct route_state *state)
         menu_view.labels[row] = label;
 
         marker = make_label(row_box,
-                            state->route == DIY_ROUTE_ICONS &&
-                            index == crazypod_appearance_get()->icon_theme
+                            route_item_is_current(state, index)
                                 ? LV_SYMBOL_OK :
                             selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET,
                             &lv_font_montserrat_8,
@@ -1884,12 +3110,16 @@ static void refresh_menu_rows(const struct route_state *state)
     if(!menu_view.valid || menu_view.route != state->route || count <= 0)
         return;
 
-    start = count <= CRAZYPOD_VISIBLE_ROWS ? 0 :
-            state->selected - CRAZYPOD_VISIBLE_ROWS / 2;
-    if(start < 0)
+    if(count <= CRAZYPOD_VISIBLE_ROWS) {
         start = 0;
-    if(start > count - CRAZYPOD_VISIBLE_ROWS)
-        start = count - CRAZYPOD_VISIBLE_ROWS;
+    }
+    else {
+        start = state->selected - CRAZYPOD_VISIBLE_ROWS / 2;
+        if(start < 0)
+            start = 0;
+        if(start > count - CRAZYPOD_VISIBLE_ROWS)
+            start = count - CRAZYPOD_VISIBLE_ROWS;
+    }
 
     for(row = 0; row < CRAZYPOD_VISIBLE_ROWS; ++row) {
         int index = start + row;
@@ -1936,8 +3166,7 @@ static void refresh_menu_rows(const struct route_state *state)
         }
         lv_label_set_text(
             marker,
-            state->route == DIY_ROUTE_ICONS &&
-            index == crazypod_appearance_get()->icon_theme
+            route_item_is_current(state, index)
                 ? LV_SYMBOL_OK :
             selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET);
         lv_obj_set_style_text_opa(marker, selected ? 205 : 90, 0);
@@ -2275,80 +3504,232 @@ static void render_album_flow(const struct route_state *state)
 static void render_now_playing(void)
 {
     const struct crazypod_track *track = current_track();
+    const lv_image_dsc_t *artwork = NULL;
+    const lv_image_dsc_t *lyrics_artwork = NULL;
+    const lv_image_dsc_t *presentation_backdrop = NULL;
+    enum crazypod_artwork_state artwork_state =
+        CRAZYPOD_ARTWORK_EMPTY;
+    int artwork_slot = CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT;
+    int presentation_bank;
+    uint32_t content_color = COLOR_WHITE;
     lv_obj_t *backdrop;
     lv_obj_t *shade;
     lv_obj_t *title;
     lv_obj_t *artist;
     lv_obj_t *mode;
-    lv_obj_t *heart;
-    int i;
 
     rendered_track_path[0] = '\0';
-    if(track != NULL)
+    if(track != NULL) {
         snprintf(rendered_track_path, sizeof(rendered_track_path),
                  "%s", track->path);
+        if(strcmp(now_prefetch_track_path, track->path) == 0)
+            artwork_slot = CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT;
+        artwork = crazypod_artwork_load_priority(
+            artwork_slot, track,
+            CRAZYPOD_NOW_ARTWORK_CACHE_SIZE, 0);
+        artwork_state = crazypod_artwork_state(
+            artwork_slot, track,
+            CRAZYPOD_NOW_ARTWORK_CACHE_SIZE);
+        if(artwork_slot == CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT &&
+           artwork != NULL) {
+            (void)crazypod_artwork_load_priority(
+                CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT,
+                track, CRAZYPOD_NOW_ARTWORK_CACHE_SIZE, 10);
+        }
+        presentation_bank = now_presentation_active_bank;
+        if(artwork != NULL &&
+           (presentation_bank < 0 ||
+            strcmp(now_presentation_track_path[presentation_bank],
+                   track->path) != 0)) {
+            (void)prepare_now_presentation(artwork, track->path);
+        }
+        else if(artwork_state == CRAZYPOD_ARTWORK_EMPTY &&
+                presentation_bank >= 0 &&
+                strcmp(now_presentation_track_path[presentation_bank],
+                       track->path) != 0) {
+            now_presentation_active_bank = -1;
+        }
+    }
 
-    backdrop = make_box(product_content, 0, 0, 320, 240, 0,
-                        artwork_color(track != NULL ? track->album : "", 0),
-                        LV_OPA_COVER);
-    lv_obj_set_style_bg_grad_color(
-        backdrop,
-        lv_color_hex(artwork_color(track != NULL ? track->artist : "", 1)),
-        0);
-    lv_obj_set_style_bg_grad_dir(backdrop, LV_GRAD_DIR_VER, 0);
-    shade = make_box(product_content, 0, 0, 320, 240, 0, 0x050508,
-                     crazypod_appearance_get()->player_style == 0
-                         ? 142 : 188);
+    presentation_bank = now_presentation_active_bank;
+    if(presentation_bank >= 0 &&
+       now_presentation_valid[presentation_bank]) {
+        lyrics_artwork =
+            &now_lyrics_cover_descriptor[presentation_bank];
+        presentation_backdrop =
+            &now_backdrop_descriptor[presentation_bank];
+        content_color =
+            now_presentation_text_color[presentation_bank];
+    }
+    if(presentation_backdrop != NULL) {
+        backdrop = lv_image_create(product_content);
+        lv_image_set_src(backdrop, presentation_backdrop);
+        lv_obj_center(backdrop);
+    }
+    else {
+        content_color = now_fallback_contrast_color(track);
+        backdrop = make_box(
+            product_content, 0, 0, 320, 240, 0,
+            artwork_color(track != NULL ? track->album : "", 0),
+            LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            backdrop,
+            lv_color_hex(
+                artwork_color(track != NULL ? track->artist : "", 1)),
+            0);
+        lv_obj_set_style_bg_grad_dir(
+            backdrop, LV_GRAD_DIR_VER, 0);
+    }
+    shade = make_box(
+        product_content, 0, 0, 320, 240, 0,
+        CRAZYPOD_NOW_SHADE_COLOR, CRAZYPOD_NOW_SHADE_OPA);
     (void)shade;
 
-    create_artwork(product_content, track, 80, 14, 160,
-                   CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT);
+    {
+        const char *previous = "";
+        const char *current = "";
+        const char *next = "";
+        bool lyrics_available = false;
+        lv_obj_t *metadata_shade;
 
-    title = make_label(product_content,
-                       track != NULL ? track->title : "No Track",
-                       CRAZYPOD_METADATA_FONT,
-                       COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(title, 240);
-    lv_obj_set_height(title, 18);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(title, 40, 123);
-    artist = make_label(product_content,
-                        track != NULL ? track->artist : "Local Music",
-                        CRAZYPOD_METADATA_FONT,
-                        COLOR_WHITE, 195);
-    lv_obj_set_width(artist, 220);
-    lv_obj_set_height(artist, 17);
-    lv_obj_set_style_text_align(artist, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(artist, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(artist, 50, 146);
+        if(now_lyrics_mode && track != NULL)
+            lyrics_available = crazypod_lyrics_load(track->path);
+        if(lyrics_available)
+            crazypod_lyrics_window(0, &previous, &current, &next);
+        create_artwork_descriptor(
+            product_content, track, 18, 55,
+            CRAZYPOD_NOW_LYRICS_COVER_SIZE,
+            lyrics_artwork, false);
 
-    heart = make_label(product_content, LV_SYMBOL_PLUS,
-                       &lv_font_montserrat_12,
-                       COLOR_WHITE, 205);
-    lv_obj_set_pos(heart, 132, 163);
-    mode = make_label(product_content,
-                      crazypod_queue_repeat() == REPEAT_ONE ? "1" :
-                      crazypod_queue_repeat() == REPEAT_ALL ? LV_SYMBOL_LOOP :
-                      crazypod_queue_shuffle() ? LV_SYMBOL_SHUFFLE :
-                      LV_SYMBOL_PLAY,
-                      &lv_font_montserrat_12,
-                      crazypod_queue_repeat() != REPEAT_OFF ||
-                      crazypod_queue_shuffle() ? COLOR_CYAN : COLOR_WHITE,
-                      220);
-    lv_obj_set_pos(mode, 174, 163);
+        make_box(product_content, 134, 55, 1, 106, 0,
+                 content_color, 38);
+        if(lyrics_available) {
+            metadata_shade = make_box(
+                product_content, 18, 116, 108, 47, 0,
+                0x000000, 112);
+            (void)metadata_shade;
+            title = make_label(
+                product_content,
+                track != NULL ? track->title : "No Track",
+                CRAZYPOD_METADATA_FONT,
+                COLOR_WHITE, LV_OPA_COVER);
+            lv_obj_set_size(title, 96, 17);
+            lv_obj_set_style_text_align(
+                title, LV_TEXT_ALIGN_CENTER, 0);
+            lv_label_set_long_mode(
+                title, LV_LABEL_LONG_MODE_DOTS);
+            lv_obj_set_pos(title, 24, 120);
+            artist = make_label(
+                product_content,
+                track != NULL ? track->artist : "Local Music",
+                CRAZYPOD_METADATA_FONT,
+                COLOR_WHITE, 180);
+            lv_obj_set_size(artist, 96, 17);
+            lv_obj_set_style_text_align(
+                artist, LV_TEXT_ALIGN_CENTER, 0);
+            lv_label_set_long_mode(
+                artist, LV_LABEL_LONG_MODE_DOTS);
+            lv_obj_set_pos(artist, 24, 140);
 
-    for(i = 0; i < 18; ++i) {
-        int height = 5 + ((i * 7 + 11) % 19);
-        lv_obj_t *wave = make_box(product_content, 20 + i * 16,
-                                  198 - height / 2, 3, height, 2,
-                                  i % 3 == 0 ? COLOR_CYAN : COLOR_WHITE,
-                                  i % 3 == 0 ? 190 : 80);
-        (void)wave;
+            now_lyrics_previous = make_label(
+                product_content, previous,
+                CRAZYPOD_METADATA_FONT,
+                content_color, 120);
+            lv_obj_set_pos(now_lyrics_previous, 144, 71);
+            lv_obj_set_size(now_lyrics_previous, 158, 18);
+            lv_label_set_long_mode(
+                now_lyrics_previous, LV_LABEL_LONG_MODE_DOTS);
+            now_lyrics_current = make_label(
+                product_content, current,
+                CRAZYPOD_METADATA_FONT,
+                content_color, LV_OPA_COVER);
+            lv_obj_set_pos(now_lyrics_current, 144, 100);
+            lv_obj_set_size(now_lyrics_current, 158, 18);
+            lv_label_set_long_mode(
+                now_lyrics_current, LV_LABEL_LONG_MODE_DOTS);
+            now_lyrics_next = make_label(
+                product_content, next,
+                CRAZYPOD_METADATA_FONT,
+                content_color, 150);
+            lv_obj_set_pos(now_lyrics_next, 144, 129);
+            lv_obj_set_size(now_lyrics_next, 158, 18);
+            lv_label_set_long_mode(
+                now_lyrics_next, LV_LABEL_LONG_MODE_DOTS);
+        }
+        else {
+            lv_obj_t *album;
+
+            title = make_label(
+                product_content,
+                track != NULL ? track->title : "No Track",
+                CRAZYPOD_METADATA_FONT,
+                content_color, LV_OPA_COVER);
+            lv_obj_set_size(title, 158, 18);
+            lv_obj_set_style_text_align(
+                title, LV_TEXT_ALIGN_CENTER, 0);
+            lv_label_set_long_mode(
+                title, LV_LABEL_LONG_MODE_DOTS);
+            lv_obj_set_pos(title, 144, 71);
+
+            artist = make_label(
+                product_content,
+                track != NULL ? track->artist : "Local Music",
+                CRAZYPOD_METADATA_FONT,
+                content_color, 220);
+            lv_obj_set_size(artist, 158, 18);
+            lv_obj_set_style_text_align(
+                artist, LV_TEXT_ALIGN_CENTER, 0);
+            lv_label_set_long_mode(
+                artist, LV_LABEL_LONG_MODE_DOTS);
+            lv_obj_set_pos(artist, 144, 95);
+
+            album = make_label(
+                product_content,
+                track != NULL && track->album[0] != '\0'
+                    ? track->album : "",
+                &lv_font_montserrat_10,
+                content_color, 190);
+            lv_obj_set_size(album, 158, 16);
+            lv_obj_set_style_text_align(
+                album, LV_TEXT_ALIGN_CENTER, 0);
+            lv_label_set_long_mode(
+                album, LV_LABEL_LONG_MODE_DOTS);
+            lv_obj_set_pos(album, 144, 119);
+
+            mode = make_label(
+                product_content,
+                crazypod_queue_repeat() == REPEAT_ONE ? "1" :
+                crazypod_queue_repeat() == REPEAT_ALL ? LV_SYMBOL_LOOP :
+                crazypod_queue_shuffle() ? LV_SYMBOL_SHUFFLE :
+                LV_SYMBOL_PLAY,
+                &lv_font_montserrat_12,
+                crazypod_queue_repeat() != REPEAT_OFF ||
+                crazypod_queue_shuffle() ? COLOR_CYAN : content_color,
+                220);
+            lv_obj_set_width(mode, 24);
+            lv_obj_set_style_text_align(
+                mode, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_pos(mode, 211, 143);
+        }
     }
-    now_progress_fill = make_box(product_content, 18, 196, 4, 4,
-                                 LV_RADIUS_CIRCLE, COLOR_WHITE,
-                                 LV_OPA_COVER);
+
+    now_wave_surface = lv_obj_create(product_content);
+    set_plain_object(now_wave_surface);
+    lv_obj_set_pos(now_wave_surface, 16, 183);
+    lv_obj_set_size(now_wave_surface, 288, 27);
+    lv_obj_set_style_bg_opa(now_wave_surface, LV_OPA_TRANSP, 0);
+    lv_obj_remove_flag(now_wave_surface, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(now_wave_surface, draw_now_wave_event,
+                        LV_EVENT_DRAW_MAIN, NULL);
+    now_wave_playing_seen =
+        (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
+        (audio_status() & AUDIO_STATUS_PAUSE) == 0;
+    last_now_wave_tick = current_tick;
+    make_box(product_content, 18, 212, 284, 2,
+             LV_RADIUS_CIRCLE, COLOR_WHITE, 60);
+    now_progress_fill = make_box(
+        product_content, 18, 212, 4, 2,
+        LV_RADIUS_CIRCLE, COLOR_WHITE, 185);
     now_elapsed = make_label(product_content, "0:00",
                              &lv_font_montserrat_8,
                              COLOR_WHITE, 180);
@@ -2361,6 +3742,501 @@ static void render_now_playing(void)
     lv_obj_set_pos(now_remaining, 230, 218);
 }
 
+static void clear_now_overlay_objects(void)
+{
+    now_overlay_root = NULL;
+    now_overlay_panel = NULL;
+    memset(&now_queue_view, 0, sizeof(now_queue_view));
+    memset(&now_actions_view, 0, sizeof(now_actions_view));
+    memset(&now_volume_view, 0, sizeof(now_volume_view));
+}
+
+static void now_popup_y_anim(void *target, int32_t value)
+{
+    lv_obj_set_y(target, value);
+}
+
+static void now_popup_opa_anim(void *target, int32_t value)
+{
+    lv_obj_set_style_opa(target, (lv_opa_t)value, 0);
+}
+
+static void animate_now_popup(lv_obj_t *panel, int target_y)
+{
+    lv_anim_t animation;
+
+    lv_obj_set_y(panel, target_y + 9);
+    lv_obj_set_style_opa(panel, 120, 0);
+
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, panel);
+    lv_anim_set_exec_cb(&animation, now_popup_y_anim);
+    lv_anim_set_values(&animation, target_y + 9, target_y);
+    lv_anim_set_duration(&animation, 180);
+    lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+    lv_anim_start(&animation);
+
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, panel);
+    lv_anim_set_exec_cb(&animation, now_popup_opa_anim);
+    lv_anim_set_values(&animation, 120, LV_OPA_COVER);
+    lv_anim_set_duration(&animation, 160);
+    lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+    lv_anim_start(&animation);
+}
+
+static void begin_now_overlay(enum now_playing_overlay overlay)
+{
+    if(now_overlay_root != NULL)
+        lv_obj_delete(now_overlay_root);
+    clear_now_overlay_objects();
+    now_overlay = overlay;
+    now_overlay_root = make_box(product_content, 0, 0,
+                                LCD_WIDTH, LCD_HEIGHT, 0,
+                                0x000000, 18);
+    lv_obj_remove_flag(now_overlay_root, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static int now_volume_percent(void)
+{
+    int minimum = sound_min(SOUND_VOLUME);
+    int maximum = sound_max(SOUND_VOLUME);
+    int volume = global_status.volume;
+
+    if(volume < minimum)
+        volume = minimum;
+    if(volume > maximum)
+        volume = maximum;
+    if(maximum <= minimum)
+        return 0;
+    return (volume - minimum) * 100 / (maximum - minimum);
+}
+
+static const char *now_playback_mode_label(void)
+{
+    if(crazypod_queue_repeat() == REPEAT_ONE)
+        return "REPEAT 1";
+    if(crazypod_queue_repeat() == REPEAT_ALL)
+        return "REPEAT";
+    if(crazypod_queue_shuffle())
+        return "SHUFFLE";
+    return "ORDERED";
+}
+
+static const char *now_playback_mode_icon(void)
+{
+    if(crazypod_queue_repeat() == REPEAT_ONE)
+        return "1";
+    if(crazypod_queue_repeat() == REPEAT_ALL)
+        return LV_SYMBOL_LOOP;
+    if(crazypod_queue_shuffle())
+        return LV_SYMBOL_SHUFFLE;
+    return LV_SYMBOL_PLAY;
+}
+
+static void refresh_now_actions_popup(void)
+{
+    static const int action_for_cell[3] = {
+        NOW_ACTION_PLAYBACK, NOW_ACTION_LYRICS, NOW_ACTION_VOLUME
+    };
+    char detail[64];
+    int i;
+    bool queue_selected = now_action_selected == NOW_ACTION_QUEUE;
+
+    if(now_actions_view.queue_row == NULL)
+        return;
+
+    lv_obj_set_style_bg_color(
+        now_actions_view.queue_row,
+        lv_color_hex(queue_selected ? 0xDBD1BD : COLOR_WHITE), 0);
+    lv_obj_set_style_bg_opa(
+        now_actions_view.queue_row, queue_selected ? 31 : 7, 0);
+    lv_obj_set_style_border_width(now_actions_view.queue_row, 1, 0);
+    lv_obj_set_style_border_color(
+        now_actions_view.queue_row,
+        lv_color_hex(queue_selected ? 0xDBD1BD : COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(
+        now_actions_view.queue_row, queue_selected ? 148 : 23, 0);
+    lv_obj_set_style_bg_color(
+        now_actions_view.queue_icon,
+        lv_color_hex(queue_selected ? 0xDBD1BD : COLOR_WHITE), 0);
+    lv_obj_set_style_bg_opa(
+        now_actions_view.queue_icon, queue_selected ? 224 : 20, 0);
+    lv_obj_set_style_text_color(
+        now_actions_view.queue_label, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_text_opa(
+        now_actions_view.queue_label, queue_selected ? 250 : 215, 0);
+
+    for(i = 0; i < 3; ++i) {
+        bool selected = now_action_selected == action_for_cell[i];
+        lv_obj_set_style_bg_color(
+            now_actions_view.cells[i],
+            lv_color_hex(selected ? 0xDBD1BD : COLOR_WHITE), 0);
+        lv_obj_set_style_bg_opa(
+            now_actions_view.cells[i], selected ? 38 : 10, 0);
+        lv_obj_set_style_border_width(now_actions_view.cells[i], 1, 0);
+        lv_obj_set_style_border_color(
+            now_actions_view.cells[i],
+            lv_color_hex(selected ? 0xDBD1BD : COLOR_WHITE), 0);
+        lv_obj_set_style_border_opa(
+            now_actions_view.cells[i], selected ? 163 : 31, 0);
+        lv_obj_set_style_text_opa(
+            now_actions_view.cell_icons[i], selected ? 245 : 124, 0);
+        lv_obj_set_style_text_opa(
+            now_actions_view.cell_labels[i], selected ? 230 : 120, 0);
+    }
+
+    lv_label_set_text(now_actions_view.cell_icons[0],
+                      now_playback_mode_icon());
+    lv_label_set_text(now_actions_view.cell_icons[1],
+                      LV_SYMBOL_FILE);
+    lv_label_set_text(now_actions_view.cell_icons[2],
+                      now_volume_percent() <= 0
+                          ? LV_SYMBOL_MUTE : LV_SYMBOL_VOLUME_MAX);
+    if(now_action_selected == NOW_ACTION_QUEUE) {
+        snprintf(detail, sizeof(detail),
+                 "Scroll browse  Center play  Menu exits");
+    }
+    else if(now_action_selected == NOW_ACTION_PLAYBACK) {
+        snprintf(detail, sizeof(detail), "Center cycles mode  %s",
+                 now_playback_mode_label());
+    }
+    else if(now_action_selected == NOW_ACTION_LYRICS) {
+        const struct crazypod_track *track = current_track();
+        bool available = track != NULL &&
+                         crazypod_lyrics_load(track->path);
+        snprintf(detail, sizeof(detail), "%s  %s",
+                 now_lyrics_mode ? "Lyrics visible" : "Lyrics hidden",
+                 available ? "Local LRC" : "No local LRC");
+    }
+    else {
+        snprintf(detail, sizeof(detail), "Volume  %d%%",
+                 now_volume_percent());
+    }
+    lv_label_set_text(now_actions_view.detail, detail);
+}
+
+static void show_now_actions_popup(void)
+{
+    lv_obj_t *title;
+    lv_obj_t *chevron;
+    int i;
+
+    if(now_overlay == NOW_OVERLAY_NONE)
+        prepare_now_overlay_glass();
+    begin_now_overlay(NOW_OVERLAY_ACTIONS);
+    if(now_action_selected < 0 ||
+       now_action_selected >= NOW_ACTION_COUNT)
+        now_action_selected = NOW_ACTION_QUEUE;
+
+    now_overlay_panel = make_now_glass_panel(35, 43, 250, 154);
+    title = make_label(now_overlay_panel, "ACTIONS",
+                       &lv_font_montserrat_10,
+                       COLOR_WHITE, 92);
+    lv_obj_set_width(title, 250);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(title, 0, 12);
+
+    now_actions_view.queue_row = make_box(
+        now_overlay_panel, 12, 31, 226, 36, 10,
+        COLOR_WHITE, LV_OPA_TRANSP);
+    now_actions_view.queue_icon = make_box(
+        now_actions_view.queue_row, 10, 7, 23, 23,
+        LV_RADIUS_CIRCLE, COLOR_WHITE, 20);
+    title = make_label(now_actions_view.queue_icon, LV_SYMBOL_LIST,
+                       &lv_font_montserrat_10,
+                       COLOR_DETAIL, 220);
+    lv_obj_center(title);
+    now_actions_view.queue_label = make_label(
+        now_actions_view.queue_row, "View Playback Queue",
+        &lv_font_montserrat_10, COLOR_WHITE, 215);
+    lv_obj_set_pos(now_actions_view.queue_label, 42, 11);
+    chevron = make_label(now_actions_view.queue_row, LV_SYMBOL_RIGHT,
+                         &lv_font_montserrat_8,
+                         COLOR_WHITE, 110);
+    lv_obj_set_pos(chevron, 207, 14);
+
+    for(i = 0; i < 3; ++i) {
+        static const int x_positions[3] = { 42, 99, 156 };
+        static const char *const labels[3] = {
+            "Playback", "Lyrics", "Volume"
+        };
+        static const char *const icons[3] = {
+            LV_SYMBOL_PLAY, LV_SYMBOL_FILE, LV_SYMBOL_VOLUME_MAX
+        };
+        int x = x_positions[i];
+        now_actions_view.cells[i] = make_box(
+            now_overlay_panel, x, 75, 52, 52, 14,
+            COLOR_WHITE, 10);
+        now_actions_view.cell_icons[i] = make_label(
+            now_actions_view.cells[i], icons[i],
+            &lv_font_montserrat_12,
+            COLOR_WHITE, 124);
+        lv_obj_set_width(now_actions_view.cell_icons[i], 52);
+        lv_obj_set_style_text_align(
+            now_actions_view.cell_icons[i], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(now_actions_view.cell_icons[i], 0, 8);
+        now_actions_view.cell_labels[i] = make_label(
+            now_actions_view.cells[i], labels[i],
+            &lv_font_montserrat_8,
+            COLOR_WHITE, 120);
+        lv_obj_set_width(now_actions_view.cell_labels[i], 52);
+        lv_obj_set_style_text_align(
+            now_actions_view.cell_labels[i], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(now_actions_view.cell_labels[i], 0, 32);
+    }
+
+    now_actions_view.detail = make_label(
+        now_overlay_panel, "",
+        &lv_font_montserrat_8,
+        COLOR_WHITE, 174);
+    lv_obj_set_width(now_actions_view.detail, 222);
+    lv_obj_set_style_text_align(
+        now_actions_view.detail, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(now_actions_view.detail, 14, 134);
+    refresh_now_actions_popup();
+    animate_now_popup(now_overlay_panel, 43);
+}
+
+static void refresh_now_queue_popup(void)
+{
+    int count = crazypod_queue_count();
+    int current = crazypod_queue_index();
+    int start;
+    char text[32];
+    char mode[32];
+    int row;
+
+    if(now_queue_view.count == NULL)
+        return;
+    if(count <= 0)
+        now_queue_selected = 0;
+    else {
+        if(now_queue_selected < 0)
+            now_queue_selected = 0;
+        if(now_queue_selected >= count)
+            now_queue_selected = count - 1;
+    }
+
+    snprintf(mode, sizeof(mode), "%s  %s",
+             now_playback_mode_icon(), now_playback_mode_label());
+    lv_label_set_text(now_queue_view.mode, mode);
+    snprintf(text, sizeof(text), count > 0 ? "%d/%d" : "0/0",
+             count > 0 ? now_queue_selected + 1 : 0, count);
+    lv_label_set_text(now_queue_view.count, text);
+    if(count > 0)
+        lv_obj_add_flag(now_queue_view.empty, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_remove_flag(now_queue_view.empty, LV_OBJ_FLAG_HIDDEN);
+
+    start = count <= 3 ? 0 : now_queue_selected - 1;
+    if(start < 0)
+        start = 0;
+    if(start > count - 3)
+        start = count - 3;
+    for(row = 0; row < 3; ++row) {
+        int index = start + row;
+        bool selected = index == now_queue_selected;
+        bool current_row = index == current;
+        const char *path;
+        const struct crazypod_track *track;
+
+        if(index < 0 || index >= count) {
+            lv_obj_add_flag(now_queue_view.rows[row],
+                            LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_remove_flag(now_queue_view.rows[row],
+                           LV_OBJ_FLAG_HIDDEN);
+        path = crazypod_queue_path(index);
+        track = crazypod_music_track(crazypod_music_find_track(path));
+        lv_label_set_text(now_queue_view.titles[row],
+                          track != NULL ? track->title : "Unavailable");
+        lv_label_set_text(now_queue_view.artists[row],
+                          track != NULL ? track->artist : "Local Music");
+        lv_label_set_text(
+            now_queue_view.icons[row],
+            current_row
+                ? ((audio_status() & AUDIO_STATUS_PAUSE)
+                       ? LV_SYMBOL_PAUSE : LV_SYMBOL_VOLUME_MAX)
+                : LV_SYMBOL_BULLET);
+        lv_obj_set_style_text_color(
+            now_queue_view.icons[row],
+            lv_color_hex(current_row ? COLOR_CYAN : COLOR_WHITE), 0);
+        lv_obj_set_style_text_opa(
+            now_queue_view.icons[row], current_row ? 245 : 75, 0);
+        lv_obj_set_style_bg_color(
+            now_queue_view.rows[row], lv_color_hex(COLOR_WHITE), 0);
+        lv_obj_set_style_bg_opa(
+            now_queue_view.rows[row], selected ? 41 : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_text_opa(
+            now_queue_view.titles[row], selected ? 255 : 220, 0);
+        lv_obj_set_style_text_opa(
+            now_queue_view.artists[row], selected ? 190 : 140, 0);
+    }
+    now_queue_generation_seen = crazypod_queue_generation();
+}
+
+static void show_now_queue_popup(void)
+{
+    lv_obj_t *source_icon;
+    lv_obj_t *source_title;
+    int row;
+
+    if(now_overlay == NOW_OVERLAY_NONE)
+        prepare_now_overlay_glass();
+    begin_now_overlay(NOW_OVERLAY_QUEUE);
+    if(crazypod_queue_count() > 0 &&
+       (now_queue_selected < 0 ||
+        now_queue_selected >= crazypod_queue_count()))
+        now_queue_selected = crazypod_queue_index();
+    if(crazypod_queue_count() > 0)
+        prefetch_now_queue_artwork(now_queue_selected);
+
+    now_overlay_panel = make_now_glass_panel(
+        CRAZYPOD_NOW_POPUP_X, CRAZYPOD_NOW_POPUP_Y,
+        CRAZYPOD_NOW_POPUP_WIDTH, CRAZYPOD_NOW_POPUP_HEIGHT);
+    now_queue_view.mode = make_label(
+        now_overlay_panel, "",
+        &lv_font_montserrat_10,
+        COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(now_queue_view.mode, 14, 12);
+    now_queue_view.count = make_label(
+        now_overlay_panel, "0/0",
+        &lv_font_montserrat_8,
+        COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(now_queue_view.count, 54);
+    lv_obj_set_style_text_align(
+        now_queue_view.count, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(now_queue_view.count, 182, 14);
+
+    source_icon = make_label(now_overlay_panel, LV_SYMBOL_AUDIO,
+                             &lv_font_montserrat_10,
+                             COLOR_WHITE, 225);
+    lv_obj_set_pos(source_icon, 14, 35);
+    source_title = make_label(now_overlay_panel, "Local Queue",
+                              &lv_font_montserrat_8,
+                              COLOR_WHITE, 220);
+    lv_obj_set_pos(source_title, 34, 36);
+    now_queue_view.empty = make_label(
+        now_overlay_panel, "No Queue",
+        CRAZYPOD_METADATA_FONT,
+        COLOR_WHITE, 225);
+    lv_obj_set_width(now_queue_view.empty, 222);
+    lv_obj_set_style_text_align(
+        now_queue_view.empty, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(now_queue_view.empty, 14, 101);
+
+    for(row = 0; row < 3; ++row) {
+        int y = 58 + row * 36;
+        now_queue_view.rows[row] = make_box(
+            now_overlay_panel, 14, y, 222, 32, 6,
+            COLOR_WHITE, LV_OPA_TRANSP);
+        now_queue_view.icons[row] = make_label(
+            now_queue_view.rows[row], LV_SYMBOL_BULLET,
+            &lv_font_montserrat_10,
+            COLOR_WHITE, 75);
+        lv_obj_set_width(now_queue_view.icons[row], 18);
+        lv_obj_set_style_text_align(
+            now_queue_view.icons[row], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(now_queue_view.icons[row], 7, 11);
+        now_queue_view.titles[row] = make_label(
+            now_queue_view.rows[row], "",
+            CRAZYPOD_METADATA_FONT,
+            COLOR_WHITE, 220);
+        lv_obj_set_pos(now_queue_view.titles[row], 32, 1);
+        lv_obj_set_size(now_queue_view.titles[row], 181, 16);
+        lv_label_set_long_mode(
+            now_queue_view.titles[row], LV_LABEL_LONG_MODE_DOTS);
+        now_queue_view.artists[row] = make_label(
+            now_queue_view.rows[row], "",
+            CRAZYPOD_METADATA_FONT,
+            COLOR_WHITE, 140);
+        lv_obj_set_pos(now_queue_view.artists[row], 32, 16);
+        lv_obj_set_size(now_queue_view.artists[row], 181, 15);
+        lv_label_set_long_mode(
+            now_queue_view.artists[row], LV_LABEL_LONG_MODE_DOTS);
+    }
+    refresh_now_queue_popup();
+    animate_now_popup(now_overlay_panel, CRAZYPOD_NOW_POPUP_Y);
+}
+
+static void refresh_now_volume_popup(void)
+{
+    int percent = now_volume_percent();
+    char text[16];
+
+    if(now_volume_view.fill == NULL)
+        return;
+    lv_obj_set_width(now_volume_view.fill,
+                     percent > 0 ? 2 + 176 * percent / 100 : 2);
+    snprintf(text, sizeof(text), "%d%%", percent);
+    lv_label_set_text(now_volume_view.percent, text);
+    lv_label_set_text(now_volume_view.icon,
+                      percent <= 0 ? LV_SYMBOL_MUTE
+                                   : LV_SYMBOL_VOLUME_MAX);
+}
+
+static void show_now_volume_popup(void)
+{
+    lv_obj_t *title;
+    lv_obj_t *track;
+
+    if(now_overlay == NOW_OVERLAY_NONE)
+        prepare_now_overlay_glass();
+    begin_now_overlay(NOW_OVERLAY_VOLUME);
+    now_overlay_panel = make_now_glass_panel(35, 65, 250, 110);
+    title = make_label(now_overlay_panel, "VOLUME",
+                       &lv_font_montserrat_10,
+                       COLOR_WHITE, 100);
+    lv_obj_set_width(title, 250);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(title, 0, 14);
+    now_volume_view.icon = make_label(
+        now_overlay_panel, LV_SYMBOL_VOLUME_MAX,
+        &lv_font_montserrat_16,
+        COLOR_WHITE, 235);
+    lv_obj_set_pos(now_volume_view.icon, 23, 47);
+    track = make_box(now_overlay_panel, 53, 51, 180, 8,
+                     LV_RADIUS_CIRCLE, COLOR_WHITE, 26);
+    now_volume_view.fill = make_box(
+        track, 0, 0, 2, 8, LV_RADIUS_CIRCLE,
+        COLOR_CYAN, LV_OPA_COVER);
+    now_volume_view.percent = make_label(
+        now_overlay_panel, "0%",
+        &lv_font_montserrat_10,
+        COLOR_WHITE, 220);
+    lv_obj_set_width(now_volume_view.percent, 180);
+    lv_obj_set_style_text_align(
+        now_volume_view.percent, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(now_volume_view.percent, 53, 72);
+    refresh_now_volume_popup();
+    animate_now_popup(now_overlay_panel, 65);
+}
+
+static void restore_now_overlay(enum now_playing_overlay overlay)
+{
+    if(overlay == NOW_OVERLAY_ACTIONS)
+        show_now_actions_popup();
+    else if(overlay == NOW_OVERLAY_QUEUE)
+        show_now_queue_popup();
+    else if(overlay == NOW_OVERLAY_VOLUME)
+        show_now_volume_popup();
+}
+
+static void dismiss_now_overlay(bool refresh_now_playing)
+{
+    if(now_overlay_root != NULL) {
+        lv_anim_delete(now_overlay_panel, NULL);
+        lv_obj_delete(now_overlay_root);
+    }
+    now_overlay = NOW_OVERLAY_NONE;
+    clear_now_overlay_objects();
+    if(refresh_now_playing && product_active && route_depth > 0 &&
+       current_route()->route == MUSIC_ROUTE_NOW_PLAYING)
+        render_current_route(false);
+}
+
 static void animate_content_entrance(void)
 {
     lv_obj_set_x(product_content, 0);
@@ -2371,15 +4247,22 @@ static void animate_content_entrance(void)
 static void render_current_route(bool transition)
 {
     struct route_state *state = current_route();
+    const lv_image_dsc_t *menu_wallpaper;
     int i;
 
     if(crazypod_coverflow_active())
         crazypod_coverflow_leave();
+    now_overlay = NOW_OVERLAY_NONE;
+    clear_now_overlay_objects();
     memset(&menu_view, 0, sizeof(menu_view));
     route_render_pending = false;
     now_progress_fill = NULL;
     now_elapsed = NULL;
     now_remaining = NULL;
+    now_wave_surface = NULL;
+    now_lyrics_previous = NULL;
+    now_lyrics_current = NULL;
+    now_lyrics_next = NULL;
     music_loading_title = NULL;
     music_loading_detail = NULL;
     album_flow_title = NULL;
@@ -2404,6 +4287,13 @@ static void render_current_route(bool transition)
     lv_obj_set_style_bg_opa(product_content, LV_OPA_COVER, 0);
     make_box(product_content, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0,
              crazypod_appearance_menu_color(), LV_OPA_COVER);
+    menu_wallpaper = crazypod_custom_menu_wallpaper();
+    if(menu_wallpaper != NULL) {
+        lv_obj_t *image = lv_image_create(product_content);
+        lv_image_set_src(image, menu_wallpaper);
+        lv_obj_set_pos(image, 0, 0);
+        lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
+    }
 
     if(state->route == MUSIC_ROUTE_NOW_PLAYING)
         render_now_playing();
@@ -2417,6 +4307,7 @@ static void render_current_route(bool transition)
         animate_content_entrance();
     lv_obj_move_foreground(status_bars[1].time);
     lv_obj_move_foreground(status_bars[1].playing);
+    refresh_screen_corner_masks();
 }
 
 static void render_loading(void)
@@ -2433,7 +4324,9 @@ static void render_loading(void)
     lv_obj_set_pos(symbol, 148, 91);
     music_loading_title = make_label(
         product_content,
-        music_scan_start_failed
+        music_artwork_cache_failed
+            ? "Artwork Cache Failed"
+            : music_scan_start_failed
             ? "Library Scan Failed"
             : music_artwork_preparing
                 ? "Preparing Album Artwork"
@@ -2451,7 +4344,9 @@ static void render_loading(void)
     }
     else {
         snprintf(detail, sizeof(detail), "%s",
-                 music_scan_start_failed
+                 music_artwork_cache_failed
+                     ? "Could not write the CoverFlow cache"
+                 : music_scan_start_failed
                      ? "No background thread was available"
                      : "Reading local files and metadata");
     }
@@ -2483,6 +4378,7 @@ static void begin_music_scan(void)
         music_library_loaded = false;
         music_scan_screen = true;
         music_artwork_preparing = true;
+        music_artwork_cache_failed = false;
         crazypod_artwork_prime_library();
         render_loading();
         lv_refr_now(NULL);
@@ -2492,6 +4388,7 @@ static void begin_music_scan(void)
     music_library_loaded = false;
     music_scan_screen = true;
     music_scan_start_failed = false;
+    music_artwork_cache_failed = false;
     music_scan_generation_seen = crazypod_music_scan_generation();
     render_loading();
     lv_refr_now(NULL);
@@ -2510,6 +4407,7 @@ static void service_music_scan(void)
     music_scan_pending = false;
     music_scan_generation_seen = crazypod_music_scan_generation();
     music_artwork_preparing = false;
+    music_artwork_cache_failed = false;
     crazypod_artwork_cancel_library_prime();
     if(!crazypod_music_scan_async()) {
         music_scan_start_failed = true;
@@ -2674,6 +4572,43 @@ static void play_selected_track(struct route_state *state)
     }
 }
 
+static void activate_now_overlay(void)
+{
+    if(now_overlay == NOW_OVERLAY_ACTIONS) {
+        if(now_action_selected == NOW_ACTION_QUEUE) {
+            now_queue_selected = crazypod_queue_count() > 0
+                ? crazypod_queue_index() : 0;
+            show_now_queue_popup();
+        }
+        else if(now_action_selected == NOW_ACTION_PLAYBACK) {
+            cycle_playback_mode();
+            refresh_now_actions_popup();
+        }
+        else if(now_action_selected == NOW_ACTION_LYRICS) {
+            now_lyrics_mode = !now_lyrics_mode;
+            render_current_route(false);
+            show_now_actions_popup();
+        }
+        else {
+            show_now_volume_popup();
+        }
+        return;
+    }
+    if(now_overlay == NOW_OVERLAY_QUEUE) {
+        if(now_queue_selected >= 0 &&
+           now_queue_selected < crazypod_queue_count()) {
+            playlist_start(now_queue_selected, 0, 0);
+            crazypod_state_forget_resume();
+            crazypod_state_mark_dirty();
+            render_current_route(false);
+            show_now_queue_popup();
+        }
+        return;
+    }
+    if(now_overlay == NOW_OVERLAY_VOLUME)
+        dismiss_now_overlay(true);
+}
+
 static void editor_append(char *buffer, size_t size, const char *text)
 {
     size_t used = strlen(buffer);
@@ -2701,6 +4636,12 @@ static void editor_backspace(char *buffer)
 static void activate_selected(void)
 {
     struct route_state *state = current_route();
+
+    if(state->route == MUSIC_ROUTE_NOW_PLAYING &&
+       now_overlay != NOW_OVERLAY_NONE) {
+        activate_now_overlay();
+        return;
+    }
     switch(state->route) {
     case MUSIC_ROUTE_MENU:
         switch(state->selected) {
@@ -2746,10 +4687,8 @@ static void activate_selected(void)
         push_route(MUSIC_ROUTE_ALBUM_SONGS, state->selected);
         break;
     case MUSIC_ROUTE_NOW_PLAYING:
-        push_route(MUSIC_ROUTE_QUEUE, -1);
-        if(crazypod_queue_count() > 0)
-            current_route()->selected = crazypod_queue_index();
-        render_current_route(false);
+        now_action_selected = NOW_ACTION_QUEUE;
+        show_now_actions_popup();
         break;
     case DIY_ROUTE_MENU:
         if(state->selected == 0)
@@ -2758,8 +4697,10 @@ static void activate_selected(void)
             push_route(DIY_ROUTE_ICONS, -1);
         else if(state->selected == 2)
             push_route(DIY_ROUTE_DETAILS, -1);
-        else
+        else if(state->selected == 3)
             push_route(DIY_ROUTE_BACKGROUNDS, -1);
+        else
+            push_route(DIY_ROUTE_LAYOUT, -1);
         break;
     case DIY_ROUTE_PRESETS:
         if(state->selected == 0) {
@@ -2791,6 +4732,7 @@ static void activate_selected(void)
         }
         if(state->selected == 0) {
             crazypod_preset_apply(state->group);
+            crazypod_wallpaper_reload_custom();
             refresh_desktop_appearance();
             render_current_route(false);
         }
@@ -2844,27 +4786,74 @@ static void activate_selected(void)
         render_current_route(false);
         break;
     case DIY_ROUTE_DETAILS: {
-        static const enum crazypod_appearance_field fields[] = {
-            CRAZYPOD_APPEARANCE_PLAYER_STYLE,
-            CRAZYPOD_APPEARANCE_ICON_SCALE,
-            CRAZYPOD_APPEARANCE_GLOW,
-            CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE,
-            CRAZYPOD_APPEARANCE_PRIMARY,
-            CRAZYPOD_APPEARANCE_SECONDARY,
-        };
-        crazypod_appearance_cycle(fields[state->selected]);
+        enum crazypod_appearance_field field =
+            diy_detail_fields[state->selected];
+        push_route_selected(DIY_ROUTE_CHOICES, field,
+                            appearance_choice_index(field));
+        break;
+    }
+    case DIY_ROUTE_CHOICES: {
+        enum crazypod_appearance_field field =
+            (enum crazypod_appearance_field)state->group;
+        int value = appearance_choice_value(field, state->selected);
+        crazypod_appearance_set_value(field, value);
         refresh_desktop_appearance();
         render_current_route(false);
         break;
     }
-    case DIY_ROUTE_BACKGROUNDS:
-        crazypod_appearance_cycle(
-            state->selected == 0
-                ? CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-                : CRAZYPOD_APPEARANCE_MENU_BACKGROUND);
-        refresh_desktop_appearance();
-        render_current_route(false);
+    case DIY_ROUTE_BACKGROUNDS: {
+        enum crazypod_appearance_field field = state->selected == 0
+            ? CRAZYPOD_APPEARANCE_HOME_BACKGROUND
+            : CRAZYPOD_APPEARANCE_MENU_BACKGROUND;
+        const struct crazypod_appearance *appearance =
+            crazypod_appearance_get();
+        const char *path = state->selected == 0
+            ? appearance->home_wallpaper : appearance->menu_wallpaper;
+        int selected = path[0] != '\0'
+            ? CRAZYPOD_APPEARANCE_COLOR_COUNT + 1
+            : appearance_field_value(field);
+        push_route_selected(DIY_ROUTE_BACKGROUND_CHOICES,
+                            field, selected);
         break;
+    }
+    case DIY_ROUTE_BACKGROUND_CHOICES: {
+        enum crazypod_appearance_field field =
+            (enum crazypod_appearance_field)state->group;
+        bool menu = field == CRAZYPOD_APPEARANCE_MENU_BACKGROUND;
+        if(state->selected ==
+           CRAZYPOD_APPEARANCE_COLOR_COUNT + 1) {
+            scan_wallpaper_files();
+            push_route(DIY_ROUTE_WALLPAPER_FILES, field);
+        }
+        else {
+            crazypod_wallpaper_clear(menu);
+            crazypod_appearance_set_value(field, state->selected);
+            refresh_desktop_appearance();
+            render_current_route(false);
+        }
+        break;
+    }
+    case DIY_ROUTE_WALLPAPER_FILES: {
+        bool menu =
+            state->group == CRAZYPOD_APPEARANCE_MENU_BACKGROUND;
+        if(state->selected >= 0 &&
+           state->selected < diy_wallpaper_file_count &&
+           crazypod_wallpaper_select(
+               menu, diy_wallpaper_files[state->selected])) {
+            refresh_desktop_appearance();
+            pop_route();
+        }
+        else
+            render_current_route(false);
+        break;
+    }
+    case DIY_ROUTE_LAYOUT: {
+        enum crazypod_appearance_field field =
+            diy_layout_fields[state->selected];
+        push_route_selected(DIY_ROUTE_CHOICES, field,
+                            appearance_choice_index(field));
+        break;
+    }
     default:
         play_selected_track(state);
         break;
@@ -2877,14 +4866,43 @@ static void move_selection(int direction)
     int count = route_item_count(state);
 
     if(state->route == MUSIC_ROUTE_NOW_PLAYING) {
-        int next_volume = global_status.volume + direction * 2;
-        if(next_volume < sound_min(SOUND_VOLUME))
-            next_volume = sound_min(SOUND_VOLUME);
-        if(next_volume > sound_max(SOUND_VOLUME))
-            next_volume = sound_max(SOUND_VOLUME);
-        sound_set_volume(next_volume);
-        global_status.volume = next_volume;
-        crazypod_state_mark_dirty();
+        if(now_overlay == NOW_OVERLAY_ACTIONS) {
+            int next = now_action_selected + direction;
+            if(next < 0)
+                next = 0;
+            if(next >= NOW_ACTION_COUNT)
+                next = NOW_ACTION_COUNT - 1;
+            if(next != now_action_selected) {
+                now_action_selected = next;
+                refresh_now_actions_popup();
+            }
+        }
+        else if(now_overlay == NOW_OVERLAY_QUEUE) {
+            int next = now_queue_selected + direction;
+            int queue_count = crazypod_queue_count();
+            if(queue_count <= 0)
+                return;
+            if(next < 0)
+                next = 0;
+            if(next >= queue_count)
+                next = queue_count - 1;
+            if(next != now_queue_selected) {
+                now_queue_selected = next;
+                prefetch_now_queue_artwork(now_queue_selected);
+                refresh_now_queue_popup();
+            }
+        }
+        else if(now_overlay == NOW_OVERLAY_VOLUME) {
+            int next_volume = global_status.volume + direction * 2;
+            if(next_volume < sound_min(SOUND_VOLUME))
+                next_volume = sound_min(SOUND_VOLUME);
+            if(next_volume > sound_max(SOUND_VOLUME))
+                next_volume = sound_max(SOUND_VOLUME);
+            sound_set_volume(next_volume);
+            global_status.volume = next_volume;
+            crazypod_state_mark_dirty();
+            refresh_now_volume_popup();
+        }
         return;
     }
     if(count <= 0)
@@ -2927,6 +4945,8 @@ static void toggle_playback(void)
     else
         playlist_start(crazypod_queue_index(),
                        crazypod_state_take_resume_elapsed(), 0);
+    if(now_overlay == NOW_OVERLAY_QUEUE)
+        refresh_now_queue_popup();
 }
 
 static void cycle_playback_mode(void)
@@ -2946,9 +4966,36 @@ static void cycle_playback_mode(void)
         crazypod_queue_set_repeat(REPEAT_OFF);
     }
     crazypod_state_mark_dirty();
-    if(route_depth > 0 &&
-       current_route()->route == MUSIC_ROUTE_NOW_PLAYING)
+    if(now_overlay == NOW_OVERLAY_ACTIONS)
+        refresh_now_actions_popup();
+    else if(now_overlay == NOW_OVERLAY_QUEUE)
+        refresh_now_queue_popup();
+    else if(route_depth > 0 &&
+            current_route()->route == MUSIC_ROUTE_NOW_PLAYING)
         render_current_route(false);
+}
+
+static void set_label_text_if_changed(lv_obj_t *label, const char *text)
+{
+    if(label == NULL || text == NULL)
+        return;
+    if(strcmp(lv_label_get_text(label), text) != 0)
+        lv_label_set_text(label, text);
+}
+
+static void refresh_now_playing_lyrics(uint32_t elapsed_ms)
+{
+    const char *previous;
+    const char *current;
+    const char *next;
+
+    if(!now_lyrics_mode || now_lyrics_current == NULL ||
+       !crazypod_lyrics_available())
+        return;
+    crazypod_lyrics_window(elapsed_ms, &previous, &current, &next);
+    set_label_text_if_changed(now_lyrics_previous, previous);
+    set_label_text_if_changed(now_lyrics_current, current);
+    set_label_text_if_changed(now_lyrics_next, next);
 }
 
 static void update_playback_ui(lv_timer_t *timer)
@@ -2963,6 +5010,7 @@ static void update_playback_ui(lv_timer_t *timer)
         music_library_loaded = false;
         if(crazypod_music_track_count() > 0) {
             music_artwork_preparing = true;
+            music_artwork_cache_failed = false;
             crazypod_artwork_prime_library();
             if(music_scan_screen)
                 render_loading();
@@ -2983,6 +5031,13 @@ static void update_playback_ui(lv_timer_t *timer)
                      crazypod_artwork_library_prime_completed(),
                      crazypod_artwork_library_prime_total());
             lv_label_set_text(music_loading_detail, progress);
+        }
+        if(crazypod_artwork_library_prime_failed()) {
+            music_artwork_preparing = false;
+            music_artwork_cache_failed = true;
+            if(music_scan_screen)
+                render_loading();
+            return;
         }
         if(!crazypod_artwork_library_priming()) {
             if(!crazypod_coverflow_warm(initial_album_index()))
@@ -3031,13 +5086,23 @@ static void update_playback_ui(lv_timer_t *timer)
         return;
 
     if(track != NULL && strcmp(rendered_track_path, track->path) != 0) {
+        enum now_playing_overlay overlay = now_overlay;
         render_current_route(false);
+        restore_now_overlay(overlay);
         return;
     }
     if(track == NULL && rendered_track_path[0] != '\0') {
+        enum now_playing_overlay overlay = now_overlay;
         render_current_route(false);
+        restore_now_overlay(overlay);
         return;
     }
+
+    if(now_overlay == NOW_OVERLAY_QUEUE &&
+       now_queue_generation_seen != crazypod_queue_generation())
+        refresh_now_queue_popup();
+    if(id3 != NULL)
+        refresh_now_playing_lyrics((uint32_t)id3->elapsed);
 
     if(id3 != NULL && id3->length > 0 && now_progress_fill != NULL) {
         int width = 284 * id3->elapsed / id3->length;
@@ -3049,7 +5114,7 @@ static void update_playback_ui(lv_timer_t *timer)
             width = 4;
         if(width > 284)
             width = 284;
-        lv_obj_set_x(now_progress_fill, 18 + width);
+        lv_obj_set_width(now_progress_fill, width);
         format_time_ms(id3->elapsed, elapsed, sizeof(elapsed));
         format_time_ms(left, remaining + 1, sizeof(remaining) - 1);
         remaining[0] = '-';
@@ -3071,13 +5136,24 @@ static void process_artwork_updates(void)
        crazypod_coverflow_active() ||
        current_route()->route >= DIY_ROUTE_MENU)
         return;
+    if(current_route()->route == MUSIC_ROUTE_NOW_PLAYING &&
+       now_overlay != NOW_OVERLAY_NONE)
+        return;
 
     if(current_route()->route == MUSIC_ROUTE_NOW_PLAYING) {
+        unsigned prefetch_generation =
+            crazypod_artwork_slot_generation(
+                CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT);
+
         generation = crazypod_artwork_slot_generation(
             CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT);
-        if(generation == now_artwork_generation_seen)
+        if(generation == now_artwork_generation_seen &&
+           prefetch_generation ==
+               now_prefetch_artwork_generation_seen)
             return;
         now_artwork_generation_seen = generation;
+        now_prefetch_artwork_generation_seen =
+            prefetch_generation;
     }
     else {
         generation = crazypod_artwork_slot_generation(
@@ -3214,13 +5290,22 @@ static void handle_button(long button, intptr_t data)
         return;
     }
 
+    if(current_route()->route == MUSIC_ROUTE_NOW_PLAYING &&
+       now_overlay != NOW_OVERLAY_NONE &&
+       base == BUTTON_MENU && !repeated) {
+        dismiss_now_overlay(true);
+        return;
+    }
+
     if(base == BUTTON_SCROLL_FWD)
         move_selection(wheel_step(
             data,
+            current_route()->route == MUSIC_ROUTE_NOW_PLAYING ? 1 :
             current_route()->route == MUSIC_ROUTE_ALBUM_FLOW ? 8 : 12));
     else if(base == BUTTON_SCROLL_BACK)
         move_selection(-wheel_step(
             data,
+            current_route()->route == MUSIC_ROUTE_NOW_PLAYING ? 1 :
             current_route()->route == MUSIC_ROUTE_ALBUM_FLOW ? 8 : 12));
     else if(base == BUTTON_RIGHT) {
         if(current_route()->route == MUSIC_ROUTE_NOW_PLAYING)
@@ -3235,9 +5320,7 @@ static void handle_button(long button, intptr_t data)
             move_selection(-1);
     }
     else if(base == BUTTON_SELECT) {
-        if(current_route()->route == MUSIC_ROUTE_NOW_PLAYING && repeated)
-            cycle_playback_mode();
-        else if(!repeated)
+        if(!repeated)
             activate_selected();
     }
     else if(base == BUTTON_MENU) {
@@ -3434,6 +5517,9 @@ void crazypod_ui_run(void)
     now_artwork_generation_seen =
         crazypod_artwork_slot_generation(
             CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT);
+    now_prefetch_artwork_generation_seen =
+        crazypod_artwork_slot_generation(
+            CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT);
     capsule_artwork_generation_seen =
         crazypod_artwork_slot_generation(CRAZYPOD_CAPSULE_ARTWORK_SLOT);
 
@@ -3458,6 +5544,7 @@ void crazypod_ui_run(void)
         process_deferred_route_render();
         process_artwork_updates();
         tick_desktop_carousel();
+        tick_now_playing_wave();
         lv_timer_handler();
         render_desktop_carousel_native();
         crazypod_coverflow_tick();

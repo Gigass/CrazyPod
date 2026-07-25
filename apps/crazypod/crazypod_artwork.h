@@ -19,6 +19,7 @@ void crazypod_artwork_init(void);
 void crazypod_artwork_prime_library(void);
 void crazypod_artwork_cancel_library_prime(void);
 bool crazypod_artwork_library_priming(void);
+bool crazypod_artwork_library_prime_failed(void);
 int crazypod_artwork_library_prime_completed(void);
 int crazypod_artwork_library_prime_total(void);
 void crazypod_artwork_suspend(void);

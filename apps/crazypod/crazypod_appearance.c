@@ -2,6 +2,7 @@
 
 #ifdef IPOD_6G
 
+#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -14,13 +15,33 @@
 #define APPEARANCE_PATH APPEARANCE_DIRECTORY "/appearance.bin"
 #define APPEARANCE_TEMP_PATH APPEARANCE_DIRECTORY "/appearance.tmp"
 #define APPEARANCE_MAGIC 0x43504150u
-#define APPEARANCE_VERSION 1u
+#define APPEARANCE_VERSION 2u
+
+struct crazypod_appearance_v1 {
+    int icon_theme;
+    int icon_scale;
+    int player_style;
+    int glow;
+    int highlight_style;
+    int primary_color;
+    int secondary_color;
+    int home_background;
+    int menu_background;
+};
 
 struct appearance_disk {
     uint32_t magic;
     uint32_t version;
     uint32_t size;
     struct crazypod_appearance value;
+    uint32_t checksum;
+};
+
+struct appearance_disk_v1 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    struct crazypod_appearance_v1 value;
     uint32_t checksum;
 };
 
@@ -63,6 +84,27 @@ static uint32_t disk_checksum(const struct appearance_disk *disk)
     return hash_bytes(&copy, sizeof(copy));
 }
 
+static uint32_t disk_v1_checksum(const struct appearance_disk_v1 *disk)
+{
+    struct appearance_disk_v1 copy = *disk;
+    copy.checksum = 0;
+    return hash_bytes(&copy, sizeof(copy));
+}
+
+static bool valid_wallpaper_path(const char *path)
+{
+    size_t length = 0;
+
+    if(path == NULL)
+        return false;
+    while(length < CRAZYPOD_WALLPAPER_PATH_SIZE &&
+          path[length] != '\0')
+        ++length;
+    if(length >= CRAZYPOD_WALLPAPER_PATH_SIZE)
+        return false;
+    return length == 0 || path[0] == '/';
+}
+
 bool crazypod_appearance_valid(const struct crazypod_appearance *value)
 {
     if(value == NULL)
@@ -70,7 +112,6 @@ bool crazypod_appearance_valid(const struct crazypod_appearance *value)
     return value->icon_theme >= 0 &&
            value->icon_theme < CRAZYPOD_ICON_THEME_COUNT &&
            value->icon_scale >= 0 && value->icon_scale < 5 &&
-           value->player_style >= 0 && value->player_style < 2 &&
            value->glow >= 0 && value->glow < 4 &&
            value->highlight_style >= 0 && value->highlight_style < 2 &&
            value->primary_color >= 0 &&
@@ -80,12 +121,20 @@ bool crazypod_appearance_valid(const struct crazypod_appearance *value)
            value->home_background >= 0 &&
            value->home_background <= CRAZYPOD_APPEARANCE_COLOR_COUNT &&
            value->menu_background >= 0 &&
-           value->menu_background <= CRAZYPOD_APPEARANCE_COLOR_COUNT;
+           value->menu_background <= CRAZYPOD_APPEARANCE_COLOR_COUNT &&
+           value->screen_top_radius >= 0 &&
+           value->screen_top_radius <= 32 &&
+           value->screen_bottom_radius >= 0 &&
+           value->screen_bottom_radius <= 32 &&
+           valid_wallpaper_path(value->home_wallpaper) &&
+           valid_wallpaper_path(value->menu_wallpaper);
 }
 
 void crazypod_appearance_load(void)
 {
     struct appearance_disk disk;
+    struct appearance_disk_v1 disk_v1;
+    uint32_t header[3];
     int fd;
 
     memset(&appearance, 0, sizeof(appearance));
@@ -98,13 +147,37 @@ void crazypod_appearance_load(void)
     fd = open(APPEARANCE_PATH, O_RDONLY);
     if(fd < 0)
         return;
-    if(read(fd, &disk, sizeof(disk)) == (ssize_t)sizeof(disk) &&
-       disk.magic == APPEARANCE_MAGIC &&
-       disk.version == APPEARANCE_VERSION &&
-       disk.size == sizeof(disk) &&
+    if(read(fd, header, sizeof(header)) != (ssize_t)sizeof(header) ||
+       lseek(fd, 0, SEEK_SET) < 0) {
+        close(fd);
+        return;
+    }
+    if(header[0] == APPEARANCE_MAGIC &&
+       header[1] == APPEARANCE_VERSION &&
+       header[2] == sizeof(disk) &&
+       read(fd, &disk, sizeof(disk)) == (ssize_t)sizeof(disk) &&
        disk.checksum == disk_checksum(&disk) &&
-       crazypod_appearance_valid(&disk.value))
+       crazypod_appearance_valid(&disk.value)) {
         appearance = disk.value;
+    }
+    else if(header[0] == APPEARANCE_MAGIC &&
+            header[1] == 1u &&
+            header[2] == sizeof(disk_v1) &&
+            lseek(fd, 0, SEEK_SET) >= 0 &&
+            read(fd, &disk_v1, sizeof(disk_v1)) ==
+                (ssize_t)sizeof(disk_v1) &&
+            disk_v1.checksum == disk_v1_checksum(&disk_v1)) {
+        appearance.icon_theme = disk_v1.value.icon_theme;
+        appearance.icon_scale = disk_v1.value.icon_scale;
+        appearance.glow = disk_v1.value.glow;
+        appearance.highlight_style = disk_v1.value.highlight_style;
+        appearance.primary_color = disk_v1.value.primary_color;
+        appearance.secondary_color = disk_v1.value.secondary_color;
+        appearance.home_background = disk_v1.value.home_background;
+        appearance.menu_background = disk_v1.value.menu_background;
+        if(crazypod_appearance_valid(&appearance))
+            crazypod_appearance_save();
+    }
     close(fd);
 }
 
@@ -147,47 +220,48 @@ bool crazypod_appearance_set(const struct crazypod_appearance *value)
     return true;
 }
 
-void crazypod_appearance_cycle(enum crazypod_appearance_field field)
+bool crazypod_appearance_set_value(enum crazypod_appearance_field field,
+                                   int value)
 {
+    struct crazypod_appearance next = appearance;
+
     switch(field) {
     case CRAZYPOD_APPEARANCE_ICON_THEME:
-        appearance.icon_theme =
-            (appearance.icon_theme + 1) % CRAZYPOD_ICON_THEME_COUNT;
+        next.icon_theme = value;
         break;
     case CRAZYPOD_APPEARANCE_ICON_SCALE:
-        appearance.icon_scale = (appearance.icon_scale + 1) % 5;
-        break;
-    case CRAZYPOD_APPEARANCE_PLAYER_STYLE:
-        appearance.player_style ^= 1;
+        next.icon_scale = value;
         break;
     case CRAZYPOD_APPEARANCE_GLOW:
-        appearance.glow = (appearance.glow + 1) % 4;
+        next.glow = value;
         break;
     case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE:
-        appearance.highlight_style ^= 1;
+        next.highlight_style = value;
         break;
     case CRAZYPOD_APPEARANCE_PRIMARY:
-        appearance.primary_color =
-            (appearance.primary_color + 1) %
-            CRAZYPOD_APPEARANCE_COLOR_COUNT;
+        next.primary_color = value;
         break;
     case CRAZYPOD_APPEARANCE_SECONDARY:
-        appearance.secondary_color =
-            (appearance.secondary_color + 1) %
-            CRAZYPOD_APPEARANCE_COLOR_COUNT;
+        next.secondary_color = value;
         break;
     case CRAZYPOD_APPEARANCE_HOME_BACKGROUND:
-        appearance.home_background =
-            (appearance.home_background + 1) %
-            (CRAZYPOD_APPEARANCE_COLOR_COUNT + 1);
+        next.home_background = value;
         break;
     case CRAZYPOD_APPEARANCE_MENU_BACKGROUND:
-        appearance.menu_background =
-            (appearance.menu_background + 1) %
-            (CRAZYPOD_APPEARANCE_COLOR_COUNT + 1);
+        next.menu_background = value;
+        break;
+    case CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS:
+        next.screen_top_radius = value;
+        break;
+    case CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS:
+        next.screen_bottom_radius = value;
         break;
     }
+    if(!crazypod_appearance_valid(&next))
+        return false;
+    appearance = next;
     crazypod_appearance_save();
+    return true;
 }
 
 void crazypod_appearance_set_icon_theme(int theme)
@@ -196,6 +270,21 @@ void crazypod_appearance_set_icon_theme(int theme)
         return;
     appearance.icon_theme = theme;
     crazypod_appearance_save();
+}
+
+bool crazypod_appearance_set_wallpaper(bool menu, const char *path)
+{
+    struct crazypod_appearance next = appearance;
+    char *target = menu ? next.menu_wallpaper : next.home_wallpaper;
+
+    if(!valid_wallpaper_path(path))
+        return false;
+    snprintf(target, CRAZYPOD_WALLPAPER_PATH_SIZE, "%s", path);
+    if(!crazypod_appearance_valid(&next))
+        return false;
+    appearance = next;
+    crazypod_appearance_save();
+    return true;
 }
 
 const char *crazypod_icon_theme_name(int theme)

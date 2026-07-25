@@ -18,8 +18,10 @@ low-level services.
   repeat, resume persistence, album artwork, codec playback, and PCM output.
 - Network music, online lyrics, and network import are intentionally excluded.
 - Customize implements the firmware-applicable part of MaxPod DIY: 16 icon
-  themes, icon scale, player style, glow, highlight colors, backgrounds, and
-  persistent appearance presets with validated `.upodtheme` import/export.
+  themes, icon scale, glow, highlight colors, independent top/bottom screen
+  corner radii, Home/Menu wallpaper selection from `/Pictures`, and persistent
+  appearance presets with validated `.upodtheme` import/export. Each setting
+  opens a chooser before applying a value.
   Chassis and click-wheel customization are intentionally excluded because
   firmware cannot change physical hardware.
 - Shuffle is a functional local-music shortcut. Every application other than
