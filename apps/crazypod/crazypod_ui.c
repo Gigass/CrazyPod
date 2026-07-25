@@ -992,13 +992,33 @@ static void create_screen_corner_masks(lv_obj_t *screen, int screen_index)
 
 static void refresh_desktop_capsule_material(void)
 {
+    const lv_image_dsc_t *glass =
+        crazypod_frosted_wallpaper_capsule();
+
     if(desktop_capsule == NULL)
         return;
-    if(desktop_capsule_glass != NULL)
-        lv_obj_add_flag(desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_bg_color(
-        desktop_capsule, lv_color_hex(COLOR_PANEL), 0);
-    lv_obj_set_style_bg_opa(desktop_capsule, LV_OPA_COVER, 0);
+    if(crazypod_appearance_get()->home_wallpaper[0] == '\0' &&
+       crazypod_appearance_get()->home_background == 0 &&
+       glass != NULL) {
+        if(desktop_capsule_glass == NULL) {
+            desktop_capsule_glass = lv_image_create(desktop_capsule);
+            lv_obj_set_pos(desktop_capsule_glass, 0, 0);
+            lv_obj_remove_flag(
+                desktop_capsule_glass, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_move_to_index(desktop_capsule_glass, 0);
+        }
+        lv_image_set_src(desktop_capsule_glass, glass);
+        lv_obj_remove_flag(desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_bg_opa(desktop_capsule, LV_OPA_TRANSP, 0);
+    }
+    else {
+        if(desktop_capsule_glass != NULL)
+            lv_obj_add_flag(
+                desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_bg_color(
+            desktop_capsule, lv_color_hex(COLOR_WHITE), 0);
+        lv_obj_set_style_bg_opa(desktop_capsule, 34, 0);
+    }
 }
 
 static void refresh_desktop_appearance(void)
@@ -2149,11 +2169,11 @@ static void create_now_playing_capsule(void)
     lv_obj_t *wave_ball;
 
     desktop_capsule = make_box(desktop_screen, 8, 174, 304, 58, 29,
-                               COLOR_PANEL, LV_OPA_COVER);
+                               COLOR_WHITE, 34);
     capsule = desktop_capsule;
 
     desktop_capsule_artwork = make_box(
-        capsule, 9, 8, 42, 42, 9, 0x941FFC, LV_OPA_COVER);
+        capsule, 17, 8, 42, 42, 9, 0x941FFC, LV_OPA_COVER);
     lv_obj_set_style_bg_grad_color(
         desktop_capsule_artwork, lv_color_hex(0x2E5CFA), 0);
     lv_obj_set_style_bg_grad_dir(
@@ -2169,7 +2189,7 @@ static void create_now_playing_capsule(void)
 
     desktop_capsule_artwork_symbol = make_label(
         desktop_capsule_artwork, LV_SYMBOL_AUDIO,
-        &lv_font_montserrat_16, COLOR_WHITE, 220);
+        &lv_font_montserrat_16, COLOR_WHITE, LV_OPA_COVER);
     lv_obj_center(desktop_capsule_artwork_symbol);
     desktop_capsule_artwork_path[0] = '\0';
 
@@ -2185,7 +2205,7 @@ static void create_now_playing_capsule(void)
 
     desktop_capsule_artist = make_label(
         capsule, "Local Music", CRAZYPOD_METADATA_FONT,
-        COLOR_WHITE, LV_OPA_COVER);
+        COLOR_WHITE, 190);
     lv_obj_set_pos(desktop_capsule_artist, 60, 25);
     lv_obj_set_width(desktop_capsule_artist, 171);
     lv_obj_set_height(desktop_capsule_artist, 17);
@@ -2195,7 +2215,7 @@ static void create_now_playing_capsule(void)
                            LV_LABEL_LONG_MODE_DOTS);
 
     progress_track = make_box(capsule, 60, 45, 171, 3,
-                              LV_RADIUS_CIRCLE, 0x3A3A42, LV_OPA_COVER);
+                              LV_RADIUS_CIRCLE, COLOR_WHITE, 31);
     desktop_capsule_progress = make_box(
         progress_track, 0, 0, 6, 3, LV_RADIUS_CIRCLE,
         0x2ECC71, LV_OPA_COVER);
@@ -2204,7 +2224,7 @@ static void create_now_playing_capsule(void)
     lv_obj_set_style_bg_grad_dir(desktop_capsule_progress,
                                  LV_GRAD_DIR_HOR, 0);
 
-    wave_ball = make_box(capsule, 245, 8, 42, 42,
+    wave_ball = make_box(capsule, 253, 8, 42, 42,
                          LV_RADIUS_CIRCLE, 0x2ECC71, LV_OPA_COVER);
     lv_obj_set_style_bg_grad_color(wave_ball,
                                    lv_color_hex(COLOR_CYAN), 0);
@@ -2222,8 +2242,8 @@ static void create_now_playing_capsule(void)
                             COLOR_WHITE, LV_OPA_TRANSP);
     lv_obj_set_style_border_width(glass_border, 1, 0);
     lv_obj_set_style_border_color(
-        glass_border, lv_color_hex(0x3A3A42), 0);
-    lv_obj_set_style_border_opa(glass_border, LV_OPA_COVER, 0);
+        glass_border, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(glass_border, 58, 0);
     lv_obj_remove_flag(glass_border, LV_OBJ_FLAG_CLICKABLE);
 }
 
