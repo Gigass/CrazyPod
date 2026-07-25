@@ -28,9 +28,11 @@
 #include "lvgl.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
 
+#include "crazypod_audio_shims.h"
 #include "crazypod_artwork.h"
 #include "crazypod_appearance.h"
 #include "crazypod_coverflow.h"
+#include "crazypod_frameclock.h"
 #include "crazypod_image.h"
 #include "crazypod_icons.h"
 #include "crazypod_lyrics.h"
@@ -87,8 +89,10 @@
 #define CRAZYPOD_METADATA_FONT (&lv_font_source_han_sans_sc_14_cjk)
 #define CRAZYPOD_GESTURE_SETTLE_TICKS \
     ((HZ * 80 / 1000) > 0 ? (HZ * 80 / 1000) : 1)
-#define CRAZYPOD_MOTION_FRAME_PHASES 3
+#define CRAZYPOD_DESKTOP_MOTION_SIM_FPS 60
 #define CRAZYPOD_NOW_WAVE_FRAME_TICKS \
+    ((HZ / 5) > 0 ? (HZ / 5) : 1)
+#define CRAZYPOD_DESKTOP_SPECTRUM_FRAME_TICKS \
     ((HZ / 5) > 0 ? (HZ / 5) : 1)
 #define CRAZYPOD_PHOTO_PAN_STEP 24
 #define CRAZYPOD_PHOTO_FAVORITE_HOLD_TICKS \
@@ -99,6 +103,10 @@
     ((HZ * 6 / 5) > 0 ? (HZ * 6 / 5) : 1)
 #define CRAZYPOD_PHOTO_FAVORITE_PROGRESS_WIDTH 126
 #define CRAZYPOD_PHOTO_TOUCH_MOVE_THRESHOLD 4
+#define CRAZYPOD_WALLPAPER_CROP_HOLD_TICKS \
+    ((HZ / 2) > 0 ? (HZ / 2) : 1)
+#define CRAZYPOD_WALLPAPER_CROP_SUCCESS_TICKS \
+    ((HZ * 2 / 5) > 0 ? (HZ * 2 / 5) : 1)
 #define CRAZYPOD_DESKTOP_NATIVE_TOP 40
 #define CRAZYPOD_DESKTOP_NATIVE_BOTTOM 143
 #define CRAZYPOD_DESKTOP_NATIVE_HEIGHT \
@@ -111,6 +119,24 @@
 #define COLOR_ROSE    0xC94A78
 #define COLOR_VIOLET  0x744BC8
 #define COLOR_CYAN    0x26CFF5
+#define COLOR_GREEN   0x30D158
+#define COLOR_AMBER   0xFFD166
+#define CRAZYPOD_EQ_GAIN_MIN (-240)
+#define CRAZYPOD_EQ_GAIN_MAX 240
+#define CRAZYPOD_EQ_GAIN_STEP 1
+#define CRAZYPOD_EQ_GAIN_FAST_STEP 10
+#define CRAZYPOD_EQ_Q_MIN 1
+#define CRAZYPOD_EQ_Q_MAX 64
+#define CRAZYPOD_EQ_Q_STEP 1
+#define CRAZYPOD_EQ_Q_FAST_STEP 10
+#define CRAZYPOD_EQ_CUTOFF_MIN 20
+#define CRAZYPOD_EQ_CUTOFF_MAX 22040
+#define CRAZYPOD_EQ_CUTOFF_STEP 10
+#define CRAZYPOD_EQ_CUTOFF_FAST_STEP 100
+#define CRAZYPOD_EQ_PRECUT_MIN 0
+#define CRAZYPOD_EQ_PRECUT_MAX 240
+#define CRAZYPOD_EQ_PRECUT_STEP 1
+#define CRAZYPOD_EQ_PRECUT_FAST_STEP 10
 
 enum crazypod_route {
     MUSIC_ROUTE_MENU,
@@ -133,6 +159,7 @@ enum crazypod_route {
     PHOTOS_ROUTE_DETAIL,
     SETTINGS_ROUTE_MENU,
     SETTINGS_ROUTE_SOUND,
+    SETTINGS_ROUTE_EQ_STUDIO,
     SETTINGS_ROUTE_DISPLAY,
     SETTINGS_ROUTE_PLAYBACK,
     SETTINGS_ROUTE_POWER,
@@ -208,6 +235,14 @@ enum choice_overlay_kind {
     CHOICE_OVERLAY_APPEARANCE,
     CHOICE_OVERLAY_BACKGROUND,
     CHOICE_OVERLAY_SETTING,
+};
+
+enum eq_studio_mode {
+    EQ_STUDIO_GAIN,
+    EQ_STUDIO_CUTOFF,
+    EQ_STUDIO_Q,
+    EQ_STUDIO_PRECUT,
+    EQ_STUDIO_MODE_COUNT,
 };
 
 enum settings_item {
@@ -446,6 +481,7 @@ static lv_obj_t *desktop_capsule_glass;
 static lv_obj_t *desktop_capsule_track;
 static lv_obj_t *desktop_capsule_artist;
 static lv_obj_t *desktop_capsule_progress;
+static lv_obj_t *desktop_capsule_spectrum;
 static lv_obj_t *desktop_capsule_artwork;
 static lv_obj_t *desktop_capsule_artwork_image;
 static lv_obj_t *desktop_capsule_artwork_symbol;
@@ -490,8 +526,9 @@ static unsigned photo_view_generation_seen;
 static long route_render_due;
 static long boost_until;
 static long music_scan_not_before;
-static long next_desktop_motion_tick;
-static int desktop_motion_frame_phase;
+static struct crazypod_frameclock desktop_motion_clock;
+static struct crazypod_frameclock lvgl_clock;
+static int desktop_motion_step_accumulator;
 static int desktop_position_q8;
 static int desktop_velocity_q8;
 static struct menu_view_state menu_view;
@@ -502,6 +539,9 @@ static enum now_playing_overlay now_overlay;
 static struct choice_overlay_view choice_overlay;
 static int now_action_selected;
 static int now_queue_selected;
+static int eq_studio_band = 5;
+static enum eq_studio_mode eq_studio_mode = EQ_STUDIO_GAIN;
+static bool eq_studio_editing;
 static unsigned now_queue_generation_seen;
 static lv_obj_t *now_overlay_root;
 static lv_obj_t *now_overlay_panel;
@@ -518,7 +558,26 @@ static int wallpaper_crop_zoom_percent;
 static int wallpaper_crop_center_x;
 static int wallpaper_crop_center_y;
 static bool wallpaper_crop_render_pending;
-static bool wallpaper_crop_apply_failed;
+enum wallpaper_crop_phase {
+    WALLPAPER_CROP_EDITING = 0,
+    WALLPAPER_CROP_APPLYING,
+    WALLPAPER_CROP_APPLIED,
+    WALLPAPER_CROP_ERROR
+};
+static enum wallpaper_crop_phase wallpaper_crop_phase;
+static bool wallpaper_crop_error_loading;
+static long wallpaper_crop_feedback_until;
+static bool wallpaper_crop_menu_holding;
+static bool wallpaper_crop_menu_armed;
+static long wallpaper_crop_menu_hold_start;
+static bool wallpaper_crop_play_holding;
+static bool wallpaper_crop_play_armed;
+static long wallpaper_crop_play_hold_start;
+static bool wallpaper_crop_select_armed;
+static lv_obj_t *wallpaper_crop_progress_fill;
+static lv_obj_t *wallpaper_crop_progress_label;
+static int wallpaper_crop_load_progress_seen;
+static int wallpaper_crop_apply_progress;
 static int photo_pan_x;
 static int photo_pan_y;
 static int photo_zoom_percent;
@@ -581,10 +640,12 @@ static int now_presentation_active_bank = -1;
 static int now_wave_phase;
 static long last_now_wave_tick;
 static bool now_wave_playing_seen;
+static int desktop_capsule_spectrum_phase;
+static long last_desktop_capsule_spectrum_tick;
+static bool desktop_capsule_spectrum_playing_seen;
 static bool now_lyrics_mode;
 
 extern struct frame_buffer_t lcd_framebuffer_default;
-void dsp_eq_enable(bool enable);
 
 static int appearance_tile_size(void);
 static void layout_desktop_carousel(bool animated);
@@ -931,33 +992,13 @@ static void create_screen_corner_masks(lv_obj_t *screen, int screen_index)
 
 static void refresh_desktop_capsule_material(void)
 {
-    const lv_image_dsc_t *glass =
-        crazypod_frosted_wallpaper_capsule();
-
     if(desktop_capsule == NULL)
         return;
-    if(crazypod_appearance_get()->home_wallpaper[0] == '\0' &&
-       crazypod_appearance_get()->home_background == 0 &&
-       glass != NULL) {
-        if(desktop_capsule_glass == NULL) {
-            desktop_capsule_glass = lv_image_create(desktop_capsule);
-            lv_obj_set_pos(desktop_capsule_glass, 0, 0);
-            lv_obj_remove_flag(
-                desktop_capsule_glass, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_move_to_index(desktop_capsule_glass, 0);
-        }
-        lv_image_set_src(desktop_capsule_glass, glass);
-        lv_obj_remove_flag(desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_style_bg_opa(desktop_capsule, LV_OPA_TRANSP, 0);
-    }
-    else {
-        if(desktop_capsule_glass != NULL)
-            lv_obj_add_flag(
-                desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_style_bg_color(
-            desktop_capsule, lv_color_hex(COLOR_WHITE), 0);
-        lv_obj_set_style_bg_opa(desktop_capsule, 34, 0);
-    }
+    if(desktop_capsule_glass != NULL)
+        lv_obj_add_flag(desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_bg_color(
+        desktop_capsule, lv_color_hex(COLOR_PANEL), 0);
+    lv_obj_set_style_bg_opa(desktop_capsule, LV_OPA_COVER, 0);
 }
 
 static void refresh_desktop_appearance(void)
@@ -1643,16 +1684,99 @@ static void tick_now_playing_wave(void)
         return;
     playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
               (audio_status() & AUDIO_STATUS_PAUSE) == 0;
-    if(!playing && !now_wave_playing_seen)
+    if(!playing) {
+        if(now_wave_playing_seen) {
+            now_wave_playing_seen = false;
+            lv_obj_invalidate(now_wave_surface);
+        }
         return;
+    }
     if(TIME_BEFORE(current_tick,
                    last_now_wave_tick + CRAZYPOD_NOW_WAVE_FRAME_TICKS))
         return;
     last_now_wave_tick = current_tick;
-    now_wave_playing_seen = playing;
-    if(playing)
-        now_wave_phase = (now_wave_phase + 1) & 0x7fff;
+    now_wave_playing_seen = true;
+    now_wave_phase = (now_wave_phase + 1) & 0x7fff;
     lv_obj_invalidate(now_wave_surface);
+}
+
+static void draw_desktop_capsule_spectrum_event(lv_event_t *event)
+{
+    static const uint8_t base_height[5] = { 8, 15, 22, 12, 18 };
+    lv_obj_t *surface = lv_event_get_target(event);
+    lv_layer_t *layer;
+    lv_area_t area;
+    lv_draw_rect_dsc_t bar;
+    bool playing;
+    int start_x;
+    int i;
+
+    if(lv_event_get_code(event) != LV_EVENT_DRAW_MAIN)
+        return;
+
+    layer = lv_event_get_layer(event);
+    lv_obj_get_coords(surface, &area);
+    playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
+              (audio_status() & AUDIO_STATUS_PAUSE) == 0;
+
+    lv_draw_rect_dsc_init(&bar);
+    bar.bg_color = lv_color_hex(COLOR_WHITE);
+    bar.bg_opa = LV_OPA_COVER;
+    bar.radius = 2;
+
+    start_x = area.x1 + ((lv_area_get_width(&area) - 23) / 2);
+    for(i = 0; i < 5; ++i) {
+        lv_area_t bar_area;
+        int height;
+
+        if(playing) {
+            int modulation =
+                ((desktop_capsule_spectrum_phase + i * 3) % 5) - 2;
+            height = base_height[i] + modulation * 2;
+            if(height < 5)
+                height = 5;
+            if(height > 22)
+                height = 22;
+        }
+        else {
+            height = 5 + (i % 2) * 2;
+        }
+
+        bar_area.x1 = start_x + i * 5;
+        bar_area.x2 = bar_area.x1 + 2;
+        bar_area.y2 = area.y1 + (lv_area_get_height(&area) + 22) / 2 - 1;
+        bar_area.y1 = bar_area.y2 - height + 1;
+        lv_draw_rect(layer, &bar, &bar_area);
+    }
+}
+
+static void tick_desktop_capsule_spectrum(void)
+{
+    bool playing;
+
+    if(product_active || desktop_capsule_spectrum == NULL)
+        return;
+
+    playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
+              (audio_status() & AUDIO_STATUS_PAUSE) == 0;
+    if(!playing) {
+        if(desktop_capsule_spectrum_playing_seen) {
+            desktop_capsule_spectrum_playing_seen = false;
+            lv_obj_invalidate(desktop_capsule_spectrum);
+        }
+        return;
+    }
+    if(TIME_BEFORE(
+           current_tick,
+           last_desktop_capsule_spectrum_tick +
+               CRAZYPOD_DESKTOP_SPECTRUM_FRAME_TICKS))
+        return;
+
+    last_desktop_capsule_spectrum_tick = current_tick;
+    desktop_capsule_spectrum_playing_seen = true;
+    desktop_capsule_spectrum_phase =
+        (desktop_capsule_spectrum_phase + 1) & 0x7fff;
+    lv_obj_invalidate(desktop_capsule_spectrum);
 }
 
 static lv_obj_t *make_glass_panel(lv_obj_t *parent, int x, int y,
@@ -1903,8 +2027,8 @@ static void render_desktop_carousel_native(void)
         }
     }
 
-    lcd_update_rect(0, CRAZYPOD_DESKTOP_NATIVE_TOP, LCD_WIDTH,
-                    CRAZYPOD_DESKTOP_NATIVE_HEIGHT);
+    crazypod_present_queue_rect(0, CRAZYPOD_DESKTOP_NATIVE_TOP, LCD_WIDTH,
+                                CRAZYPOD_DESKTOP_NATIVE_HEIGHT);
     desktop_native_dirty = false;
 }
 
@@ -1913,49 +2037,34 @@ static void layout_desktop_carousel(bool animated)
     update_desktop_selection_chrome();
     if(animated) {
         desktop_motion_active = true;
-        next_desktop_motion_tick = current_tick;
-        desktop_motion_frame_phase = 0;
+        desktop_motion_step_accumulator = 0;
+        crazypod_frameclock_reset(&desktop_motion_clock, current_tick);
         keep_cpu_boosted(HZ / 4);
     }
     else {
         desktop_position_q8 = selected_app * 256;
         desktop_velocity_q8 = 0;
         desktop_motion_active = false;
-        next_desktop_motion_tick = 0;
-        desktop_motion_frame_phase = 0;
+        desktop_motion_step_accumulator = 0;
     }
     desktop_native_dirty = true;
 }
 
 static void schedule_next_desktop_motion_frame(long now)
 {
-    /* HZ is 100, so 60 fps needs a 5-tick / 3-frame cadence. */
-    static const int intervals[CRAZYPOD_MOTION_FRAME_PHASES] = { 2, 2, 1 };
-
-    do {
-        next_desktop_motion_tick += intervals[desktop_motion_frame_phase];
-        desktop_motion_frame_phase =
-            (desktop_motion_frame_phase + 1) %
-                CRAZYPOD_MOTION_FRAME_PHASES;
-    } while(!TIME_BEFORE(now, next_desktop_motion_tick));
+    crazypod_frameclock_schedule_next(&desktop_motion_clock, now);
 }
 
-static void tick_desktop_carousel(void)
+static bool advance_desktop_carousel_motion_step(void)
 {
     int target;
     int delta;
-
-    if(!desktop_motion_active ||
-       (next_desktop_motion_tick != 0 &&
-        TIME_BEFORE(current_tick, next_desktop_motion_tick)))
-        return;
 
     target = selected_app * 256;
     delta = target - desktop_position_q8;
     if(delta == 0 && desktop_velocity_q8 == 0) {
         desktop_motion_active = false;
-        next_desktop_motion_tick = 0;
-        return;
+        return false;
     }
     desktop_velocity_q8 =
         desktop_velocity_q8 * 8 / 16 + delta * 3 / 16;
@@ -1972,10 +2081,26 @@ static void tick_desktop_carousel(void)
         desktop_motion_active = false;
     }
     desktop_native_dirty = true;
+    return desktop_motion_active;
+}
+
+static void tick_desktop_carousel(void)
+{
+    if(!desktop_motion_active ||
+       !crazypod_frameclock_due(&desktop_motion_clock, current_tick))
+        return;
+
+    desktop_motion_step_accumulator += CRAZYPOD_DESKTOP_MOTION_SIM_FPS;
+    do {
+        if(!advance_desktop_carousel_motion_step())
+            break;
+        desktop_motion_step_accumulator -= CRAZYPOD_TARGET_FPS;
+    } while(desktop_motion_step_accumulator >= CRAZYPOD_TARGET_FPS);
+
     if(desktop_motion_active)
         schedule_next_desktop_motion_frame(current_tick);
     else
-        next_desktop_motion_tick = 0;
+        desktop_motion_step_accumulator = 0;
 }
 
 static void app_focus_event(lv_event_t *event)
@@ -2022,10 +2147,9 @@ static void create_now_playing_capsule(void)
     lv_obj_t *glass_border;
     lv_obj_t *progress_track;
     lv_obj_t *wave_ball;
-    lv_obj_t *wave;
 
     desktop_capsule = make_box(desktop_screen, 8, 174, 304, 58, 29,
-                               COLOR_WHITE, 34);
+                               COLOR_PANEL, LV_OPA_COVER);
     capsule = desktop_capsule;
 
     desktop_capsule_artwork = make_box(
@@ -2055,19 +2179,23 @@ static void create_now_playing_capsule(void)
     lv_obj_set_pos(desktop_capsule_track, 60, 7);
     lv_obj_set_width(desktop_capsule_track, 171);
     lv_obj_set_height(desktop_capsule_track, 17);
+    lv_obj_set_style_text_align(
+        desktop_capsule_track, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(desktop_capsule_track, LV_LABEL_LONG_MODE_DOTS);
 
     desktop_capsule_artist = make_label(
         capsule, "Local Music", CRAZYPOD_METADATA_FONT,
-        COLOR_WHITE, 190);
+        COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_pos(desktop_capsule_artist, 60, 25);
     lv_obj_set_width(desktop_capsule_artist, 171);
     lv_obj_set_height(desktop_capsule_artist, 17);
+    lv_obj_set_style_text_align(
+        desktop_capsule_artist, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(desktop_capsule_artist,
                            LV_LABEL_LONG_MODE_DOTS);
 
     progress_track = make_box(capsule, 60, 45, 171, 3,
-                              LV_RADIUS_CIRCLE, COLOR_WHITE, 31);
+                              LV_RADIUS_CIRCLE, 0x3A3A42, LV_OPA_COVER);
     desktop_capsule_progress = make_box(
         progress_track, 0, 0, 6, 3, LV_RADIUS_CIRCLE,
         0x2ECC71, LV_OPA_COVER);
@@ -2077,21 +2205,25 @@ static void create_now_playing_capsule(void)
                                  LV_GRAD_DIR_HOR, 0);
 
     wave_ball = make_box(capsule, 245, 8, 42, 42,
-                         LV_RADIUS_CIRCLE, 0x2ECC71, 215);
+                         LV_RADIUS_CIRCLE, 0x2ECC71, LV_OPA_COVER);
     lv_obj_set_style_bg_grad_color(wave_ball,
                                    lv_color_hex(COLOR_CYAN), 0);
     lv_obj_set_style_bg_grad_dir(wave_ball, LV_GRAD_DIR_HOR, 0);
-    wave = make_label(wave_ball, LV_SYMBOL_VOLUME_MAX,
-                      &lv_font_montserrat_16,
-                      COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_center(wave);
+    desktop_capsule_spectrum = lv_obj_create(wave_ball);
+    set_plain_object(desktop_capsule_spectrum);
+    lv_obj_set_size(desktop_capsule_spectrum, 28, 24);
+    lv_obj_center(desktop_capsule_spectrum);
+    lv_obj_remove_flag(desktop_capsule_spectrum, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(desktop_capsule_spectrum,
+                        draw_desktop_capsule_spectrum_event,
+                        LV_EVENT_DRAW_MAIN, NULL);
 
     glass_border = make_box(capsule, 0, 0, 304, 58, 29,
                             COLOR_WHITE, LV_OPA_TRANSP);
     lv_obj_set_style_border_width(glass_border, 1, 0);
     lv_obj_set_style_border_color(
-        glass_border, lv_color_hex(COLOR_WHITE), 0);
-    lv_obj_set_style_border_opa(glass_border, 58, 0);
+        glass_border, lv_color_hex(0x3A3A42), 0);
+    lv_obj_set_style_border_opa(glass_border, LV_OPA_COVER, 0);
     lv_obj_remove_flag(glass_border, LV_OBJ_FLAG_CLICKABLE);
 }
 
@@ -2230,6 +2362,7 @@ static bool is_settings_route(enum crazypod_route route)
 {
     return route == SETTINGS_ROUTE_MENU ||
            route == SETTINGS_ROUTE_SOUND ||
+           route == SETTINGS_ROUTE_EQ_STUDIO ||
            route == SETTINGS_ROUTE_DISPLAY ||
            route == SETTINGS_ROUTE_PLAYBACK ||
            route == SETTINGS_ROUTE_POWER ||
@@ -2251,6 +2384,8 @@ static int settings_route_item_count(enum crazypod_route route)
     case SETTINGS_ROUTE_SOUND:
         return array_count_int(settings_sound_items,
                                sizeof(settings_sound_items));
+    case SETTINGS_ROUTE_EQ_STUDIO:
+        return EQ_NUM_BANDS;
     case SETTINGS_ROUTE_DISPLAY:
         return array_count_int(settings_display_items,
                                sizeof(settings_display_items));
@@ -2320,7 +2455,7 @@ static const char *settings_item_title(int item)
     case SETTINGS_ITEM_SHUFFLE: return "Shuffle";
     case SETTINGS_ITEM_REPEAT: return "Repeat";
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION: return "Sleep Timer";
-    case SETTINGS_ITEM_SLEEP_TIMER_STARTUP: return "Start Timer";
+    case SETTINGS_ITEM_SLEEP_TIMER_STARTUP: return "Timer on Boot";
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS: return "Key Reset Timer";
     case SETTINGS_ITEM_BEEP: return "System Beep";
     case SETTINGS_ITEM_KEYCLICK: return "Keyclick";
@@ -2752,7 +2887,7 @@ static void settings_apply_choice(int item, int index)
     switch(item) {
     case SETTINGS_ITEM_EQ_ENABLED:
         global_settings.eq_enabled = value != 0;
-        dsp_eq_enable(global_settings.eq_enabled);
+        crazypod_eq_settings_apply();
         break;
     case SETTINGS_ITEM_BASS:
         global_settings.bass = value;
@@ -2829,6 +2964,330 @@ static void settings_apply_choice(int item, int index)
     crazypod_state_save(false);
 }
 
+static int clamp_value(int value, int minimum, int maximum)
+{
+    if(value < minimum)
+        return minimum;
+    if(value > maximum)
+        return maximum;
+    return value;
+}
+
+static const char *eq_mode_title(enum eq_studio_mode mode)
+{
+    switch(mode) {
+    case EQ_STUDIO_CUTOFF: return "Freq";
+    case EQ_STUDIO_Q: return "Q";
+    case EQ_STUDIO_PRECUT: return "Precut";
+    default: return "Gain";
+    }
+}
+
+static const char *eq_band_role(int band)
+{
+    if(band <= 1)
+        return "Sub Bass";
+    if(band <= 3)
+        return "Low Mid";
+    if(band <= 5)
+        return "Presence";
+    if(band <= 7)
+        return "Air Detail";
+    return "Top End";
+}
+
+static void format_eq_db(char *buffer, size_t size, int value)
+{
+    int abs_value = value < 0 ? -value : value;
+
+    snprintf(buffer, size, "%c%d.%d dB",
+             value < 0 ? '-' : '+',
+             abs_value / 10, abs_value % 10);
+}
+
+static void format_eq_precut(char *buffer, size_t size, int value)
+{
+    snprintf(buffer, size, value == 0 ? "0.0 dB" : "-%d.%d dB",
+             value / 10, value % 10);
+}
+
+static void format_eq_frequency(char *buffer, size_t size, int value)
+{
+    if(value >= 1000 && value % 1000 == 0)
+        snprintf(buffer, size, "%dkHz", value / 1000);
+    else if(value >= 1000)
+        snprintf(buffer, size, "%d.%dkHz", value / 1000,
+                 (value % 1000) / 100);
+    else
+        snprintf(buffer, size, "%dHz", value);
+}
+
+static void format_eq_q(char *buffer, size_t size, int value)
+{
+    snprintf(buffer, size, "%d.%d Q", value / 10, value % 10);
+}
+
+static void eq_studio_apply_band(int band)
+{
+    if(band < 0 || band >= EQ_NUM_BANDS)
+        return;
+    dsp_set_eq_coefs(band, &global_settings.eq_band_settings[band]);
+    crazypod_state_mark_dirty();
+}
+
+static void eq_studio_apply_precut(void)
+{
+    dsp_set_eq_precut(global_settings.eq_precut);
+    crazypod_state_mark_dirty();
+}
+
+static void eq_studio_toggle_enabled(void)
+{
+    global_settings.eq_enabled = !global_settings.eq_enabled;
+    crazypod_eq_settings_apply();
+    crazypod_state_mark_dirty();
+    render_current_route(false);
+}
+
+static void eq_studio_cycle_mode(void)
+{
+    eq_studio_mode =
+        (enum eq_studio_mode)((eq_studio_mode + 1) %
+                              EQ_STUDIO_MODE_COUNT);
+    render_current_route(false);
+}
+
+static void eq_studio_adjust(int direction)
+{
+    struct eq_band_setting *band;
+    int next;
+
+    if(direction == 0)
+        return;
+    if(!eq_studio_editing) {
+        eq_studio_band = clamp_value(eq_studio_band + direction,
+                                     0, EQ_NUM_BANDS - 1);
+        render_current_route(false);
+        return;
+    }
+
+    band = &global_settings.eq_band_settings[eq_studio_band];
+    switch(eq_studio_mode) {
+    case EQ_STUDIO_CUTOFF:
+        next = band->cutoff + direction * CRAZYPOD_EQ_CUTOFF_FAST_STEP;
+        band->cutoff = clamp_value(next, CRAZYPOD_EQ_CUTOFF_MIN,
+                                   CRAZYPOD_EQ_CUTOFF_MAX);
+        eq_studio_apply_band(eq_studio_band);
+        break;
+    case EQ_STUDIO_Q:
+        next = band->q + direction * CRAZYPOD_EQ_Q_STEP;
+        band->q = clamp_value(next, CRAZYPOD_EQ_Q_MIN,
+                              CRAZYPOD_EQ_Q_MAX);
+        eq_studio_apply_band(eq_studio_band);
+        break;
+    case EQ_STUDIO_PRECUT:
+        next = global_settings.eq_precut +
+               direction * CRAZYPOD_EQ_PRECUT_FAST_STEP;
+        global_settings.eq_precut =
+            clamp_value(next, CRAZYPOD_EQ_PRECUT_MIN,
+                        CRAZYPOD_EQ_PRECUT_MAX);
+        eq_studio_apply_precut();
+        break;
+    default:
+        next = band->gain + direction * CRAZYPOD_EQ_GAIN_FAST_STEP;
+        band->gain = clamp_value(next, CRAZYPOD_EQ_GAIN_MIN,
+                                 CRAZYPOD_EQ_GAIN_MAX);
+        eq_studio_apply_band(eq_studio_band);
+        break;
+    }
+    render_current_route(false);
+}
+
+static void eq_studio_select_band(int direction)
+{
+    if(direction == 0)
+        return;
+    eq_studio_band = clamp_value(eq_studio_band + direction,
+                                 0, EQ_NUM_BANDS - 1);
+    render_current_route(false);
+}
+
+static void render_eq_chip(lv_obj_t *parent, int x, const char *title,
+                           bool active)
+{
+    lv_obj_t *chip = make_box(parent, x, 194, 58, 18, 9,
+                              active ? highlight_primary() : COLOR_WHITE,
+                              active ? 210 : 20);
+    lv_obj_t *label = make_label(chip, title, &lv_font_montserrat_8,
+                                 COLOR_WHITE, active ? 255 : 140);
+    lv_obj_set_width(label, 58);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 0, 5);
+}
+
+static int eq_bar_y_for_gain(int gain)
+{
+    return 124 - gain * 38 / CRAZYPOD_EQ_GAIN_MAX;
+}
+
+static void render_eq_studio(void)
+{
+    static const char *const fixed_labels[EQ_NUM_BANDS] = {
+        "32", "64", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"
+    };
+    lv_obj_t *label;
+    lv_obj_t *bar;
+    char text[96];
+    char gain_text[24];
+    char freq_text[24];
+    char q_text[24];
+    char precut_text[24];
+    int i;
+    int max_gain = 0;
+    const struct eq_band_setting *current =
+        &global_settings.eq_band_settings[eq_studio_band];
+    bool clipping_risk;
+
+    make_box(product_content, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0,
+             0x050508, LV_OPA_COVER);
+    make_box(product_content, 0, 29, LCD_WIDTH, 35, 0,
+             0x101017, 235);
+
+    label = make_label(product_content, "EQ Studio",
+                       CRAZYPOD_METADATA_FONT, COLOR_WHITE, 245);
+    lv_obj_set_pos(label, 14, 39);
+    lv_obj_set_width(label, 120);
+    label = make_label(product_content,
+                       global_settings.eq_enabled ? "On" : "Bypass",
+                       &lv_font_montserrat_10,
+                       global_settings.eq_enabled ? COLOR_GREEN : COLOR_MUTED,
+                       240);
+    lv_obj_set_width(label, 60);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(label, 190, 41);
+    label = make_label(product_content,
+                       eq_studio_editing ? "EDIT" : "BROWSE",
+                       &lv_font_montserrat_8, COLOR_WHITE, 125);
+    lv_obj_set_width(label, 54);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(label, 252, 42);
+
+    format_eq_db(gain_text, sizeof(gain_text), current->gain);
+    format_eq_frequency(freq_text, sizeof(freq_text), current->cutoff);
+    format_eq_q(q_text, sizeof(q_text), current->q);
+    format_eq_precut(precut_text, sizeof(precut_text),
+                     global_settings.eq_precut);
+
+    snprintf(text, sizeof(text), "%s  %s  %s",
+             freq_text, gain_text, q_text);
+    label = make_label(product_content, text, &lv_font_montserrat_10,
+                       COLOR_WHITE, 180);
+    lv_obj_set_pos(label, 14, 66);
+    lv_obj_set_width(label, 198);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+
+    for(i = 0; i < EQ_NUM_BANDS; ++i) {
+        int gain = global_settings.eq_band_settings[i].gain;
+        if(gain > max_gain)
+            max_gain = gain;
+    }
+    clipping_risk = max_gain > 0 &&
+                    max_gain > (int)global_settings.eq_precut;
+    snprintf(text, sizeof(text), "Precut %s", precut_text);
+    label = make_label(product_content, text, &lv_font_montserrat_8,
+                       clipping_risk ? COLOR_AMBER : COLOR_WHITE,
+                       clipping_risk ? 235 : 125);
+    lv_obj_set_width(label, 90);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(label, 216, 68);
+
+    make_box(product_content, 14, 124, 292, 1, 0, COLOR_WHITE, 70);
+    make_box(product_content, 14, 84, 292, 1, 0, COLOR_WHITE, 18);
+    make_box(product_content, 14, 163, 292, 1, 0, COLOR_WHITE, 18);
+    label = make_label(product_content, "0 dB", &lv_font_montserrat_8,
+                       COLOR_WHITE, 95);
+    lv_obj_set_pos(label, 16, 113);
+
+    for(i = 0; i < EQ_NUM_BANDS; ++i) {
+        int gain = global_settings.eq_band_settings[i].gain;
+        int abs_gain = gain < 0 ? -gain : gain;
+        int height = abs_gain * 38 / CRAZYPOD_EQ_GAIN_MAX;
+        int x = 29 + i * 27;
+        int y = gain >= 0 ? 124 - height : 125;
+        int width = i == eq_studio_band ? 16 : 10;
+        uint32_t color = gain >= 0 ? COLOR_GREEN : COLOR_ROSE;
+        lv_opa_t opa = global_settings.eq_enabled ? 230 : 80;
+
+        if(height < 2)
+            height = 2;
+        if(i == eq_studio_band)
+            color = highlight_primary();
+        bar = make_box(product_content, x - width / 2, y,
+                       width, height, 4, color, opa);
+        if(i == eq_studio_band) {
+            lv_obj_set_style_border_width(bar, 1, 0);
+            lv_obj_set_style_border_color(bar, lv_color_hex(COLOR_WHITE), 0);
+            lv_obj_set_style_border_opa(bar, 95, 0);
+        }
+        make_box(product_content, x - 2,
+                 eq_bar_y_for_gain(gain) - 2, 4, 4,
+                 LV_RADIUS_CIRCLE, color, opa);
+        label = make_label(product_content, fixed_labels[i],
+                           &lv_font_montserrat_8,
+                           i == eq_studio_band ? COLOR_WHITE : COLOR_MUTED,
+                           i == eq_studio_band ? 235 : 110);
+        lv_obj_set_width(label, 28);
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(label, x - 14, 168);
+    }
+
+    make_box(product_content, 0, 184, LCD_WIDTH, 34, 0,
+             0x111119, 235);
+    label = make_label(product_content, fixed_labels[eq_studio_band],
+                       &lv_font_montserrat_16, COLOR_WHITE, 245);
+    lv_obj_set_pos(label, 14, 188);
+    lv_obj_set_width(label, 44);
+    label = make_label(product_content, eq_band_role(eq_studio_band),
+                       &lv_font_montserrat_8, COLOR_WHITE, 120);
+    lv_obj_set_pos(label, 62, 190);
+    lv_obj_set_width(label, 75);
+    label = make_label(product_content, eq_mode_title(eq_studio_mode),
+                       &lv_font_montserrat_10, COLOR_CYAN, 225);
+    lv_obj_set_pos(label, 142, 189);
+    lv_obj_set_width(label, 60);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    label = make_label(product_content,
+                       eq_studio_editing ? "Wheel adjusts" : "Wheel selects",
+                       &lv_font_montserrat_8, COLOR_WHITE, 115);
+    lv_obj_set_pos(label, 205, 190);
+    lv_obj_set_width(label, 98);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+
+    render_eq_chip(product_content, 14, "Gain",
+                   eq_studio_mode == EQ_STUDIO_GAIN);
+    render_eq_chip(product_content, 80, "Freq",
+                   eq_studio_mode == EQ_STUDIO_CUTOFF);
+    render_eq_chip(product_content, 146, "Q",
+                   eq_studio_mode == EQ_STUDIO_Q);
+    render_eq_chip(product_content, 212, "Precut",
+                   eq_studio_mode == EQ_STUDIO_PRECUT);
+
+    make_box(product_content, 0, 218, LCD_WIDTH, 22, 0,
+             0x050508, 245);
+    label = make_label(product_content, "Menu Done",
+                       &lv_font_montserrat_8, COLOR_WHITE, 125);
+    lv_obj_set_pos(label, 14, 225);
+    label = make_label(product_content, "Select Edit",
+                       &lv_font_montserrat_8, COLOR_WHITE, 165);
+    lv_obj_set_pos(label, 113, 225);
+    label = make_label(product_content,
+                       eq_studio_editing ? "Play Mode" : "Play A/B",
+                       &lv_font_montserrat_8, COLOR_WHITE, 125);
+    lv_obj_set_width(label, 82);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(label, 224, 225);
+}
+
 static int route_item_count(const struct route_state *state)
 {
     switch(state->route) {
@@ -2871,6 +3330,7 @@ static int route_item_count(const struct route_state *state)
         return 2;
     case SETTINGS_ROUTE_MENU:
     case SETTINGS_ROUTE_SOUND:
+    case SETTINGS_ROUTE_EQ_STUDIO:
     case SETTINGS_ROUTE_DISPLAY:
     case SETTINGS_ROUTE_PLAYBACK:
     case SETTINGS_ROUTE_POWER:
@@ -2958,6 +3418,13 @@ static const char *route_item_title(const struct route_state *state, int index)
                index < (int)(sizeof(settings_menu_titles) /
                              sizeof(settings_menu_titles[0]))
             ? settings_menu_titles[index] : "";
+    case SETTINGS_ROUTE_EQ_STUDIO: {
+        static const char *const labels[EQ_NUM_BANDS] = {
+            "32Hz", "64Hz", "125Hz", "250Hz", "500Hz",
+            "1kHz", "2kHz", "4kHz", "8kHz", "16kHz"
+        };
+        return index >= 0 && index < EQ_NUM_BANDS ? labels[index] : "";
+    }
     case SETTINGS_ROUTE_SOUND:
     case SETTINGS_ROUTE_DISPLAY:
     case SETTINGS_ROUTE_PLAYBACK:
@@ -3111,6 +3578,7 @@ static const char *route_title(const struct route_state *state)
     case PHOTOS_ROUTE_DETAIL: return "PHOTO";
     case SETTINGS_ROUTE_MENU: return "SETTINGS";
     case SETTINGS_ROUTE_SOUND: return "SOUND";
+    case SETTINGS_ROUTE_EQ_STUDIO: return "EQ STUDIO";
     case SETTINGS_ROUTE_DISPLAY: return "DISPLAY";
     case SETTINGS_ROUTE_PLAYBACK: return "PLAYBACK";
     case SETTINGS_ROUTE_POWER: return "POWER";
@@ -4070,6 +4538,7 @@ static bool wallpaper_crop_rect(
     int source_height;
     int maximum_width;
     int maximum_height;
+    int maximum_zoom;
     int width;
     int height;
 
@@ -4089,8 +4558,10 @@ static bool wallpaper_crop_rect(
     }
     if(wallpaper_crop_zoom_percent < 100)
         wallpaper_crop_zoom_percent = 100;
-    if(wallpaper_crop_zoom_percent > 500)
-        wallpaper_crop_zoom_percent = 500;
+    maximum_zoom =
+        crazypod_wallpaper_crop_max_zoom(source);
+    if(wallpaper_crop_zoom_percent > maximum_zoom)
+        wallpaper_crop_zoom_percent = maximum_zoom;
     width = maximum_width * 100 / wallpaper_crop_zoom_percent;
     height = maximum_height * 100 / wallpaper_crop_zoom_percent;
     if(width < 4)
@@ -4129,62 +4600,74 @@ static void render_wallpaper_crop(void)
 {
     const lv_image_dsc_t *source =
         crazypod_photo_view(wallpaper_crop_photo_index);
-    const lv_image_dsc_t *preview = source != NULL
+    int crop_x;
+    int crop_y;
+    int crop_width;
+    int crop_height;
+    bool crop_valid = wallpaper_crop_rect(
+        source, &crop_x, &crop_y, &crop_width, &crop_height);
+    const lv_image_dsc_t *preview = crop_valid
         ? crazypod_photo_render_crop_preview(
-              wallpaper_crop_photo_index)
+              wallpaper_crop_photo_index,
+              wallpaper_crop_center_y)
         : NULL;
     lv_obj_t *viewport = make_box(
         product_content, 0, 40, LCD_WIDTH, LCD_HEIGHT - 40,
         0, 0x000000, LV_OPA_COVER);
     lv_obj_t *label;
+    const char *instruction;
 
     if(source != NULL && preview != NULL) {
         const int canvas_height = 168;
-        uint32_t scale_x =
-            (uint32_t)LCD_WIDTH * LV_SCALE_NONE /
-            source->header.w;
-        uint32_t scale_y =
-            (uint32_t)canvas_height * LV_SCALE_NONE /
-            source->header.h;
-        uint32_t scale = scale_x < scale_y ? scale_x : scale_y;
-        int display_width;
         int display_height;
-        int display_x;
         int display_y;
-        int crop_x;
-        int crop_y;
-        int crop_width;
-        int crop_height;
         int frame_x;
         int frame_y;
         int frame_width;
         int frame_height;
+        int visible_frame_y;
+        int visible_frame_bottom;
+        int visible_frame_height;
         lv_obj_t *image;
         lv_obj_t *ring;
 
-        if(scale == 0)
-            scale = 1;
-        display_width =
-            source->header.w * scale / LV_SCALE_NONE;
         display_height =
-            source->header.h * scale / LV_SCALE_NONE;
-        display_x = (LCD_WIDTH - display_width) / 2;
-        display_y = (canvas_height - display_height) / 2;
+            source->header.h * LCD_WIDTH /
+            source->header.w;
+        if(display_height < 1)
+            display_height = 1;
+        if(display_height <= canvas_height)
+            display_y =
+                (canvas_height - display_height) / 2;
+        else {
+            display_y = canvas_height / 2 -
+                wallpaper_crop_center_y * display_height /
+                source->header.h;
+            if(display_y > 0)
+                display_y = 0;
+            if(display_y < canvas_height - display_height)
+                display_y = canvas_height - display_height;
+        }
         image = lv_image_create(viewport);
         lv_image_set_src(image, preview);
         lv_obj_set_pos(image, 0, 0);
         lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
-        if(wallpaper_crop_rect(
-               source, &crop_x, &crop_y,
-               &crop_width, &crop_height)) {
-            frame_x =
-                display_x + crop_x * (int)scale / LV_SCALE_NONE;
-            frame_y =
-                display_y + crop_y * (int)scale / LV_SCALE_NONE;
-            frame_width =
-                crop_width * (int)scale / LV_SCALE_NONE;
-            frame_height =
-                crop_height * (int)scale / LV_SCALE_NONE;
+        if(crop_valid) {
+            frame_x = crop_x * LCD_WIDTH /
+                source->header.w;
+            frame_y = display_y +
+                crop_y * display_height /
+                source->header.h;
+            frame_width = crop_width * LCD_WIDTH /
+                source->header.w;
+            frame_height = crop_height * display_height /
+                source->header.h;
+            visible_frame_y = frame_y > 0 ? frame_y : 0;
+            visible_frame_bottom =
+                frame_y + frame_height < canvas_height
+                ? frame_y + frame_height : canvas_height;
+            visible_frame_height =
+                visible_frame_bottom - visible_frame_y;
             if(frame_y > 0)
                 make_box(viewport, 0, 0, LCD_WIDTH, frame_y,
                          0, 0x000000, 150);
@@ -4194,14 +4677,17 @@ static void render_wallpaper_crop(void)
                     LCD_WIDTH,
                     canvas_height - frame_y - frame_height,
                     0, 0x000000, 150);
-            if(frame_x > 0)
-                make_box(viewport, 0, frame_y, frame_x,
-                         frame_height, 0, 0x000000, 150);
-            if(frame_x + frame_width < LCD_WIDTH)
+            if(frame_x > 0 && visible_frame_height > 0)
                 make_box(
-                    viewport, frame_x + frame_width, frame_y,
+                    viewport, 0, visible_frame_y, frame_x,
+                    visible_frame_height, 0, 0x000000, 150);
+            if(frame_x + frame_width < LCD_WIDTH &&
+               visible_frame_height > 0)
+                make_box(
+                    viewport, frame_x + frame_width,
+                    visible_frame_y,
                     LCD_WIDTH - frame_x - frame_width,
-                    frame_height, 0, 0x000000, 150);
+                    visible_frame_height, 0, 0x000000, 150);
             ring = make_box(
                 viewport, frame_x, frame_y,
                 frame_width, frame_height, 6,
@@ -4213,17 +4699,110 @@ static void render_wallpaper_crop(void)
         }
     }
     else {
+        int progress =
+            crazypod_photo_view_progress(
+                wallpaper_crop_photo_index);
+        char loading_text[40];
+        lv_obj_t *track;
+        int fill_width;
+
+        wallpaper_crop_load_progress_seen = progress;
         label = make_label(viewport, LV_SYMBOL_REFRESH,
                            &lv_font_montserrat_24,
                            COLOR_WHITE, 130);
         lv_obj_set_pos(label, 148, 55);
-        label = make_label(viewport, "Loading picture",
-                           &lv_font_montserrat_10,
-                           COLOR_WHITE, 170);
-        lv_obj_set_width(label, 200);
+        if(progress < 0)
+            snprintf(loading_text, sizeof(loading_text),
+                     "Could not load picture");
+        else
+            snprintf(loading_text, sizeof(loading_text),
+                     "Loading picture  %d%%",
+                     progress > 100 ? 100 : progress);
+        wallpaper_crop_progress_label = make_label(
+            viewport, loading_text,
+            &lv_font_montserrat_10, COLOR_WHITE, 185);
+        lv_obj_set_width(
+            wallpaper_crop_progress_label, 220);
+        lv_obj_set_style_text_align(
+            wallpaper_crop_progress_label,
+            LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(
+            wallpaper_crop_progress_label, 50, 91);
+        track = make_box(
+            viewport, 60, 112, 200, 6,
+            LV_RADIUS_CIRCLE, COLOR_WHITE, 35);
+        if(progress < 0)
+            fill_width = 200;
+        else {
+            fill_width = progress * 200 / 100;
+            if(fill_width < 2)
+                fill_width = 2;
+            if(fill_width > 200)
+                fill_width = 200;
+        }
+        wallpaper_crop_progress_fill = make_box(
+            track, 0, 0, fill_width, 6,
+            LV_RADIUS_CIRCLE,
+            progress < 0 ? 0xFF453A : COLOR_CYAN,
+            LV_OPA_COVER);
+    }
+    {
+        lv_obj_t *hint = make_box(
+            viewport, 6, 5, LCD_WIDTH - 12, 34, 10,
+            0x000000, 205);
+
+        label = make_label(
+            hint,
+            "Click Arrows: Move  \xE2\x80\xA2  Rotate: Zoom  "
+            "\xE2\x80\xA2  SELECT: Apply",
+            &lv_font_montserrat_8, COLOR_WHITE, 230);
+        lv_obj_set_width(label, LCD_WIDTH - 24);
         lv_obj_set_style_text_align(
             label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(label, 60, 91);
+        lv_obj_set_pos(label, 6, 4);
+        label = make_label(
+            hint,
+            "Hold MENU 0.5s: Cancel  \xE2\x80\xA2  "
+            "Hold PLAY 0.5s: Reset",
+            &lv_font_montserrat_8, 0xFFD60A, 235);
+        lv_obj_set_width(label, LCD_WIDTH - 24);
+        lv_obj_set_style_text_align(
+            label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(label, 6, 18);
+    }
+    if(wallpaper_crop_phase == WALLPAPER_CROP_APPLYING) {
+        lv_obj_t *panel = make_box(
+            viewport, 45, 67, 230, 50, 12,
+            0x000000, 225);
+        lv_obj_t *track;
+        char progress_text[40];
+        int fill_width =
+            wallpaper_crop_apply_progress * 200 / 100;
+
+        if(fill_width < 2)
+            fill_width = 2;
+        if(fill_width > 200)
+            fill_width = 200;
+        snprintf(progress_text, sizeof(progress_text),
+                 "Applying wallpaper  %d%%",
+                 wallpaper_crop_apply_progress);
+        wallpaper_crop_progress_label = make_label(
+            panel, progress_text,
+            &lv_font_montserrat_10, COLOR_WHITE, 230);
+        lv_obj_set_width(
+            wallpaper_crop_progress_label, 210);
+        lv_obj_set_style_text_align(
+            wallpaper_crop_progress_label,
+            LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(
+            wallpaper_crop_progress_label, 10, 9);
+        track = make_box(
+            panel, 15, 31, 200, 7,
+            LV_RADIUS_CIRCLE, COLOR_WHITE, 38);
+        wallpaper_crop_progress_fill = make_box(
+            track, 0, 0, fill_width, 7,
+            LV_RADIUS_CIRCLE, COLOR_CYAN,
+            LV_OPA_COVER);
     }
     make_box(viewport, 0, 168, LCD_WIDTH, 32,
              0, 0x000000, 220);
@@ -4248,13 +4827,31 @@ static void render_wallpaper_crop(void)
             label, LV_TEXT_ALIGN_RIGHT, 0);
         lv_obj_set_pos(label, 269, 173);
     }
+    if(wallpaper_crop_phase == WALLPAPER_CROP_APPLYING)
+        instruction = "Applying wallpaper...";
+    else if(wallpaper_crop_phase == WALLPAPER_CROP_APPLIED)
+        instruction =
+            wallpaper_crop_target ==
+                CRAZYPOD_APPEARANCE_HOME_BACKGROUND
+            ? "Applied to Home"
+            : "Applied to Menu";
+    else if(wallpaper_crop_phase == WALLPAPER_CROP_ERROR)
+        instruction = wallpaper_crop_error_loading
+            ? "Picture is still loading"
+            : "Could not save wallpaper";
+    else if(wallpaper_crop_menu_armed)
+        instruction = "Release MENU to Cancel";
+    else if(wallpaper_crop_play_armed)
+        instruction = "Release PLAY to Reset";
+    else
+        instruction =
+            "SELECT Apply  \xE2\x80\xA2  Wheel Zoom  "
+            "\xE2\x80\xA2  Hold MENU Cancel";
     label = make_label(
-        viewport,
-        wallpaper_crop_apply_failed
-            ? "Could not save wallpaper"
-            : "MENU Cancel  \xE2\x80\xA2  Touch Move  "
-              "\xE2\x80\xA2  PLAY Apply",
-        &lv_font_montserrat_8, COLOR_WHITE, 125);
+        viewport, instruction,
+        &lv_font_montserrat_8, COLOR_WHITE,
+        wallpaper_crop_phase == WALLPAPER_CROP_EDITING
+            ? 145 : 220);
     lv_obj_set_width(label, 302);
     lv_obj_set_style_text_align(
         label, LV_TEXT_ALIGN_CENTER, 0);
@@ -4801,7 +5398,7 @@ static void render_album_flow(const struct route_state *state)
     const struct crazypod_album *album;
     char position[32];
 
-    lv_obj_set_style_bg_color(product_content, lv_color_hex(0x050509), 0);
+    lv_obj_set_style_bg_color(product_content, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(product_content, LV_OPA_COVER, 0);
     if(count <= 0) {
         render_empty_state("No Albums", "Add local music and rescan.");
@@ -5996,6 +6593,11 @@ static void render_current_route(bool transition)
 {
     struct route_state *state = current_route();
     const lv_image_dsc_t *menu_wallpaper;
+    bool solid_black =
+        state->route == DIY_ROUTE_WALLPAPER_CROP ||
+        state->route == MUSIC_ROUTE_ALBUM_FLOW;
+    uint32_t route_background = solid_black
+        ? 0x000000 : crazypod_appearance_menu_color();
     int i;
 
     if(state->route == PHOTOS_ROUTE_DETAIL)
@@ -6015,6 +6617,8 @@ static void render_current_route(bool transition)
     now_lyrics_current = NULL;
     now_lyrics_next = NULL;
     photo_favorite_progress_fill = NULL;
+    wallpaper_crop_progress_fill = NULL;
+    wallpaper_crop_progress_label = NULL;
     music_loading_title = NULL;
     music_loading_detail = NULL;
     album_flow_title = NULL;
@@ -6035,11 +6639,12 @@ static void render_current_route(bool transition)
     lv_obj_set_pos(product_content, 0, 0);
     lv_obj_set_style_bg_color(
         product_content,
-        lv_color_hex(crazypod_appearance_menu_color()), 0);
+        lv_color_hex(route_background), 0);
     lv_obj_set_style_bg_opa(product_content, LV_OPA_COVER, 0);
     make_box(product_content, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0,
-             crazypod_appearance_menu_color(), LV_OPA_COVER);
-    menu_wallpaper = crazypod_custom_menu_wallpaper();
+             route_background, LV_OPA_COVER);
+    menu_wallpaper = solid_black
+        ? NULL : crazypod_custom_menu_wallpaper();
     if(menu_wallpaper != NULL) {
         lv_obj_t *image = lv_image_create(product_content);
         lv_image_set_src(image, menu_wallpaper);
@@ -6049,6 +6654,8 @@ static void render_current_route(bool transition)
 
     if(state->route == MUSIC_ROUTE_NOW_PLAYING)
         render_now_playing();
+    else if(state->route == SETTINGS_ROUTE_EQ_STUDIO)
+        render_eq_studio();
     else if(state->route == MUSIC_ROUTE_ALBUM_FLOW)
         render_album_flow(state);
     else if(state->route == PHOTOS_ROUTE_LIBRARY ||
@@ -6539,6 +7146,14 @@ static void activate_selected(void)
     case SETTINGS_ROUTE_POWER:
     case SETTINGS_ROUTE_CONTROLS: {
         int item = settings_route_item(state->route, state->selected);
+        if(item == SETTINGS_ITEM_EQ_ENABLED) {
+            eq_studio_band = clamp_value(eq_studio_band, 0,
+                                         EQ_NUM_BANDS - 1);
+            eq_studio_mode = EQ_STUDIO_GAIN;
+            eq_studio_editing = false;
+            push_route(SETTINGS_ROUTE_EQ_STUDIO, -1);
+            break;
+        }
         show_choice_overlay(CHOICE_OVERLAY_SETTING, item,
                             settings_choice_index(item));
         break;
@@ -6700,11 +7315,20 @@ static void activate_selected(void)
             wallpaper_crop_photo_index = state->selected;
             wallpaper_crop_target =
                 (enum crazypod_appearance_field)state->group;
-            wallpaper_crop_zoom_percent = 100;
+            wallpaper_crop_zoom_percent = 140;
             wallpaper_crop_center_x = -1;
             wallpaper_crop_center_y = -1;
             wallpaper_crop_render_pending = false;
-            wallpaper_crop_apply_failed = false;
+            wallpaper_crop_phase = WALLPAPER_CROP_EDITING;
+            wallpaper_crop_error_loading = false;
+            wallpaper_crop_feedback_until = 0;
+            wallpaper_crop_menu_holding = false;
+            wallpaper_crop_menu_armed = false;
+            wallpaper_crop_play_holding = false;
+            wallpaper_crop_play_armed = false;
+            wallpaper_crop_select_armed = false;
+            wallpaper_crop_load_progress_seen = -2;
+            wallpaper_crop_apply_progress = 0;
             crazypod_photo_view(wallpaper_crop_photo_index);
             push_route(
                 DIY_ROUTE_WALLPAPER_CROP,
@@ -7167,7 +7791,8 @@ static void adjust_wallpaper_crop_zoom(int direction, int steps)
     if(source != NULL)
         wallpaper_crop_rect(
             source, &crop_x, &crop_y, &crop_width, &crop_height);
-    wallpaper_crop_apply_failed = false;
+    wallpaper_crop_phase = WALLPAPER_CROP_EDITING;
+    wallpaper_crop_error_loading = false;
     wallpaper_crop_render_pending = true;
 }
 
@@ -7195,17 +7820,49 @@ static void move_wallpaper_crop(int direction_x, int direction_y)
     wallpaper_crop_center_y += direction_y * step_y;
     wallpaper_crop_rect(
         source, &crop_x, &crop_y, &crop_width, &crop_height);
-    wallpaper_crop_apply_failed = false;
+    wallpaper_crop_phase = WALLPAPER_CROP_EDITING;
+    wallpaper_crop_error_loading = false;
     wallpaper_crop_render_pending = true;
 }
 
 static void reset_wallpaper_crop(void)
 {
-    wallpaper_crop_zoom_percent = 100;
+    wallpaper_crop_zoom_percent = 140;
     wallpaper_crop_center_x = -1;
     wallpaper_crop_center_y = -1;
-    wallpaper_crop_apply_failed = false;
+    wallpaper_crop_phase = WALLPAPER_CROP_EDITING;
+    wallpaper_crop_error_loading = false;
     wallpaper_crop_render_pending = true;
+}
+
+static void wallpaper_crop_apply_progress_update(
+    int progress, void *user_data)
+{
+    char text[40];
+    int fill_width;
+
+    (void)user_data;
+    if(progress < 0)
+        progress = 0;
+    if(progress > 100)
+        progress = 100;
+    wallpaper_crop_apply_progress = progress;
+    if(wallpaper_crop_progress_fill == NULL ||
+       wallpaper_crop_progress_label == NULL)
+        return;
+    fill_width = progress * 200 / 100;
+    if(fill_width < 2)
+        fill_width = 2;
+    snprintf(text, sizeof(text),
+             "Applying wallpaper  %d%%", progress);
+    lv_obj_set_width(
+        wallpaper_crop_progress_fill, fill_width);
+    lv_label_set_text(
+        wallpaper_crop_progress_label, text);
+    /* The crop renderer blocks the UI loop.  Commit each real milestone
+     * immediately instead of leaving it queued for the next UI tick. */
+    lv_refr_now(NULL);
+    crazypod_present_now();
 }
 
 static void apply_wallpaper_crop(void)
@@ -7223,19 +7880,34 @@ static void apply_wallpaper_crop(void)
     int crop_height;
 
     if(!wallpaper_crop_rect(
-           source, &crop_x, &crop_y, &crop_width, &crop_height) ||
-       !crazypod_wallpaper_apply_crop(
-           menu, path, source, crop_x, crop_y,
-           crop_width, crop_height)) {
-        wallpaper_crop_apply_failed = true;
+           source, &crop_x, &crop_y, &crop_width, &crop_height)) {
+        wallpaper_crop_phase = WALLPAPER_CROP_ERROR;
+        wallpaper_crop_error_loading = true;
         wallpaper_crop_render_pending = true;
         return;
     }
-    wallpaper_crop_render_pending = false;
+    wallpaper_crop_phase = WALLPAPER_CROP_APPLYING;
+    wallpaper_crop_error_loading = false;
+    wallpaper_crop_apply_progress = 5;
+    render_current_route(false);
+    lv_refr_now(NULL);
+    /* The original-image decode starts immediately below and can take a
+     * noticeable time.  Present this first frame before entering it. */
+    crazypod_present_now();
+    if(!crazypod_wallpaper_apply_crop(
+           menu, path, source, crop_x, crop_y,
+           crop_width, crop_height,
+           wallpaper_crop_apply_progress_update, NULL)) {
+        wallpaper_crop_phase = WALLPAPER_CROP_ERROR;
+        wallpaper_crop_error_loading = false;
+        render_current_route(false);
+        return;
+    }
     refresh_desktop_appearance();
-    if(route_depth >= 3)
-        route_depth -= 2;
-    render_current_route(true);
+    wallpaper_crop_phase = WALLPAPER_CROP_APPLIED;
+    wallpaper_crop_feedback_until =
+        current_tick + CRAZYPOD_WALLPAPER_CROP_SUCCESS_TICKS;
+    render_current_route(false);
 }
 
 static int selected_photo_index(const struct route_state *state)
@@ -7358,10 +8030,97 @@ static void process_wallpaper_crop_render(void)
         render_current_route(false);
 }
 
+static void process_wallpaper_crop_loading_progress(void)
+{
+    int progress;
+    int fill_width;
+    char text[40];
+
+    if(!product_active || route_depth <= 0 ||
+       current_route()->route != DIY_ROUTE_WALLPAPER_CROP ||
+       wallpaper_crop_phase == WALLPAPER_CROP_APPLYING ||
+       wallpaper_crop_phase == WALLPAPER_CROP_APPLIED ||
+       crazypod_photo_view(wallpaper_crop_photo_index) != NULL)
+        return;
+    progress = crazypod_photo_view_progress(
+        wallpaper_crop_photo_index);
+    if(progress == wallpaper_crop_load_progress_seen)
+        return;
+    wallpaper_crop_load_progress_seen = progress;
+    if(wallpaper_crop_progress_fill == NULL ||
+       wallpaper_crop_progress_label == NULL)
+        return;
+    if(progress < 0) {
+        snprintf(text, sizeof(text),
+                 "Could not load picture");
+        fill_width = 200;
+        lv_obj_set_style_bg_color(
+            wallpaper_crop_progress_fill,
+            lv_color_hex(0xFF453A), 0);
+    }
+    else {
+        if(progress > 100)
+            progress = 100;
+        snprintf(text, sizeof(text),
+                 "Loading picture  %d%%", progress);
+        fill_width = progress * 200 / 100;
+        if(fill_width < 2)
+            fill_width = 2;
+    }
+    lv_obj_set_width(
+        wallpaper_crop_progress_fill, fill_width);
+    lv_label_set_text(
+        wallpaper_crop_progress_label, text);
+}
+
+static void process_wallpaper_crop_state(void)
+{
+    if(!product_active || route_depth <= 0 ||
+       current_route()->route != DIY_ROUTE_WALLPAPER_CROP) {
+        wallpaper_crop_menu_holding = false;
+        wallpaper_crop_menu_armed = false;
+        wallpaper_crop_play_holding = false;
+        wallpaper_crop_play_armed = false;
+        wallpaper_crop_select_armed = false;
+        return;
+    }
+    if(wallpaper_crop_phase == WALLPAPER_CROP_APPLIED &&
+       wallpaper_crop_feedback_until != 0 &&
+       !TIME_BEFORE(
+           current_tick, wallpaper_crop_feedback_until)) {
+        wallpaper_crop_feedback_until = 0;
+        wallpaper_crop_phase = WALLPAPER_CROP_EDITING;
+        if(route_depth >= 3)
+            route_depth -= 2;
+        render_current_route(true);
+        return;
+    }
+    if(wallpaper_crop_phase == WALLPAPER_CROP_APPLYING ||
+       wallpaper_crop_phase == WALLPAPER_CROP_APPLIED)
+        return;
+    if(wallpaper_crop_menu_holding &&
+       !wallpaper_crop_menu_armed &&
+       !TIME_BEFORE(
+           current_tick,
+           wallpaper_crop_menu_hold_start +
+               CRAZYPOD_WALLPAPER_CROP_HOLD_TICKS)) {
+        wallpaper_crop_menu_armed = true;
+        wallpaper_crop_render_pending = true;
+    }
+    if(wallpaper_crop_play_holding &&
+       !wallpaper_crop_play_armed &&
+       !TIME_BEFORE(
+           current_tick,
+           wallpaper_crop_play_hold_start +
+               CRAZYPOD_WALLPAPER_CROP_HOLD_TICKS)) {
+        wallpaper_crop_play_armed = true;
+        wallpaper_crop_render_pending = true;
+    }
+}
+
 static void process_photo_wheel_touch(void)
 {
     struct route_state *state;
-    bool crop;
     int position;
 
     if(!product_active || route_depth <= 0) {
@@ -7369,9 +8128,8 @@ static void process_photo_wheel_touch(void)
         return;
     }
     state = current_route();
-    crop = state->route == DIY_ROUTE_WALLPAPER_CROP;
-    if((state->route != PHOTOS_ROUTE_DETAIL && !crop) ||
-       (!crop && photo_zoom_percent <= 100)) {
+    if(state->route != PHOTOS_ROUTE_DETAIL ||
+       photo_zoom_percent <= 100) {
         photo_wheel_touch_active = false;
         return;
     }
@@ -7416,26 +8174,14 @@ static void process_photo_wheel_touch(void)
             int quadrant =
                 ((photo_wheel_touch_start + 12) / 24) & 3;
 
-            if(crop) {
-                if(quadrant == 0)
-                    move_wallpaper_crop(0, -1);
-                else if(quadrant == 1)
-                    move_wallpaper_crop(-1, 0);
-                else if(quadrant == 2)
-                    move_wallpaper_crop(0, 1);
-                else
-                    move_wallpaper_crop(1, 0);
-            }
-            else {
-                if(quadrant == 0)
-                    queue_photo_pan(0, CRAZYPOD_PHOTO_PAN_STEP);
-                else if(quadrant == 1)
-                    queue_photo_pan(CRAZYPOD_PHOTO_PAN_STEP, 0);
-                else if(quadrant == 2)
-                    queue_photo_pan(0, -CRAZYPOD_PHOTO_PAN_STEP);
-                else
-                    queue_photo_pan(-CRAZYPOD_PHOTO_PAN_STEP, 0);
-            }
+            if(quadrant == 0)
+                queue_photo_pan(0, CRAZYPOD_PHOTO_PAN_STEP);
+            else if(quadrant == 1)
+                queue_photo_pan(CRAZYPOD_PHOTO_PAN_STEP, 0);
+            else if(quadrant == 2)
+                queue_photo_pan(0, -CRAZYPOD_PHOTO_PAN_STEP);
+            else
+                queue_photo_pan(-CRAZYPOD_PHOTO_PAN_STEP, 0);
         }
         photo_wheel_touch_start = -1;
         photo_wheel_touch_max_delta = 0;
@@ -7451,6 +8197,9 @@ static void play_wheel_feedback(long button)
 
     base = button & ~(BUTTON_REL | BUTTON_REPEAT);
     if(base != BUTTON_SCROLL_FWD && base != BUTTON_SCROLL_BACK)
+        return;
+    if((button & BUTTON_REPEAT) != 0 &&
+       !global_settings.keyclick_repeats)
         return;
 
 #if defined(HAVE_HARDWARE_CLICK) && !defined(SIMULATOR)
@@ -7508,6 +8257,9 @@ static void handle_button(long button, intptr_t data)
         bool crop_release = (button & BUTTON_REL) != 0;
         bool crop_repeat = (button & BUTTON_REPEAT) != 0;
 
+        if(wallpaper_crop_phase == WALLPAPER_CROP_APPLYING ||
+           wallpaper_crop_phase == WALLPAPER_CROP_APPLIED)
+            return;
         if(crop_base == BUTTON_SCROLL_FWD ||
            crop_base == BUTTON_SCROLL_BACK) {
             photo_direction_input_tick = current_tick;
@@ -7521,26 +8273,60 @@ static void handle_button(long button, intptr_t data)
            crop_base == BUTTON_RIGHT) {
             photo_direction_input_tick = current_tick;
             if(!crop_release)
-                adjust_wallpaper_crop_zoom(
-                    crop_base == BUTTON_RIGHT ? 1 : -1, 1);
+                move_wallpaper_crop(
+                    crop_base == BUTTON_RIGHT ? 1 : -1, 0);
             return;
         }
         if(crop_base == BUTTON_SELECT) {
             photo_direction_input_tick = current_tick;
-            if(!crop_release && !crop_repeat)
-                reset_wallpaper_crop();
+            if(crop_release) {
+                bool apply = wallpaper_crop_select_armed;
+
+                wallpaper_crop_select_armed = false;
+                if(apply)
+                    apply_wallpaper_crop();
+            }
+            else if(!crop_repeat) {
+                wallpaper_crop_select_armed = true;
+            }
             return;
         }
         if(crop_base == BUTTON_MENU) {
             photo_direction_input_tick = current_tick;
-            if(!crop_release && !crop_repeat)
-                pop_route();
+            if(crop_release) {
+                bool cancel = wallpaper_crop_menu_armed;
+
+                wallpaper_crop_menu_holding = false;
+                wallpaper_crop_menu_armed = false;
+                if(cancel)
+                    pop_route();
+                else
+                    move_wallpaper_crop(0, -1);
+            }
+            else if(!crop_repeat) {
+                wallpaper_crop_menu_holding = true;
+                wallpaper_crop_menu_armed = false;
+                wallpaper_crop_menu_hold_start = current_tick;
+            }
             return;
         }
         if(crop_base == BUTTON_PLAY) {
             photo_direction_input_tick = current_tick;
-            if(!crop_release && !crop_repeat)
-                apply_wallpaper_crop();
+            if(crop_release) {
+                bool reset = wallpaper_crop_play_armed;
+
+                wallpaper_crop_play_holding = false;
+                wallpaper_crop_play_armed = false;
+                if(reset)
+                    reset_wallpaper_crop();
+                else
+                    move_wallpaper_crop(0, 1);
+            }
+            else if(!crop_repeat) {
+                wallpaper_crop_play_holding = true;
+                wallpaper_crop_play_armed = false;
+                wallpaper_crop_play_hold_start = current_tick;
+            }
             return;
         }
         return;
@@ -7715,6 +8501,33 @@ static void handle_button(long button, intptr_t data)
         return;
     }
 
+    if(current_route()->route == SETTINGS_ROUTE_EQ_STUDIO) {
+        if(base == BUTTON_SCROLL_FWD)
+            eq_studio_adjust(wheel_step(data, 8));
+        else if(base == BUTTON_SCROLL_BACK)
+            eq_studio_adjust(-wheel_step(data, 8));
+        else if(base == BUTTON_RIGHT)
+            eq_studio_select_band(1);
+        else if(base == BUTTON_LEFT)
+            eq_studio_select_band(-1);
+        else if(base == BUTTON_SELECT && !repeated) {
+            eq_studio_editing = !eq_studio_editing;
+            render_current_route(false);
+        }
+        else if(base == BUTTON_PLAY && !repeated) {
+            if(eq_studio_editing)
+                eq_studio_cycle_mode();
+            else
+                eq_studio_toggle_enabled();
+        }
+        else if(base == BUTTON_MENU && !repeated) {
+            eq_studio_editing = false;
+            crazypod_state_save(false);
+            pop_route();
+        }
+        return;
+    }
+
     if(choice_overlay.kind != CHOICE_OVERLAY_NONE) {
         if(base == BUTTON_SCROLL_FWD)
             move_choice_overlay(wheel_step(data, 12));
@@ -7870,9 +8683,9 @@ static void display_flush(lv_display_t *display, const lv_area_t *area,
             crazypod_coverflow_invalidate();
         }
         else {
-            lcd_update_rect(dirty_x1, dirty_y1,
-                            dirty_x2 - dirty_x1 + 1,
-                            dirty_y2 - dirty_y1 + 1);
+            crazypod_present_queue_rect(dirty_x1, dirty_y1,
+                                        dirty_x2 - dirty_x1 + 1,
+                                        dirty_y2 - dirty_y1 + 1);
         }
         dirty_valid = false;
     }
@@ -7930,6 +8743,12 @@ void crazypod_ui_run(void)
     lcd_set_viewport(NULL);
     lv_init();
     lv_tick_set_cb(rockbox_tick_ms);
+    crazypod_present_init(current_tick);
+    crazypod_frameclock_reset(&lvgl_clock, current_tick);
+    crazypod_frameclock_reset(&desktop_motion_clock, current_tick);
+    last_desktop_capsule_spectrum_tick = current_tick;
+    desktop_capsule_spectrum_phase = 0;
+    desktop_capsule_spectrum_playing_seen = false;
     crazypod_image_init();
     crazypod_artwork_init();
     crazypod_icons_init();
@@ -7992,17 +8811,24 @@ void crazypod_ui_run(void)
         process_photo_favorite_hold();
         process_photo_wheel_touch();
         process_photo_pan_render();
+        process_wallpaper_crop_state();
+        process_wallpaper_crop_loading_progress();
         process_wallpaper_crop_render();
         service_music_scan();
         process_deferred_route_render();
         process_artwork_updates();
         process_photo_updates();
         tick_desktop_carousel();
+        tick_desktop_capsule_spectrum();
         tick_now_playing_wave();
-        lv_timer_handler();
+        if(crazypod_frameclock_due(&lvgl_clock, current_tick)) {
+            lv_timer_handler();
+            crazypod_frameclock_schedule_next(&lvgl_clock, current_tick);
+        }
         render_desktop_carousel_native();
         crazypod_coverflow_tick();
         sync_album_flow_metadata();
+        crazypod_present_tick();
         if(crazypod_artwork_busy() || crazypod_photos_busy())
             keep_cpu_boosted(HZ / 10);
         if(!lv_anim_count_running() &&

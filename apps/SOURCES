@@ -1,5 +1,6 @@
 crazypod/crazypod_main.c
 crazypod/crazypod_lcd.c
+crazypod/crazypod_frameclock.c
 crazypod/crazypod_image.c
 crazypod/crazypod_photos.c
 crazypod/crazypod_artwork.c

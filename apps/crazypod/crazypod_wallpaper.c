@@ -2,6 +2,7 @@
 
 #ifdef IPOD_6G
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -28,6 +29,9 @@
     (WALLPAPER_WIDTH * WALLPAPER_HEIGHT * sizeof(fb_data))
 #define WALLPAPER_DECODE_BYTES \
     (CUSTOM_WALLPAPER_BYTES + 64 * 1024)
+#define WALLPAPER_CROP_DECODE_EXTRA (64 * 1024)
+#define WALLPAPER_CROP_MAX_PIXELS (4 * 1024 * 1024)
+#define WALLPAPER_CROP_OVERSAMPLE 2
 #define WALLPAPER_PATH "/.rockbox/crazypod/default-home.bmp"
 #define CUSTOM_WALLPAPER_DIRECTORY "/.crazypod"
 #define CUSTOM_WALLPAPER_CACHE_DIRECTORY "/.crazypod/cache"
@@ -517,20 +521,240 @@ static fb_data sample_crop_pixel(
         (blue0 * (256 - fy) + blue1 * fy) >> 16);
 }
 
+static int crop_decode_max_scale(int width, int height)
+{
+    uint64_t source_pixels;
+    int scale = 1;
+
+    if(width <= 0 || height <= 0)
+        return 0;
+    source_pixels = (uint64_t)width * height;
+    if(source_pixels > WALLPAPER_CROP_MAX_PIXELS)
+        return 0;
+    while((uint64_t)(scale + 1) * (scale + 1) *
+              source_pixels <=
+          WALLPAPER_CROP_MAX_PIXELS)
+        ++scale;
+    return scale;
+}
+
+int crazypod_wallpaper_crop_max_zoom(
+    const lv_image_dsc_t *source_descriptor)
+{
+    int source_width;
+    int source_height;
+    int maximum_width;
+    int maximum_height;
+    int decode_scale;
+    int width_zoom;
+    int height_zoom;
+    int maximum_zoom;
+
+    if(source_descriptor == NULL ||
+       source_descriptor->header.magic != LV_IMAGE_HEADER_MAGIC ||
+       source_descriptor->header.w <= 0 ||
+       source_descriptor->header.h <= 0)
+        return 100;
+    source_width = source_descriptor->header.w;
+    source_height = source_descriptor->header.h;
+    if(source_width * 3 > source_height * 4) {
+        maximum_height = source_height;
+        maximum_width = maximum_height * 4 / 3;
+    }
+    else {
+        maximum_width = source_width;
+        maximum_height = maximum_width * 3 / 4;
+    }
+    decode_scale =
+        crop_decode_max_scale(source_width, source_height);
+    if(decode_scale < 1)
+        return 100;
+    width_zoom =
+        maximum_width * decode_scale * 100 /
+        WALLPAPER_WIDTH;
+    height_zoom =
+        maximum_height * decode_scale * 100 /
+        WALLPAPER_HEIGHT;
+    maximum_zoom =
+        width_zoom < height_zoom ? width_zoom : height_zoom;
+    if(maximum_zoom < 100)
+        maximum_zoom = 100;
+    if(maximum_zoom > 500)
+        maximum_zoom = 500;
+    return maximum_zoom;
+}
+
+static bool decode_crop_source(
+    const char *path, int width, int height,
+    struct bitmap *bitmap, int *decode_handle)
+{
+    size_t pixel_bytes;
+    size_t decode_bytes;
+    fb_data *decode_buffer;
+    int format = FORMAT_NATIVE | FORMAT_RESIZE |
+        FORMAT_KEEP_ASPECT;
+    int result;
+
+    if(path == NULL || bitmap == NULL ||
+       decode_handle == NULL || width <= 0 || height <= 0 ||
+       (uint64_t)width * height >
+           WALLPAPER_CROP_MAX_PIXELS)
+        return false;
+    pixel_bytes =
+        (size_t)width * height * sizeof(fb_data);
+    decode_bytes =
+        pixel_bytes + WALLPAPER_CROP_DECODE_EXTRA;
+    if(decode_bytes > INT_MAX)
+        return false;
+    *decode_handle = core_alloc_ex(
+        decode_bytes, &buflib_ops_locked);
+    if(*decode_handle < 0)
+        return false;
+    decode_buffer = core_get_data(*decode_handle);
+    memset(bitmap, 0, sizeof(*bitmap));
+    bitmap->width = width;
+    bitmap->height = height;
+    bitmap->data = (unsigned char *)decode_buffer;
+
+    crazypod_image_decode_lock();
+    if(path_has_extension(path, ".jpg") ||
+       path_has_extension(path, ".jpeg"))
+        result = read_jpeg_file(
+            path, bitmap, (int)decode_bytes,
+            format, &format_native);
+    else if(path_has_extension(path, ".bmp"))
+        result = read_bmp_file(
+            path, bitmap, (int)decode_bytes,
+            format, &format_native);
+    else
+        result = -1;
+    crazypod_image_decode_unlock();
+    if(result < 0 || bitmap->width <= 0 ||
+       bitmap->height <= 0 || bitmap->width > width ||
+       bitmap->height > height || bitmap->data == NULL) {
+        *decode_handle = core_free(*decode_handle);
+        return false;
+    }
+    return true;
+}
+
+static bool render_crop_from_original(
+    const char *path,
+    const lv_image_dsc_t *preview_descriptor,
+    int crop_x, int crop_y, int crop_width, int crop_height,
+    fb_data *destination,
+    crazypod_wallpaper_progress_cb progress_cb,
+    void *progress_user_data)
+{
+    struct bitmap bitmap;
+    const fb_data *source;
+    int preview_width = preview_descriptor->header.w;
+    int preview_height = preview_descriptor->header.h;
+    int maximum_scale =
+        crop_decode_max_scale(preview_width, preview_height);
+    int width_scale =
+        (WALLPAPER_WIDTH * WALLPAPER_CROP_OVERSAMPLE +
+         crop_width - 1) / crop_width;
+    int height_scale =
+        (WALLPAPER_HEIGHT * WALLPAPER_CROP_OVERSAMPLE +
+         crop_height - 1) / crop_height;
+    int decode_scale =
+        width_scale > height_scale ? width_scale : height_scale;
+    int decode_width;
+    int decode_height;
+    int decode_handle = -1;
+    int high_x;
+    int high_y;
+    int high_right;
+    int high_bottom;
+    int high_width;
+    int high_height;
+    int y;
+
+    if(maximum_scale < 1 || destination == NULL)
+        return false;
+    if(decode_scale < 1)
+        decode_scale = 1;
+    if(decode_scale > maximum_scale)
+        decode_scale = maximum_scale;
+    decode_width = preview_width * decode_scale;
+    decode_height = preview_height * decode_scale;
+    if(progress_cb != NULL)
+        progress_cb(12, progress_user_data);
+    if(!decode_crop_source(
+           path, decode_width, decode_height,
+           &bitmap, &decode_handle))
+        return false;
+    if(progress_cb != NULL)
+        progress_cb(55, progress_user_data);
+    high_x = (int)(
+        ((int64_t)crop_x * bitmap.width +
+         preview_width / 2) / preview_width);
+    high_y = (int)(
+        ((int64_t)crop_y * bitmap.height +
+         preview_height / 2) / preview_height);
+    high_right = (int)(
+        ((int64_t)(crop_x + crop_width) * bitmap.width +
+         preview_width / 2) / preview_width);
+    high_bottom = (int)(
+        ((int64_t)(crop_y + crop_height) * bitmap.height +
+         preview_height / 2) / preview_height);
+    if(high_x < 0)
+        high_x = 0;
+    if(high_y < 0)
+        high_y = 0;
+    if(high_right > bitmap.width)
+        high_right = bitmap.width;
+    if(high_bottom > bitmap.height)
+        high_bottom = bitmap.height;
+    high_width = high_right - high_x;
+    high_height = high_bottom - high_y;
+    if(high_width < WALLPAPER_WIDTH ||
+       high_height < WALLPAPER_HEIGHT) {
+        core_free(decode_handle);
+        return false;
+    }
+    source = (const fb_data *)bitmap.data;
+    for(y = 0; y < WALLPAPER_HEIGHT; ++y) {
+        int source_y_q8 = high_y * 256 +
+            y * (high_height - 1) * 256 /
+            (WALLPAPER_HEIGHT - 1);
+        int x;
+
+        for(x = 0; x < WALLPAPER_WIDTH; ++x) {
+            int source_x_q8 = high_x * 256 +
+                x * (high_width - 1) * 256 /
+                (WALLPAPER_WIDTH - 1);
+
+            destination[y * WALLPAPER_WIDTH + x] =
+                sample_crop_pixel(
+                    source, bitmap.width, bitmap.height,
+                    bitmap.width, source_x_q8, source_y_q8);
+        }
+        if(progress_cb != NULL && (y % 48) == 47)
+            progress_cb(
+                55 + (y + 1) * 35 / WALLPAPER_HEIGHT,
+                progress_user_data);
+    }
+    core_free(decode_handle);
+    if(progress_cb != NULL)
+        progress_cb(90, progress_user_data);
+    return true;
+}
+
 bool crazypod_wallpaper_apply_crop(
     bool menu, const char *path,
     const lv_image_dsc_t *source_descriptor,
-    int crop_x, int crop_y, int crop_width, int crop_height)
+    int crop_x, int crop_y, int crop_width, int crop_height,
+    crazypod_wallpaper_progress_cb progress_cb,
+    void *progress_user_data)
 {
-    const fb_data *source;
     fb_data *destination =
         menu ? custom_menu_pixels : custom_home_pixels;
     lv_image_dsc_t *descriptor =
         menu ? &custom_menu_descriptor : &custom_home_descriptor;
     int source_width;
     int source_height;
-    int source_stride;
-    int y;
 
     if(path == NULL || path[0] == '\0' ||
        source_descriptor == NULL ||
@@ -539,35 +763,24 @@ bool crazypod_wallpaper_apply_crop(
         return false;
     source_width = source_descriptor->header.w;
     source_height = source_descriptor->header.h;
-    source_stride =
-        source_descriptor->header.stride / sizeof(fb_data);
     if(source_width <= 0 || source_height <= 0 ||
-       source_stride < source_width ||
        crop_x < 0 || crop_y < 0 ||
        crop_width <= 1 || crop_height <= 1 ||
        crop_x + crop_width > source_width ||
-       crop_y + crop_height > source_height)
+        crop_y + crop_height > source_height)
         return false;
-    source = (const fb_data *)source_descriptor->data;
-    for(y = 0; y < WALLPAPER_HEIGHT; ++y) {
-        int source_y_q8 = crop_y * 256 +
-            y * (crop_height - 1) * 256 /
-            (WALLPAPER_HEIGHT - 1);
-        int x;
-
-        for(x = 0; x < WALLPAPER_WIDTH; ++x) {
-            int source_x_q8 = crop_x * 256 +
-                x * (crop_width - 1) * 256 /
-                (WALLPAPER_WIDTH - 1);
-
-            destination[y * WALLPAPER_WIDTH + x] =
-                sample_crop_pixel(
-                    source, source_width, source_height,
-                    source_stride, source_x_q8, source_y_q8);
-        }
-    }
-    if(!save_native_wallpaper(menu, path, destination) ||
-       !crazypod_appearance_set_wallpaper(menu, path))
+    if(progress_cb != NULL)
+        progress_cb(5, progress_user_data);
+    if(!render_crop_from_original(
+           path, source_descriptor,
+           crop_x, crop_y, crop_width, crop_height,
+           destination, progress_cb, progress_user_data))
+        return false;
+    if(!save_native_wallpaper(menu, path, destination))
+        return false;
+    if(progress_cb != NULL)
+        progress_cb(96, progress_user_data);
+    if(!crazypod_appearance_set_wallpaper(menu, path))
         return false;
     if(!crazypod_image_configure_rgb565(
            descriptor, destination,
@@ -579,6 +792,8 @@ bool crazypod_wallpaper_apply_crop(
         custom_home_valid = true;
         release_frosted_capsule();
     }
+    if(progress_cb != NULL)
+        progress_cb(100, progress_user_data);
     return true;
 }
 

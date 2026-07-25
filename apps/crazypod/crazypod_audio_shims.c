@@ -19,6 +19,19 @@
 struct user_settings global_settings;
 struct system_status global_status;
 
+static const struct eq_band_setting crazypod_eq_defaults[EQ_NUM_BANDS] = {
+    { 32, 7, 0 },
+    { 64, 10, 0 },
+    { 125, 10, 0 },
+    { 250, 10, 0 },
+    { 500, 10, 0 },
+    { 1000, 10, 0 },
+    { 2000, 10, 0 },
+    { 4000, 10, 0 },
+    { 8000, 10, 0 },
+    { 16000, 7, 0 },
+};
+
 int string_option(const char *option, const char *const options[],
                   bool ignore_case)
 {
@@ -213,8 +226,20 @@ void sound_settings_apply(void)
     sound_set(SOUND_STEREO_WIDTH, global_settings.stereo_width);
 }
 
+void crazypod_eq_settings_apply(void)
+{
+    int i;
+
+    dsp_eq_enable(global_settings.eq_enabled);
+    dsp_set_eq_precut(global_settings.eq_precut);
+    for(i = 0; i < EQ_NUM_BANDS; ++i)
+        dsp_set_eq_coefs(i, &global_settings.eq_band_settings[i]);
+}
+
 void crazypod_audio_settings_init(void)
 {
+    int i;
+
     memset(&global_settings, 0, sizeof(global_settings));
     memset(&global_status, 0, sizeof(global_status));
     global_status.volume = -25;
@@ -236,6 +261,8 @@ void crazypod_audio_settings_init(void)
     global_settings.lcd_sleep_after_backlight_off = 0;
 #endif
     global_settings.sleeptimer_duration = 30;
+    for(i = 0; i < EQ_NUM_BANDS; ++i)
+        global_settings.eq_band_settings[i] = crazypod_eq_defaults[i];
 #ifdef HAVE_DISK_STORAGE
     global_settings.buffer_margin = 5;
 #endif

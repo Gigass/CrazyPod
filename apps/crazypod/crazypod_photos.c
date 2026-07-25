@@ -86,6 +86,7 @@ struct photo_view_slot {
     int requested_index;
     int decoded_index;
     int active_bank;
+    int progress;
     bool pending;
     bool valid;
 };
@@ -134,6 +135,7 @@ static fb_data photo_viewport_pixels[
 static lv_image_dsc_t photo_viewport_descriptor;
 static const uint8_t *photo_viewport_source;
 static const uint8_t *photo_crop_preview_source;
+static int photo_crop_preview_image_y;
 static int photo_viewport_index = -1;
 static int photo_viewport_zoom_percent;
 static int photo_viewport_pan_x;
@@ -770,6 +772,7 @@ static bool find_request(struct photo_decode_request *request)
         snprintf(request->path, sizeof(request->path), "%s",
                  view_slot.requested_path);
         view_slot.pending = false;
+        view_slot.progress = 25;
         photo_worker_decoding = true;
         mutex_unlock(&photo_mutex);
         return true;
@@ -810,6 +813,7 @@ static void publish_request(const struct photo_decode_request *request,
             view_slot.decoded_index = request->index;
             view_slot.decoded_serial = request->serial;
             view_slot.valid = valid;
+            view_slot.progress = valid ? 100 : -1;
             ++photo_publish_generation;
             ++photo_view_publish_generation;
         }
@@ -829,6 +833,19 @@ static void publish_request(const struct photo_decode_request *request,
             ++photo_publish_generation;
         }
     }
+    mutex_unlock(&photo_mutex);
+}
+
+static void update_view_progress(
+    const struct photo_decode_request *request, int progress)
+{
+    if(request == NULL || !request->view)
+        return;
+    mutex_lock(&photo_mutex);
+    if(view_slot.request_serial == request->serial &&
+       view_slot.requested_index == request->index &&
+       strcmp(view_slot.requested_path, request->path) == 0)
+        view_slot.progress = progress;
     mutex_unlock(&photo_mutex);
 }
 
@@ -871,13 +888,19 @@ static void photo_thread(void)
                 pixels = slot->pixels[bank];
             }
             if(request.view)
+                update_view_progress(&request, 35);
+            if(request.view)
                 cache_hit = load_cached_view(
                     &request, descriptor, pixels);
             else
                 cache_hit = load_cached_thumbnail(
                     &request, descriptor, pixels);
+            if(request.view && !cache_hit)
+                update_view_progress(&request, 45);
             valid = cache_hit ||
                 decode_photo(&request, descriptor, pixels);
+            if(request.view && valid)
+                update_view_progress(&request, 90);
             publish_request(&request, bank, valid);
             if(valid && request.view && !cache_hit)
                 store_cached_view(&request, descriptor);
@@ -1095,12 +1118,29 @@ const lv_image_dsc_t *crazypod_photo_view(int index)
         ++view_slot.request_serial;
         view_slot.pending = true;
         view_slot.valid = false;
+        view_slot.progress = 10;
         changed = true;
     }
     mutex_unlock(&photo_mutex);
     if(changed)
         wake_worker();
     return result;
+}
+
+int crazypod_photo_view_progress(int index)
+{
+    int progress;
+
+    if(index < 0 || index >= photo_count)
+        return -1;
+    mutex_lock(&photo_mutex);
+    if(view_slot.requested_index != index ||
+       strcmp(view_slot.requested_path, photos[index].path) != 0)
+        progress = 0;
+    else
+        progress = view_slot.progress;
+    mutex_unlock(&photo_mutex);
+    return progress;
 }
 
 static const lv_image_dsc_t *ready_thumbnail(int index)
@@ -1366,51 +1406,51 @@ const lv_image_dsc_t *crazypod_photo_render_viewport(
     return &photo_viewport_descriptor;
 }
 
-const lv_image_dsc_t *crazypod_photo_render_crop_preview(int index)
+const lv_image_dsc_t *crazypod_photo_render_crop_preview(
+    int index, int center_y)
 {
     const lv_image_dsc_t *source_descriptor =
         crazypod_photo_view(index);
     const int preview_height = 168;
     const fb_data *source;
-    uint32_t scale_x;
-    uint32_t scale_y;
-    uint32_t scale;
     int source_width;
     int source_height;
-    int display_width;
     int display_height;
-    int image_x;
     int image_y;
     int y;
 
     if(source_descriptor == NULL)
         return NULL;
-    if(photo_viewport_descriptor.header.magic ==
-           LV_IMAGE_HEADER_MAGIC &&
-       photo_viewport_descriptor.header.w ==
-           CRAZYPOD_PHOTO_VIEWPORT_WIDTH &&
-       photo_viewport_descriptor.header.h == preview_height &&
-       photo_crop_preview_source == source_descriptor->data)
-        return &photo_viewport_descriptor;
     source = (const fb_data *)source_descriptor->data;
     source_width = source_descriptor->header.w;
     source_height = source_descriptor->header.h;
     if(source == NULL || source_width <= 0 || source_height <= 0)
         return NULL;
-    scale_x =
-        (uint32_t)CRAZYPOD_PHOTO_VIEWPORT_WIDTH *
-        LV_SCALE_NONE / source_width;
-    scale_y =
-        (uint32_t)preview_height *
-        LV_SCALE_NONE / source_height;
-    scale = scale_x < scale_y ? scale_x : scale_y;
-    if(scale == 0)
-        scale = 1;
-    display_width = source_width * scale / LV_SCALE_NONE;
-    display_height = source_height * scale / LV_SCALE_NONE;
-    image_x =
-        (CRAZYPOD_PHOTO_VIEWPORT_WIDTH - display_width) / 2;
-    image_y = (preview_height - display_height) / 2;
+    display_height =
+        source_height * CRAZYPOD_PHOTO_VIEWPORT_WIDTH /
+        source_width;
+    if(display_height < 1)
+        display_height = 1;
+    if(display_height <= preview_height)
+        image_y = (preview_height - display_height) / 2;
+    else {
+        if(center_y < 0)
+            center_y = source_height / 2;
+        image_y = preview_height / 2 -
+            center_y * display_height / source_height;
+        if(image_y > 0)
+            image_y = 0;
+        if(image_y < preview_height - display_height)
+            image_y = preview_height - display_height;
+    }
+    if(photo_viewport_descriptor.header.magic ==
+           LV_IMAGE_HEADER_MAGIC &&
+       photo_viewport_descriptor.header.w ==
+           CRAZYPOD_PHOTO_VIEWPORT_WIDTH &&
+       photo_viewport_descriptor.header.h == preview_height &&
+       photo_crop_preview_source == source_descriptor->data &&
+       photo_crop_preview_image_y == image_y)
+        return &photo_viewport_descriptor;
     if(photo_viewport_descriptor.header.magic ==
        LV_IMAGE_HEADER_MAGIC)
         lv_image_cache_drop(&photo_viewport_descriptor);
@@ -1429,17 +1469,14 @@ const lv_image_dsc_t *crazypod_photo_render_crop_preview(int index)
                 display_height;
         for(x = 0;
             x < CRAZYPOD_PHOTO_VIEWPORT_WIDTH; ++x) {
-            int display_x = x - image_x;
             int source_x_q8;
 
             if(display_y < 0 ||
-               display_y >= display_height ||
-               display_x < 0 ||
-               display_x >= display_width)
+               display_y >= display_height)
                 continue;
             source_x_q8 =
-                display_x * source_width * 256 /
-                display_width;
+                x * source_width * 256 /
+                CRAZYPOD_PHOTO_VIEWPORT_WIDTH;
             photo_viewport_pixels[
                 y * CRAZYPOD_PHOTO_VIEWPORT_WIDTH + x] =
                 sample_rgb565_bilinear(
@@ -1451,6 +1488,7 @@ const lv_image_dsc_t *crazypod_photo_render_crop_preview(int index)
         &photo_viewport_descriptor, photo_viewport_pixels,
         CRAZYPOD_PHOTO_VIEWPORT_WIDTH, preview_height);
     photo_crop_preview_source = source_descriptor->data;
+    photo_crop_preview_image_y = image_y;
     photo_viewport_source = NULL;
     photo_viewport_index = -1;
     return &photo_viewport_descriptor;

@@ -15,6 +15,7 @@
 #include "settings.h"
 #include "sound.h"
 
+#include "crazypod_audio_shims.h"
 #include "crazypod_playlist.h"
 #include "crazypod_state.h"
 
@@ -24,8 +25,14 @@
 #define QUEUE_PATH STATE_DIRECTORY "/queue.m3u8"
 #define QUEUE_TEMP_PATH STATE_DIRECTORY "/queue.tmp"
 #define STATE_MAGIC 0x43505354u
-#define STATE_VERSION 3u
+#define STATE_VERSION 4u
 #define STATE_SAVE_INTERVAL (30 * HZ)
+#define CRAZYPOD_EQ_GAIN_MIN (-240)
+#define CRAZYPOD_EQ_GAIN_MAX 240
+#define CRAZYPOD_EQ_Q_MIN 1
+#define CRAZYPOD_EQ_Q_MAX 64
+#define CRAZYPOD_EQ_CUTOFF_MIN 20
+#define CRAZYPOD_EQ_CUTOFF_MAX 22040
 
 struct crazypod_state_disk_v1 {
     uint32_t magic;
@@ -69,7 +76,7 @@ struct crazypod_state_disk_v2 {
     uint32_t checksum;
 };
 
-struct crazypod_state_disk {
+struct crazypod_state_disk_v3 {
     uint32_t magic;
     uint32_t version;
     uint32_t size;
@@ -98,13 +105,48 @@ struct crazypod_state_disk {
     uint32_t checksum;
 };
 
+struct crazypod_state_eq_band_disk {
+    int32_t cutoff;
+    int32_t q;
+    int32_t gain;
+};
+
+struct crazypod_state_disk {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t checksum;
+};
+
 static unsigned long resume_elapsed;
 static unsigned long last_saved_elapsed;
 static long last_save_tick;
 static unsigned saved_queue_generation;
 static bool state_dirty;
-
-void dsp_eq_enable(bool enable);
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 {
@@ -135,6 +177,13 @@ static uint32_t state_v1_checksum(const struct crazypod_state_disk_v1 *state)
 static uint32_t state_v2_checksum(const struct crazypod_state_disk_v2 *state)
 {
     struct crazypod_state_disk_v2 copy = *state;
+    copy.checksum = 0;
+    return hash_bytes(2166136261u, &copy, sizeof(copy));
+}
+
+static uint32_t state_v3_checksum(const struct crazypod_state_disk_v3 *state)
+{
+    struct crazypod_state_disk_v3 copy = *state;
     copy.checksum = 0;
     return hash_bytes(2166136261u, &copy, sizeof(copy));
 }
@@ -185,6 +234,19 @@ static int read_line(int fd, char *line, size_t size)
     return result == 1 || length > 0 ? (int)length : -1;
 }
 
+static void copy_current_eq_settings(struct crazypod_state_disk *state)
+{
+    int i;
+
+    state->eq_precut = global_settings.eq_precut;
+    for(i = 0; i < EQ_NUM_BANDS; ++i) {
+        state->eq_bands[i].cutoff =
+            global_settings.eq_band_settings[i].cutoff;
+        state->eq_bands[i].q = global_settings.eq_band_settings[i].q;
+        state->eq_bands[i].gain = global_settings.eq_band_settings[i].gain;
+    }
+}
+
 static bool load_header(struct crazypod_state_disk *state)
 {
     int fd = open(STATE_PATH, O_RDONLY);
@@ -205,6 +267,45 @@ static bool load_header(struct crazypod_state_disk *state)
        header[2] == sizeof(*state)) {
         valid = read_exact(fd, state, sizeof(*state)) &&
                 state->checksum == state_checksum(state);
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 3u &&
+            header[2] == sizeof(struct crazypod_state_disk_v3)) {
+        struct crazypod_state_disk_v3 state_v3;
+
+        valid = read_exact(fd, &state_v3, sizeof(state_v3)) &&
+                state_v3.checksum == state_v3_checksum(&state_v3);
+        if(valid) {
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+            state->volume = state_v3.volume;
+            state->repeat_mode = state_v3.repeat_mode;
+            state->shuffled = state_v3.shuffled;
+            state->queue_index = state_v3.queue_index;
+            state->queue_count = state_v3.queue_count;
+            state->queue_hash = state_v3.queue_hash;
+            state->elapsed = state_v3.elapsed;
+            state->eq_enabled = state_v3.eq_enabled;
+            state->bass = state_v3.bass;
+            state->treble = state_v3.treble;
+            state->balance = state_v3.balance;
+            state->brightness = state_v3.brightness;
+            state->backlight_timeout = state_v3.backlight_timeout;
+            state->backlight_timeout_plugged =
+                state_v3.backlight_timeout_plugged;
+            state->lcd_sleep_after_backlight_off =
+                state_v3.lcd_sleep_after_backlight_off;
+            state->sleeptimer_duration = state_v3.sleeptimer_duration;
+            state->sleeptimer_on_startup = state_v3.sleeptimer_on_startup;
+            state->keypress_restarts_sleeptimer =
+                state_v3.keypress_restarts_sleeptimer;
+            state->beep = state_v3.beep;
+            state->keyclick = state_v3.keyclick;
+            state->keyclick_repeats = state_v3.keyclick_repeats;
+            state->keyclick_hardware = state_v3.keyclick_hardware;
+            copy_current_eq_settings(state);
+        }
     }
     else if(header[0] == STATE_MAGIC &&
             header[1] == 2u &&
@@ -242,6 +343,7 @@ static bool load_header(struct crazypod_state_disk *state)
             state->keyclick = state_v2.keyclick;
             state->keyclick_repeats = state_v2.keyclick_repeats;
             state->keyclick_hardware = 1;
+            copy_current_eq_settings(state);
         }
     }
     else if(header[0] == STATE_MAGIC &&
@@ -280,6 +382,7 @@ static bool load_header(struct crazypod_state_disk *state)
             state->beep = global_settings.beep;
             state->keyclick = global_settings.keyclick;
             state->keyclick_hardware = 1;
+            copy_current_eq_settings(state);
         }
     }
     close(fd);
@@ -300,6 +403,7 @@ static void clamp_and_apply_settings(const struct crazypod_state_disk *state)
 {
     int volume = state->volume;
     int repeat = state->repeat_mode;
+    int i;
 
     volume = clamp_int(volume, sound_min(SOUND_VOLUME),
                        sound_max(SOUND_VOLUME));
@@ -342,10 +446,25 @@ static void clamp_and_apply_settings(const struct crazypod_state_disk *state)
 #ifdef HAVE_HARDWARE_CLICK
     global_settings.keyclick_hardware = state->keyclick_hardware != 0;
 #endif
+    global_settings.eq_precut = clamp_int(state->eq_precut, 0, 240);
+    for(i = 0; i < EQ_NUM_BANDS; ++i) {
+        global_settings.eq_band_settings[i].cutoff =
+            clamp_int(state->eq_bands[i].cutoff,
+                      CRAZYPOD_EQ_CUTOFF_MIN,
+                      CRAZYPOD_EQ_CUTOFF_MAX);
+        global_settings.eq_band_settings[i].q =
+            clamp_int(state->eq_bands[i].q,
+                      CRAZYPOD_EQ_Q_MIN,
+                      CRAZYPOD_EQ_Q_MAX);
+        global_settings.eq_band_settings[i].gain =
+            clamp_int(state->eq_bands[i].gain,
+                      CRAZYPOD_EQ_GAIN_MIN,
+                      CRAZYPOD_EQ_GAIN_MAX);
+    }
 
     sound_set_volume(volume);
     sound_settings_apply();
-    dsp_eq_enable(global_settings.eq_enabled);
+    crazypod_eq_settings_apply();
 #ifdef HAVE_BACKLIGHT_BRIGHTNESS
     backlight_set_brightness(global_settings.brightness);
 #endif
@@ -474,6 +593,7 @@ void crazypod_state_save(bool force)
     uint32_t queue_count;
     unsigned long elapsed;
     int fd;
+    int i;
     bool success;
 
     id3 = audio_current_track();
@@ -522,6 +642,13 @@ void crazypod_state_save(bool force)
 #ifdef HAVE_HARDWARE_CLICK
     state.keyclick_hardware = global_settings.keyclick_hardware ? 1 : 0;
 #endif
+    state.eq_precut = global_settings.eq_precut;
+    for(i = 0; i < EQ_NUM_BANDS; ++i) {
+        state.eq_bands[i].cutoff =
+            global_settings.eq_band_settings[i].cutoff;
+        state.eq_bands[i].q = global_settings.eq_band_settings[i].q;
+        state.eq_bands[i].gain = global_settings.eq_band_settings[i].gain;
+    }
     state.checksum = state_checksum(&state);
 
     fd = open(STATE_TEMP_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);

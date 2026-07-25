@@ -13,6 +13,7 @@
 
 #include "crazypod_artwork.h"
 #include "crazypod_coverflow.h"
+#include "crazypod_frameclock.h"
 #include "crazypod_music.h"
 
 #define FLOW_CACHE_SLOTS 25
@@ -23,7 +24,6 @@
 #define FLOW_BOTTOM 194
 #define FLOW_CENTER_Y 106
 #define FLOW_POSITION_ONE (1L << 16)
-#define FLOW_FRAME_PHASES 3
 #define FLOW_RELEASE_STIFFNESS 400
 #define FLOW_RELEASE_DAMPING 40
 #define FLOW_RELEASE_MOMENTUM_DIVISOR 3
@@ -61,9 +61,8 @@ static int prefetched_visual_album;
 static long last_physics;
 static long last_prefetch;
 static long last_input;
-static long next_render;
+static struct crazypod_frameclock render_clock;
 static unsigned artwork_generation_seen;
-static int frame_phase;
 static bool cache_initialized;
 static bool input_active;
 
@@ -102,7 +101,7 @@ static uint32_t album_color(int index)
 static void clear_flow_area(void)
 {
     fb_data *pixels = framebuffer();
-    fb_data color = LCD_RGBPACK(5, 5, 9);
+    fb_data color = LCD_RGBPACK(0, 0, 0);
     int y;
 
     for(y = FLOW_TOP; y < FLOW_BOTTOM; ++y)
@@ -656,7 +655,7 @@ static void render_flow(void)
      * LVGL flushes are held while CoverFlow is active. Present the complete
      * screen once here so metadata and covers belong to the same LCD frame.
      */
-    lcd_update();
+    crazypod_present_queue_full();
 }
 
 void crazypod_coverflow_enter(int selected)
@@ -682,9 +681,8 @@ void crazypod_coverflow_enter(int selected)
     last_physics = current_tick;
     last_prefetch = current_tick;
     last_input = current_tick;
-    next_render = current_tick;
+    crazypod_frameclock_reset(&render_clock, current_tick);
     artwork_generation_seen = crazypod_artwork_generation();
-    frame_phase = 0;
     input_active = false;
     flow_active = true;
     flow_dirty = true;
@@ -774,7 +772,6 @@ int crazypod_coverflow_step(int direction)
     flow_dirty = true;
     prefetch_pending = true;
     last_prefetch = 0;
-    next_render = current_tick;
     return selected_album;
 }
 
@@ -893,12 +890,7 @@ void crazypod_coverflow_invalidate(void)
 
 static void schedule_next_frame(long now)
 {
-    static const int intervals[FLOW_FRAME_PHASES] = { 3, 3, 4 };
-
-    do {
-        next_render += intervals[frame_phase];
-        frame_phase = (frame_phase + 1) % FLOW_FRAME_PHASES;
-    } while(!TIME_BEFORE(now, next_render));
+    crazypod_frameclock_schedule_next(&render_clock, now);
 }
 
 void crazypod_coverflow_tick(void)
@@ -914,7 +906,7 @@ void crazypod_coverflow_tick(void)
         input_active ||
         position_q16 != target_position_q16 ||
         velocity_q16 != 0;
-    frame_due = !TIME_BEFORE(current_tick, next_render);
+    frame_due = crazypod_frameclock_due(&render_clock, current_tick);
     if(frame_due && animating)
         advance_position(current_tick);
 
