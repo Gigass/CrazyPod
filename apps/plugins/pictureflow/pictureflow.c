@@ -4426,6 +4426,8 @@ static bool show_track_list(void)
 
 static void select_next_track(bool allow_wrap)
 {
+    (void)allow_wrap;
+
     if (pf_tracks.count <= 0)
         return;
 
@@ -4435,14 +4437,13 @@ static void select_next_track(bool allow_wrap)
         pf_tracks.sel++;
         if (pf_tracks.sel==(pf_tracks.list_visible+pf_tracks.list_start))
             pf_tracks.list_start++;
-    } else if (allow_wrap && rb->global_settings->list_wraparound) {
-        pf_tracks.sel = 0;
-        pf_tracks.list_start = 0;
     }
 }
 
 static void select_prev_track(bool allow_wrap)
 {
+    (void)allow_wrap;
+
     if (pf_tracks.count <= 0)
         return;
 
@@ -4451,12 +4452,6 @@ static void select_prev_track(bool allow_wrap)
     if (pf_tracks.sel > 0 ) {
         if (pf_tracks.sel==pf_tracks.list_start) pf_tracks.list_start--;
         pf_tracks.sel--;
-    } else if (allow_wrap && rb->global_settings->list_wraparound) {
-        pf_tracks.sel = pf_tracks.count - 1;
-        if (pf_tracks.count > pf_tracks.list_visible)
-            pf_tracks.list_start = pf_tracks.count - pf_tracks.list_visible;
-        else
-            pf_tracks.list_start = 0;
     }
 }
 

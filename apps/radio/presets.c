@@ -94,13 +94,10 @@ int preset_find(int freq)
     return -1;
 }
 
-/* Return the closest preset encountered in the search direction with
-   wraparound. */
+/* Return the closest preset encountered in the search direction. */
 static int find_closest_preset(int freq, int direction)
 {
     int i;
-    int lowpreset = 0;
-    int highpreset = 0;
     int closest = -1;
 
     if (direction == 0) /* direction == 0 isn't really used */
@@ -111,12 +108,6 @@ static int find_closest_preset(int freq, int direction)
         int f = presets[i].frequency;
         if (f == freq)
             return i; /* Exact match = stop */
-
-        /* remember the highest and lowest presets for wraparound */
-        if (f < presets[lowpreset].frequency)
-            lowpreset = i;
-        if (f > presets[highpreset].frequency)
-            highpreset = i;
 
         /* find the closest preset in the given direction */
         if (direction > 0 && f > freq)
@@ -129,16 +120,6 @@ static int find_closest_preset(int freq, int direction)
             if (closest < 0 || f > presets[closest].frequency)
                 closest = i;
         }
-    }
-
-    if (closest < 0)
-    {
-        /* no presets in the given direction */
-        /* wrap around depending on direction */
-        if (direction < 0)
-            closest = highpreset;
-        else
-            closest = lowpreset;
     }
 
     return closest;
@@ -154,7 +135,15 @@ void preset_next(int direction)
     if (curr_preset == -1)
         curr_preset = find_closest_preset(curr_freq, direction);
     else
-        curr_preset = (curr_preset + direction + num_presets) % num_presets;
+    {
+        int next = curr_preset + direction;
+        if (next < 0 || next >= num_presets)
+            return;
+        curr_preset = next;
+    }
+
+    if (curr_preset < 0)
+        return;
 
     /* Must stay on the current grid for the region */
     curr_freq = snap_freq_to_grid(presets[curr_preset].frequency);

@@ -19,15 +19,12 @@
 #define ICON_BYTES (ICON_ROW_BYTES * ICON_HEIGHT)
 
 struct icon_slot {
-    uint8_t pixels[ICON_BYTES] CACHEALIGN_AT_LEAST_ATTR(16);
     uint8_t premultiplied[ICON_BYTES] CACHEALIGN_AT_LEAST_ATTR(16);
-    lv_image_dsc_t descriptor;
+    struct crazypod_icon image;
     bool valid;
 };
 
 static struct icon_slot slots[CRAZYPOD_ICON_COUNT];
-static uint8_t icon_load_buffer[ICON_BYTES]
-    CACHEALIGN_AT_LEAST_ATTR(16);
 static int loaded_theme = -1;
 
 static const char *const theme_paths[CRAZYPOD_ICON_THEME_COUNT] = {
@@ -79,7 +76,6 @@ static bool load_icon(struct icon_slot *slot, const char *path)
     bool top_down;
     int fd;
     int source_row;
-    int pixel;
 
     fd = open(path, O_RDONLY);
     if(fd < 0)
@@ -107,37 +103,34 @@ static bool load_icon(struct icon_slot *slot, const char *path)
     for(source_row = 0; source_row < ICON_HEIGHT; ++source_row) {
         int target_row = top_down
             ? source_row : ICON_HEIGHT - 1 - source_row;
+        uint8_t *target =
+            slot->premultiplied + target_row * ICON_ROW_BYTES;
+        int pixel;
+
         if(!read_exact(fd, row, sizeof(row))) {
             close(fd);
             return false;
         }
-        memcpy(icon_load_buffer + target_row * ICON_ROW_BYTES,
-               row, sizeof(row));
+        for(pixel = 0; pixel < ICON_WIDTH; ++pixel) {
+            const uint8_t *source = row + pixel * 4;
+            uint8_t *destination = target + pixel * 4;
+            unsigned alpha = source[3];
+            int channel;
+
+            for(channel = 0; channel < 3; ++channel) {
+                unsigned product = source[channel] * alpha + 128;
+                destination[channel] =
+                    (product + (product >> 8)) >> 8;
+            }
+            destination[3] = alpha;
+        }
     }
     close(fd);
 
-    memcpy(slot->pixels, icon_load_buffer, sizeof(slot->pixels));
-    for(pixel = 0; pixel < ICON_WIDTH * ICON_HEIGHT; ++pixel) {
-        const uint8_t *source = slot->pixels + pixel * 4;
-        uint8_t *destination = slot->premultiplied + pixel * 4;
-        unsigned alpha = source[3];
-        int channel;
-
-        for(channel = 0; channel < 3; ++channel) {
-            unsigned product = source[channel] * alpha + 128;
-            destination[channel] =
-                (product + (product >> 8)) >> 8;
-        }
-        destination[3] = alpha;
-    }
-    memset(&slot->descriptor, 0, sizeof(slot->descriptor));
-    slot->descriptor.header.magic = LV_IMAGE_HEADER_MAGIC;
-    slot->descriptor.header.cf = LV_COLOR_FORMAT_ARGB8888;
-    slot->descriptor.header.w = ICON_WIDTH;
-    slot->descriptor.header.h = ICON_HEIGHT;
-    slot->descriptor.header.stride = ICON_ROW_BYTES;
-    slot->descriptor.data_size = ICON_BYTES;
-    slot->descriptor.data = slot->pixels;
+    slot->image.pixels = slot->premultiplied;
+    slot->image.width = ICON_WIDTH;
+    slot->image.height = ICON_HEIGHT;
+    slot->image.stride = ICON_ROW_BYTES;
     slot->valid = true;
     return true;
 }
@@ -170,19 +163,11 @@ void crazypod_icons_load_theme(int theme)
         loaded_theme = theme;
 }
 
-const lv_image_dsc_t *crazypod_icon_get(int index)
+const struct crazypod_icon *crazypod_icon_get(int index)
 {
     if(index < 0 || index >= CRAZYPOD_ICON_COUNT || !slots[index].valid)
         return NULL;
-    return &slots[index].descriptor;
-}
-
-const uint8_t *crazypod_icon_get_premultiplied(int index)
-{
-    if(index < 0 || index >= CRAZYPOD_ICON_COUNT ||
-       !slots[index].valid)
-        return NULL;
-    return slots[index].premultiplied;
+    return &slots[index].image;
 }
 
 #endif

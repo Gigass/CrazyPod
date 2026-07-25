@@ -6,10 +6,12 @@
 #include <string.h>
 
 #include "audio.h"
+#include "backlight.h"
 #include "dir.h"
 #include "file.h"
 #include "kernel.h"
 #include "metadata.h"
+#include "powermgmt.h"
 #include "settings.h"
 #include "sound.h"
 
@@ -22,10 +24,10 @@
 #define QUEUE_PATH STATE_DIRECTORY "/queue.m3u8"
 #define QUEUE_TEMP_PATH STATE_DIRECTORY "/queue.tmp"
 #define STATE_MAGIC 0x43505354u
-#define STATE_VERSION 1u
+#define STATE_VERSION 3u
 #define STATE_SAVE_INTERVAL (30 * HZ)
 
-struct crazypod_state_disk {
+struct crazypod_state_disk_v1 {
     uint32_t magic;
     uint32_t version;
     uint32_t size;
@@ -39,11 +41,70 @@ struct crazypod_state_disk {
     uint32_t checksum;
 };
 
+struct crazypod_state_disk_v2 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    uint32_t checksum;
+};
+
+struct crazypod_state_disk {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    uint32_t checksum;
+};
+
 static unsigned long resume_elapsed;
 static unsigned long last_saved_elapsed;
 static long last_save_tick;
 static unsigned saved_queue_generation;
 static bool state_dirty;
+
+void dsp_eq_enable(bool enable);
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 {
@@ -60,6 +121,20 @@ static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 static uint32_t state_checksum(const struct crazypod_state_disk *state)
 {
     struct crazypod_state_disk copy = *state;
+    copy.checksum = 0;
+    return hash_bytes(2166136261u, &copy, sizeof(copy));
+}
+
+static uint32_t state_v1_checksum(const struct crazypod_state_disk_v1 *state)
+{
+    struct crazypod_state_disk_v1 copy = *state;
+    copy.checksum = 0;
+    return hash_bytes(2166136261u, &copy, sizeof(copy));
+}
+
+static uint32_t state_v2_checksum(const struct crazypod_state_disk_v2 *state)
+{
+    struct crazypod_state_disk_v2 copy = *state;
     copy.checksum = 0;
     return hash_bytes(2166136261u, &copy, sizeof(copy));
 }
@@ -113,18 +188,112 @@ static int read_line(int fd, char *line, size_t size)
 static bool load_header(struct crazypod_state_disk *state)
 {
     int fd = open(STATE_PATH, O_RDONLY);
-    bool valid;
+    uint32_t header[3];
+    bool valid = false;
 
     if(fd < 0)
         return false;
-    valid = read_exact(fd, state, sizeof(*state));
+    if(!read_exact(fd, header, sizeof(header)) ||
+       lseek(fd, 0, SEEK_SET) < 0) {
+        close(fd);
+        return false;
+    }
+
+    memset(state, 0, sizeof(*state));
+    if(header[0] == STATE_MAGIC &&
+       header[1] == STATE_VERSION &&
+       header[2] == sizeof(*state)) {
+        valid = read_exact(fd, state, sizeof(*state)) &&
+                state->checksum == state_checksum(state);
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 2u &&
+            header[2] == sizeof(struct crazypod_state_disk_v2)) {
+        struct crazypod_state_disk_v2 state_v2;
+
+        valid = read_exact(fd, &state_v2, sizeof(state_v2)) &&
+                state_v2.checksum == state_v2_checksum(&state_v2);
+        if(valid) {
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+            state->volume = state_v2.volume;
+            state->repeat_mode = state_v2.repeat_mode;
+            state->shuffled = state_v2.shuffled;
+            state->queue_index = state_v2.queue_index;
+            state->queue_count = state_v2.queue_count;
+            state->queue_hash = state_v2.queue_hash;
+            state->elapsed = state_v2.elapsed;
+            state->eq_enabled = state_v2.eq_enabled;
+            state->bass = state_v2.bass;
+            state->treble = state_v2.treble;
+            state->balance = state_v2.balance;
+            state->brightness = state_v2.brightness;
+            state->backlight_timeout = state_v2.backlight_timeout;
+            state->backlight_timeout_plugged =
+                state_v2.backlight_timeout_plugged;
+            state->lcd_sleep_after_backlight_off =
+                state_v2.lcd_sleep_after_backlight_off;
+            state->sleeptimer_duration = state_v2.sleeptimer_duration;
+            state->sleeptimer_on_startup = state_v2.sleeptimer_on_startup;
+            state->keypress_restarts_sleeptimer =
+                state_v2.keypress_restarts_sleeptimer;
+            state->beep = state_v2.beep;
+            state->keyclick = state_v2.keyclick;
+            state->keyclick_repeats = state_v2.keyclick_repeats;
+            state->keyclick_hardware = 1;
+        }
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 1u &&
+            header[2] == sizeof(struct crazypod_state_disk_v1)) {
+        struct crazypod_state_disk_v1 state_v1;
+
+        valid = read_exact(fd, &state_v1, sizeof(state_v1)) &&
+                state_v1.checksum == state_v1_checksum(&state_v1);
+        if(valid) {
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+            state->volume = state_v1.volume;
+            state->repeat_mode = state_v1.repeat_mode;
+            state->shuffled = state_v1.shuffled;
+            state->queue_index = state_v1.queue_index;
+            state->queue_count = state_v1.queue_count;
+            state->queue_hash = state_v1.queue_hash;
+            state->elapsed = state_v1.elapsed;
+            state->bass = global_settings.bass;
+            state->treble = global_settings.treble;
+            state->balance = global_settings.balance;
+#ifdef HAVE_BACKLIGHT_BRIGHTNESS
+            state->brightness = global_settings.brightness;
+#endif
+            state->backlight_timeout = global_settings.backlight_timeout;
+#if CONFIG_CHARGING
+            state->backlight_timeout_plugged =
+                global_settings.backlight_timeout_plugged;
+#endif
+            state->lcd_sleep_after_backlight_off =
+                global_settings.lcd_sleep_after_backlight_off;
+            state->sleeptimer_duration =
+                global_settings.sleeptimer_duration;
+            state->beep = global_settings.beep;
+            state->keyclick = global_settings.keyclick;
+            state->keyclick_hardware = 1;
+        }
+    }
     close(fd);
 
-    return valid &&
-           state->magic == STATE_MAGIC &&
-           state->version == STATE_VERSION &&
-           state->size == sizeof(*state) &&
-           state->checksum == state_checksum(state);
+    return valid;
+}
+
+static int clamp_int(int value, int minimum, int maximum)
+{
+    if(value < minimum)
+        return minimum;
+    if(value > maximum)
+        return maximum;
+    return value;
 }
 
 static void clamp_and_apply_settings(const struct crazypod_state_disk *state)
@@ -132,16 +301,65 @@ static void clamp_and_apply_settings(const struct crazypod_state_disk *state)
     int volume = state->volume;
     int repeat = state->repeat_mode;
 
-    if(volume < sound_min(SOUND_VOLUME))
-        volume = sound_min(SOUND_VOLUME);
-    if(volume > sound_max(SOUND_VOLUME))
-        volume = sound_max(SOUND_VOLUME);
+    volume = clamp_int(volume, sound_min(SOUND_VOLUME),
+                       sound_max(SOUND_VOLUME));
     if(repeat < REPEAT_OFF || repeat > REPEAT_ONE)
         repeat = REPEAT_OFF;
 
     global_status.volume = volume;
     global_settings.repeat_mode = repeat;
+    global_settings.eq_enabled = state->eq_enabled != 0;
+    global_settings.bass = clamp_int(state->bass, sound_min(SOUND_BASS),
+                                     sound_max(SOUND_BASS));
+    global_settings.treble = clamp_int(state->treble,
+                                       sound_min(SOUND_TREBLE),
+                                       sound_max(SOUND_TREBLE));
+    global_settings.balance = clamp_int(state->balance,
+                                        sound_min(SOUND_BALANCE),
+                                        sound_max(SOUND_BALANCE));
+#ifdef HAVE_BACKLIGHT_BRIGHTNESS
+    global_settings.brightness =
+        clamp_int(state->brightness, MIN_BRIGHTNESS_SETTING,
+                  MAX_BRIGHTNESS_SETTING);
+#endif
+    global_settings.backlight_timeout =
+        clamp_int(state->backlight_timeout, -1, 7200);
+#if CONFIG_CHARGING
+    global_settings.backlight_timeout_plugged =
+        clamp_int(state->backlight_timeout_plugged, -1, 7200);
+#endif
+    global_settings.lcd_sleep_after_backlight_off =
+        clamp_int(state->lcd_sleep_after_backlight_off, -1, 7200);
+    global_settings.sleeptimer_duration =
+        clamp_int(state->sleeptimer_duration, 0, 300);
+    global_settings.sleeptimer_on_startup =
+        state->sleeptimer_on_startup != 0;
+    global_settings.keypress_restarts_sleeptimer =
+        state->keypress_restarts_sleeptimer != 0;
+    global_settings.beep = clamp_int(state->beep, 0, 3);
+    global_settings.keyclick = clamp_int(state->keyclick, 0, 3);
+    global_settings.keyclick_repeats = state->keyclick_repeats != 0;
+#ifdef HAVE_HARDWARE_CLICK
+    global_settings.keyclick_hardware = state->keyclick_hardware != 0;
+#endif
+
     sound_set_volume(volume);
+    sound_settings_apply();
+    dsp_eq_enable(global_settings.eq_enabled);
+#ifdef HAVE_BACKLIGHT_BRIGHTNESS
+    backlight_set_brightness(global_settings.brightness);
+#endif
+    backlight_set_timeout(global_settings.backlight_timeout);
+#if CONFIG_CHARGING
+    backlight_set_timeout_plugged(
+        global_settings.backlight_timeout_plugged);
+#endif
+    lcd_set_sleep_after_backlight_off(
+        global_settings.lcd_sleep_after_backlight_off);
+    if(global_settings.sleeptimer_on_startup)
+        set_sleeptimer_duration(global_settings.sleeptimer_duration);
+    set_keypress_restarts_sleep_timer(
+        global_settings.keypress_restarts_sleeptimer);
 }
 
 void crazypod_state_load(void)
@@ -279,6 +497,31 @@ void crazypod_state_save(bool force)
     state.queue_count = queue_count;
     state.queue_hash = queue_hash;
     state.elapsed = elapsed;
+    state.eq_enabled = global_settings.eq_enabled ? 1 : 0;
+    state.bass = global_settings.bass;
+    state.treble = global_settings.treble;
+    state.balance = global_settings.balance;
+#ifdef HAVE_BACKLIGHT_BRIGHTNESS
+    state.brightness = global_settings.brightness;
+#endif
+    state.backlight_timeout = global_settings.backlight_timeout;
+#if CONFIG_CHARGING
+    state.backlight_timeout_plugged =
+        global_settings.backlight_timeout_plugged;
+#endif
+    state.lcd_sleep_after_backlight_off =
+        global_settings.lcd_sleep_after_backlight_off;
+    state.sleeptimer_duration = global_settings.sleeptimer_duration;
+    state.sleeptimer_on_startup =
+        global_settings.sleeptimer_on_startup ? 1 : 0;
+    state.keypress_restarts_sleeptimer =
+        global_settings.keypress_restarts_sleeptimer ? 1 : 0;
+    state.beep = global_settings.beep;
+    state.keyclick = global_settings.keyclick;
+    state.keyclick_repeats = global_settings.keyclick_repeats ? 1 : 0;
+#ifdef HAVE_HARDWARE_CLICK
+    state.keyclick_hardware = global_settings.keyclick_hardware ? 1 : 0;
+#endif
     state.checksum = state_checksum(&state);
 
     fd = open(STATE_TEMP_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);

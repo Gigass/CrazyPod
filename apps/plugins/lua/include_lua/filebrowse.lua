@@ -181,7 +181,7 @@ function file_choose(dir, title, sort_by, descending)
     local f_finddir  = nil -- function to match directories; nil all, false none
     local f_findfile = nil -- function to match files; nil all, false none
 
-    local p_settings = {wrap = true, hasheader = true}
+    local p_settings = {wrap = false, hasheader = true}
 
     local timer
     local files = {}

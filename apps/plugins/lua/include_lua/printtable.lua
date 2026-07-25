@@ -148,7 +148,7 @@ function print_table(t, t_count, settings)
     local table_linedesc, drawsep, overflow, dpad_fn, pagescroll
     do
         local s = settings or _print.get_settings()
-        wrap, justify  = s.wrap, s.justify
+        wrap, justify  = false, s.justify
         start, curpos  = s.start, s.curpos
         co_routine     = s.co_routine
         hasheader      = s.hasheader

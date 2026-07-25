@@ -154,16 +154,15 @@ static int playlist_buffer_get_index(struct playlist_buffer *pb, int index)
     {
         if (index >= pb->first_index)
             buffer_index = index-pb->first_index;
-        else /* rotation : track0 in buffer + requested track */
-            buffer_index = viewer.num_tracks-pb->first_index+index;
+        else
+            buffer_index = -1;
     }
     else
     {
         if (index <= pb->first_index)
             buffer_index = pb->first_index-index;
-        else /* rotation : track0 in buffer + dist from the last track
-                to the requested track (num_tracks-requested track) */
-            buffer_index = pb->first_index+viewer.num_tracks-index;
+        else
+            buffer_index = -1;
     }
     return buffer_index;
 }
@@ -232,8 +231,11 @@ static void playlist_buffer_load_entries(struct playlist_buffer *pb, int index,
             index++;
         else
             index--;
-        index += viewer.num_tracks;
-        index %= viewer.num_tracks;
+        if (index < 0 || index >= viewer.num_tracks)
+        {
+            i++;
+            break;
+        }
     }
     pb->direction = direction;
     pb->num_loaded = i;
@@ -255,14 +257,12 @@ static void playlist_buffer_load_entries_screen(struct playlist_buffer * pb,
     if (direction == FORWARD)
     {
         int min_start = reference_track-2*screens[0].getnblines();
-        while (min_start < 0)
-            min_start += viewer.num_tracks;
-        start = min_start % viewer.num_tracks;
+        start = MAX(0, min_start);
     }
     else
     {
         int max_start = reference_track+2*screens[0].getnblines();
-        start = max_start % viewer.num_tracks;
+        start = MIN(viewer.num_tracks - 1, max_start);
     }
 
     playlist_buffer_load_entries(pb, start, direction);
@@ -302,6 +302,8 @@ static bool playlist_buffer_needs_reload(struct playlist_buffer* pb,
     if (pb->num_loaded == viewer.num_tracks)
         return false;
     int selected_index = playlist_buffer_get_index(pb, track_index);
+    if (selected_index < 0 || selected_index >= pb->num_loaded)
+        return true;
     int first_buffer_index = playlist_buffer_get_index(pb, pb->first_index);
     int distance_beginning = distance(selected_index, first_buffer_index);
     if (distance_beginning < MIN_BUFFER_MARGIN)

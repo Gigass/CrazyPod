@@ -139,7 +139,7 @@ function script_choose(dir, title)
     local f_finddir  = false -- function to match directories; nil all, false none
     local f_findfile = nil -- function to match files; nil all, false none
     local t_linedesc = {show_icons = true, icon_fn = icon_fn}
-    local p_settings = {wrap = true, hasheader = true, justify = "left", linedesc = t_linedesc}
+    local p_settings = {wrap = false, hasheader = true, justify = "left", linedesc = t_linedesc}
     local files = {}
     local dirs = {}
     local item = 1

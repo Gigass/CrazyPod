@@ -297,16 +297,17 @@ void option_select_next_val(const struct settings_list *setting,
     else if (HASFLAG(setting, F_TABLE_SETTING))
     {
         const struct table_setting *tbl_info = setting->table_setting;
-        int i, add;
-        add = previous?tbl_info->count-1:1;
+        int i, index;
         for (i=0; i<tbl_info->count;i++)
         {
             if ((*value == tbl_info->values[i]) ||
                   (settings->flags&F_ALLOW_ARBITRARY_VALS &&
                     *value < tbl_info->values[i]))
             {
-                int index = (i+add)%tbl_info->count;
+                index = previous ? i - 1 : i + 1;
                 if (repeated && ((i == 0 && previous) || (!previous && i == tbl_info->count -1)))
+                    val = *value;
+                else if (index < 0 || index >= tbl_info->count)
                     val = *value;
                 else
                     val = tbl_info->values[index];
@@ -528,7 +529,7 @@ bool option_screen(const struct settings_list *setting,
     gui_synclist_speak_item(&lists);
     while (!done)
     {
-        /* override user wraparound setting; used mainly by EQ settings.
+        /* Keep callers that explicitly disable wrapping non-wrapping.
          * Not sure this is justified? */
         if (!allow_wrap)
             lists.wraparound = false;

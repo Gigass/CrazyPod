@@ -1482,7 +1482,7 @@ const struct settings_list settings[] = {
     OFFON_SETTING(0,scroll_paginated,LANG_SCROLL_PAGINATED,
                   false,"scroll paginated",NULL),
     OFFON_SETTING(0,list_wraparound,LANG_LIST_WRAPAROUND,
-                  true,"list wraparound",NULL),
+                  false,"list wraparound",NULL),
     CHOICE_SETTING(0, list_order, LANG_LIST_ORDER,
 #if defined(HAVE_SCROLLWHEEL) && !defined(FIIO_M3K)
                    1,

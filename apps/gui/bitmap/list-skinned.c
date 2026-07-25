@@ -72,20 +72,12 @@ static bool skinlist_is_configured(enum screen_type screen,
 static int current_drawing_line;
 static int offset_to_item(int offset, bool wrap)
 {
+    (void)wrap;
     int item = current_drawing_line + offset;
     if (!current_list || current_list->nb_items == 0)
         return -1;
-    if (item < 0)
-    {
-        if (!wrap)
-            return -1;
-        else
-            item = (item + current_list->nb_items) % current_list->nb_items;
-    }
-    else if (item >= current_list->nb_items && !wrap)
+    if (item < 0 || item >= current_list->nb_items)
         return -1;
-    else
-        item = item % current_list->nb_items;
     return item;
 }
 

@@ -551,9 +551,10 @@ int rectrigger(void)
                 break;
             case ACTION_STD_PREV:
             case ACTION_STD_PREVREPEAT:
-                i -= 2;
-                if (i<0)
-                    i = (TRIG_OPTION_COUNT*2) - 2;
+                if (i >= 2)
+                    i -= 2;
+                else
+                    i = 0;
                 gui_synclist_select_item(&lists, i);
                 i = gui_synclist_get_sel_pos(&lists);
                 trigger_speak_item(settings, i/2, true);
@@ -561,7 +562,10 @@ int rectrigger(void)
                 break;
             case ACTION_STD_NEXT:
             case ACTION_STD_NEXTREPEAT:
-                gui_synclist_select_item(&lists, (i+2) % (TRIG_OPTION_COUNT*2));
+                i += 2;
+                if (i >= TRIG_OPTION_COUNT*2)
+                    i = (TRIG_OPTION_COUNT*2) - 2;
+                gui_synclist_select_item(&lists, i);
                 i = gui_synclist_get_sel_pos(&lists);
                 trigger_speak_item(settings, i/2, true);
                 changed = true;

@@ -40,7 +40,34 @@ int string_option(const char *option, const char *const options[],
 
 void system_sound_play(enum system_sound sound)
 {
-    (void)sound;
+    static const struct beep_params
+    {
+        int *setting;
+        unsigned short frequency;
+        unsigned short duration;
+        unsigned short amplitude;
+    } beep_params[] =
+    {
+        [SOUND_KEYCLICK] =
+        { &global_settings.keyclick, 4000, KEYCLICK_DURATION, 2500 },
+        [SOUND_TRACK_SKIP] =
+        { &global_settings.beep, 2000, 100, 2500 },
+        [SOUND_TRACK_NO_MORE] =
+        { &global_settings.beep, 1000, 100, 1500 },
+        [SOUND_LIST_EDGE_BEEP_WRAP] =
+        { &global_settings.keyclick, 2000, 20, 1500 },
+        [SOUND_LIST_EDGE_BEEP_NOWRAP] =
+        { &global_settings.keyclick, 1000, 40, 1500 },
+    };
+    const struct beep_params *params;
+
+    if(sound < SOUND_KEYCLICK || sound > SOUND_LIST_EDGE_BEEP_NOWRAP)
+        return;
+
+    params = &beep_params[sound];
+    if(*params->setting)
+        beep_play(params->frequency, params->duration,
+                  params->amplitude * *params->setting);
 }
 
 char *strip_extension(char *buffer, int buffer_size, const char *filename)
@@ -196,6 +223,19 @@ void crazypod_audio_settings_init(void)
     global_settings.repeat_mode = REPEAT_OFF;
     global_settings.single_mode = SINGLE_MODE_OFF;
     global_settings.max_files_in_playlist = CRAZYPOD_MAX_TRACKS;
+#ifdef HAVE_BACKLIGHT
+    global_settings.backlight_timeout = 30;
+#if CONFIG_CHARGING
+    global_settings.backlight_timeout_plugged = 60;
+#endif
+#endif
+#ifdef HAVE_BACKLIGHT_BRIGHTNESS
+    global_settings.brightness = DEFAULT_BRIGHTNESS_SETTING;
+#endif
+#ifdef HAVE_LCD_SLEEP_SETTING
+    global_settings.lcd_sleep_after_backlight_off = 0;
+#endif
+    global_settings.sleeptimer_duration = 30;
 #ifdef HAVE_DISK_STORAGE
     global_settings.buffer_margin = 5;
 #endif
@@ -204,6 +244,9 @@ void crazypod_audio_settings_init(void)
 #endif
 #ifdef HAVE_CROSSFADE
     global_settings.crossfade = CROSSFADE_ENABLE_OFF;
+#endif
+#ifdef HAVE_HARDWARE_CLICK
+    global_settings.keyclick_hardware = true;
 #endif
 #ifdef AB_REPEAT_ENABLE
     ab_reset_markers();

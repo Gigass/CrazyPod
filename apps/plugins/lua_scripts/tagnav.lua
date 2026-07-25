@@ -63,7 +63,7 @@ local s_EXISTS        = "Exists"
 local function question(tInquiry, start)
     settings = {}
     settings.justify = "center"
-    settings.wrap = true
+    settings.wrap = false
     settings.msel = false
     settings.hasheader = true
     settings.co_routine = nil
@@ -252,7 +252,7 @@ local function print_tags(ftable, settings, t_selected)
     if not settings then
         settings = {}
         settings.justify = "left"
-        settings.wrap = true
+        settings.wrap = false
         settings.msel = true
     end
 

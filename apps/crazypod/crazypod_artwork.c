@@ -16,8 +16,9 @@
 #include "string-extra.h"
 
 #include "crazypod_artwork.h"
+#include "crazypod_image.h"
 
-#define CRAZYPOD_ARTWORK_MAX_SIZE 160
+#define CRAZYPOD_ARTWORK_MAX_SIZE CRAZYPOD_COVERFLOW_ARTWORK_SIZE
 #define CRAZYPOD_ARTWORK_BANKS 2
 #define CRAZYPOD_ARTWORK_PIXELS \
     (CRAZYPOD_ARTWORK_MAX_SIZE * CRAZYPOD_ARTWORK_MAX_SIZE)
@@ -39,10 +40,10 @@
 #define CRAZYPOD_COVER_PACK_VERSION 1
 #define CRAZYPOD_COVER_PACK_IMAGE 1
 #define CRAZYPOD_COVER_PACK_EMPTY 2
+#define CRAZYPOD_COVER_PACK_HASH_SIZE 4096
 
 struct artwork_slot {
-    fb_data pixels[CRAZYPOD_ARTWORK_BANKS][CRAZYPOD_ARTWORK_PIXELS]
-        CACHEALIGN_AT_LEAST_ATTR(16);
+    fb_data *pixels[CRAZYPOD_ARTWORK_BANKS];
     lv_image_dsc_t descriptor[CRAZYPOD_ARTWORK_BANKS];
     char requested_path[MAX_PATH];
     char requested_album[72];
@@ -52,6 +53,7 @@ struct artwork_slot {
     int requested_size;
     int requested_priority;
     int decoded_size;
+    int capacity_size;
     uint32_t requested_artwork_offset;
     uint32_t requested_artwork_size;
     uint32_t requested_source_size;
@@ -122,6 +124,20 @@ enum artwork_cache_result {
 };
 
 static struct artwork_slot artwork_slots[CRAZYPOD_ARTWORK_SLOTS];
+static fb_data coverflow_pixels[CRAZYPOD_COVERFLOW_ARTWORK_SLOTS]
+    [CRAZYPOD_ARTWORK_BANKS][CRAZYPOD_COVERFLOW_ARTWORK_SIZE *
+                             CRAZYPOD_COVERFLOW_ARTWORK_SIZE]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data preview_pixels[CRAZYPOD_ARTWORK_BANKS]
+    [CRAZYPOD_PREVIEW_ARTWORK_SIZE * CRAZYPOD_PREVIEW_ARTWORK_SIZE]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data now_pixels[2][CRAZYPOD_ARTWORK_BANKS]
+    [CRAZYPOD_COVERFLOW_ARTWORK_SIZE *
+     CRAZYPOD_COVERFLOW_ARTWORK_SIZE]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data capsule_pixels[CRAZYPOD_ARTWORK_BANKS]
+    [CRAZYPOD_CAPSULE_ARTWORK_SIZE * CRAZYPOD_CAPSULE_ARTWORK_SIZE]
+    CACHEALIGN_AT_LEAST_ATTR(16);
 static unsigned char decode_buffer[CRAZYPOD_DECODE_BUFFER_SIZE]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static struct mutex artwork_mutex;
@@ -141,6 +157,7 @@ static struct cover_pack_entry
     cover_pack_entries[CRAZYPOD_MAX_TRACKS];
 static struct cover_pack_entry
     cover_pack_build_entries[CRAZYPOD_MAX_TRACKS];
+static int16_t cover_pack_hash[CRAZYPOD_COVER_PACK_HASH_SIZE];
 static int cover_pack_entry_count;
 static int cover_pack_build_count;
 static uint32_t cover_pack_data_size;
@@ -253,25 +270,6 @@ static bool write_exact(int fd, const void *data, size_t size)
     return true;
 }
 
-static bool configure_descriptor(lv_image_dsc_t *descriptor,
-                                 fb_data *pixels, int width, int height)
-{
-    size_t pixel_size;
-
-    if(width <= 0 || height <= 0 || pixels == NULL)
-        return false;
-    pixel_size = (size_t)width * height * sizeof(fb_data);
-    descriptor->header.magic = LV_IMAGE_HEADER_MAGIC;
-    descriptor->header.cf = LV_COLOR_FORMAT_RGB565;
-    descriptor->header.flags = 0;
-    descriptor->header.w = width;
-    descriptor->header.h = height;
-    descriptor->header.stride = width * sizeof(fb_data);
-    descriptor->data_size = pixel_size;
-    descriptor->data = (const uint8_t *)pixels;
-    return true;
-}
-
 static void cover_pack_close_data(void)
 {
     if(cover_pack_data_fd >= 0) {
@@ -280,15 +278,45 @@ static void cover_pack_close_data(void)
     }
 }
 
-static int cover_pack_find(const struct cover_pack_entry *entries,
-                           int count, uint32_t key_a, uint32_t key_b)
+static unsigned cover_pack_hash_slot(uint32_t key_a, uint32_t key_b)
+{
+    uint32_t mixed = key_a ^ (key_b + 0x9e3779b9u +
+                              (key_a << 6) + (key_a >> 2));
+
+    mixed ^= mixed >> 16;
+    return mixed & (CRAZYPOD_COVER_PACK_HASH_SIZE - 1);
+}
+
+static void cover_pack_hash_build(void)
 {
     int i;
 
-    for(i = 0; i < count; ++i) {
-        if(entries[i].key_a == key_a &&
-           entries[i].key_b == key_b)
-            return i;
+    for(i = 0; i < CRAZYPOD_COVER_PACK_HASH_SIZE; ++i)
+        cover_pack_hash[i] = -1;
+    for(i = 0; i < cover_pack_entry_count; ++i) {
+        unsigned slot = cover_pack_hash_slot(
+            cover_pack_entries[i].key_a, cover_pack_entries[i].key_b);
+
+        while(cover_pack_hash[slot] >= 0)
+            slot = (slot + 1) & (CRAZYPOD_COVER_PACK_HASH_SIZE - 1);
+        cover_pack_hash[slot] = i;
+    }
+}
+
+static int cover_pack_lookup(uint32_t key_a, uint32_t key_b)
+{
+    unsigned slot = cover_pack_hash_slot(key_a, key_b);
+    unsigned probes;
+
+    for(probes = 0; probes < CRAZYPOD_COVER_PACK_HASH_SIZE; ++probes) {
+        int index = cover_pack_hash[slot];
+
+        if(index < 0)
+            return -1;
+        if(cover_pack_entries[index].key_a == key_a &&
+           cover_pack_entries[index].key_b == key_b)
+            return index;
+        slot = (slot + 1) & (CRAZYPOD_COVER_PACK_HASH_SIZE - 1);
     }
     return -1;
 }
@@ -320,6 +348,7 @@ static bool cover_pack_load_index(void)
     cover_pack_close_data();
     cover_pack_entry_count = 0;
     cover_pack_data_size = 0;
+    cover_pack_hash_build();
     index_fd = open(CRAZYPOD_COVER_PACK_INDEX, O_RDONLY);
     if(index_fd < 0)
         return false;
@@ -355,6 +384,7 @@ static bool cover_pack_load_index(void)
     cover_pack_entry_count = header.entry_count;
     cover_pack_data_size = header.data_size;
     cover_pack_data_fd = data_fd;
+    cover_pack_hash_build();
     return true;
 }
 
@@ -362,16 +392,22 @@ static enum artwork_cache_result cover_pack_load(
     const struct artwork_decode_request *request, fb_data *pixels,
     lv_image_dsc_t *descriptor)
 {
+    struct artwork_decode_request canonical_request;
     struct cover_pack_entry *entry;
+    fb_data *source_pixels;
     uint32_t key_a;
     uint32_t key_b;
+    int output_width;
+    int output_height;
     int index;
 
-    if(request->target_size != CRAZYPOD_COVERFLOW_ARTWORK_SIZE)
+    if(request->target_size <= 0 ||
+       request->target_size > CRAZYPOD_COVERFLOW_ARTWORK_SIZE)
         return ARTWORK_CACHE_MISS;
-    artwork_cache_keys(request, &key_a, &key_b);
-    index = cover_pack_find(cover_pack_entries,
-                            cover_pack_entry_count, key_a, key_b);
+    canonical_request = *request;
+    canonical_request.target_size = CRAZYPOD_COVERFLOW_ARTWORK_SIZE;
+    artwork_cache_keys(&canonical_request, &key_a, &key_b);
+    index = cover_pack_lookup(key_a, key_b);
     if(index < 0)
         return ARTWORK_CACHE_MISS;
     entry = &cover_pack_entries[index];
@@ -383,11 +419,40 @@ static enum artwork_cache_result cover_pack_load(
         if(cover_pack_data_fd < 0)
             return ARTWORK_CACHE_MISS;
     }
+    source_pixels = request->target_size ==
+        CRAZYPOD_COVERFLOW_ARTWORK_SIZE
+            ? pixels : (fb_data *)decode_buffer;
     if(lseek(cover_pack_data_fd, entry->offset, SEEK_SET) < 0 ||
-       !read_exact(cover_pack_data_fd, pixels, entry->data_size))
+       !read_exact(cover_pack_data_fd, source_pixels, entry->data_size))
         return ARTWORK_CACHE_MISS;
-    configure_descriptor(descriptor, pixels,
-                         entry->width, entry->height);
+    if(request->target_size == CRAZYPOD_COVERFLOW_ARTWORK_SIZE) {
+        crazypod_image_configure_rgb565(
+            descriptor, pixels, entry->width, entry->height);
+        return ARTWORK_CACHE_IMAGE;
+    }
+
+    output_width = entry->width;
+    output_height = entry->height;
+    if(output_width >= output_height) {
+        output_height =
+            output_height * request->target_size / output_width;
+        output_width = request->target_size;
+    }
+    else {
+        output_width =
+            output_width * request->target_size / output_height;
+        output_height = request->target_size;
+    }
+    if(output_width < 1)
+        output_width = 1;
+    if(output_height < 1)
+        output_height = 1;
+    if(!crazypod_image_scale_rgb565(
+           source_pixels, entry->width, entry->height, entry->width,
+           pixels, output_width, output_height))
+        return ARTWORK_CACHE_MISS;
+    crazypod_image_configure_rgb565(
+        descriptor, pixels, output_width, output_height);
     return ARTWORK_CACHE_IMAGE;
 }
 
@@ -421,9 +486,7 @@ static bool cover_pack_contains(
     uint32_t key_b;
 
     artwork_cache_keys(request, &key_a, &key_b);
-    return cover_pack_find(cover_pack_entries,
-                           cover_pack_entry_count,
-                           key_a, key_b) >= 0;
+    return cover_pack_lookup(key_a, key_b) >= 0;
 }
 
 static bool cover_pack_append(
@@ -441,8 +504,7 @@ static bool cover_pack_append(
     artwork_cache_keys(request, &key_a, &key_b);
     entry = &cover_pack_build_entries[cover_pack_build_count];
     memset(entry, 0, sizeof(*entry));
-    existing = cover_pack_find(cover_pack_entries,
-                               cover_pack_entry_count, key_a, key_b);
+    existing = cover_pack_lookup(key_a, key_b);
     if(existing >= 0) {
         *entry = cover_pack_entries[existing];
         ++cover_pack_build_count;
@@ -561,7 +623,8 @@ static enum artwork_cache_result artwork_cache_load(
         return ARTWORK_CACHE_MISS;
     }
     close(fd);
-    configure_descriptor(descriptor, pixels, header.width, header.height);
+    crazypod_image_configure_rgb565(
+        descriptor, pixels, header.width, header.height);
     return ARTWORK_CACHE_IMAGE;
 }
 
@@ -631,6 +694,7 @@ static bool decode_artwork(const struct artwork_decode_request *request,
         artwork_path = discovered_path;
 
     if(artwork_path[0] != '\0') {
+        crazypod_image_decode_lock();
         if(is_jpeg(artwork_path))
             result = read_jpeg_file(artwork_path, &bitmap,
                                     sizeof(decode_buffer), format,
@@ -639,11 +703,13 @@ static bool decode_artwork(const struct artwork_decode_request *request,
             result = read_bmp_file(artwork_path, &bitmap,
                                    sizeof(decode_buffer), format,
                                    &format_native);
+        crazypod_image_decode_unlock();
     }
     else if(request->embedded) {
         fd = open(request->track_path, O_RDONLY);
         if(fd < 0)
             return false;
+        crazypod_image_decode_lock();
         if(lseek(fd, request->offset, SEEK_SET) >= 0) {
             if(request->type == AA_TYPE_JPG)
                 result = clip_jpeg_fd(fd, 0, request->size,
@@ -654,14 +720,15 @@ static bool decode_artwork(const struct artwork_decode_request *request,
                                      sizeof(decode_buffer),
                                      format, &format_native);
         }
+        crazypod_image_decode_unlock();
         close(fd);
     }
 
     if(result < 0 || bitmap.width <= 0 || bitmap.height <= 0 ||
        bitmap.data == NULL)
         return false;
-    return configure_descriptor(descriptor, (fb_data *)bitmap.data,
-                                bitmap.width, bitmap.height);
+    return crazypod_image_configure_rgb565(
+        descriptor, (fb_data *)bitmap.data, bitmap.width, bitmap.height);
 }
 
 static void copy_decoded_pixels(const lv_image_dsc_t *source,
@@ -679,8 +746,8 @@ static void copy_decoded_pixels(const lv_image_dsc_t *source,
                source_pixels + row * source_stride,
                (size_t)width * sizeof(fb_data));
     }
-    configure_descriptor(destination_descriptor, destination,
-                         width, height);
+    crazypod_image_configure_rgb565(
+        destination_descriptor, destination, width, height);
 }
 
 static bool find_pending_request(int *slot_index, unsigned *serial,
@@ -972,7 +1039,37 @@ void crazypod_artwork_init(void)
         artwork_slots[i].active_bank = 0;
         artwork_slots[i].requested_priority =
             CRAZYPOD_ARTWORK_DEFAULT_PRIORITY;
+        if(i < CRAZYPOD_COVERFLOW_ARTWORK_SLOTS) {
+            artwork_slots[i].pixels[0] = coverflow_pixels[i][0];
+            artwork_slots[i].pixels[1] = coverflow_pixels[i][1];
+            artwork_slots[i].capacity_size =
+                CRAZYPOD_COVERFLOW_ARTWORK_SIZE;
+        }
     }
+    artwork_slots[CRAZYPOD_PREVIEW_ARTWORK_SLOT].pixels[0] =
+        preview_pixels[0];
+    artwork_slots[CRAZYPOD_PREVIEW_ARTWORK_SLOT].pixels[1] =
+        preview_pixels[1];
+    artwork_slots[CRAZYPOD_PREVIEW_ARTWORK_SLOT].capacity_size =
+        CRAZYPOD_PREVIEW_ARTWORK_SIZE;
+    artwork_slots[CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT].pixels[0] =
+        now_pixels[0][0];
+    artwork_slots[CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT].pixels[1] =
+        now_pixels[0][1];
+    artwork_slots[CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT].capacity_size =
+        CRAZYPOD_COVERFLOW_ARTWORK_SIZE;
+    artwork_slots[CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT].pixels[0] =
+        now_pixels[1][0];
+    artwork_slots[CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT].pixels[1] =
+        now_pixels[1][1];
+    artwork_slots[CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT].capacity_size =
+        CRAZYPOD_COVERFLOW_ARTWORK_SIZE;
+    artwork_slots[CRAZYPOD_CAPSULE_ARTWORK_SLOT].pixels[0] =
+        capsule_pixels[0];
+    artwork_slots[CRAZYPOD_CAPSULE_ARTWORK_SLOT].pixels[1] =
+        capsule_pixels[1];
+    artwork_slots[CRAZYPOD_CAPSULE_ARTWORK_SLOT].capacity_size =
+        CRAZYPOD_CAPSULE_ARTWORK_SIZE;
     mkdir(CRAZYPOD_DIRECTORY);
     mkdir(CRAZYPOD_CACHE_DIRECTORY);
     mkdir(CRAZYPOD_COVER_CACHE_DIRECTORY);
@@ -1126,15 +1223,15 @@ static const lv_image_dsc_t *artwork_load_priority(
     if(slot_index < 0 || slot_index >= CRAZYPOD_ARTWORK_SLOTS ||
        track == NULL)
         return NULL;
+    slot = &artwork_slots[slot_index];
     if(target_size < 16)
         target_size = 16;
-    if(target_size > CRAZYPOD_ARTWORK_MAX_SIZE)
-        target_size = CRAZYPOD_ARTWORK_MAX_SIZE;
+    if(target_size > slot->capacity_size)
+        target_size = slot->capacity_size;
     if(priority < 0)
         priority = 0;
 
     mutex_lock(&artwork_mutex);
-    slot = &artwork_slots[slot_index];
     if(slot->decoded_serial == slot->request_serial &&
        slot->decoded_size == target_size &&
        strcmp(slot->decoded_path, track->path) == 0 &&
@@ -1218,13 +1315,12 @@ enum crazypod_artwork_state crazypod_artwork_state(
     if(slot_index < 0 || slot_index >= CRAZYPOD_ARTWORK_SLOTS ||
        track == NULL)
         return CRAZYPOD_ARTWORK_EMPTY;
-    if(target_size < 16)
-        target_size = 16;
-    if(target_size > CRAZYPOD_ARTWORK_MAX_SIZE)
-        target_size = CRAZYPOD_ARTWORK_MAX_SIZE;
-
     mutex_lock(&artwork_mutex);
     slot = &artwork_slots[slot_index];
+    if(target_size < 16)
+        target_size = 16;
+    if(target_size > slot->capacity_size)
+        target_size = slot->capacity_size;
     if(slot->decoded_serial == slot->request_serial &&
        slot->decoded_size == target_size &&
        strcmp(slot->decoded_path, track->path) == 0) {
@@ -1237,7 +1333,12 @@ enum crazypod_artwork_state crazypod_artwork_state(
 
 unsigned crazypod_artwork_generation(void)
 {
-    return artwork_publish_generation;
+    unsigned generation;
+
+    mutex_lock(&artwork_mutex);
+    generation = artwork_publish_generation;
+    mutex_unlock(&artwork_mutex);
+    return generation;
 }
 
 unsigned crazypod_artwork_slot_generation(int slot_index)

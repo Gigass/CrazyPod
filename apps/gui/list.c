@@ -200,7 +200,7 @@ static void gui_synclist_init_display_settings(struct gui_synclist * list)
     list->scroll_paginated = gs->scroll_paginated;
     list->keyclick = gs->keyclick;
     list->talk_menu = gs->talk_menu;
-    list->wraparound = gs->list_wraparound;
+    list->wraparound = false;
     list->cursor_style = gs->cursor_style;
 }
 

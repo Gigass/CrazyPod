@@ -127,7 +127,7 @@ function print_menu(menu_t, func_t, selected, settings, copy_screen)
     end
 
     settings.justify = settings.justify or "center"
-    settings.wrap    = settings.wrap or true
+    settings.wrap    = false
     settings.hfgc    = settings.hfgc or c_table.lst_color or _clr.set( 0, 000, 000, 000)
     settings.hbgc    = settings.hbgc or c_table.bg_color or _clr.set(-1, 255, 255, 255)
     settings.ifgc    = settings.ifgc or c_table.fg_color or _clr.set(-1, 000, 255, 060)

@@ -722,20 +722,19 @@ int eq_menu_graphical(void)
 
         case ACTION_STD_PREV:
         case ACTION_STD_PREVREPEAT:
-            current_band--;
-            if (current_band < 0)
-                current_band = EQ_NUM_BANDS - 1; /* wrap around */
+            if (current_band > 0)
+                current_band--;
             break;
 
         case ACTION_STD_NEXT:
         case ACTION_STD_NEXTREPEAT:
-            current_band = (current_band + 1) % EQ_NUM_BANDS;
+            if (current_band < EQ_NUM_BANDS - 1)
+                current_band++;
             break;
 
         case ACTION_STD_OK:
-            mode++;
-            if (mode > Q)
-                mode = GAIN; /* wrap around */
+            if (mode < Q)
+                mode++;
             break;
 
         case ACTION_STD_CANCEL:

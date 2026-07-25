@@ -175,14 +175,21 @@ static void get_pic_list(bool single_file)
     }
 }
 
+static bool can_change_filename(int direct)
+{
+    if (entries <= 1)
+        return false;
+
+    if (direct == DIR_PREV)
+        return curfile > 0;
+
+    return curfile >= 0 && curfile < entries - 1;
+}
+
 static int change_filename(int direct)
 {
     bool file_erased = (file_pt[curfile] == NULL);
     direction = direct;
-
-    curfile += (direct == DIR_PREV? entries - 1: 1);
-    if (curfile >= entries)
-        curfile -= entries;
 
     if (file_erased)
     {
@@ -196,6 +203,31 @@ static int change_filename(int direct)
                 file_pt[count++] = file_pt[i];
         }
         entries = count;
+
+        if (entries == 0)
+        {
+            rb->splash(HZ, "No supported files");
+            return PLUGIN_ERROR;
+        }
+
+        if (direct == DIR_PREV)
+        {
+            if (curfile > 0)
+                curfile--;
+            else
+                curfile = 0;
+        }
+        else if (curfile >= entries)
+        {
+            curfile = entries - 1;
+        }
+    }
+    else
+    {
+        if (!can_change_filename(direct))
+            return NEXT_FRAME;
+
+        curfile += (direct == DIR_PREV ? -1 : 1);
     }
 
     if (entries == 0)
@@ -411,7 +443,7 @@ static int ask_and_get_audio_buffer(const char *filename)
                 return PLUGIN_OK;
 
             case IMGVIEW_LEFT:
-                if(entries>1)
+                if(can_change_filename(DIR_PREV))
                 {
                     rb->lcd_clear_display();
                     return change_filename(DIR_PREV);
@@ -419,14 +451,14 @@ static int ask_and_get_audio_buffer(const char *filename)
                 break;
 
             case IMGVIEW_RIGHT:
-                if(entries>1)
+                if(can_change_filename(DIR_NEXT))
                 {
                     rb->lcd_clear_display();
                     return change_filename(DIR_NEXT);
                 }
                 break;
             case BUTTON_NONE:
-                if(entries>1)
+                if(can_change_filename(direction))
                 {
                     rb->lcd_clear_display();
                     return change_filename(direction);
@@ -635,9 +667,9 @@ static int scroll_bmp(struct image_info *info, bool initial_frame)
             if (entries > 1 && info->width <= LCD_WIDTH
                             && info->height <= LCD_HEIGHT)
             {
-                int result = change_filename(DIR_PREV);
-                if (entries > 1)
-                    return result;
+                if (can_change_filename(DIR_PREV))
+                    return change_filename(DIR_PREV);
+                break;
             }
             /* fallthrough */
         case IMGVIEW_LEFT | BUTTON_REPEAT:
@@ -648,9 +680,9 @@ static int scroll_bmp(struct image_info *info, bool initial_frame)
             if (entries > 1 && info->width <= LCD_WIDTH
                             && info->height <= LCD_HEIGHT)
             {
-                int result = change_filename(DIR_NEXT);
-                if (entries > 1)
-                    return result;
+                if (can_change_filename(DIR_NEXT))
+                    return change_filename(DIR_NEXT);
+                break;
             }
             /* fallthrough */
         case IMGVIEW_RIGHT | BUTTON_REPEAT:
@@ -685,7 +717,10 @@ static int scroll_bmp(struct image_info *info, bool initial_frame)
                     {
                         iv_api.running_slideshow = true;
                         ss_timeout = 0;
-                        return change_filename(DIR_NEXT);
+                        if (can_change_filename(DIR_NEXT))
+                            return change_filename(DIR_NEXT);
+                        iv_api.slideshow_enabled = false;
+                        break;
                     }
                     else
                         return NEXT_FRAME;
@@ -693,8 +728,12 @@ static int scroll_bmp(struct image_info *info, bool initial_frame)
                 else
                 {
                     /* still picture */
-                    iv_api.running_slideshow = true;
-                    return change_filename(DIR_NEXT);
+                    if (can_change_filename(DIR_NEXT))
+                    {
+                        iv_api.running_slideshow = true;
+                        return change_filename(DIR_NEXT);
+                    }
+                    iv_api.slideshow_enabled = false;
                 }
             }
             else
@@ -719,7 +758,7 @@ static int scroll_bmp(struct image_info *info, bool initial_frame)
         case IMGVIEW_NEXT_REPEAT:
 #endif
         case IMGVIEW_NEXT:
-            if (entries > 1)
+            if (can_change_filename(DIR_NEXT))
                 return change_filename(DIR_NEXT);
             break;
 
@@ -727,7 +766,7 @@ static int scroll_bmp(struct image_info *info, bool initial_frame)
         case IMGVIEW_PREVIOUS_REPEAT:
 #endif
         case IMGVIEW_PREVIOUS:
-            if (entries > 1)
+            if (can_change_filename(DIR_PREV))
                 return change_filename(DIR_PREV);
             break;
 

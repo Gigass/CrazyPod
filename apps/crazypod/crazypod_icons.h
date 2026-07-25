@@ -3,13 +3,17 @@
 
 #include <stdint.h>
 
-#include "lvgl.h"
-
 #define CRAZYPOD_ICON_COUNT 14
+
+struct crazypod_icon {
+    const uint8_t *pixels;
+    int width;
+    int height;
+    int stride;
+};
 
 void crazypod_icons_init(void);
 void crazypod_icons_load_theme(int theme);
-const lv_image_dsc_t *crazypod_icon_get(int index);
-const uint8_t *crazypod_icon_get_premultiplied(int index);
+const struct crazypod_icon *crazypod_icon_get(int index);
 
 #endif

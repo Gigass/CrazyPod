@@ -200,7 +200,7 @@ function print_file(filename, maxlinelen, settings)
     if not settings then
         settings = {}
         settings.justify = "center"
-        settings.wrap = true
+        settings.wrap = false
         settings.msel = true
     end
     settings.hasheader = true
@@ -305,7 +305,7 @@ function print_file_increment(filename, settings)
     if not settings then
         settings = {}
         settings.justify = "center"
-        settings.wrap = true
+        settings.wrap = false
     end
     settings.hasheader = true
     settings.co_routine = co
@@ -426,7 +426,7 @@ function print_file_hex(filename, bytesperline, settings)
     if not settings then
         settings = {}
         settings.justify = "left"
-        settings.wrap    = true
+        settings.wrap    = false
         settings.msel    = false
         settings.hfgc    = _clr.set( 0, 000, 000, 000)
         settings.hbgc    = _clr.set(-1, 255, 255, 255)

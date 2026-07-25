@@ -87,9 +87,10 @@ def main():
     # 2. TEST FILES
     print("Testing Files back-navigation...")
     # Assume we are back at Main Menu at the top (Music selected)
-    # Press UP to wrap around to Extras
-    pyautogui.press('up')
-    time.sleep(0.5)
+    # Walk down to Extras without relying on wraparound.
+    for _ in range(7):
+        pyautogui.press('down')
+        time.sleep(0.2)
     cap("4_extras_selected", w)
     
     pyautogui.press('return') # enter Extras

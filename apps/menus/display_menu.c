@@ -333,7 +333,6 @@ MENUITEM_SETTING(offset_out_of_view, &global_settings.offset_out_of_view, NULL);
 MENUITEM_SETTING(disable_mainmenu_scrolling, &global_settings.disable_mainmenu_scrolling, NULL);
 MENUITEM_SETTING(screen_scroll_step, &global_settings.screen_scroll_step, NULL);
 MENUITEM_SETTING(scroll_paginated, &global_settings.scroll_paginated, NULL);
-MENUITEM_SETTING(list_wraparound, &global_settings.list_wraparound, NULL);
 MENUITEM_SETTING(list_order, &global_settings.list_order, NULL);
 
 MAKE_MENU(scroll_settings_menu, ID2P(LANG_SCROLL_MENU), 0, Icon_NOICON,
@@ -347,7 +346,6 @@ MAKE_MENU(scroll_settings_menu, ID2P(LANG_SCROLL_MENU), 0, Icon_NOICON,
           &disable_mainmenu_scrolling,
           &screen_scroll_step,
           &scroll_paginated,
-          &list_wraparound,
           &list_order,
 #ifndef HAVE_WHEEL_ACCELERATION
           &list_accel_start_delay, &list_accel_wait

@@ -1,5 +1,7 @@
 crazypod/crazypod_main.c
 crazypod/crazypod_lcd.c
+crazypod/crazypod_image.c
+crazypod/crazypod_photos.c
 crazypod/crazypod_artwork.c
 crazypod/crazypod_coverflow.c
 crazypod/crazypod_music.c

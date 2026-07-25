@@ -560,10 +560,7 @@ static int parse_listitem(struct skin_element *element,
     else
     {
         li->offset = get_param(element, 0)->data.number;
-        if (element->params_count > 1)
-            li->wrap = strcasecmp(get_param_text(element, 1), "nowrap") != 0;
-        else
-            li->wrap = true;
+        li->wrap = false;
     }
     return 0;
 }

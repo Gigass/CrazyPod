@@ -219,10 +219,6 @@ static int change_filename(int direct)
     bool file_erased = (file_pt[curfile] == NULL);
     direction = direct;
 
-    curfile += (direct == DIR_PREV? entries - 1: 1);
-    if (curfile >= entries)
-        curfile -= entries;
-
     if (file_erased)
     {
         /* remove 'erased' file names from list. */
@@ -235,13 +231,32 @@ static int change_filename(int direct)
                 file_pt[count++] = file_pt[i];
         }
         entries = count;
-    }
 
-    if (entries == 0)
-    {
-        rb->splash(HZ, ID2P(LANG_NO_FILES));
-        return PLUGIN_ERROR;
+        if (entries == 0)
+        {
+            rb->splash(HZ, ID2P(LANG_NO_FILES));
+            return PLUGIN_ERROR;
+        }
+
+        if (direct == DIR_PREV)
+        {
+            if (curfile > 0)
+                curfile--;
+            else
+                curfile = 0;
+        }
+        else if (curfile >= entries)
+        {
+            curfile = entries - 1;
+        }
     }
+    else if ((direct == DIR_PREV && curfile > 0) ||
+             (direct == DIR_NEXT && curfile < entries - 1))
+    {
+        curfile += (direct == DIR_PREV ? -1 : 1);
+    }
+    else
+        return PLUGIN_OK;
 
     rb->strcpy(rb->strrchr(np_file, '/')+1, file_pt[curfile]);
 

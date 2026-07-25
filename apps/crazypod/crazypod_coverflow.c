@@ -15,25 +15,23 @@
 #include "crazypod_coverflow.h"
 #include "crazypod_music.h"
 
-#define FLOW_CACHE_SLOTS 15
-#define FLOW_PREFETCH_AHEAD 6
-#define FLOW_PREFETCH_BEHIND 6
+#define FLOW_CACHE_SLOTS 25
+#define FLOW_PREFETCH_AHEAD 12
+#define FLOW_PREFETCH_BEHIND 12
 #define FLOW_COVER_SIZE CRAZYPOD_COVERFLOW_ARTWORK_SIZE
 #define FLOW_TOP 40
 #define FLOW_BOTTOM 194
 #define FLOW_CENTER_Y 106
 #define FLOW_POSITION_ONE (1L << 16)
 #define FLOW_FRAME_PHASES 3
-#define FLOW_SPRING_STIFFNESS 144
-#define FLOW_SPRING_DAMPING 22
 #define FLOW_RELEASE_STIFFNESS 400
 #define FLOW_RELEASE_DAMPING 40
 #define FLOW_RELEASE_MOMENTUM_DIVISOR 3
 #define FLOW_RELEASE_GRACE_TICKS \
     (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
-#define FLOW_INPUT_IMPULSE 3
-#define FLOW_MAX_VELOCITY 6
-#define FLOW_MAX_TARGET_LEAD (FLOW_POSITION_ONE * 3 / 2)
+#define FLOW_INPUT_BASE_SPEED 2
+#define FLOW_INPUT_RESPONSE 24
+#define FLOW_MAX_VELOCITY 8
 #define FLOW_SNAP_POSITION (FLOW_POSITION_ONE / 512)
 #define FLOW_SNAP_VELOCITY (FLOW_POSITION_ONE / 20)
 #define FLOW_PREFETCH_TICKS ((HZ / 10) > 0 ? (HZ / 10) : 1)
@@ -56,15 +54,18 @@ static int selected_album;
 static int32_t position_q16;
 static int32_t target_position_q16;
 static int32_t velocity_q16;
+static int32_t input_velocity_q16;
 static int flow_direction;
+static int gesture_min_album;
 static int prefetched_visual_album;
 static long last_physics;
 static long last_prefetch;
 static long last_input;
 static long next_render;
+static unsigned artwork_generation_seen;
 static int frame_phase;
 static bool cache_initialized;
-static bool release_brake_applied;
+static bool input_active;
 
 extern struct frame_buffer_t lcd_framebuffer_default;
 
@@ -196,17 +197,15 @@ static bool prefetch_covers(void)
 
     prefetched_visual_album = visual_album;
     append_prefetch_candidate(order, &order_count, visual_album);
-    for(distance = 1;
-        distance <= FLOW_PREFETCH_AHEAD ||
-        distance <= FLOW_PREFETCH_BEHIND;
-        ++distance) {
+    for(distance = 1; distance <= FLOW_PREFETCH_AHEAD; ++distance) {
         int ahead = visual_album + direction * distance;
+
+        append_prefetch_candidate(order, &order_count, ahead);
+    }
+    for(distance = 1; distance <= FLOW_PREFETCH_BEHIND; ++distance) {
         int behind = visual_album - direction * distance;
 
-        if(distance <= FLOW_PREFETCH_AHEAD)
-            append_prefetch_candidate(order, &order_count, ahead);
-        if(distance <= FLOW_PREFETCH_BEHIND)
-            append_prefetch_candidate(order, &order_count, behind);
+        append_prefetch_candidate(order, &order_count, behind);
     }
     for(candidate_number = 0;
         candidate_number < order_count;
@@ -676,14 +675,17 @@ void crazypod_coverflow_enter(int selected)
     position_q16 = selected * FLOW_POSITION_ONE;
     target_position_q16 = position_q16;
     velocity_q16 = 0;
+    input_velocity_q16 = 0;
     flow_direction = 1;
+    gesture_min_album = selected;
     prefetched_visual_album = -1;
     last_physics = current_tick;
     last_prefetch = current_tick;
     last_input = current_tick;
     next_render = current_tick;
+    artwork_generation_seen = crazypod_artwork_generation();
     frame_phase = 0;
-    release_brake_applied = true;
+    input_active = false;
     flow_active = true;
     flow_dirty = true;
     prefetch_pending = !prefetch_covers();
@@ -705,7 +707,11 @@ bool crazypod_coverflow_warm(int selected)
     selected_album = selected;
     position_q16 = selected * FLOW_POSITION_ONE;
     target_position_q16 = position_q16;
+    velocity_q16 = 0;
+    input_velocity_q16 = 0;
     flow_direction = 1;
+    gesture_min_album = selected;
+    input_active = false;
     prefetched_visual_album = -1;
     complete = prefetch_covers();
     last_prefetch = current_tick;
@@ -716,6 +722,8 @@ void crazypod_coverflow_leave(void)
 {
     flow_active = false;
     velocity_q16 = 0;
+    input_velocity_q16 = 0;
+    input_active = false;
     prefetch_pending = false;
 }
 
@@ -727,42 +735,42 @@ bool crazypod_coverflow_active(void)
 int crazypod_coverflow_step(int direction)
 {
     int count = crazypod_music_album_count();
-    int next = selected_album + direction;
-    int32_t proposed_target_q16;
-    int32_t impulse_q16;
-    int32_t maximum_velocity_q16 =
-        FLOW_MAX_VELOCITY * FLOW_POSITION_ONE;
+    int magnitude;
+    int speed;
+    int direction_sign;
+    int center;
+    bool new_gesture;
 
-    if(next < 0)
-        next = 0;
-    if(next >= count)
-        next = count - 1;
-    if(next == selected_album)
+    if(count <= 0 || direction == 0)
         return selected_album;
+    direction_sign = direction < 0 ? -1 : 1;
+    magnitude = direction < 0 ? -direction : direction;
+    center = crazypod_coverflow_center_album();
+    new_gesture =
+        !input_active ||
+        !TIME_BEFORE(current_tick,
+                     last_input + FLOW_RELEASE_GRACE_TICKS) ||
+        direction_sign != flow_direction;
+
+    if(new_gesture) {
+        gesture_min_album = center + direction_sign;
+        if(gesture_min_album < 0)
+            gesture_min_album = 0;
+        if(gesture_min_album >= count)
+            gesture_min_album = count - 1;
+        selected_album = gesture_min_album;
+        if(direction_sign != flow_direction)
+            velocity_q16 /= 4;
+    }
+
     last_input = current_tick;
-    release_brake_applied = false;
-    proposed_target_q16 = next * FLOW_POSITION_ONE;
-    if((direction > 0 &&
-        proposed_target_q16 - position_q16 >
-            FLOW_MAX_TARGET_LEAD) ||
-       (direction < 0 &&
-        position_q16 - proposed_target_q16 >
-            FLOW_MAX_TARGET_LEAD))
-        return selected_album;
-
-    flow_direction = direction < 0 ? -1 : 1;
-    target_position_q16 = proposed_target_q16;
-    selected_album = next;
-    if((direction > 0 && velocity_q16 < 0) ||
-       (direction < 0 && velocity_q16 > 0))
-        velocity_q16 /= 4;
-    impulse_q16 =
-        direction * FLOW_INPUT_IMPULSE * FLOW_POSITION_ONE;
-    velocity_q16 += impulse_q16;
-    if(velocity_q16 > maximum_velocity_q16)
-        velocity_q16 = maximum_velocity_q16;
-    else if(velocity_q16 < -maximum_velocity_q16)
-        velocity_q16 = -maximum_velocity_q16;
+    input_active = true;
+    flow_direction = direction_sign;
+    speed = FLOW_INPUT_BASE_SPEED + magnitude;
+    if(speed > FLOW_MAX_VELOCITY)
+        speed = FLOW_MAX_VELOCITY;
+    input_velocity_q16 =
+        direction_sign * speed * FLOW_POSITION_ONE;
     flow_dirty = true;
     prefetch_pending = true;
     last_prefetch = 0;
@@ -794,9 +802,29 @@ static void advance_position(long now)
     bool released =
         !TIME_BEFORE(now, last_input + FLOW_RELEASE_GRACE_TICKS);
 
-    if(released && !release_brake_applied) {
+    if(released && input_active) {
+        int target_album;
+
+        input_active = false;
+        input_velocity_q16 = 0;
+        if(flow_direction > 0) {
+            target_album =
+                (position_q16 + FLOW_POSITION_ONE - 1) >> 16;
+            if(target_album < gesture_min_album)
+                target_album = gesture_min_album;
+        }
+        else {
+            target_album = position_q16 >> 16;
+            if(target_album > gesture_min_album)
+                target_album = gesture_min_album;
+        }
+        if(target_album < 0)
+            target_album = 0;
+        if(target_album >= count)
+            target_album = count - 1;
+        target_position_q16 = target_album * FLOW_POSITION_ONE;
+        selected_album = target_album;
         velocity_q16 /= FLOW_RELEASE_MOMENTUM_DIVISOR;
-        release_brake_applied = true;
     }
 
     if(elapsed < 1)
@@ -804,18 +832,24 @@ static void advance_position(long now)
     if(elapsed > 8)
         elapsed = 8;
     while(elapsed-- > 0) {
-        int32_t error_q16 =
-            target_position_q16 - position_q16;
-        int64_t acceleration_q16 =
-            (int64_t)error_q16 *
-                (released ? FLOW_RELEASE_STIFFNESS
-                          : FLOW_SPRING_STIFFNESS) -
-            (int64_t)velocity_q16 *
-                (released ? FLOW_RELEASE_DAMPING
-                          : FLOW_SPRING_DAMPING);
+        if(!released) {
+            velocity_q16 +=
+                (int32_t)(((int64_t)
+                    (input_velocity_q16 - velocity_q16) *
+                    FLOW_INPUT_RESPONSE) / HZ);
+        }
+        else {
+            int32_t error_q16 =
+                target_position_q16 - position_q16;
+            int64_t acceleration_q16 =
+                (int64_t)error_q16 *
+                    FLOW_RELEASE_STIFFNESS -
+                (int64_t)velocity_q16 *
+                    FLOW_RELEASE_DAMPING;
 
-        velocity_q16 +=
-            (int32_t)(acceleration_q16 / HZ);
+            velocity_q16 +=
+                (int32_t)(acceleration_q16 / HZ);
+        }
         if(velocity_q16 > maximum_velocity_q16)
             velocity_q16 = maximum_velocity_q16;
         else if(velocity_q16 < -maximum_velocity_q16)
@@ -833,8 +867,9 @@ static void advance_position(long now)
         }
     }
     last_physics = now;
+    selected_album = crazypod_coverflow_center_album();
 
-    {
+    if(released) {
         int32_t error_q16 =
             target_position_q16 - position_q16;
         int32_t absolute_error_q16 =
@@ -869,10 +904,26 @@ static void schedule_next_frame(long now)
 void crazypod_coverflow_tick(void)
 {
     bool animating;
+    bool frame_due;
     int visual_album;
+    unsigned artwork_generation;
 
     if(!flow_active)
         return;
+    animating =
+        input_active ||
+        position_q16 != target_position_q16 ||
+        velocity_q16 != 0;
+    frame_due = !TIME_BEFORE(current_tick, next_render);
+    if(frame_due && animating)
+        advance_position(current_tick);
+
+    artwork_generation = crazypod_artwork_generation();
+    if(artwork_generation != artwork_generation_seen) {
+        artwork_generation_seen = artwork_generation;
+        prefetch_pending = true;
+        last_prefetch = 0;
+    }
     visual_album =
         (position_q16 + FLOW_POSITION_ONE / 2) >> 16;
     if(visual_album != prefetched_visual_album) {
@@ -885,12 +936,7 @@ void crazypod_coverflow_tick(void)
         prefetch_pending = !prefetch_covers();
         last_prefetch = current_tick;
     }
-    animating =
-        position_q16 != target_position_q16 || velocity_q16 != 0;
-    if((flow_dirty || animating) &&
-       !TIME_BEFORE(current_tick, next_render)) {
-        if(animating)
-            advance_position(current_tick);
+    if(frame_due && (flow_dirty || animating)) {
         render_flow();
         schedule_next_frame(current_tick);
         flow_dirty = false;

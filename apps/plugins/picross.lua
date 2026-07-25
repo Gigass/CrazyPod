@@ -26,8 +26,7 @@ local _lcd   = require("lcd")   -- lcd helper functions
 local plugindir = rb.PLUGIN_GAMES_DATA_DIR
 local userdir = plugindir .. "/.picross"
 
-local wrap = rb.settings.read('global_settings', rb.system.global_settings.list_wraparound)
-wrap = (wrap or 1) == 1
+local wrap = false
 
 do     -- free up some ram by removing items we don't need
     local function strip_functions(t, ...)

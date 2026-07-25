@@ -506,10 +506,8 @@ const char *get_radio_token(struct wps_token *token, int preset_offset,
             if (preset_count == 0 || cur_preset < 0)
                 return NULL;
             int preset = cur_preset + preset_offset;
-            /* make sure it's in the valid range */
-            preset %= preset_count;
-            if (preset < 0)
-                preset += preset_count;
+            if (preset < 0 || preset >= preset_count)
+                return NULL;
             if (token->type == SKIN_TOKEN_PRESET_NAME)
                 snprintf(buf, buf_size, "%s", radio_get_preset_name(preset));
             else if (token->type == SKIN_TOKEN_PRESET_FREQ)

@@ -288,7 +288,7 @@ end
 
 --
 function submenu_set_defaults(settings, ctx)
-    p_settings = settings or {wrap = true, hasheader = true, justify = "left", dpad_fn = dpad}
+    p_settings = settings or {wrap = false, hasheader = true, justify = "left", dpad_fn = dpad}
     menu_ctx = ctx or {collapse_fn = {}, lv = 0, update = false, start = 1}
 end
 
