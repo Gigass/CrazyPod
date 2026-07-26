@@ -85,6 +85,7 @@ static void crazypod_platform_init(void)
 
 #ifndef USB_NONE
     usb_init();
+    crazypod_ui_usb_prompt_init();
     usb_start_monitoring();
 #endif
 }
@@ -165,6 +166,7 @@ static void crazypod_platform_init(void)
     crazypod_music_init();
 
 #ifndef USB_NONE
+    crazypod_ui_usb_prompt_init();
     usb_start_monitoring();
 #endif
     cpu_boost(false);

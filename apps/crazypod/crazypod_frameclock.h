@@ -7,7 +7,12 @@
 
 #include <stdbool.h>
 
-#define CRAZYPOD_TARGET_FPS 42
+/*
+ * The kernel tick rate is 100 Hz on iPod 6G. 50 fps maps to an exact
+ * two-tick cadence; 42 fps requires uneven 2/3 tick pacing and produces
+ * visible motion jitter.
+ */
+#define CRAZYPOD_TARGET_FPS 50
 
 struct crazypod_frameclock {
     long next_tick;

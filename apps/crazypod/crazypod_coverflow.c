@@ -31,7 +31,6 @@
     (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
 #define FLOW_INPUT_BASE_SPEED 2
 #define FLOW_INPUT_RESPONSE 24
-#define FLOW_MAX_VELOCITY 8
 #define FLOW_SNAP_POSITION (FLOW_POSITION_ONE / 512)
 #define FLOW_SNAP_VELOCITY (FLOW_POSITION_ONE / 20)
 #define FLOW_PREFETCH_TICKS ((HZ / 10) > 0 ? (HZ / 10) : 1)
@@ -312,8 +311,10 @@ static inline fb_data sample_rgb565_bilinear(
     const fb_data *source, int source_width, int source_height,
     int source_stride, int source_x_q16, int source_y_q16)
 {
-    int sx = source_x_q16 >> 16;
-    int sy = source_y_q16 >> 16;
+    int max_x_q16 = (source_width - 1) << 16;
+    int max_y_q16 = (source_height - 1) << 16;
+    int sx;
+    int sy;
     int sx1;
     int sy1;
     int fx;
@@ -329,14 +330,17 @@ static inline fb_data sample_rgb565_bilinear(
     int blue0;
     int blue1;
 
-    if(sx < 0)
-        sx = 0;
-    if(sy < 0)
-        sy = 0;
-    if(sx >= source_width)
-        sx = source_width - 1;
-    if(sy >= source_height)
-        sy = source_height - 1;
+    if(source_x_q16 < 0)
+        source_x_q16 = 0;
+    if(source_y_q16 < 0)
+        source_y_q16 = 0;
+    if(source_x_q16 > max_x_q16)
+        source_x_q16 = max_x_q16;
+    if(source_y_q16 > max_y_q16)
+        source_y_q16 = max_y_q16;
+
+    sx = source_x_q16 >> 16;
+    sy = source_y_q16 >> 16;
     sx1 = sx + 1 < source_width ? sx + 1 : sx;
     sy1 = sy + 1 < source_height ? sy + 1 : sy;
     fx = (source_x_q16 >> 8) & 255;
@@ -373,16 +377,35 @@ static fb_data shade565(fb_data color, int shade)
         RGB_UNPACK_BLUE(color) * shade >> 8);
 }
 
-static int projected_x(int center_x, int u, int sin_q15, int cos_q15)
+static int32_t projected_x_q16(int center_x, int u,
+                               int sin_q15, int cos_q15)
 {
     int denominator =
         FLOW_CAMERA_DISTANCE * 32768 - u * sin_q15;
 
     if(denominator <= 0)
-        return center_x;
-    return center_x + (int)(
-        (int64_t)u * cos_q15 * FLOW_CAMERA_DISTANCE /
-        denominator);
+        return center_x << 16;
+    return (center_x << 16) + (int32_t)(
+        ((int64_t)u * cos_q15 * FLOW_CAMERA_DISTANCE *
+         FLOW_POSITION_ONE) / denominator);
+}
+
+static int column_coverage_alpha_q16(int x, int32_t left_q16,
+                                     int32_t right_q16)
+{
+    int32_t pixel_left_q16 = x << 16;
+    int32_t pixel_right_q16 = pixel_left_q16 + FLOW_POSITION_ONE;
+    int32_t cover_left_q16 =
+        pixel_left_q16 > left_q16 ? pixel_left_q16 : left_q16;
+    int32_t cover_right_q16 =
+        pixel_right_q16 < right_q16 ? pixel_right_q16 : right_q16;
+    int32_t coverage_q16 = cover_right_q16 - cover_left_q16;
+
+    if(coverage_q16 <= 0)
+        return 0;
+    if(coverage_q16 >= FLOW_POSITION_ONE)
+        return 255;
+    return (int)((coverage_q16 * 255 + FLOW_POSITION_ONE / 2) >> 16);
 }
 
 static void draw_projected_image(const lv_image_dsc_t *image,
@@ -399,12 +422,14 @@ static void draw_projected_image(const lv_image_dsc_t *image,
     int half_size = size / 2;
     int sin_q15 = lv_trigo_sin(yaw);
     int cos_q15 = lv_trigo_cos(yaw);
-    int x0 = projected_x(
+    int32_t x0_q16 = projected_x_q16(
         center_x, -half_size, sin_q15, cos_q15);
-    int x1 = projected_x(
+    int32_t x1_q16 = projected_x_q16(
         center_x, half_size, sin_q15, cos_q15);
-    int left = x0 < x1 ? x0 : x1;
-    int right = x0 > x1 ? x0 : x1;
+    int32_t left_q16 = x0_q16 < x1_q16 ? x0_q16 : x1_q16;
+    int32_t right_q16 = x0_q16 > x1_q16 ? x0_q16 : x1_q16;
+    int left = left_q16 >> 16;
+    int right = (right_q16 + FLOW_POSITION_ONE - 1) >> 16;
     int abs_sin_q15 = sin_q15 < 0 ? -sin_q15 : sin_q15;
     int32_t near_depth_q16 =
         (int32_t)half_size * abs_sin_q15 * 2;
@@ -427,11 +452,19 @@ static void draw_projected_image(const lv_image_dsc_t *image,
         source_stride = image->header.stride / sizeof(fb_data);
     }
 
-    for(px = left; px <= right; ++px) {
-        int screen_x = px - center_x;
-        int inverse_denominator =
-            FLOW_CAMERA_DISTANCE * cos_q15 +
-            screen_x * sin_q15;
+    if(left < 0)
+        left = 0;
+    if(right > LCD_WIDTH)
+        right = LCD_WIDTH;
+    for(px = left; px < right; ++px) {
+        int edge_alpha =
+            column_coverage_alpha_q16(px, left_q16, right_q16);
+        int32_t screen_x_q16 =
+            (px << 16) + FLOW_POSITION_ONE / 2 -
+            (center_x << 16);
+        int64_t inverse_denominator =
+            (int64_t)FLOW_CAMERA_DISTANCE * cos_q15 +
+            (((int64_t)screen_x_q16 * sin_q15) >> 16);
         int32_t u_q16;
         int32_t depth_q16;
         int32_t depth_denominator_q16;
@@ -442,14 +475,14 @@ static void draw_projected_image(const lv_image_dsc_t *image,
         int source_y_step;
         int source_position;
         int shade;
+        int draw_alpha;
         int y;
 
-        if(px < 0 || px >= LCD_WIDTH ||
-           inverse_denominator <= 0)
+        if(edge_alpha <= 0 || inverse_denominator <= 0)
             continue;
         u_q16 = (int32_t)(
-            ((int64_t)screen_x * FLOW_CAMERA_DISTANCE *
-             (1LL << 31)) / inverse_denominator);
+            ((int64_t)screen_x_q16 * FLOW_CAMERA_DISTANCE *
+             32768) / inverse_denominator);
         if(u_q16 < -(half_size << 16) ||
            u_q16 > (half_size << 16))
             continue;
@@ -481,6 +514,9 @@ static void draw_projected_image(const lv_image_dsc_t *image,
         if(side < 0)
             source_position = 255 - source_position;
         shade = side == 0 ? 256 : 184 + source_position * 60 / 255;
+        draw_alpha = alpha;
+        if(edge_alpha < 255)
+            draw_alpha = (draw_alpha * edge_alpha + 127) / 255;
 
         for(y = 0; y < column_height; ++y) {
             int py = top + y;
@@ -516,15 +552,15 @@ static void draw_projected_image(const lv_image_dsc_t *image,
             if(shade != 256)
                 color = shade565(color, shade);
             destination = pixels + py * LCD_WIDTH + px;
-            *destination = alpha == 255
-                ? color : blend565(color, *destination, alpha);
+            *destination = draw_alpha == 255
+                ? color : blend565(color, *destination, draw_alpha);
         }
 
         source_y_q16 = (source_height - 1) << 16;
         source_y_step = (source_height << 16) / 18;
         for(y = 0; y < 9; ++y) {
             int py = top + column_height + 2 + y;
-            int reflection_alpha = alpha * (27 - y * 3) >> 8;
+            int reflection_alpha = draw_alpha * (27 - y * 3) >> 8;
             fb_data *destination;
             fb_data color;
 
@@ -604,7 +640,7 @@ static void draw_album(int album_index)
         size = FLOW_COVER_SIZE;
         yaw = direction * FLOW_SIDE_ANGLE;
         alpha = 255 - outer_fade;
-        bilinear = false;
+        bilinear = true;
     }
 
     image = cached_image(album_index);
@@ -765,8 +801,6 @@ int crazypod_coverflow_step(int direction)
     input_active = true;
     flow_direction = direction_sign;
     speed = FLOW_INPUT_BASE_SPEED + magnitude;
-    if(speed > FLOW_MAX_VELOCITY)
-        speed = FLOW_MAX_VELOCITY;
     input_velocity_q16 =
         direction_sign * speed * FLOW_POSITION_ONE;
     flow_dirty = true;
@@ -794,8 +828,6 @@ static void advance_position(long now)
     int count = crazypod_music_album_count();
     int32_t maximum_position_q16 =
         (count > 0 ? count - 1 : 0) * FLOW_POSITION_ONE;
-    int32_t maximum_velocity_q16 =
-        FLOW_MAX_VELOCITY * FLOW_POSITION_ONE;
     bool released =
         !TIME_BEFORE(now, last_input + FLOW_RELEASE_GRACE_TICKS);
 
@@ -847,10 +879,6 @@ static void advance_position(long now)
             velocity_q16 +=
                 (int32_t)(acceleration_q16 / HZ);
         }
-        if(velocity_q16 > maximum_velocity_q16)
-            velocity_q16 = maximum_velocity_q16;
-        else if(velocity_q16 < -maximum_velocity_q16)
-            velocity_q16 = -maximum_velocity_q16;
         position_q16 += velocity_q16 / HZ;
         if(position_q16 < 0) {
             position_q16 = 0;

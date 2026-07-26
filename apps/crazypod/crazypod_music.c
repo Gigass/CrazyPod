@@ -19,23 +19,28 @@
 
 #define CRAZYPOD_SCAN_DEPTH 16
 #define CRAZYPOD_PLAYLIST_PATHS 64
+#define CRAZYPOD_SEARCH_CACHE_QUERY_SIZE 96
 
 static struct crazypod_track tracks[CRAZYPOD_MAX_TRACKS];
 static struct crazypod_album albums[CRAZYPOD_MAX_TRACKS];
 static char artists[CRAZYPOD_MAX_TRACKS][72];
 static struct crazypod_playlist playlists[CRAZYPOD_MAX_PLAYLISTS];
 static uint16_t playlist_track_indices[CRAZYPOD_MAX_PLAYLIST_TRACKS];
+static uint16_t search_track_indices[CRAZYPOD_MAX_TRACKS];
 static char playlist_paths[CRAZYPOD_PLAYLIST_PATHS][MAX_PATH];
 static const char *queue_build_paths[CRAZYPOD_QUEUE_CAPACITY];
+static char search_cache_query[CRAZYPOD_SEARCH_CACHE_QUERY_SIZE];
 static int track_count;
 static int artist_count;
 static int album_count;
 static int playlist_count;
 static int playlist_track_count;
 static int playlist_path_count;
+static int search_result_count;
 static volatile bool scanning;
 static volatile bool scan_abort_requested;
 static volatile unsigned scan_generation;
+static unsigned search_cache_generation;
 static long scan_stack[(DEFAULT_STACK_SIZE + 0x3000) / sizeof(long)];
 
 static int compare_text(const char *left, const char *right)
@@ -87,6 +92,25 @@ static bool track_matches(const struct crazypod_track *track,
            (text_contains(track->title, query) ||
             text_contains(track->artist, query) ||
             text_contains(track->album, query));
+}
+
+static void refresh_search_cache(const char *query)
+{
+    int i;
+
+    if(query == NULL)
+        query = "";
+    if(search_cache_generation == scan_generation &&
+       strcmp(search_cache_query, query) == 0)
+        return;
+
+    snprintf(search_cache_query, sizeof(search_cache_query), "%s", query);
+    search_result_count = 0;
+    for(i = 0; i < track_count; ++i) {
+        if(track_matches(&tracks[i], query))
+            search_track_indices[search_result_count++] = (uint16_t)i;
+    }
+    search_cache_generation = scan_generation;
 }
 
 static void copy_text(char *destination, size_t size, const char *source,
@@ -560,6 +584,9 @@ void crazypod_music_init(void)
     scanning = false;
     scan_abort_requested = false;
     scan_generation = 0;
+    search_cache_generation = (unsigned)-1;
+    search_cache_query[0] = '\0';
+    search_result_count = 0;
 }
 
 void crazypod_music_scan(void)
@@ -785,32 +812,17 @@ const struct crazypod_track *crazypod_music_playlist_track(int playlist_index,
 
 int crazypod_music_search_count(const char *query)
 {
-    int count = 0;
-    int i;
-
-    for(i = 0; i < track_count; ++i) {
-        if(track_matches(&tracks[i], query))
-            ++count;
-    }
-    return count;
+    refresh_search_cache(query);
+    return search_result_count;
 }
 
 const struct crazypod_track *crazypod_music_search_track(const char *query,
                                                           int result_index)
 {
-    int visible = 0;
-    int i;
-
-    if(result_index < 0)
+    refresh_search_cache(query);
+    if(result_index < 0 || result_index >= search_result_count)
         return NULL;
-    for(i = 0; i < track_count; ++i) {
-        if(track_matches(&tracks[i], query)) {
-            if(visible == result_index)
-                return &tracks[i];
-            ++visible;
-        }
-    }
-    return NULL;
+    return &tracks[search_track_indices[result_index]];
 }
 
 bool crazypod_music_play_track(int library_index)
@@ -827,16 +839,16 @@ bool crazypod_music_play_search(const char *query, int selected_index)
 {
     int count = 0;
     int start = -1;
-    int visible = 0;
     int i;
 
-    for(i = 0; i < track_count && count < CRAZYPOD_QUEUE_CAPACITY; ++i) {
-        if(!track_matches(&tracks[i], query))
-            continue;
-        if(visible == selected_index)
+    refresh_search_cache(query);
+    for(i = 0; i < search_result_count &&
+               count < CRAZYPOD_QUEUE_CAPACITY; ++i) {
+        int track_index = search_track_indices[i];
+
+        if(i == selected_index)
             start = count;
-        queue_build_paths[count++] = tracks[i].path;
-        ++visible;
+        queue_build_paths[count++] = tracks[track_index].path;
     }
     if(count <= 0)
         return false;

@@ -477,19 +477,38 @@ static void NORETURN_ATTR usb_thread(void)
 
             usb_state = USB_POWERED;
 
+#if defined(IPOD_6G) && !defined(BOOTLOADER)
+#ifndef HAVE_USB_POWER
+            int usb_mode = -1;
+#endif
+            send_event(SYS_EVENT_USB_INSERTED, &usb_mode);
+#endif
+
+#ifdef HAVE_USB_POWER
+#ifdef IPOD_6G
+            /* Ask CrazyPod before the DesignWare controller soft-connects.
+             * Blocking after usb_stack_enable() lets the host send setup
+             * packets while the app is still waiting for user input, which
+             * corrupts the EP0 control-state sequence. */
+            usb_power_only = usb_mode != USB_MODE_MASS_STORAGE;
+#endif
+#endif
+
             usb_stack_enable(true);
-#ifndef BOOTLOADER
+#if !defined(BOOTLOADER) && !defined(IPOD_6G)
 #ifndef HAVE_USB_POWER
             int usb_mode = -1;
 #endif
             send_event(SYS_EVENT_USB_INSERTED, &usb_mode);
 #endif
 #ifdef HAVE_USB_POWER
+#ifndef IPOD_6G
             /* Power (charging-only) button */
             usb_power_only = usb_mode != USB_MODE_MASS_STORAGE;
             if(button_status() & ~USBPOWER_BTN_IGNORE) {
                 usb_power_only = !usb_power_only;
             }
+#endif
 #endif
 
 #ifndef USB_DETECT_BY_REQUEST

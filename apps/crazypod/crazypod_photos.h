@@ -12,7 +12,7 @@
 #define CRAZYPOD_PHOTO_VIEW_WIDTH 640
 #define CRAZYPOD_PHOTO_VIEW_HEIGHT 400
 #define CRAZYPOD_PHOTO_VIEWPORT_WIDTH 320
-#define CRAZYPOD_PHOTO_VIEWPORT_HEIGHT 200
+#define CRAZYPOD_PHOTO_VIEWPORT_HEIGHT 240
 
 void crazypod_photos_init(void);
 void crazypod_photos_refresh(void);

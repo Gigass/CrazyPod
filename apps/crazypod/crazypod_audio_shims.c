@@ -258,7 +258,7 @@ void crazypod_audio_settings_init(void)
     global_settings.brightness = DEFAULT_BRIGHTNESS_SETTING;
 #endif
 #ifdef HAVE_LCD_SLEEP_SETTING
-    global_settings.lcd_sleep_after_backlight_off = 0;
+    global_settings.lcd_sleep_after_backlight_off = 1;
 #endif
     global_settings.sleeptimer_duration = 30;
     for(i = 0; i < EQ_NUM_BANDS; ++i)

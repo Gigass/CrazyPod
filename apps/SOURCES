@@ -8,6 +8,7 @@ crazypod/crazypod_coverflow.c
 crazypod/crazypod_music.c
 crazypod/crazypod_playlist.c
 crazypod/crazypod_audio_shims.c
+crazypod/crazypod_soundwave.c
 crazypod/crazypod_state.c
 crazypod/crazypod_appearance.c
 crazypod/crazypod_presets.c

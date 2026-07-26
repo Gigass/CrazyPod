@@ -21,6 +21,7 @@
 #include "crazypod_appearance.h"
 #include "crazypod_image.h"
 #include "crazypod_wallpaper.h"
+#include "src/misc/cache/instance/lv_image_cache.h"
 
 #define WALLPAPER_WIDTH LCD_WIDTH
 #define WALLPAPER_HEIGHT LCD_HEIGHT
@@ -29,7 +30,6 @@
     (WALLPAPER_WIDTH * WALLPAPER_HEIGHT * sizeof(fb_data))
 #define WALLPAPER_DECODE_BYTES \
     (CUSTOM_WALLPAPER_BYTES + 64 * 1024)
-#define WALLPAPER_CROP_DECODE_EXTRA (64 * 1024)
 #define WALLPAPER_CROP_MAX_PIXELS (4 * 1024 * 1024)
 #define WALLPAPER_CROP_OVERSAMPLE 2
 #define WALLPAPER_PATH "/.rockbox/crazypod/default-home.bmp"
@@ -39,24 +39,19 @@
 #define CUSTOM_HOME_NATIVE_TEMP "/.crazypod/cache/home.wall.tmp"
 #define CUSTOM_MENU_NATIVE_PATH "/.crazypod/cache/menu.wall"
 #define CUSTOM_MENU_NATIVE_TEMP "/.crazypod/cache/menu.wall.tmp"
+#define CUSTOM_LOCK_NATIVE_PATH "/.crazypod/cache/lock.wall"
+#define CUSTOM_LOCK_NATIVE_TEMP "/.crazypod/cache/lock.wall.tmp"
 #define CUSTOM_WALLPAPER_MAGIC 0x43505731u
 #define CUSTOM_WALLPAPER_VERSION 1
 #define FROSTED_CAPSULE_X 8
 #define FROSTED_CAPSULE_Y 174
 #define FROSTED_CAPSULE_WIDTH 304
 #define FROSTED_CAPSULE_HEIGHT 58
-#define FROSTED_BLUR_RADIUS 7
 #define FROSTED_CORNER_RADIUS 29
-#define FROSTED_SAMPLE_COUNT (FROSTED_BLUR_RADIUS * 2 + 1)
-#define FROSTED_WORK_HEIGHT \
-    (FROSTED_CAPSULE_HEIGHT + FROSTED_BLUR_RADIUS * 2)
 #define FROSTED_CAPSULE_ROW_BYTES \
     (FROSTED_CAPSULE_WIDTH * sizeof(fb_data))
 #define FROSTED_CAPSULE_BYTES \
     (FROSTED_CAPSULE_ROW_BYTES * FROSTED_CAPSULE_HEIGHT)
-#define FROSTED_RING_ROW_BYTES (FROSTED_CAPSULE_WIDTH * 3)
-#define FROSTED_RING_BYTES \
-    (FROSTED_RING_ROW_BYTES * FROSTED_SAMPLE_COUNT)
 
 struct custom_wallpaper_header {
     uint32_t magic;
@@ -75,18 +70,32 @@ static fb_data custom_home_pixels[WALLPAPER_WIDTH * WALLPAPER_HEIGHT]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static fb_data custom_menu_pixels[WALLPAPER_WIDTH * WALLPAPER_HEIGHT]
     CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data custom_lock_pixels[WALLPAPER_WIDTH * WALLPAPER_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
 static lv_image_dsc_t custom_home_descriptor;
 static lv_image_dsc_t custom_menu_descriptor;
+static lv_image_dsc_t custom_lock_descriptor;
 static lv_image_dsc_t frosted_capsule_descriptor;
 static bool wallpaper_valid;
 static bool custom_home_valid;
 static bool custom_menu_valid;
+static bool custom_lock_valid;
 static bool frosted_capsule_valid;
 static int frosted_capsule_handle = -1;
+static uint32_t frosted_capsule_source_key;
+static uint32_t frosted_capsule_tint;
+static unsigned frosted_capsule_tint_opa;
 
 static void release_frosted_capsule(void)
 {
+    if(frosted_capsule_descriptor.header.magic == LV_IMAGE_HEADER_MAGIC)
+        lv_image_cache_drop(&frosted_capsule_descriptor);
+    memset(&frosted_capsule_descriptor, 0,
+           sizeof(frosted_capsule_descriptor));
     frosted_capsule_valid = false;
+    frosted_capsule_source_key = 0;
+    frosted_capsule_tint = 0;
+    frosted_capsule_tint_opa = 0;
     if(frosted_capsule_handle >= 0)
         frosted_capsule_handle = core_free(frosted_capsule_handle);
 }
@@ -143,24 +152,79 @@ static uint32_t wallpaper_source_key(const char *path)
     return hash;
 }
 
-static const char *native_wallpaper_path(bool menu)
+static bool valid_target(enum crazypod_wallpaper_target target)
 {
-    return menu ? CUSTOM_MENU_NATIVE_PATH
-                : CUSTOM_HOME_NATIVE_PATH;
+    return target <= CRAZYPOD_WALLPAPER_LOCK;
 }
 
-static const char *native_wallpaper_temp(bool menu)
+static const char *native_wallpaper_path(
+    enum crazypod_wallpaper_target target)
 {
-    return menu ? CUSTOM_MENU_NATIVE_TEMP
-                : CUSTOM_HOME_NATIVE_TEMP;
+    if(target == CRAZYPOD_WALLPAPER_MENU)
+        return CUSTOM_MENU_NATIVE_PATH;
+    if(target == CRAZYPOD_WALLPAPER_LOCK)
+        return CUSTOM_LOCK_NATIVE_PATH;
+    return CUSTOM_HOME_NATIVE_PATH;
+}
+
+static const char *native_wallpaper_temp(
+    enum crazypod_wallpaper_target target)
+{
+    if(target == CRAZYPOD_WALLPAPER_MENU)
+        return CUSTOM_MENU_NATIVE_TEMP;
+    if(target == CRAZYPOD_WALLPAPER_LOCK)
+        return CUSTOM_LOCK_NATIVE_TEMP;
+    return CUSTOM_HOME_NATIVE_TEMP;
+}
+
+static enum crazypod_appearance_field appearance_field_for_target(
+    enum crazypod_wallpaper_target target)
+{
+    if(target == CRAZYPOD_WALLPAPER_MENU)
+        return CRAZYPOD_APPEARANCE_MENU_BACKGROUND;
+    if(target == CRAZYPOD_WALLPAPER_LOCK)
+        return CRAZYPOD_APPEARANCE_LOCK_BACKGROUND;
+    return CRAZYPOD_APPEARANCE_HOME_BACKGROUND;
+}
+
+static fb_data *pixels_for_target(
+    enum crazypod_wallpaper_target target)
+{
+    if(target == CRAZYPOD_WALLPAPER_MENU)
+        return custom_menu_pixels;
+    if(target == CRAZYPOD_WALLPAPER_LOCK)
+        return custom_lock_pixels;
+    return custom_home_pixels;
+}
+
+static lv_image_dsc_t *descriptor_for_target(
+    enum crazypod_wallpaper_target target)
+{
+    if(target == CRAZYPOD_WALLPAPER_MENU)
+        return &custom_menu_descriptor;
+    if(target == CRAZYPOD_WALLPAPER_LOCK)
+        return &custom_lock_descriptor;
+    return &custom_home_descriptor;
+}
+
+static void set_target_valid(
+    enum crazypod_wallpaper_target target, bool valid)
+{
+    if(target == CRAZYPOD_WALLPAPER_MENU)
+        custom_menu_valid = valid;
+    else if(target == CRAZYPOD_WALLPAPER_LOCK)
+        custom_lock_valid = valid;
+    else
+        custom_home_valid = valid;
 }
 
 static bool load_native_wallpaper(
-    bool menu, const char *source_path, fb_data *pixels,
+    enum crazypod_wallpaper_target target,
+    const char *source_path, fb_data *pixels,
     lv_image_dsc_t *descriptor)
 {
     struct custom_wallpaper_header header;
-    int fd = open(native_wallpaper_path(menu), O_RDONLY);
+    int fd = open(native_wallpaper_path(target), O_RDONLY);
     bool valid;
 
     if(fd < 0)
@@ -182,11 +246,13 @@ static bool load_native_wallpaper(
 }
 
 static bool save_native_wallpaper(
-    bool menu, const char *source_path, const fb_data *pixels)
+    enum crazypod_wallpaper_target target,
+    const char *source_path, const fb_data *pixels,
+    enum crazypod_wallpaper_apply_result *error)
 {
     struct custom_wallpaper_header header;
-    const char *temporary = native_wallpaper_temp(menu);
-    const char *published = native_wallpaper_path(menu);
+    const char *temporary = native_wallpaper_temp(target);
+    const char *published = native_wallpaper_path(target);
     bool complete;
     int fd;
 
@@ -201,14 +267,25 @@ static bool save_native_wallpaper(
     header.height = WALLPAPER_HEIGHT;
     header.data_size = CUSTOM_WALLPAPER_BYTES;
     fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if(fd < 0)
+    if(fd < 0) {
+        if(error != NULL)
+            *error = CRAZYPOD_WALLPAPER_APPLY_CACHE_OPEN_FAILED;
         return false;
+    }
     complete =
         write_exact(fd, &header, sizeof(header)) &&
         write_exact(fd, pixels, CUSTOM_WALLPAPER_BYTES) &&
         fsync(fd) >= 0;
     close(fd);
-    if(!complete || rename(temporary, published) < 0) {
+    if(!complete) {
+        if(error != NULL)
+            *error = CRAZYPOD_WALLPAPER_APPLY_CACHE_WRITE_FAILED;
+        remove(temporary);
+        return false;
+    }
+    if(rename(temporary, published) < 0) {
+        if(error != NULL)
+            *error = CRAZYPOD_WALLPAPER_APPLY_CACHE_PUBLISH_FAILED;
         remove(temporary);
         return false;
     }
@@ -283,14 +360,15 @@ static bool decode_custom_wallpaper(const char *path, fb_data *pixels,
 }
 
 static bool load_custom_wallpaper(
-    bool menu, const char *path, fb_data *pixels,
+    enum crazypod_wallpaper_target target,
+    const char *path, fb_data *pixels,
     lv_image_dsc_t *descriptor)
 {
-    if(load_native_wallpaper(menu, path, pixels, descriptor))
+    if(load_native_wallpaper(target, path, pixels, descriptor))
         return true;
     if(!decode_custom_wallpaper(path, pixels, descriptor))
         return false;
-    save_native_wallpaper(menu, path, pixels);
+    save_native_wallpaper(target, path, pixels, NULL);
     return true;
 }
 
@@ -301,12 +379,16 @@ void crazypod_wallpaper_reload_custom(void)
 
     custom_home_valid = appearance->home_wallpaper[0] != '\0' &&
         load_custom_wallpaper(
-            false, appearance->home_wallpaper,
+            CRAZYPOD_WALLPAPER_HOME, appearance->home_wallpaper,
             custom_home_pixels, &custom_home_descriptor);
     custom_menu_valid = appearance->menu_wallpaper[0] != '\0' &&
         load_custom_wallpaper(
-            true, appearance->menu_wallpaper,
+            CRAZYPOD_WALLPAPER_MENU, appearance->menu_wallpaper,
             custom_menu_pixels, &custom_menu_descriptor);
+    custom_lock_valid = appearance->lock_wallpaper[0] != '\0' &&
+        load_custom_wallpaper(
+            CRAZYPOD_WALLPAPER_LOCK, appearance->lock_wallpaper,
+            custom_lock_pixels, &custom_lock_descriptor);
     release_frosted_capsule();
 }
 
@@ -348,35 +430,18 @@ static uint8_t rounded_capsule_alpha(int x, int y)
         (outer_squared - inner_squared));
 }
 
-static void blur_wallpaper_row(uint8_t *destination, int work_y)
+static fb_data blend_capsule_edge(
+    fb_data material, fb_data background, unsigned alpha)
 {
-    int source_y = clamp_coordinate(
-        FROSTED_CAPSULE_Y - FROSTED_BLUR_RADIUS + work_y,
-        WALLPAPER_HEIGHT);
-    int x;
+    unsigned inverse_alpha = 255 - alpha;
 
-    for(x = 0; x < FROSTED_CAPSULE_WIDTH; ++x) {
-        unsigned blue = 0;
-        unsigned green = 0;
-        unsigned red = 0;
-        int offset;
-
-        for(offset = -FROSTED_BLUR_RADIUS;
-            offset <= FROSTED_BLUR_RADIUS; ++offset) {
-            int source_x = clamp_coordinate(
-                FROSTED_CAPSULE_X + x + offset, WALLPAPER_WIDTH);
-            const fb_data *source =
-                wallpaper_pixels +
-                source_y * WALLPAPER_WIDTH + source_x;
-
-            blue += RGB_UNPACK_BLUE(*source);
-            green += RGB_UNPACK_GREEN(*source);
-            red += RGB_UNPACK_RED(*source);
-        }
-        destination[x * 3] = blue / FROSTED_SAMPLE_COUNT;
-        destination[x * 3 + 1] = green / FROSTED_SAMPLE_COUNT;
-        destination[x * 3 + 2] = red / FROSTED_SAMPLE_COUNT;
-    }
+    return LCD_RGBPACK(
+        (RGB_UNPACK_RED(material) * alpha +
+         RGB_UNPACK_RED(background) * inverse_alpha + 127) / 255,
+        (RGB_UNPACK_GREEN(material) * alpha +
+         RGB_UNPACK_GREEN(background) * inverse_alpha + 127) / 255,
+        (RGB_UNPACK_BLUE(material) * alpha +
+         RGB_UNPACK_BLUE(background) * inverse_alpha + 127) / 255);
 }
 
 void crazypod_wallpaper_init(void)
@@ -393,6 +458,7 @@ void crazypod_wallpaper_init(void)
     wallpaper_valid = false;
     custom_home_valid = false;
     custom_menu_valid = false;
+    custom_lock_valid = false;
     crazypod_wallpaper_reload_custom();
 
     fd = open(WALLPAPER_PATH, O_RDONLY);
@@ -442,28 +508,26 @@ void crazypod_wallpaper_init(void)
     wallpaper_valid = true;
 }
 
-bool crazypod_wallpaper_select(bool menu, const char *path)
+bool crazypod_wallpaper_select(
+    enum crazypod_wallpaper_target target, const char *path)
 {
+    fb_data *pixels;
+    lv_image_dsc_t *descriptor;
     bool loaded;
 
-    if(menu) {
-        loaded = decode_custom_wallpaper(
-            path, custom_menu_pixels, &custom_menu_descriptor);
-        if(!loaded ||
-           !save_native_wallpaper(true, path, custom_menu_pixels))
-            return false;
-        custom_menu_valid = true;
-    }
-    else {
-        loaded = decode_custom_wallpaper(
-            path, custom_home_pixels, &custom_home_descriptor);
-        if(!loaded ||
-           !save_native_wallpaper(false, path, custom_home_pixels))
-            return false;
-        custom_home_valid = true;
+    if(!valid_target(target))
+        return false;
+    pixels = pixels_for_target(target);
+    descriptor = descriptor_for_target(target);
+    loaded = decode_custom_wallpaper(path, pixels, descriptor);
+    if(!loaded ||
+       !save_native_wallpaper(target, path, pixels, NULL))
+        return false;
+    set_target_valid(target, true);
+    if(target == CRAZYPOD_WALLPAPER_HOME)
         release_frosted_capsule();
-    }
-    return crazypod_appearance_set_wallpaper(menu, path);
+    return crazypod_appearance_set_wallpaper(
+        appearance_field_for_target(target), path);
 }
 
 static fb_data sample_crop_pixel(
@@ -584,32 +648,65 @@ int crazypod_wallpaper_crop_max_zoom(
     return maximum_zoom;
 }
 
-static bool decode_crop_source(
+static enum crazypod_wallpaper_apply_result decode_crop_source(
     const char *path, int width, int height,
     struct bitmap *bitmap, int *decode_handle)
 {
-    size_t pixel_bytes;
     size_t decode_bytes;
     fb_data *decode_buffer;
     int format = FORMAT_NATIVE | FORMAT_RESIZE |
         FORMAT_KEEP_ASPECT;
+    int required_bytes;
+    int probe_handle = -1;
+    void *probe_buffer = NULL;
     int result;
+    bool jpeg;
 
     if(path == NULL || bitmap == NULL ||
        decode_handle == NULL || width <= 0 || height <= 0 ||
        (uint64_t)width * height >
            WALLPAPER_CROP_MAX_PIXELS)
-        return false;
-    pixel_bytes =
-        (size_t)width * height * sizeof(fb_data);
-    decode_bytes =
-        pixel_bytes + WALLPAPER_CROP_DECODE_EXTRA;
+        return CRAZYPOD_WALLPAPER_APPLY_INVALID_SOURCE;
+    jpeg = path_has_extension(path, ".jpg") ||
+        path_has_extension(path, ".jpeg");
+    if(jpeg) {
+        /*
+         * JPEG's FORMAT_RETURN_SIZE parser stores its state in bm->data.
+         * JPEG_DECODE_OVERHEAD is guaranteed to hold that parser state.
+         */
+        probe_handle = core_alloc_ex(
+            JPEG_DECODE_OVERHEAD, &buflib_ops_locked);
+        if(probe_handle < 0)
+            return CRAZYPOD_WALLPAPER_APPLY_WORKSPACE_FAILED;
+        probe_buffer = core_get_data(probe_handle);
+    }
+    memset(bitmap, 0, sizeof(*bitmap));
+    bitmap->width = width;
+    bitmap->height = height;
+    bitmap->data = probe_buffer;
+    crazypod_image_decode_lock();
+    if(jpeg)
+        required_bytes = read_jpeg_file(
+            path, bitmap, (int)JPEG_DECODE_OVERHEAD,
+            format | FORMAT_RETURN_SIZE, &format_native);
+    else if(path_has_extension(path, ".bmp"))
+        required_bytes = read_bmp_file(
+            path, bitmap, 0,
+            format | FORMAT_RETURN_SIZE, &format_native);
+    else
+        required_bytes = -1;
+    crazypod_image_decode_unlock();
+    if(probe_handle >= 0)
+        probe_handle = core_free(probe_handle);
+    if(required_bytes <= 0)
+        return CRAZYPOD_WALLPAPER_APPLY_DECODE_FAILED;
+    decode_bytes = (size_t)required_bytes;
     if(decode_bytes > INT_MAX)
-        return false;
+        return CRAZYPOD_WALLPAPER_APPLY_WORKSPACE_FAILED;
     *decode_handle = core_alloc_ex(
         decode_bytes, &buflib_ops_locked);
     if(*decode_handle < 0)
-        return false;
+        return CRAZYPOD_WALLPAPER_APPLY_WORKSPACE_FAILED;
     decode_buffer = core_get_data(*decode_handle);
     memset(bitmap, 0, sizeof(*bitmap));
     bitmap->width = width;
@@ -617,8 +714,7 @@ static bool decode_crop_source(
     bitmap->data = (unsigned char *)decode_buffer;
 
     crazypod_image_decode_lock();
-    if(path_has_extension(path, ".jpg") ||
-       path_has_extension(path, ".jpeg"))
+    if(jpeg)
         result = read_jpeg_file(
             path, bitmap, (int)decode_bytes,
             format, &format_native);
@@ -633,12 +729,12 @@ static bool decode_crop_source(
        bitmap->height <= 0 || bitmap->width > width ||
        bitmap->height > height || bitmap->data == NULL) {
         *decode_handle = core_free(*decode_handle);
-        return false;
+        return CRAZYPOD_WALLPAPER_APPLY_DECODE_FAILED;
     }
-    return true;
+    return CRAZYPOD_WALLPAPER_APPLY_OK;
 }
 
-static bool render_crop_from_original(
+static enum crazypod_wallpaper_apply_result render_crop_from_original(
     const char *path,
     const lv_image_dsc_t *preview_descriptor,
     int crop_x, int crop_y, int crop_width, int crop_height,
@@ -670,9 +766,10 @@ static bool render_crop_from_original(
     int high_width;
     int high_height;
     int y;
+    enum crazypod_wallpaper_apply_result decode_result;
 
     if(maximum_scale < 1 || destination == NULL)
-        return false;
+        return CRAZYPOD_WALLPAPER_APPLY_INVALID_SOURCE;
     if(decode_scale < 1)
         decode_scale = 1;
     if(decode_scale > maximum_scale)
@@ -681,10 +778,11 @@ static bool render_crop_from_original(
     decode_height = preview_height * decode_scale;
     if(progress_cb != NULL)
         progress_cb(12, progress_user_data);
-    if(!decode_crop_source(
-           path, decode_width, decode_height,
-           &bitmap, &decode_handle))
-        return false;
+    decode_result = decode_crop_source(
+        path, decode_width, decode_height,
+        &bitmap, &decode_handle);
+    if(decode_result != CRAZYPOD_WALLPAPER_APPLY_OK)
+        return decode_result;
     if(progress_cb != NULL)
         progress_cb(55, progress_user_data);
     high_x = (int)(
@@ -712,7 +810,7 @@ static bool render_crop_from_original(
     if(high_width < WALLPAPER_WIDTH ||
        high_height < WALLPAPER_HEIGHT) {
         core_free(decode_handle);
-        return false;
+        return CRAZYPOD_WALLPAPER_APPLY_DECODE_FAILED;
     }
     source = (const fb_data *)bitmap.data;
     for(y = 0; y < WALLPAPER_HEIGHT; ++y) {
@@ -739,28 +837,31 @@ static bool render_crop_from_original(
     core_free(decode_handle);
     if(progress_cb != NULL)
         progress_cb(90, progress_user_data);
-    return true;
+    return CRAZYPOD_WALLPAPER_APPLY_OK;
 }
 
-bool crazypod_wallpaper_apply_crop(
-    bool menu, const char *path,
+enum crazypod_wallpaper_apply_result crazypod_wallpaper_apply_crop(
+    enum crazypod_wallpaper_target target, const char *path,
     const lv_image_dsc_t *source_descriptor,
     int crop_x, int crop_y, int crop_width, int crop_height,
     crazypod_wallpaper_progress_cb progress_cb,
     void *progress_user_data)
 {
-    fb_data *destination =
-        menu ? custom_menu_pixels : custom_home_pixels;
-    lv_image_dsc_t *descriptor =
-        menu ? &custom_menu_descriptor : &custom_home_descriptor;
+    fb_data *destination;
+    lv_image_dsc_t *descriptor;
     int source_width;
     int source_height;
+    enum crazypod_wallpaper_apply_result result =
+        CRAZYPOD_WALLPAPER_APPLY_OK;
 
-    if(path == NULL || path[0] == '\0' ||
+    if(!valid_target(target) ||
+       path == NULL || path[0] == '\0' ||
        source_descriptor == NULL ||
        source_descriptor->header.magic != LV_IMAGE_HEADER_MAGIC ||
        source_descriptor->header.cf != LV_COLOR_FORMAT_RGB565)
-        return false;
+        return CRAZYPOD_WALLPAPER_APPLY_INVALID_SOURCE;
+    destination = pixels_for_target(target);
+    descriptor = descriptor_for_target(target);
     source_width = source_descriptor->header.w;
     source_height = source_descriptor->header.h;
     if(source_width <= 0 || source_height <= 0 ||
@@ -768,153 +869,191 @@ bool crazypod_wallpaper_apply_crop(
        crop_width <= 1 || crop_height <= 1 ||
        crop_x + crop_width > source_width ||
         crop_y + crop_height > source_height)
-        return false;
+        return CRAZYPOD_WALLPAPER_APPLY_INVALID_SOURCE;
     if(progress_cb != NULL)
         progress_cb(5, progress_user_data);
-    if(!render_crop_from_original(
-           path, source_descriptor,
-           crop_x, crop_y, crop_width, crop_height,
-           destination, progress_cb, progress_user_data))
-        return false;
-    if(!save_native_wallpaper(menu, path, destination))
-        return false;
+    result = render_crop_from_original(
+        path, source_descriptor,
+        crop_x, crop_y, crop_width, crop_height,
+        destination, progress_cb, progress_user_data);
+    if(result != CRAZYPOD_WALLPAPER_APPLY_OK)
+        return result;
+    if(!save_native_wallpaper(
+           target, path, destination, &result))
+        return result;
     if(progress_cb != NULL)
         progress_cb(96, progress_user_data);
-    if(!crazypod_appearance_set_wallpaper(menu, path))
-        return false;
+    if(!crazypod_appearance_set_wallpaper(
+           appearance_field_for_target(target), path))
+        return CRAZYPOD_WALLPAPER_APPLY_SETTINGS_FAILED;
     if(!crazypod_image_configure_rgb565(
            descriptor, destination,
            WALLPAPER_WIDTH, WALLPAPER_HEIGHT))
-        return false;
-    if(menu)
-        custom_menu_valid = true;
-    else {
-        custom_home_valid = true;
+        return CRAZYPOD_WALLPAPER_APPLY_ACTIVATE_FAILED;
+    set_target_valid(target, true);
+    if(target == CRAZYPOD_WALLPAPER_HOME)
         release_frosted_capsule();
-    }
     if(progress_cb != NULL)
         progress_cb(100, progress_user_data);
-    return true;
+    return CRAZYPOD_WALLPAPER_APPLY_OK;
 }
 
-void crazypod_wallpaper_clear(bool menu)
+void crazypod_wallpaper_clear(enum crazypod_wallpaper_target target)
 {
-    if(menu) {
-        custom_menu_valid = false;
-        remove(CUSTOM_MENU_NATIVE_PATH);
+    if(!valid_target(target))
+        return;
+    set_target_valid(target, false);
+    remove(native_wallpaper_path(target));
+    if(target == CRAZYPOD_WALLPAPER_HOME)
+        release_frosted_capsule();
+    crazypod_appearance_set_wallpaper(
+        appearance_field_for_target(target), "");
+}
+
+bool crazypod_wallpaper_prepare_frosted_capsule(
+    uint32_t tint, unsigned tint_opa)
+{
+    const struct crazypod_appearance *appearance =
+        crazypod_appearance_get();
+    fb_data *frosted_capsule_pixels;
+    const fb_data *source_pixels;
+    fb_data solid_pixel;
+    fb_data *sample_pixels;
+    fb_data *scratch_pixels;
+    size_t sample_count =
+        crazypod_image_glass_sample_pixels(
+            FROSTED_CAPSULE_WIDTH, FROSTED_CAPSULE_HEIGHT);
+    int source_width;
+    int source_height;
+    int source_stride;
+    int source_x;
+    int source_y;
+    int source_region_width;
+    int source_region_height;
+    int workspace_handle;
+    uint32_t source_key;
+
+    if(custom_home_valid) {
+        source_key = 1;
+        source_pixels = custom_home_pixels;
+        source_width = WALLPAPER_WIDTH;
+        source_height = WALLPAPER_HEIGHT;
+        source_stride = WALLPAPER_WIDTH;
+        source_x = FROSTED_CAPSULE_X;
+        source_y = FROSTED_CAPSULE_Y;
+        source_region_width = FROSTED_CAPSULE_WIDTH;
+        source_region_height = FROSTED_CAPSULE_HEIGHT;
+    }
+    else if(appearance->home_wallpaper[0] == '\0' &&
+            appearance->home_background == 0 && wallpaper_valid) {
+        source_key = 2;
+        source_pixels = wallpaper_pixels;
+        source_width = WALLPAPER_WIDTH;
+        source_height = WALLPAPER_HEIGHT;
+        source_stride = WALLPAPER_WIDTH;
+        source_x = FROSTED_CAPSULE_X;
+        source_y = FROSTED_CAPSULE_Y;
+        source_region_width = FROSTED_CAPSULE_WIDTH;
+        source_region_height = FROSTED_CAPSULE_HEIGHT;
     }
     else {
-        custom_home_valid = false;
-        remove(CUSTOM_HOME_NATIVE_PATH);
-        release_frosted_capsule();
+        uint32_t color = crazypod_appearance_home_color();
+
+        source_key = 0x03000000u | color;
+        solid_pixel = LCD_RGBPACK(
+            (color >> 16) & 0xff,
+            (color >> 8) & 0xff,
+            color & 0xff);
+        source_pixels = &solid_pixel;
+        source_width = 1;
+        source_height = 1;
+        source_stride = 1;
+        source_x = 0;
+        source_y = 0;
+        source_region_width = 1;
+        source_region_height = 1;
     }
-    crazypod_appearance_set_wallpaper(menu, "");
-}
-
-bool crazypod_wallpaper_prepare_frosted_capsule(void)
-{
-    fb_data *frosted_capsule_pixels;
-    uint8_t *frosted_ring;
-    int ring_handle;
-    int work_y;
-    int y;
-
-    if(frosted_capsule_valid)
+    if(frosted_capsule_valid &&
+       frosted_capsule_source_key == source_key &&
+       frosted_capsule_tint == tint &&
+       frosted_capsule_tint_opa == tint_opa)
         return true;
-    if(!wallpaper_valid)
-        return false;
+    if(frosted_capsule_valid)
+        release_frosted_capsule();
 
     frosted_capsule_handle = core_alloc_ex(
         FROSTED_CAPSULE_BYTES, &buflib_ops_locked);
     if(frosted_capsule_handle < 0)
         return false;
-    ring_handle = core_alloc(FROSTED_RING_BYTES);
-    if(ring_handle < 0) {
+    workspace_handle = core_alloc(
+        sample_count * 2 * sizeof(fb_data));
+    if(workspace_handle < 0) {
         frosted_capsule_handle = core_free(frosted_capsule_handle);
         return false;
     }
 
     frosted_capsule_pixels = core_get_data(frosted_capsule_handle);
-    frosted_ring = core_get_data(ring_handle);
-    for(work_y = 0; work_y < FROSTED_SAMPLE_COUNT; ++work_y) {
-        blur_wallpaper_row(
-            frosted_ring +
-                (work_y % FROSTED_SAMPLE_COUNT) * FROSTED_RING_ROW_BYTES,
-            work_y);
+    sample_pixels = core_get_data(workspace_handle);
+    scratch_pixels = sample_pixels + sample_count;
+    if(!crazypod_image_render_glass_rgb565(
+           source_pixels, source_width, source_height, source_stride,
+           source_x, source_y,
+           source_region_width, source_region_height,
+           tint, tint_opa,
+           sample_pixels, scratch_pixels, sample_count,
+           frosted_capsule_pixels,
+           FROSTED_CAPSULE_WIDTH, FROSTED_CAPSULE_HEIGHT)) {
+        core_free(workspace_handle);
+        frosted_capsule_handle = core_free(frosted_capsule_handle);
+        return false;
     }
+    {
+        int y;
 
-    for(y = 0; y < FROSTED_CAPSULE_HEIGHT; ++y) {
-        int x;
+        for(y = 0; y < FROSTED_CAPSULE_HEIGHT; ++y) {
+            int x;
 
-        for(x = 0; x < FROSTED_CAPSULE_WIDTH; ++x) {
-            unsigned channel_sum[3] = { 0, 0, 0 };
-            const fb_data *background =
-                wallpaper_pixels +
-                (FROSTED_CAPSULE_Y + y) * WALLPAPER_WIDTH +
-                FROSTED_CAPSULE_X + x;
-            unsigned material[3];
-            unsigned composited[3];
-            unsigned alpha = rounded_capsule_alpha(x, y);
-            unsigned inverse_alpha = 255 - alpha;
-            unsigned sheen =
-                (unsigned)(FROSTED_CAPSULE_HEIGHT - y) * 8 /
-                FROSTED_CAPSULE_HEIGHT;
-            int sample;
-            int channel;
+            for(x = 0; x < FROSTED_CAPSULE_WIDTH; ++x) {
+                unsigned alpha = rounded_capsule_alpha(x, y);
+                int sample_x;
+                int sample_y;
+                fb_data background;
+                fb_data *material;
 
-            for(sample = 0; sample < FROSTED_SAMPLE_COUNT; ++sample) {
-                const uint8_t *source =
-                    frosted_ring +
-                    ((y + sample) % FROSTED_SAMPLE_COUNT) *
-                        FROSTED_RING_ROW_BYTES +
-                    x * 3;
-                channel_sum[0] += source[0];
-                channel_sum[1] += source[1];
-                channel_sum[2] += source[2];
+                if(alpha == 255)
+                    continue;
+                sample_x = clamp_coordinate(
+                    source_x +
+                        x * source_region_width /
+                            FROSTED_CAPSULE_WIDTH,
+                    source_width);
+                sample_y = clamp_coordinate(
+                    source_y +
+                        y * source_region_height /
+                            FROSTED_CAPSULE_HEIGHT,
+                    source_height);
+                background =
+                    source_pixels[sample_y * source_stride + sample_x];
+                material =
+                    frosted_capsule_pixels +
+                    y * FROSTED_CAPSULE_WIDTH + x;
+                *material =
+                    blend_capsule_edge(*material, background, alpha);
             }
-            for(channel = 0; channel < 3; ++channel) {
-                unsigned blurred =
-                    channel_sum[channel] / FROSTED_SAMPLE_COUNT;
-
-                material[channel] =
-                    (blurred * 168 + sheen * 256) >> 8;
-                composited[channel] =
-                    (material[channel] * alpha +
-                     (channel == 0 ? RGB_UNPACK_BLUE(*background) :
-                      channel == 1 ? RGB_UNPACK_GREEN(*background) :
-                                     RGB_UNPACK_RED(*background)) *
-                         inverse_alpha + 127) / 255;
-            }
-            frosted_capsule_pixels[
-                y * FROSTED_CAPSULE_WIDTH + x] =
-                    LCD_RGBPACK(composited[2],
-                                composited[1],
-                                composited[0]);
-        }
-
-        work_y = y + FROSTED_SAMPLE_COUNT;
-        if(work_y < FROSTED_WORK_HEIGHT) {
-            blur_wallpaper_row(
-                frosted_ring +
-                    (y % FROSTED_SAMPLE_COUNT) *
-                        FROSTED_RING_ROW_BYTES,
-                work_y);
         }
     }
-    core_free(ring_handle);
-
-    memset(&frosted_capsule_descriptor, 0,
-           sizeof(frosted_capsule_descriptor));
-    frosted_capsule_descriptor.header.magic = LV_IMAGE_HEADER_MAGIC;
-    frosted_capsule_descriptor.header.cf = LV_COLOR_FORMAT_RGB565;
-    frosted_capsule_descriptor.header.w = FROSTED_CAPSULE_WIDTH;
-    frosted_capsule_descriptor.header.h = FROSTED_CAPSULE_HEIGHT;
-    frosted_capsule_descriptor.header.stride =
-        FROSTED_CAPSULE_ROW_BYTES;
-    frosted_capsule_descriptor.data_size = FROSTED_CAPSULE_BYTES;
-    frosted_capsule_descriptor.data =
-        (const uint8_t *)frosted_capsule_pixels;
+    core_free(workspace_handle);
+    if(!crazypod_image_configure_rgb565(
+           &frosted_capsule_descriptor,
+           frosted_capsule_pixels,
+           FROSTED_CAPSULE_WIDTH, FROSTED_CAPSULE_HEIGHT)) {
+        frosted_capsule_handle = core_free(frosted_capsule_handle);
+        return false;
+    }
     frosted_capsule_valid = true;
+    frosted_capsule_source_key = source_key;
+    frosted_capsule_tint = tint;
+    frosted_capsule_tint_opa = tint_opa;
     return true;
 }
 
@@ -931,6 +1070,11 @@ const lv_image_dsc_t *crazypod_custom_home_wallpaper(void)
 const lv_image_dsc_t *crazypod_custom_menu_wallpaper(void)
 {
     return custom_menu_valid ? &custom_menu_descriptor : NULL;
+}
+
+const lv_image_dsc_t *crazypod_custom_lock_wallpaper(void)
+{
+    return custom_lock_valid ? &custom_lock_descriptor : NULL;
 }
 
 const lv_image_dsc_t *crazypod_frosted_wallpaper_capsule(void)

@@ -14,6 +14,7 @@
 #include "powermgmt.h"
 #include "settings.h"
 #include "sound.h"
+#include "usb.h"
 
 #include "crazypod_audio_shims.h"
 #include "crazypod_playlist.h"
@@ -25,7 +26,7 @@
 #define QUEUE_PATH STATE_DIRECTORY "/queue.m3u8"
 #define QUEUE_TEMP_PATH STATE_DIRECTORY "/queue.tmp"
 #define STATE_MAGIC 0x43505354u
-#define STATE_VERSION 4u
+#define STATE_VERSION 5u
 #define STATE_SAVE_INTERVAL (30 * HZ)
 #define CRAZYPOD_EQ_GAIN_MIN (-240)
 #define CRAZYPOD_EQ_GAIN_MAX 240
@@ -111,6 +112,37 @@ struct crazypod_state_eq_band_disk {
     int32_t gain;
 };
 
+struct crazypod_state_disk_v4 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t checksum;
+};
+
 struct crazypod_state_disk {
     uint32_t magic;
     uint32_t version;
@@ -133,6 +165,7 @@ struct crazypod_state_disk {
     int32_t sleeptimer_duration;
     int32_t sleeptimer_on_startup;
     int32_t keypress_restarts_sleeptimer;
+    int32_t usb_charging;
     int32_t beep;
     int32_t keyclick;
     int32_t keyclick_repeats;
@@ -184,6 +217,13 @@ static uint32_t state_v2_checksum(const struct crazypod_state_disk_v2 *state)
 static uint32_t state_v3_checksum(const struct crazypod_state_disk_v3 *state)
 {
     struct crazypod_state_disk_v3 copy = *state;
+    copy.checksum = 0;
+    return hash_bytes(2166136261u, &copy, sizeof(copy));
+}
+
+static uint32_t state_v4_checksum(const struct crazypod_state_disk_v4 *state)
+{
+    struct crazypod_state_disk_v4 copy = *state;
     copy.checksum = 0;
     return hash_bytes(2166136261u, &copy, sizeof(copy));
 }
@@ -269,6 +309,48 @@ static bool load_header(struct crazypod_state_disk *state)
                 state->checksum == state_checksum(state);
     }
     else if(header[0] == STATE_MAGIC &&
+            header[1] == 4u &&
+            header[2] == sizeof(struct crazypod_state_disk_v4)) {
+        struct crazypod_state_disk_v4 state_v4;
+
+        valid = read_exact(fd, &state_v4, sizeof(state_v4)) &&
+                state_v4.checksum == state_v4_checksum(&state_v4);
+        if(valid) {
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+            state->volume = state_v4.volume;
+            state->repeat_mode = state_v4.repeat_mode;
+            state->shuffled = state_v4.shuffled;
+            state->queue_index = state_v4.queue_index;
+            state->queue_count = state_v4.queue_count;
+            state->queue_hash = state_v4.queue_hash;
+            state->elapsed = state_v4.elapsed;
+            state->eq_enabled = state_v4.eq_enabled;
+            state->bass = state_v4.bass;
+            state->treble = state_v4.treble;
+            state->balance = state_v4.balance;
+            state->brightness = state_v4.brightness;
+            state->backlight_timeout = state_v4.backlight_timeout;
+            state->backlight_timeout_plugged =
+                state_v4.backlight_timeout_plugged;
+            state->lcd_sleep_after_backlight_off =
+                state_v4.lcd_sleep_after_backlight_off;
+            state->sleeptimer_duration = state_v4.sleeptimer_duration;
+            state->sleeptimer_on_startup = state_v4.sleeptimer_on_startup;
+            state->keypress_restarts_sleeptimer =
+                state_v4.keypress_restarts_sleeptimer;
+            state->usb_charging = global_settings.usb_charging;
+            state->beep = state_v4.beep;
+            state->keyclick = state_v4.keyclick;
+            state->keyclick_repeats = state_v4.keyclick_repeats;
+            state->keyclick_hardware = state_v4.keyclick_hardware;
+            state->eq_precut = state_v4.eq_precut;
+            memcpy(state->eq_bands, state_v4.eq_bands,
+                   sizeof(state->eq_bands));
+        }
+    }
+    else if(header[0] == STATE_MAGIC &&
             header[1] == 3u &&
             header[2] == sizeof(struct crazypod_state_disk_v3)) {
         struct crazypod_state_disk_v3 state_v3;
@@ -300,6 +382,7 @@ static bool load_header(struct crazypod_state_disk *state)
             state->sleeptimer_on_startup = state_v3.sleeptimer_on_startup;
             state->keypress_restarts_sleeptimer =
                 state_v3.keypress_restarts_sleeptimer;
+            state->usb_charging = global_settings.usb_charging;
             state->beep = state_v3.beep;
             state->keyclick = state_v3.keyclick;
             state->keyclick_repeats = state_v3.keyclick_repeats;
@@ -339,6 +422,7 @@ static bool load_header(struct crazypod_state_disk *state)
             state->sleeptimer_on_startup = state_v2.sleeptimer_on_startup;
             state->keypress_restarts_sleeptimer =
                 state_v2.keypress_restarts_sleeptimer;
+            state->usb_charging = global_settings.usb_charging;
             state->beep = state_v2.beep;
             state->keyclick = state_v2.keyclick;
             state->keyclick_repeats = state_v2.keyclick_repeats;
@@ -379,6 +463,7 @@ static bool load_header(struct crazypod_state_disk *state)
                 global_settings.lcd_sleep_after_backlight_off;
             state->sleeptimer_duration =
                 global_settings.sleeptimer_duration;
+            state->usb_charging = global_settings.usb_charging;
             state->beep = global_settings.beep;
             state->keyclick = global_settings.keyclick;
             state->keyclick_hardware = 1;
@@ -434,12 +519,19 @@ static void clamp_and_apply_settings(const struct crazypod_state_disk *state)
 #endif
     global_settings.lcd_sleep_after_backlight_off =
         clamp_int(state->lcd_sleep_after_backlight_off, -1, 7200);
+    if(global_settings.lcd_sleep_after_backlight_off == 0)
+        global_settings.lcd_sleep_after_backlight_off = 1;
     global_settings.sleeptimer_duration =
         clamp_int(state->sleeptimer_duration, 0, 300);
     global_settings.sleeptimer_on_startup =
         state->sleeptimer_on_startup != 0;
     global_settings.keypress_restarts_sleeptimer =
         state->keypress_restarts_sleeptimer != 0;
+#ifdef HAVE_USB_CHARGING_ENABLE
+    global_settings.usb_charging =
+        clamp_int(state->usb_charging, USB_CHARGING_DISABLE,
+                  USB_CHARGING_FORCE);
+#endif
     global_settings.beep = clamp_int(state->beep, 0, 3);
     global_settings.keyclick = clamp_int(state->keyclick, 0, 3);
     global_settings.keyclick_repeats = state->keyclick_repeats != 0;
@@ -479,6 +571,9 @@ static void clamp_and_apply_settings(const struct crazypod_state_disk *state)
         set_sleeptimer_duration(global_settings.sleeptimer_duration);
     set_keypress_restarts_sleep_timer(
         global_settings.keypress_restarts_sleeptimer);
+#ifdef HAVE_USB_CHARGING_ENABLE
+    usb_charging_enable(global_settings.usb_charging);
+#endif
 }
 
 void crazypod_state_load(void)
@@ -636,6 +731,9 @@ void crazypod_state_save(bool force)
         global_settings.sleeptimer_on_startup ? 1 : 0;
     state.keypress_restarts_sleeptimer =
         global_settings.keypress_restarts_sleeptimer ? 1 : 0;
+#ifdef HAVE_USB_CHARGING_ENABLE
+    state.usb_charging = global_settings.usb_charging;
+#endif
     state.beep = global_settings.beep;
     state.keyclick = global_settings.keyclick;
     state.keyclick_repeats = global_settings.keyclick_repeats ? 1 : 0;

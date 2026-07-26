@@ -300,6 +300,11 @@ static inline pix_t pf_color_mix(int brightness)
 #define DISPLAY_LEFT_R (PFREAL_HALF - LCD_WIDTH * PFREAL_HALF)
 #define MAXSLIDE_LEFT_R (PFREAL_HALF - DISPLAY_WIDTH * PFREAL_HALF)
 
+/* Rockbox uses HZ=100 on this target. 42 Hz would need uneven 20/30 ms
+ * pacing, so PictureFlow animates on a stable 50 Hz cadence instead. */
+#define PF_ANIM_FRAME_TICKS 2
+#define PF_ANIM_MAX_ELAPSED_TICKS (HZ / 5)
+
 #define SLIDE_CACHE_SIZE 100
 
 #define MAX_SLIDES_COUNT 10
@@ -611,6 +616,8 @@ static int slide_frame;
 static int step;
 static int target;
 static int fade;
+static long pf_last_frame_tick;
+static int pf_anim_step_remainder;
 static int center_index = 0; /* index of the slide that is in the center */
 static int itilt;
 static PFreal offsetX;
@@ -3125,6 +3132,101 @@ static inline pix_t fade_color(pix_t c, unsigned a)
 #endif
 }
 
+static inline PFreal project_slide_x(PFreal render_cx, PFreal slide_x,
+                                     PFreal cosr, PFreal sinr, PFreal zo)
+{
+    return fdiv(CAM_DIST * (render_cx + fmul(slide_x, cosr)),
+                CAM_DIST_R + zo + fmul(slide_x, sinr));
+}
+
+static inline unsigned pf_frac_to_256(PFreal v)
+{
+    return ((unsigned)(v & (PFREAL_ONE - 1)) * 256 + PFREAL_HALF)
+           >> PFREAL_SHIFT;
+}
+
+#if (LCD_PIXELFORMAT == RGB565) || (LCD_PIXELFORMAT == RGB565SWAPPED)
+static inline pix_t pf_lerp_color_256(pix_t ca, pix_t cb, unsigned amount)
+{
+    if (amount == 0)
+        return ca;
+    if (amount >= 256)
+        return cb;
+
+#if (LCD_PIXELFORMAT == RGB565SWAPPED)
+    ca = swap16(ca);
+    cb = swap16(cb);
+#endif
+
+    unsigned inv = 256 - amount;
+    unsigned result = (((ca & 0xf81f) * inv + (cb & 0xf81f) * amount)
+                       & 0xf81f00);
+    result |= (((ca & 0x07e0) * inv + (cb & 0x07e0) * amount)
+               & 0x07e000);
+    result >>= 8;
+
+#if (LCD_PIXELFORMAT == RGB565SWAPPED)
+    return swap16(result);
+#else
+    return result;
+#endif
+}
+#endif
+
+static inline pix_t sample_slide_pixel(const pix_t *src, int sw, int sh,
+                                       PFreal sx, PFreal sy)
+{
+    if (sx < 0)
+        sx = 0;
+    if (sy < 0)
+        sy = 0;
+
+    PFreal max_x = (sw - 1) * PFREAL_ONE;
+    PFreal max_y = (sh - 1) * PFREAL_ONE;
+
+    if (sx > max_x)
+        sx = max_x;
+    if (sy > max_y)
+        sy = max_y;
+
+    int x0 = sx >> PFREAL_SHIFT;
+    int y0 = sy >> PFREAL_SHIFT;
+
+#if (LCD_PIXELFORMAT == RGB565) || (LCD_PIXELFORMAT == RGB565SWAPPED)
+    int x1 = (x0 + 1 < sw) ? x0 + 1 : x0;
+    int y1 = (y0 + 1 < sh) ? y0 + 1 : y0;
+    unsigned xf = pf_frac_to_256(sx);
+    unsigned yf = pf_frac_to_256(sy);
+
+    pix_t c00 = src[x0 * sh + y0];
+    pix_t c10 = src[x1 * sh + y0];
+    pix_t c01 = src[x0 * sh + y1];
+    pix_t c11 = src[x1 * sh + y1];
+    pix_t top = pf_lerp_color_256(c00, c10, xf);
+    pix_t bottom = pf_lerp_color_256(c01, c11, xf);
+    return pf_lerp_color_256(top, bottom, yf);
+#else
+    return src[x0 * sh + y0];
+#endif
+}
+
+static inline int slide_column_coverage_alpha(int x, PFreal edge_min,
+                                              PFreal edge_max)
+{
+    PFreal px0 = DISPLAY_LEFT_R + x * PFREAL_ONE;
+    PFreal px1 = px0 + PFREAL_ONE;
+    PFreal cover0 = MAX(px0, edge_min);
+    PFreal cover1 = MIN(px1, edge_max);
+    PFreal cover = cover1 - cover0;
+
+    if (cover <= 0)
+        return 0;
+    if (cover >= PFREAL_ONE)
+        return 256;
+
+    return (cover * 256 + PFREAL_HALF) >> PFREAL_SHIFT;
+}
+
 /**
  * Render a single slide
  * Where xc is the slide's horizontal offset from center, xs is the horizontal
@@ -3195,20 +3297,26 @@ static void render_slide(struct slide_data *slide, const int alpha)
         ? fdiv(CAM_DIST * slide->cx, CAM_DIST_R + zo) : 0;
     PFreal render_cx = (screen_cx != 0) ? 0 : slide->cx;
 
-    PFreal xs = slide_left, xsnum, xsnumi, xsden, xsdeni;
-    PFreal xp = fdiv(CAM_DIST * (render_cx + fmul(xs, cosr)),
-        (CAM_DIST_R + zo + fmul(xs,sinr)));
+    PFreal slide_right = sw * PFREAL_HALF - PFREAL_HALF;
+    PFreal edge0 = project_slide_x(render_cx, slide_left, cosr, sinr, zo)
+                   + screen_cx;
+    PFreal edge1 = project_slide_x(render_cx, slide_right, cosr, sinr, zo)
+                   + screen_cx;
+    PFreal edge_min = MIN(edge0, edge1);
+    PFreal edge_max = MAX(edge0, edge1);
 
-    /* Since we're finding the screen position of the left edge of the slide,
-     * we round up.
-     */
-    xp += screen_cx;
-    int xi = (fmax(DISPLAY_LEFT_R, xp) - DISPLAY_LEFT_R + PFREAL_ONE - 1)
+    if (edge_max <= DISPLAY_LEFT_R)
+        return;
+
+    PFreal xs, xsnum, xsnumi, xsden, xsdeni;
+    int xi = (MAX(DISPLAY_LEFT_R, edge_min) - DISPLAY_LEFT_R)
         >> PFREAL_SHIFT;
-    xp = DISPLAY_LEFT_R + xi * PFREAL_ONE;
+    if (xi < 0)
+        xi = 0;
     if (xi >= w) {
         return;
     }
+    PFreal xp = DISPLAY_LEFT_R + xi * PFREAL_ONE + PFREAL_HALF;
     PFreal xp_local = xp - screen_cx;
     xsnum = CAM_DIST * (render_cx - xp_local)
         - fmuln(xp_local, zo, PFREAL_SHIFT - 2, 0);
@@ -3228,14 +3336,18 @@ static void render_slide(struct slide_data *slide, const int alpha)
     const int p_start_lower = (sh - display_offs) * PFREAL_ONE;
     const int plim2_max = MIN(sh + reflect_height, sh * 2) * PFREAL_ONE;
     for (x = xi; x < w; x++) {
-        int column = (unsigned)(xs - slide_left) >> PFREAL_SHIFT;
-        if (column >= sw)
+        if (DISPLAY_LEFT_R + x * PFREAL_ONE >= edge_max)
             break;
-        if (perspective) {
-            dy = (CAM_DIST_R + zo + fmul(xs, sinr)) / CAM_DIST;
-        }
+        int edge_alpha = slide_column_coverage_alpha(x, edge_min, edge_max);
+        if (edge_alpha > 0) {
+            if (perspective) {
+                dy = (CAM_DIST_R + zo + fmul(xs, sinr)) / CAM_DIST;
+            }
 
-        const pix_t *ptr = &src[column * sh];
+            const PFreal src_x = xs - slide_left;
+            int draw_alpha = alpha;
+            if (edge_alpha < 256)
+                draw_alpha = (MULUQ(draw_alpha, edge_alpha) + 128) >> 8;
 
 #if LCD_STRIDEFORMAT == VERTICAL_STRIDE
 #define PIXELSTEP_Y   1
@@ -3245,47 +3357,54 @@ static void render_slide(struct slide_data *slide, const int alpha)
 #define LCDADDR(x, y) (&buffer[(y)*BUFFER_WIDTH + (x)])
 #endif
 
-        int p = p_start_upper;
-        int plim = MAX(0, p - (half_height-1) * dy);
-        pix_t *pixel = LCDADDR(x, half_height-1 );
+            int p = p_start_upper;
+            int plim = MAX(0, p - (half_height-1) * dy);
+            pix_t *pixel = LCDADDR(x, half_height-1 );
 
-        if (alpha == 256) {
-            while (p >= plim) {
-                *pixel = ptr[((unsigned)p) >> PFREAL_SHIFT];
-                p -= dy;
-                pixel -= PIXELSTEP_Y;
+            if (draw_alpha == 256) {
+                while (p >= plim) {
+                    *pixel = sample_slide_pixel(src, sw, sh, src_x, p);
+                    p -= dy;
+                    pixel -= PIXELSTEP_Y;
+                }
+            } else {
+                while (p >= plim) {
+                    pix_t c = sample_slide_pixel(src, sw, sh, src_x, p);
+                    *pixel = fade_color(c, draw_alpha);
+                    p -= dy;
+                    pixel -= PIXELSTEP_Y;
+                }
             }
-        } else {
-            while (p >= plim) {
-                *pixel = fade_color(ptr[((unsigned)p) >> PFREAL_SHIFT], alpha);
-                p -= dy;
-                pixel -= PIXELSTEP_Y;
-            }
-        }
-        p = p_start_lower;
-        plim = MIN(sh * PFREAL_ONE, p + lower_half * dy);
-        int plim2 = MIN(plim2_max, p + lower_half * dy);
-        pixel = LCDADDR(x, half_height );
+            p = p_start_lower;
+            plim = MIN(sh * PFREAL_ONE, p + lower_half * dy);
+            int plim2 = MIN(plim2_max, p + lower_half * dy);
+            pixel = LCDADDR(x, half_height );
 
-        if (alpha == 256) {
-            while (p < plim) {
-                *pixel = ptr[((unsigned)p) >> PFREAL_SHIFT];
+            if (draw_alpha == 256) {
+                while (p < plim) {
+                    *pixel = sample_slide_pixel(src, sw, sh, src_x, p);
+                    p += dy;
+                    pixel += PIXELSTEP_Y;
+                }
+            } else {
+                while (p < plim) {
+                    pix_t c = sample_slide_pixel(src, sw, sh, src_x, p);
+                    *pixel = fade_color(c, draw_alpha);
+                    p += dy;
+                    pixel += PIXELSTEP_Y;
+                }
+            }
+            while (p < plim2) {
+                int ty = (((unsigned)p) >> PFREAL_SHIFT) - sh;
+                int lalpha = reftab[ty];
+                if (edge_alpha < 256)
+                    lalpha = (MULUQ(lalpha, edge_alpha) + 128) >> 8;
+                PFreal refl_y = sh * PFREAL_ONE - 1 - (p - sh * PFREAL_ONE);
+                pix_t c = sample_slide_pixel(src, sw, sh, src_x, refl_y);
+                *pixel = fade_color(c, lalpha);
                 p += dy;
                 pixel += PIXELSTEP_Y;
             }
-        } else {
-            while (p < plim) {
-                *pixel = fade_color(ptr[((unsigned)p) >> PFREAL_SHIFT], alpha);
-                p += dy;
-                pixel += PIXELSTEP_Y;
-            }
-        }
-        while (p < plim2) {
-            int ty = (((unsigned)p) >> PFREAL_SHIFT) - sh;
-            int lalpha = reftab[ty];
-            *pixel = fade_color(ptr[sh - 1 - ty], lalpha);
-            p += dy;
-            pixel += PIXELSTEP_Y;
         }
 
         if (perspective)
@@ -3309,6 +3428,7 @@ static inline void set_current_slide(const int slide_index)
 {
     int old_center_index = center_index;
     step = 0;
+    pf_anim_step_remainder = 0;
     center_index = fbound(0, slide_index, number_of_slides - 1);
     if (old_center_index != center_index)
     {
@@ -3440,10 +3560,12 @@ static bool sort_albums(int new_sorting, bool from_settings)
 static void start_animation(void)
 {
     step = (target < center_slide.slide_index) ? -1 : 1;
+    pf_last_frame_tick = *rb->current_tick;
+    pf_anim_step_remainder = 0;
     pf_state = pf_scrolling;
 }
 
-static void update_scroll_animation(void);
+static void update_scroll_animation(int elapsed_ticks);
 
 /**
   Go to the previous slide
@@ -3459,7 +3581,7 @@ static void show_previous_slide(void)
         target = center_index;
         step = (target <= center_slide.slide_index) ? -1 : 1;
         if (step < 0)
-            update_scroll_animation();
+            update_scroll_animation(PF_ANIM_FRAME_TICKS);
     } else {
         target = fmax(0, center_index - 2);
     }
@@ -3480,7 +3602,7 @@ static void show_next_slide(void)
         target = center_index;
         step = (target < center_slide.slide_index) ? -1 : 1;
         if (step > 0)
-            update_scroll_animation();
+            update_scroll_animation(PF_ANIM_FRAME_TICKS);
     } else {
         target = fmin(center_index + 2, number_of_slides - 1);
     }
@@ -3593,10 +3715,14 @@ static void render_all_slides(void)
 /**
   Updates the animation effect. Call this periodically from a timer.
 */
-static void update_scroll_animation(void)
+static void update_scroll_animation(int elapsed_ticks)
 {
     if (step == 0)
         return;
+    if (elapsed_ticks <= 0)
+        return;
+    if (elapsed_ticks > PF_ANIM_MAX_ELAPSED_TICKS)
+        elapsed_ticks = PF_ANIM_FRAME_TICKS;
 
     int speed = 16384;
     int i;
@@ -3616,6 +3742,10 @@ static void update_scroll_animation(void)
         speed = 512 * pf_cfg.transition_speed / 100
               + accel * pf_cfg.scroll_speed / 100;
     }
+
+    int scaled_speed = speed * elapsed_ticks + pf_anim_step_remainder;
+    speed = scaled_speed / PF_ANIM_FRAME_TICKS;
+    pf_anim_step_remainder = scaled_speed % PF_ANIM_FRAME_TICKS;
 
     slide_frame += speed * step;
 
@@ -3658,6 +3788,7 @@ static void update_scroll_animation(void)
         pf_state = pf_idle;
         slide_frame = center_index << 16;
         step = 0;
+        pf_anim_step_remainder = 0;
         fade = 256;
         return;
     }
@@ -5092,6 +5223,8 @@ static bool init(void)
     slide_frame = 0;
     step = 0;
     target = 0;
+    pf_last_frame_tick = *rb->current_tick;
+    pf_anim_step_remainder = 0;
     fade = 256;
 
     recalc_offsets();
@@ -5166,6 +5299,7 @@ static int pictureflow_main(void)
     int fps = 0;
     int fpstxt_y;
     bool instant_update;
+    int elapsed_ticks;
 
     rb->skin_render_inhibit_flush(false);
 
@@ -5187,7 +5321,7 @@ static int pictureflow_main(void)
 #ifndef USE_CORE_PREVNEXT
             |(pf_state == pf_show_tracks ? 1 : 0)
 #endif
-            ,instant_update ? 0 : HZ/16,
+            ,instant_update ? 1 : HZ/16,
             get_context_map);
 
         if (pf_cfg.show_statusbar)
@@ -5198,7 +5332,25 @@ static int pictureflow_main(void)
         rb->lcd_set_viewport(&pf_vp);
 
         current_update = *rb->current_tick;
-        frames++;
+        elapsed_ticks = PF_ANIM_FRAME_TICKS;
+        if (instant_update)
+        {
+            long raw_elapsed = current_update - pf_last_frame_tick;
+            if (raw_elapsed < PF_ANIM_FRAME_TICKS)
+            {
+                rb->yield();
+                goto handle_button;
+            }
+            elapsed_ticks = raw_elapsed;
+            if (elapsed_ticks > PF_ANIM_MAX_ELAPSED_TICKS)
+                elapsed_ticks = PF_ANIM_FRAME_TICKS;
+            pf_last_frame_tick = current_update;
+        }
+        else
+        {
+            pf_last_frame_tick = current_update;
+            pf_anim_step_remainder = 0;
+        }
 
 #if defined(HAVE_LCD_COLOR) && defined(HAVE_ALBUMART)
         pf_update_dynamic_colors();
@@ -5208,7 +5360,7 @@ static int pictureflow_main(void)
         /* Handle states */
         switch ( pf_state ) {
             case pf_scrolling:
-                update_scroll_animation();
+                update_scroll_animation(elapsed_ticks);
                 render_all_slides();
                 break;
             case pf_cover_in:
@@ -5247,6 +5399,8 @@ static int pictureflow_main(void)
                 break;
         }
 
+        frames++;
+
         /* Calculate FPS */
         if (current_update - last_update > update_interval) {
             fps = frames * HZ / (current_update - last_update);
@@ -5284,6 +5438,7 @@ static int pictureflow_main(void)
         mylcd_update();
         rb->yield();
 
+handle_button:
         switch (button) {
         case PF_QUIT:
             if (pf_state == pf_show_tracks)

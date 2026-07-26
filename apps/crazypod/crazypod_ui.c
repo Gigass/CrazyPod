@@ -10,6 +10,7 @@
 #include "backlight.h"
 #include "button.h"
 #include "dir.h"
+#include "events.h"
 #include "file.h"
 #include "kernel.h"
 #include "lcd.h"
@@ -40,22 +41,28 @@
 #include "crazypod_playlist.h"
 #include "crazypod_photos.h"
 #include "crazypod_presets.h"
+#include "crazypod_soundwave.h"
 #include "crazypod_state.h"
 #include "crazypod_ui.h"
 #include "crazypod_wallpaper.h"
 
 #define CRAZYPOD_APP_COUNT 14
-#define CRAZYPOD_SCREEN_COUNT 2
+#define CRAZYPOD_STATUS_BAR_COUNT 2
+#define CRAZYPOD_CORNER_SCREEN_COUNT 3
 #define CRAZYPOD_DRAW_ROWS 40
 #define CRAZYPOD_ROUTE_DEPTH 8
 #define CRAZYPOD_VISIBLE_ROWS 7
-#define CRAZYPOD_MENU_PANEL_Y 40
-#define CRAZYPOD_MENU_PANEL_HEIGHT 192
-#define CRAZYPOD_MENU_HEADER_X 19
+#define CRAZYPOD_SEARCH_PREVIEW_ROWS 4
+#define CRAZYPOD_STATUS_BAR_HEIGHT 32
+#define CRAZYPOD_MENU_TOPBAR_OPA 118
+#define CRAZYPOD_MENU_PANEL_Y CRAZYPOD_STATUS_BAR_HEIGHT
+#define CRAZYPOD_MENU_PANEL_HEIGHT (LCD_HEIGHT - CRAZYPOD_MENU_PANEL_Y)
+#define CRAZYPOD_MENU_PANEL_WIDTH 160
+#define CRAZYPOD_MENU_HEADER_X 16
 #define CRAZYPOD_MENU_HEADER_Y 42
 #define CRAZYPOD_MENU_HEADER_WIDTH 128
 #define CRAZYPOD_MENU_HEADER_HEIGHT 20
-#define CRAZYPOD_MENU_ROW_X 12
+#define CRAZYPOD_MENU_ROW_X 8
 #define CRAZYPOD_MENU_ROW_Y 64
 #define CRAZYPOD_MENU_ROW_WIDTH 140
 #define CRAZYPOD_MENU_ROW_HEIGHT 24
@@ -63,6 +70,13 @@
 #define CRAZYPOD_MENU_SCROLL_X 153
 #define CRAZYPOD_MENU_SCROLL_Y 66
 #define CRAZYPOD_MENU_SCROLL_HEIGHT 164
+#define CRAZYPOD_PREVIEW_SETTLE_TICKS \
+    ((HZ * 140 / 1000) > 0 ? (HZ * 140 / 1000) : 1)
+#define CRAZYPOD_MUSIC_PREVIEW_SETTLE_TICKS \
+    ((HZ * 260 / 1000) > 0 ? (HZ * 260 / 1000) : 1)
+#define CRAZYPOD_PREVIEW_ENTRANCE_OFFSET_X 18
+#define CRAZYPOD_PREVIEW_ENTRANCE_DELAY_MS 20
+#define CRAZYPOD_PREVIEW_ENTRANCE_DURATION_MS 340
 #define CRAZYPOD_EDITOR_CHAR_COUNT 36
 #define CRAZYPOD_SEARCH_QUERY_SIZE 33
 #define CRAZYPOD_ALBUM_FLOW_CARD_COUNT 5
@@ -76,13 +90,17 @@
 #define CRAZYPOD_NOW_POPUP_HEIGHT 176
 #define CRAZYPOD_NOW_POPUP_RADIUS 18
 #define CRAZYPOD_CHOICE_OVERLAY_ROWS 5
-#define CRAZYPOD_NOW_GLASS_SCALE 4
-#define CRAZYPOD_NOW_GLASS_WIDTH 63
-#define CRAZYPOD_NOW_GLASS_HEIGHT 44
+#define CRAZYPOD_NOW_GLASS_WIDTH \
+    ((CRAZYPOD_NOW_POPUP_WIDTH + CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE - 1) / \
+     CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE)
+#define CRAZYPOD_NOW_GLASS_HEIGHT \
+    ((CRAZYPOD_NOW_POPUP_HEIGHT + CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE - 1) / \
+     CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE)
+#define CRAZYPOD_GLASS_SAMPLE_WIDTH 80
+#define CRAZYPOD_GLASS_SAMPLE_HEIGHT 60
 #define CRAZYPOD_NOW_BACKDROP_WIDTH 40
 #define CRAZYPOD_NOW_BACKDROP_HEIGHT 30
 #define CRAZYPOD_NOW_PRESENTATION_BANKS 2
-#define CRAZYPOD_NOW_SPECTRUM_BAR_COUNT 72
 #define CRAZYPOD_NOW_SHADE_COLOR 0x050508
 #define CRAZYPOD_NOW_SHADE_OPA 118
 #define CRAZYPOD_SCREEN_RADIUS_MAX 32
@@ -91,9 +109,9 @@
     ((HZ * 80 / 1000) > 0 ? (HZ * 80 / 1000) : 1)
 #define CRAZYPOD_DESKTOP_MOTION_SIM_FPS 60
 #define CRAZYPOD_NOW_WAVE_FRAME_TICKS \
-    ((HZ / 5) > 0 ? (HZ / 5) : 1)
+    ((HZ / 10) > 0 ? (HZ / 10) : 1)
 #define CRAZYPOD_DESKTOP_SPECTRUM_FRAME_TICKS \
-    ((HZ / 5) > 0 ? (HZ / 5) : 1)
+    ((HZ / 10) > 0 ? (HZ / 10) : 1)
 #define CRAZYPOD_PHOTO_PAN_STEP 24
 #define CRAZYPOD_PHOTO_FAVORITE_HOLD_TICKS \
     ((HZ * 8 / 10) > 0 ? (HZ * 8 / 10) : 1)
@@ -107,10 +125,43 @@
     ((HZ / 2) > 0 ? (HZ / 2) : 1)
 #define CRAZYPOD_WALLPAPER_CROP_SUCCESS_TICKS \
     ((HZ * 2 / 5) > 0 ? (HZ * 2 / 5) : 1)
+#define CRAZYPOD_UNLOCK_HOLD_TICKS \
+    ((HZ * 3 / 2) > 0 ? (HZ * 3 / 2) : 1)
+#define CRAZYPOD_UNLOCK_OPEN_TICKS \
+    ((HZ / 4) > 0 ? (HZ / 4) : 1)
+#define CRAZYPOD_PREVIOUS_RESTART_THRESHOLD_MS 3000
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+#define CRAZYPOD_USB_PROMPT_REQUEST \
+    MAKE_SYS_EVENT(SYS_EVENT_CLS_PRIVATE, 0x31)
+#define CRAZYPOD_USB_PROMPT_DONE \
+    MAKE_SYS_EVENT(SYS_EVENT_CLS_PRIVATE, 0x32)
+#define CRAZYPOD_USB_PROMPT_TIMEOUT (5 * HZ)
+#endif
 #define CRAZYPOD_DESKTOP_NATIVE_TOP 40
 #define CRAZYPOD_DESKTOP_NATIVE_BOTTOM 143
 #define CRAZYPOD_DESKTOP_NATIVE_HEIGHT \
     (CRAZYPOD_DESKTOP_NATIVE_BOTTOM - CRAZYPOD_DESKTOP_NATIVE_TOP)
+#define CRAZYPOD_DESKTOP_CAPSULE_FALLBACK_OPA 34
+#define CRAZYPOD_DESKTOP_CAPSULE_TINT_OPA 48
+#define CRAZYPOD_GLASS_TINT_COLOR 0x11131A
+#define CRAZYPOD_GLASS_BAKE_TINT_OPA 104
+#define CRAZYPOD_GLASS_PANEL_TINT_OPA 92
+#define CRAZYPOD_GLASS_BORDER_OPA 38
+#define CRAZYPOD_GLASS_SHADOW_OPA 92
+#define CRAZYPOD_MENU_TOPBAR_PIXELS \
+    (LCD_WIDTH * CRAZYPOD_STATUS_BAR_HEIGHT)
+#define CRAZYPOD_MENU_PANEL_PIXELS \
+    (CRAZYPOD_MENU_PANEL_WIDTH * CRAZYPOD_MENU_PANEL_HEIGHT)
+#define CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH 140
+#define CRAZYPOD_PREVIEW_TEXT_PANEL_MAX_HEIGHT 70
+#define CRAZYPOD_PREVIEW_TEXT_PANEL_PIXELS \
+    (CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH * \
+     CRAZYPOD_PREVIEW_TEXT_PANEL_MAX_HEIGHT)
+#define CRAZYPOD_SEARCH_QUERY_PIXELS (136 * 38)
+#define CRAZYPOD_SEARCH_RESULTS_PIXELS (136 * 104)
+#define CRAZYPOD_INFO_TOAST_PIXELS (230 * 50)
+#define CRAZYPOD_INFO_BAR_PIXELS (LCD_WIDTH * 34)
+#define CRAZYPOD_INFO_BAR_ALT_PIXELS (LCD_WIDTH * 34)
 
 #define COLOR_DETAIL  0x08080D
 #define COLOR_PANEL   0x1B1B22
@@ -180,6 +231,17 @@ enum crazypod_route {
     DIY_ROUTE_LAYOUT,
 };
 
+enum crazypod_preview_icon {
+    CRAZYPOD_PREVIEW_ICON_NOW_PLAYING,
+    CRAZYPOD_PREVIEW_ICON_ALBUM_FLOW,
+    CRAZYPOD_PREVIEW_ICON_ALL_MUSIC,
+    CRAZYPOD_PREVIEW_ICON_PLAYLISTS,
+    CRAZYPOD_PREVIEW_ICON_ARTIST,
+    CRAZYPOD_PREVIEW_ICON_ALBUMS,
+    CRAZYPOD_PREVIEW_ICON_SONGS,
+    CRAZYPOD_PREVIEW_ICON_SEARCH
+};
+
 struct route_state {
     enum crazypod_route route;
     int selected;
@@ -237,6 +299,15 @@ enum choice_overlay_kind {
     CHOICE_OVERLAY_SETTING,
 };
 
+enum crazypod_glass_material {
+    CRAZYPOD_GLASS_POPUP = 0,
+    CRAZYPOD_GLASS_MENU_PANEL,
+    CRAZYPOD_GLASS_MENU_TOPBAR,
+    CRAZYPOD_GLASS_TEXT_PANEL,
+    CRAZYPOD_GLASS_HOME_CAPSULE,
+    CRAZYPOD_GLASS_INFO_TOAST,
+};
+
 enum eq_studio_mode {
     EQ_STUDIO_GAIN,
     EQ_STUDIO_CUTOFF,
@@ -259,6 +330,9 @@ enum settings_item {
     SETTINGS_ITEM_SLEEP_TIMER_DURATION,
     SETTINGS_ITEM_SLEEP_TIMER_STARTUP,
     SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS,
+#ifdef HAVE_USB_CHARGING_ENABLE
+    SETTINGS_ITEM_USB_CHARGING,
+#endif
     SETTINGS_ITEM_BEEP,
     SETTINGS_ITEM_KEYCLICK,
 #ifdef HAVE_HARDWARE_CLICK
@@ -319,6 +393,18 @@ struct choice_overlay_view {
     lv_obj_t *scroll_thumb;
 };
 
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+struct usb_prompt_view {
+    lv_obj_t *root;
+    lv_obj_t *panel;
+    lv_obj_t *rows[2];
+    lv_obj_t *markers[2];
+    lv_obj_t *hints[2];
+    int selected;
+    unsigned request;
+};
+#endif
+
 static struct crazypod_app apps[CRAZYPOD_APP_COUNT] = {
     { "Music",       LV_SYMBOL_AUDIO,      0xFF2E54, NULL },
     { "Podcasts",    LV_SYMBOL_VOLUME_MAX, 0xA95BDE, NULL },
@@ -371,11 +457,13 @@ static const char *const preset_edit_actions[] = {
 };
 
 static const char *const diy_detail_titles[] = {
-    "Icon Size", "Glow", "Highlight", "Primary", "Secondary"
+    "Icon Size", "Wave Style", "Glow", "Highlight",
+    "Primary", "Secondary"
 };
 
 static const enum crazypod_appearance_field diy_detail_fields[] = {
     CRAZYPOD_APPEARANCE_ICON_SCALE,
+    CRAZYPOD_APPEARANCE_SOUND_WAVE_STYLE,
     CRAZYPOD_APPEARANCE_GLOW,
     CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE,
     CRAZYPOD_APPEARANCE_PRIMARY,
@@ -396,7 +484,7 @@ static const int diy_screen_radius_values[] = {
 };
 
 static const char *const diy_background_titles[] = {
-    "Home", "Menu"
+    "Home", "Menu", "Lock Screen"
 };
 
 static const char *const settings_menu_titles[] = {
@@ -432,6 +520,9 @@ static const int settings_playback_items[] = {
 };
 
 static const int settings_power_items[] = {
+#ifdef HAVE_USB_CHARGING_ENABLE
+    SETTINGS_ITEM_USB_CHARGING,
+#endif
     SETTINGS_ITEM_SLEEP_TIMER_DURATION,
     SETTINGS_ITEM_SLEEP_TIMER_STARTUP,
     SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS,
@@ -451,6 +542,11 @@ static const int setting_timeout_values[] = {
     15, 20, 25, 30, 45, 60, 90, 120, 180, 240, 300
 };
 
+static const int setting_lcd_sleep_values[] = {
+    -1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+    15, 20, 25, 30, 45, 60, 90, 120, 180, 240, 300
+};
+
 static const int setting_sleep_timer_values[] = {
     0, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 300
 };
@@ -467,7 +563,7 @@ static const char *const photos_menu_symbols[] = {
     LV_SYMBOL_IMAGE, LV_SYMBOL_OK
 };
 
-static struct status_bar status_bars[CRAZYPOD_SCREEN_COUNT];
+static struct status_bar status_bars[CRAZYPOD_STATUS_BAR_COUNT];
 static struct route_state route_stack[CRAZYPOD_ROUTE_DEPTH];
 static lv_obj_t *desktop_screen;
 static lv_obj_t *desktop_wallpaper;
@@ -476,12 +572,22 @@ static lv_obj_t *desktop_title;
 static lv_obj_t *desktop_indicators[CRAZYPOD_APP_COUNT];
 static lv_obj_t *product_screen;
 static lv_obj_t *product_content;
+static lv_obj_t *lock_screen;
+static lv_obj_t *lock_wallpaper;
+static lv_obj_t *lock_time_label;
+static lv_obj_t *lock_date_label;
+static lv_obj_t *lock_hint_label;
+static lv_obj_t *lock_progress_surface;
+static lv_obj_t *lock_icon_shackle;
+static lv_obj_t *lock_icon_body;
 static lv_obj_t *desktop_capsule;
 static lv_obj_t *desktop_capsule_glass;
 static lv_obj_t *desktop_capsule_track;
 static lv_obj_t *desktop_capsule_artist;
 static lv_obj_t *desktop_capsule_progress;
 static lv_obj_t *desktop_capsule_spectrum;
+static lv_obj_t *desktop_capsule_wave_ball;
+static lv_obj_t *desktop_capsule_wave_glow;
 static lv_obj_t *desktop_capsule_artwork;
 static lv_obj_t *desktop_capsule_artwork_image;
 static lv_obj_t *desktop_capsule_artwork_symbol;
@@ -491,7 +597,7 @@ static lv_obj_t *album_flow_title;
 static lv_obj_t *album_flow_artist;
 static lv_obj_t *album_flow_position;
 static int album_flow_displayed_album = -1;
-static lv_obj_t *now_progress_fill;
+static lv_obj_t *now_progress_marker;
 static lv_obj_t *now_elapsed;
 static lv_obj_t *now_remaining;
 static lv_obj_t *now_wave_surface;
@@ -504,6 +610,15 @@ static lv_group_t *desktop_group;
 static int selected_app;
 static int route_depth;
 static bool product_active;
+static bool screen_locked;
+static bool lock_backlight_was_on;
+static bool lock_wait_for_wake_release;
+static bool lock_select_holding;
+static bool lock_release_guard;
+static bool lock_opening;
+static long lock_select_hold_start;
+static long lock_opening_start;
+static int lock_progress_percent;
 static bool music_library_loaded;
 static bool music_scan_screen;
 static bool music_scan_start_failed;
@@ -524,6 +639,7 @@ static unsigned capsule_artwork_generation_seen;
 static unsigned photo_generation_seen;
 static unsigned photo_view_generation_seen;
 static long route_render_due;
+static long menu_preview_due;
 static long boost_until;
 static long music_scan_not_before;
 static struct crazypod_frameclock desktop_motion_clock;
@@ -532,11 +648,24 @@ static int desktop_motion_step_accumulator;
 static int desktop_position_q8;
 static int desktop_velocity_q8;
 static struct menu_view_state menu_view;
+static lv_obj_t *menu_preview_root;
+static lv_obj_t *menu_preview_content;
+static bool menu_preview_pending;
+static bool menu_preview_motion_ready;
 static struct now_queue_popup_view now_queue_view;
 static struct now_actions_popup_view now_actions_view;
 static struct now_volume_popup_view now_volume_view;
 static enum now_playing_overlay now_overlay;
 static struct choice_overlay_view choice_overlay;
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+static struct usb_prompt_view usb_prompt_view;
+static struct semaphore usb_prompt_response;
+static volatile bool usb_prompt_registered;
+static volatile bool usb_prompt_ui_ready;
+static volatile bool usb_prompt_waiting;
+static volatile unsigned usb_prompt_request_id;
+static volatile int usb_prompt_result;
+#endif
 static int now_action_selected;
 static int now_queue_selected;
 static int eq_studio_band = 5;
@@ -549,9 +678,13 @@ static char search_query[CRAZYPOD_SEARCH_QUERY_SIZE];
 static char preset_name_editor[CRAZYPOD_PRESET_NAME_SIZE];
 static char rendered_track_path[MAX_PATH];
 static char now_prefetch_track_path[MAX_PATH];
+static char pending_now_playing_track_path[MAX_PATH];
 static char now_presentation_track_path[
     CRAZYPOD_NOW_PRESENTATION_BANKS][MAX_PATH];
 static char desktop_capsule_artwork_path[MAX_PATH];
+static bool now_playing_open_pending;
+static int pending_now_playing_route_depth;
+static enum crazypod_route pending_now_playing_route;
 static int wallpaper_crop_photo_index;
 static enum crazypod_appearance_field wallpaper_crop_target;
 static int wallpaper_crop_zoom_percent;
@@ -578,6 +711,8 @@ static lv_obj_t *wallpaper_crop_progress_fill;
 static lv_obj_t *wallpaper_crop_progress_label;
 static int wallpaper_crop_load_progress_seen;
 static int wallpaper_crop_apply_progress;
+static enum crazypod_wallpaper_apply_result
+    wallpaper_crop_apply_result;
 static int photo_pan_x;
 static int photo_pan_y;
 static int photo_zoom_percent;
@@ -594,7 +729,8 @@ static int photo_wheel_touch_start;
 static int photo_wheel_touch_max_delta;
 static long photo_direction_input_tick;
 static bool photo_pan_render_pending;
-static lv_obj_t *screen_corner_masks[CRAZYPOD_SCREEN_COUNT][4];
+static lv_obj_t *screen_corner_masks[
+    CRAZYPOD_CORNER_SCREEN_COUNT][4];
 static uint8_t screen_corner_pixels[4][
     CRAZYPOD_SCREEN_RADIUS_MAX * CRAZYPOD_SCREEN_RADIUS_MAX * 4]
     CACHEALIGN_AT_LEAST_ATTR(16);
@@ -615,6 +751,37 @@ static fb_data now_glass_render_pixels[
     CACHEALIGN_AT_LEAST_ATTR(16);
 static lv_image_dsc_t now_glass_descriptor;
 static bool now_glass_valid;
+static fb_data glass_sample_pixels[
+    CRAZYPOD_GLASS_SAMPLE_WIDTH * CRAZYPOD_GLASS_SAMPLE_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data glass_sample_scratch[
+    CRAZYPOD_GLASS_SAMPLE_WIDTH * CRAZYPOD_GLASS_SAMPLE_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data menu_topbar_glass_pixels[CRAZYPOD_MENU_TOPBAR_PIXELS]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data menu_panel_glass_pixels[CRAZYPOD_MENU_PANEL_PIXELS]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data preview_text_glass_pixels[
+    CRAZYPOD_PREVIEW_TEXT_PANEL_PIXELS]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data search_query_glass_pixels[CRAZYPOD_SEARCH_QUERY_PIXELS]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data search_results_glass_pixels[CRAZYPOD_SEARCH_RESULTS_PIXELS]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data info_toast_glass_pixels[CRAZYPOD_INFO_TOAST_PIXELS]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data info_bar_glass_pixels[CRAZYPOD_INFO_BAR_PIXELS]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data info_bar_alt_glass_pixels[CRAZYPOD_INFO_BAR_ALT_PIXELS]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static lv_image_dsc_t menu_topbar_glass_descriptor;
+static lv_image_dsc_t menu_panel_glass_descriptor;
+static lv_image_dsc_t preview_text_glass_descriptor;
+static lv_image_dsc_t search_query_glass_descriptor;
+static lv_image_dsc_t search_results_glass_descriptor;
+static lv_image_dsc_t info_toast_glass_descriptor;
+static lv_image_dsc_t info_bar_glass_descriptor;
+static lv_image_dsc_t info_bar_alt_glass_descriptor;
 static fb_data now_backdrop_pixels[
     CRAZYPOD_NOW_BACKDROP_WIDTH * CRAZYPOD_NOW_BACKDROP_HEIGHT]
     CACHEALIGN_AT_LEAST_ATTR(16);
@@ -660,6 +827,20 @@ static void dismiss_now_overlay(bool refresh_now_playing);
 static void dismiss_choice_overlay(bool refresh_route);
 static void push_route_selected(enum crazypod_route route, int group,
                                 int selected);
+static void prepare_glass_descriptor(int source_x, int source_y,
+                                     int width, int height,
+                                     enum crazypod_glass_material material,
+                                     fb_data *render_pixels,
+                                     lv_image_dsc_t *descriptor);
+
+static bool usb_prompt_visible(void)
+{
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+    return usb_prompt_view.root != NULL;
+#else
+    return false;
+#endif
+}
 
 static void set_cpu_boost(bool enabled)
 {
@@ -710,6 +891,104 @@ static lv_obj_t *make_box(lv_obj_t *parent, int x, int y, int width,
     lv_obj_set_style_bg_color(box, lv_color_hex(color), 0);
     lv_obj_set_style_bg_opa(box, opacity, 0);
     return box;
+}
+
+static lv_obj_t *make_preview_icon_part(lv_obj_t *parent,
+                                        int x, int y,
+                                        int width, int height,
+                                        int radius, lv_opa_t opacity)
+{
+    return make_box(parent, x, y, width, height, radius,
+                    COLOR_CYAN, opacity);
+}
+
+static lv_obj_t *make_music_preview_icon(
+    lv_obj_t *parent, enum crazypod_preview_icon icon, int x, int y)
+{
+    lv_obj_t *stage = make_box(parent, x, y, 96, 96, 24,
+                               0x102A38, 188);
+    lv_obj_t *part;
+
+    lv_obj_set_style_bg_grad_color(
+        stage, lv_color_hex(0x07131B), 0);
+    lv_obj_set_style_bg_grad_dir(stage, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_border_width(stage, 1, 0);
+    lv_obj_set_style_border_color(stage, lv_color_hex(COLOR_CYAN), 0);
+    lv_obj_set_style_border_opa(stage, 58, 0);
+
+    switch(icon) {
+    case CRAZYPOD_PREVIEW_ICON_NOW_PLAYING:
+        make_preview_icon_part(stage, 26, 18, 38, 7, 3, 235);
+        make_preview_icon_part(stage, 26, 22, 7, 40, 3, 235);
+        make_preview_icon_part(stage, 57, 22, 7, 34, 3, 235);
+        make_preview_icon_part(stage, 16, 53, 22, 17,
+                               LV_RADIUS_CIRCLE, 255);
+        make_preview_icon_part(stage, 47, 47, 22, 17,
+                               LV_RADIUS_CIRCLE, 255);
+        break;
+    case CRAZYPOD_PREVIEW_ICON_ALBUM_FLOW:
+    case CRAZYPOD_PREVIEW_ICON_ALBUMS:
+        part = make_preview_icon_part(stage, 12, 20, 54, 50, 10, 75);
+        lv_obj_set_style_border_width(part, 1, 0);
+        lv_obj_set_style_border_color(part, lv_color_hex(COLOR_CYAN), 0);
+        lv_obj_set_style_border_opa(part, 95, 0);
+        part = make_preview_icon_part(stage, 17, 15, 54, 50, 10, 120);
+        lv_obj_set_style_border_width(part, 1, 0);
+        lv_obj_set_style_border_color(part, lv_color_hex(COLOR_CYAN), 0);
+        lv_obj_set_style_border_opa(part, 125, 0);
+        part = make_preview_icon_part(stage, 22, 10, 54, 50, 10, 215);
+        lv_obj_set_style_bg_grad_color(
+            part, lv_color_hex(0x176F8A), 0);
+        lv_obj_set_style_bg_grad_dir(part, LV_GRAD_DIR_HOR, 0);
+        make_preview_icon_part(part, 13, 11, 30, 30,
+                               LV_RADIUS_CIRCLE, 220);
+        make_box(part, 24, 22, 8, 8, LV_RADIUS_CIRCLE,
+                 0x102A38, LV_OPA_COVER);
+        break;
+    case CRAZYPOD_PREVIEW_ICON_ARTIST:
+        make_preview_icon_part(stage, 29, 13, 30, 30,
+                               LV_RADIUS_CIRCLE, 245);
+        make_preview_icon_part(stage, 17, 48, 54, 27,
+                               LV_RADIUS_CIRCLE, 225);
+        make_box(stage, 27, 62, 34, 14, 7, 0x102A38, 188);
+        break;
+    case CRAZYPOD_PREVIEW_ICON_PLAYLISTS:
+        make_preview_icon_part(stage, 17, 20, 10, 10,
+                               LV_RADIUS_CIRCLE, 235);
+        make_preview_icon_part(stage, 17, 40, 10, 10,
+                               LV_RADIUS_CIRCLE, 235);
+        make_preview_icon_part(stage, 17, 60, 10, 10,
+                               LV_RADIUS_CIRCLE, 235);
+        make_preview_icon_part(stage, 34, 22, 38, 6, 3, 220);
+        make_preview_icon_part(stage, 34, 42, 38, 6, 3, 220);
+        make_preview_icon_part(stage, 34, 62, 38, 6, 3, 220);
+        break;
+    case CRAZYPOD_PREVIEW_ICON_ALL_MUSIC:
+        make_preview_icon_part(stage, 14, 21, 39, 6, 3, 180);
+        make_preview_icon_part(stage, 14, 39, 31, 6, 3, 180);
+        make_preview_icon_part(stage, 14, 57, 24, 6, 3, 180);
+        make_preview_icon_part(stage, 58, 16, 7, 38, 3, 235);
+        make_preview_icon_part(stage, 46, 47, 24, 18,
+                               LV_RADIUS_CIRCLE, 255);
+        break;
+    case CRAZYPOD_PREVIEW_ICON_SONGS:
+        make_preview_icon_part(stage, 48, 18, 7, 41, 3, 235);
+        make_preview_icon_part(stage, 48, 18, 22, 7, 3, 235);
+        make_preview_icon_part(stage, 33, 51, 24, 19,
+                               LV_RADIUS_CIRCLE, 255);
+        break;
+    case CRAZYPOD_PREVIEW_ICON_SEARCH:
+        part = make_box(stage, 14, 12, 48, 48,
+                        LV_RADIUS_CIRCLE, COLOR_CYAN, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(part, 8, 0);
+        lv_obj_set_style_border_color(part, lv_color_hex(COLOR_CYAN), 0);
+        lv_obj_set_style_border_opa(part, 235, 0);
+        make_preview_icon_part(stage, 57, 54, 8, 8, 3, 235);
+        make_preview_icon_part(stage, 62, 59, 8, 8, 3, 235);
+        make_preview_icon_part(stage, 67, 64, 8, 8, 3, 235);
+        break;
+    }
+    return stage;
 }
 
 static void make_pixel_heart(lv_obj_t *parent, int x, int y, int unit,
@@ -772,6 +1051,8 @@ static int appearance_field_value(enum crazypod_appearance_field field)
     switch(field) {
     case CRAZYPOD_APPEARANCE_ICON_THEME: return value->icon_theme;
     case CRAZYPOD_APPEARANCE_ICON_SCALE: return value->icon_scale;
+    case CRAZYPOD_APPEARANCE_SOUND_WAVE_STYLE:
+        return value->sound_wave_style;
     case CRAZYPOD_APPEARANCE_GLOW: return value->glow;
     case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE:
         return value->highlight_style;
@@ -781,6 +1062,8 @@ static int appearance_field_value(enum crazypod_appearance_field field)
         return value->home_background;
     case CRAZYPOD_APPEARANCE_MENU_BACKGROUND:
         return value->menu_background;
+    case CRAZYPOD_APPEARANCE_LOCK_BACKGROUND:
+        return value->lock_background;
     case CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS:
         return value->screen_top_radius;
     case CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS:
@@ -793,6 +1076,8 @@ static int appearance_choice_count(enum crazypod_appearance_field field)
 {
     switch(field) {
     case CRAZYPOD_APPEARANCE_ICON_SCALE: return 5;
+    case CRAZYPOD_APPEARANCE_SOUND_WAVE_STYLE:
+        return CRAZYPOD_SOUND_WAVE_STYLE_COUNT;
     case CRAZYPOD_APPEARANCE_GLOW: return 4;
     case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE: return 2;
     case CRAZYPOD_APPEARANCE_PRIMARY:
@@ -846,6 +1131,8 @@ static const char *appearance_choice_title(
     switch(field) {
     case CRAZYPOD_APPEARANCE_ICON_SCALE:
         return index >= 0 && index < 5 ? icon_sizes[index] : "";
+    case CRAZYPOD_APPEARANCE_SOUND_WAVE_STYLE:
+        return crazypod_sound_wave_style_name(index);
     case CRAZYPOD_APPEARANCE_GLOW:
         return index >= 0 && index < 4 ? glows[index] : "";
     case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE:
@@ -868,6 +1155,7 @@ static const char *appearance_field_title(
 {
     switch(field) {
     case CRAZYPOD_APPEARANCE_ICON_SCALE: return "ICON SIZE";
+    case CRAZYPOD_APPEARANCE_SOUND_WAVE_STYLE: return "WAVE STYLE";
     case CRAZYPOD_APPEARANCE_GLOW: return "GLOW";
     case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE: return "HIGHLIGHT";
     case CRAZYPOD_APPEARANCE_PRIMARY: return "PRIMARY";
@@ -886,6 +1174,360 @@ static const char *path_basename(const char *path)
         return "";
     name = strrchr(path, '/');
     return name != NULL ? name + 1 : path;
+}
+
+static enum crazypod_appearance_field background_field_for_index(int index)
+{
+    if(index == 1)
+        return CRAZYPOD_APPEARANCE_MENU_BACKGROUND;
+    if(index == 2)
+        return CRAZYPOD_APPEARANCE_LOCK_BACKGROUND;
+    return CRAZYPOD_APPEARANCE_HOME_BACKGROUND;
+}
+
+static const char *background_field_title(
+    enum crazypod_appearance_field field)
+{
+    if(field == CRAZYPOD_APPEARANCE_MENU_BACKGROUND)
+        return "MENU";
+    if(field == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND)
+        return "LOCK SCREEN";
+    return "HOME";
+}
+
+static const char *background_wallpaper(
+    const struct crazypod_appearance *appearance,
+    enum crazypod_appearance_field field)
+{
+    if(field == CRAZYPOD_APPEARANCE_MENU_BACKGROUND)
+        return appearance->menu_wallpaper;
+    if(field == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND)
+        return appearance->lock_wallpaper;
+    return appearance->home_wallpaper;
+}
+
+static enum crazypod_wallpaper_target wallpaper_target_for_field(
+    enum crazypod_appearance_field field)
+{
+    if(field == CRAZYPOD_APPEARANCE_MENU_BACKGROUND)
+        return CRAZYPOD_WALLPAPER_MENU;
+    if(field == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND)
+        return CRAZYPOD_WALLPAPER_LOCK;
+    return CRAZYPOD_WALLPAPER_HOME;
+}
+
+static uint32_t background_default_color(
+    enum crazypod_appearance_field field)
+{
+    if(field == CRAZYPOD_APPEARANCE_MENU_BACKGROUND)
+        return 0x08080D;
+    if(field == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND)
+        return 0x07090D;
+    return 0x141419;
+}
+
+static void refresh_lock_clock(void)
+{
+    static const char *const days[] = {
+        "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY",
+        "THURSDAY", "FRIDAY", "SATURDAY"
+    };
+    static const char *const months[] = {
+        "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+        "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
+    };
+    struct tm *now;
+    char time_text[8];
+    char date_text[32];
+    int weekday;
+    int month;
+
+    if(lock_time_label == NULL || lock_date_label == NULL)
+        return;
+    now = get_time();
+    weekday = now->tm_wday >= 0 && now->tm_wday < 7
+        ? now->tm_wday : 0;
+    month = now->tm_mon >= 0 && now->tm_mon < 12
+        ? now->tm_mon : 0;
+    snprintf(time_text, sizeof(time_text), "%02d:%02d",
+             now->tm_hour, now->tm_min);
+    snprintf(date_text, sizeof(date_text), "%s  \xE2\x80\xA2  %s %d",
+             days[weekday], months[month], now->tm_mday);
+    lv_label_set_text(lock_time_label, time_text);
+    lv_label_set_text(lock_date_label, date_text);
+}
+
+static void refresh_lock_appearance(void)
+{
+    const struct crazypod_appearance *appearance;
+    const lv_image_dsc_t *wallpaper = NULL;
+    uint32_t color;
+
+    if(lock_screen == NULL)
+        return;
+    appearance = crazypod_appearance_get();
+    if(appearance->lock_wallpaper[0] != '\0') {
+        wallpaper = crazypod_custom_lock_wallpaper();
+        color = crazypod_appearance_lock_color();
+    }
+    else if(appearance->lock_background == 0) {
+        wallpaper = crazypod_custom_home_wallpaper();
+        if(wallpaper == NULL &&
+           appearance->home_wallpaper[0] == '\0' &&
+           appearance->home_background == 0)
+            wallpaper = crazypod_default_wallpaper();
+        color = crazypod_appearance_home_color();
+    }
+    else {
+        color = crazypod_appearance_lock_color();
+    }
+    lv_obj_set_style_bg_color(
+        lock_screen, lv_color_hex(color), 0);
+    if(wallpaper != NULL) {
+        lv_image_set_src(lock_wallpaper, wallpaper);
+        lv_obj_remove_flag(lock_wallpaper, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_add_flag(lock_wallpaper, LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_obj_invalidate(lock_screen);
+}
+
+static void draw_lock_progress_event(lv_event_t *event)
+{
+    lv_obj_t *surface;
+    lv_layer_t *layer;
+    lv_area_t area;
+    lv_draw_arc_dsc_t arc;
+    int center_x;
+    int center_y;
+    int progress;
+
+    if(lv_event_get_code(event) != LV_EVENT_DRAW_MAIN)
+        return;
+    surface = lv_event_get_target(event);
+    layer = lv_event_get_layer(event);
+    lv_obj_get_coords(surface, &area);
+    center_x = area.x1 + lv_area_get_width(&area) / 2;
+    center_y = area.y1 + lv_area_get_height(&area) / 2;
+    progress = lock_progress_percent;
+    if(progress < 0)
+        progress = 0;
+    if(progress > 100)
+        progress = 100;
+
+    lv_draw_arc_dsc_init(&arc);
+    arc.base.layer = layer;
+    arc.center.x = center_x;
+    arc.center.y = center_y;
+    arc.radius = 33;
+    arc.start_angle = 0;
+    arc.end_angle = 359;
+    arc.width = 2;
+    arc.rounded = 1;
+    arc.color = lv_color_hex(COLOR_WHITE);
+    arc.opa = 64;
+    lv_draw_arc(layer, &arc);
+
+    if(progress > 0) {
+        arc.start_angle = 270;
+        arc.end_angle = 270 + progress * 360 / 100;
+        arc.width = lock_opening ? 4 : 3;
+        arc.color = lv_color_hex(
+            lock_opening ? 0xB8FFE2 :
+            progress >= 72 ? 0xFF739E : COLOR_CYAN);
+        arc.opa = lock_opening ? 255 : 235;
+        lv_draw_arc(layer, &arc);
+        if(lock_opening) {
+            arc.radius = 36;
+            arc.width = 2;
+            arc.opa = 58;
+            lv_draw_arc(layer, &arc);
+        }
+    }
+}
+
+static void refresh_lock_progress(void)
+{
+    if(lock_progress_surface != NULL)
+        lv_obj_invalidate(lock_progress_surface);
+    if(lock_hint_label == NULL)
+        return;
+    if(lock_opening)
+        lv_label_set_text(lock_hint_label, "UNLOCKED");
+    else if(lock_select_holding)
+        lv_label_set_text(lock_hint_label, "KEEP HOLDING");
+    else
+        lv_label_set_text(lock_hint_label, "HOLD SELECT  1.5s");
+}
+
+static void reset_lock_hold(void)
+{
+    lock_select_holding = false;
+    lock_opening = false;
+    lock_progress_percent = 0;
+    if(lock_icon_shackle != NULL) {
+        lv_obj_set_pos(lock_icon_shackle, 12, 3);
+        lv_obj_set_style_transform_rotation(
+            lock_icon_shackle, 0, 0);
+    }
+    if(lock_icon_body != NULL)
+        lv_obj_set_style_bg_color(
+            lock_icon_body, lv_color_hex(0xDDF9FF), 0);
+    refresh_lock_progress();
+}
+
+static void show_lock_screen(bool turn_display_off)
+{
+    if(lock_screen == NULL)
+        return;
+    screen_locked = true;
+    lock_release_guard = false;
+    lock_wait_for_wake_release = turn_display_off;
+    reset_lock_hold();
+    refresh_lock_appearance();
+    refresh_lock_clock();
+    lv_obj_remove_flag(lock_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(lock_screen);
+    lv_obj_invalidate(lock_screen);
+    lv_refr_now(NULL);
+    crazypod_present_now();
+    if(turn_display_off)
+        backlight_off();
+}
+
+static void finish_unlock(void)
+{
+    screen_locked = false;
+    lock_select_holding = false;
+    lock_opening = false;
+    lock_progress_percent = 0;
+    lock_release_guard = true;
+    lock_wait_for_wake_release = false;
+    lv_obj_add_flag(lock_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_background(lock_screen);
+    if(product_active)
+        lv_obj_invalidate(product_screen);
+    else
+        lv_obj_invalidate(desktop_screen);
+}
+
+static void process_lock_state(void)
+{
+    bool backlight_is_on = is_backlight_on(false);
+
+    if(lock_backlight_was_on && !backlight_is_on) {
+        if(!screen_locked)
+            show_lock_screen(false);
+        else
+            reset_lock_hold();
+        lock_wait_for_wake_release = false;
+    }
+    else if(!lock_backlight_was_on && backlight_is_on &&
+            screen_locked) {
+        lock_wait_for_wake_release = button_status() != BUTTON_NONE;
+        reset_lock_hold();
+        refresh_lock_clock();
+    }
+    lock_backlight_was_on = backlight_is_on;
+
+    if(!screen_locked)
+        return;
+    if(lock_select_holding && !lock_opening) {
+        long elapsed = current_tick - lock_select_hold_start;
+        int progress;
+
+        if(elapsed < 0)
+            elapsed = 0;
+        progress = (int)(elapsed * 100 /
+                         CRAZYPOD_UNLOCK_HOLD_TICKS);
+        if(progress > 100)
+            progress = 100;
+        if(progress != lock_progress_percent) {
+            lock_progress_percent = progress;
+            refresh_lock_progress();
+        }
+        if(elapsed >= CRAZYPOD_UNLOCK_HOLD_TICKS) {
+            lock_opening = true;
+            lock_opening_start = current_tick;
+            lock_progress_percent = 100;
+            if(lock_icon_body != NULL)
+                lv_obj_set_style_bg_color(
+                    lock_icon_body, lv_color_hex(0xB8FFE2), 0);
+            refresh_lock_progress();
+        }
+    }
+    if(lock_opening) {
+        long elapsed = current_tick - lock_opening_start;
+        int shift;
+
+        if(elapsed < 0)
+            elapsed = 0;
+        shift = (int)(elapsed * 5 / CRAZYPOD_UNLOCK_OPEN_TICKS);
+        if(shift > 5)
+            shift = 5;
+        if(lock_icon_shackle != NULL) {
+            lv_obj_set_pos(lock_icon_shackle,
+                           12 + shift, 3 - shift);
+            lv_obj_set_style_transform_rotation(
+                lock_icon_shackle, shift * 30, 0);
+        }
+        if(elapsed >= CRAZYPOD_UNLOCK_OPEN_TICKS)
+            finish_unlock();
+    }
+}
+
+static bool handle_lock_button(long button)
+{
+    long base;
+    bool release;
+    bool repeated;
+
+    if(lock_release_guard) {
+        base = button & ~(BUTTON_REL | BUTTON_REPEAT);
+        if(base == BUTTON_SELECT) {
+            if(button & BUTTON_REL)
+                lock_release_guard = false;
+            return true;
+        }
+        lock_release_guard = false;
+    }
+    if(!screen_locked)
+        return false;
+    release = (button & BUTTON_REL) != 0;
+    repeated = (button & BUTTON_REPEAT) != 0;
+    base = button & ~(BUTTON_REL | BUTTON_REPEAT);
+
+    if(release) {
+        lock_wait_for_wake_release = false;
+        if(base == BUTTON_SELECT && lock_select_holding)
+            reset_lock_hold();
+        return true;
+    }
+    backlight_on();
+    if(!lock_backlight_was_on) {
+        lock_backlight_was_on = true;
+        lock_wait_for_wake_release = true;
+        reset_lock_hold();
+        return true;
+    }
+    if(lock_wait_for_wake_release) {
+        return true;
+    }
+    if(lock_opening)
+        return true;
+    if(base != BUTTON_SELECT) {
+        if(lock_select_holding)
+            reset_lock_hold();
+        return true;
+    }
+    if(!repeated && !lock_select_holding) {
+        lock_select_holding = true;
+        lock_select_hold_start = current_tick;
+        lock_progress_percent = 1;
+        refresh_lock_progress();
+    }
+    return true;
 }
 
 static void rebuild_screen_corner_descriptors(void)
@@ -951,7 +1593,7 @@ static void refresh_screen_corner_masks(void)
     int screen;
 
     rebuild_screen_corner_descriptors();
-    for(screen = 0; screen < CRAZYPOD_SCREEN_COUNT; ++screen) {
+    for(screen = 0; screen < CRAZYPOD_CORNER_SCREEN_COUNT; ++screen) {
         int corner;
         for(corner = 0; corner < 4; ++corner) {
             lv_obj_t *mask = screen_corner_masks[screen][corner];
@@ -992,14 +1634,15 @@ static void create_screen_corner_masks(lv_obj_t *screen, int screen_index)
 
 static void refresh_desktop_capsule_material(void)
 {
-    const lv_image_dsc_t *glass =
-        crazypod_frosted_wallpaper_capsule();
+    const lv_image_dsc_t *glass = NULL;
 
     if(desktop_capsule == NULL)
         return;
-    if(crazypod_appearance_get()->home_wallpaper[0] == '\0' &&
-       crazypod_appearance_get()->home_background == 0 &&
-       glass != NULL) {
+    if(crazypod_wallpaper_prepare_frosted_capsule(
+           CRAZYPOD_GLASS_TINT_COLOR,
+           CRAZYPOD_DESKTOP_CAPSULE_TINT_OPA))
+        glass = crazypod_frosted_wallpaper_capsule();
+    if(glass != NULL) {
         if(desktop_capsule_glass == NULL) {
             desktop_capsule_glass = lv_image_create(desktop_capsule);
             lv_obj_set_pos(desktop_capsule_glass, 0, 0);
@@ -1008,6 +1651,8 @@ static void refresh_desktop_capsule_material(void)
             lv_obj_move_to_index(desktop_capsule_glass, 0);
         }
         lv_image_set_src(desktop_capsule_glass, glass);
+        lv_obj_set_style_image_opa(
+            desktop_capsule_glass, LV_OPA_COVER, 0);
         lv_obj_remove_flag(desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_bg_opa(desktop_capsule, LV_OPA_TRANSP, 0);
     }
@@ -1017,8 +1662,40 @@ static void refresh_desktop_capsule_material(void)
                 desktop_capsule_glass, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_bg_color(
             desktop_capsule, lv_color_hex(COLOR_WHITE), 0);
-        lv_obj_set_style_bg_opa(desktop_capsule, 34, 0);
+        lv_obj_set_style_bg_opa(
+            desktop_capsule,
+            CRAZYPOD_DESKTOP_CAPSULE_FALLBACK_OPA, 0);
     }
+}
+
+static void refresh_desktop_wave_ball_appearance(void)
+{
+    bool playing =
+        (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
+        (audio_status() & AUDIO_STATUS_PAUSE) == 0;
+    uint32_t primary = highlight_primary();
+    uint32_t secondary = highlight_secondary();
+
+    if(desktop_capsule_wave_ball != NULL) {
+        lv_obj_set_style_shadow_width(
+            desktop_capsule_wave_ball, playing ? 10 : 4, 0);
+        lv_obj_set_style_shadow_color(
+            desktop_capsule_wave_ball, lv_color_hex(primary), 0);
+        lv_obj_set_style_shadow_opa(
+            desktop_capsule_wave_ball, playing ? 112 : 34, 0);
+    }
+    if(desktop_capsule_wave_glow != NULL) {
+        lv_obj_set_style_bg_color(
+            desktop_capsule_wave_glow, lv_color_hex(primary), 0);
+        lv_obj_set_style_bg_grad_color(
+            desktop_capsule_wave_glow, lv_color_hex(secondary), 0);
+        lv_obj_set_style_bg_grad_dir(
+            desktop_capsule_wave_glow, LV_GRAD_DIR_HOR, 0);
+        lv_obj_set_style_bg_opa(
+            desktop_capsule_wave_glow, playing ? 82 : 18, 0);
+    }
+    if(desktop_capsule_spectrum != NULL)
+        lv_obj_invalidate(desktop_capsule_spectrum);
 }
 
 static void refresh_desktop_appearance(void)
@@ -1052,9 +1729,11 @@ static void refresh_desktop_appearance(void)
 
     crazypod_icons_load_theme(crazypod_appearance_get()->icon_theme);
     refresh_desktop_capsule_material();
+    refresh_desktop_wave_ball_appearance();
     desktop_native_backdrop_ready = false;
     layout_desktop_carousel(false);
     refresh_screen_corner_masks();
+    refresh_lock_appearance();
     lv_obj_invalidate(desktop_screen);
 }
 
@@ -1099,6 +1778,15 @@ static void prefetch_now_queue_artwork(int queue_index)
     keep_cpu_boosted(HZ / 5);
 }
 
+static int now_playing_artwork_slot_for_track(
+    const struct crazypod_track *track)
+{
+    return track != NULL &&
+           strcmp(now_prefetch_track_path, track->path) == 0
+        ? CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT
+        : CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT;
+}
+
 static int initial_album_index(void)
 {
     const struct crazypod_track *track = current_track();
@@ -1140,7 +1828,7 @@ static void update_status_bars(lv_timer_t *timer)
     snprintf(time_text, sizeof(time_text), "%02d:%02d",
              now->tm_hour, now->tm_min);
 
-    for(i = 0; i < CRAZYPOD_SCREEN_COUNT; ++i) {
+    for(i = 0; i < CRAZYPOD_STATUS_BAR_COUNT; ++i) {
         lv_label_set_text(status_bars[i].time, time_text);
         lv_obj_set_width(status_bars[i].battery_fill,
                          level > 0 ? 3 + (21 * level / 100) : 0);
@@ -1153,6 +1841,8 @@ static void update_status_bars(lv_timer_t *timer)
         else
             lv_obj_add_flag(status_bars[i].playing, LV_OBJ_FLAG_HIDDEN);
     }
+    if(screen_locked)
+        refresh_lock_clock();
 }
 
 static void create_status_bar(lv_obj_t *screen, struct status_bar *bar)
@@ -1272,7 +1962,6 @@ static void prepare_now_overlay_glass(void)
 {
     const fb_data *framebuffer =
         (const fb_data *)lcd_framebuffer_default.data;
-    int y;
 
     keep_cpu_boosted(HZ / 2);
     /*
@@ -1281,129 +1970,24 @@ static void prepare_now_overlay_glass(void)
      * wheel is moving and the full 250x176 source never needs a second copy.
      */
     lv_refr_now(NULL);
-    for(y = 0; y < CRAZYPOD_NOW_GLASS_HEIGHT; ++y) {
-        int source_y = CRAZYPOD_NOW_POPUP_Y +
-                       y * CRAZYPOD_NOW_GLASS_SCALE;
-        int x;
-        for(x = 0; x < CRAZYPOD_NOW_GLASS_WIDTH; ++x) {
-            int source_x = CRAZYPOD_NOW_POPUP_X +
-                           x * CRAZYPOD_NOW_GLASS_SCALE;
-            unsigned red = 0;
-            unsigned green = 0;
-            unsigned blue = 0;
-            unsigned samples = 0;
-            int sy;
-
-            for(sy = 0; sy < CRAZYPOD_NOW_GLASS_SCALE; ++sy) {
-                int py = source_y + sy;
-                int sx;
-                if(py >= LCD_HEIGHT)
-                    break;
-                for(sx = 0; sx < CRAZYPOD_NOW_GLASS_SCALE; ++sx) {
-                    int px = source_x + sx;
-                    fb_data pixel;
-                    if(px >= LCD_WIDTH)
-                        break;
-                    pixel = framebuffer[py * LCD_WIDTH + px];
-                    red += RGB_UNPACK_RED(pixel);
-                    green += RGB_UNPACK_GREEN(pixel);
-                    blue += RGB_UNPACK_BLUE(pixel);
-                    ++samples;
-                }
-            }
-            if(samples == 0)
-                samples = 1;
-            now_glass_pixels[
-                y * CRAZYPOD_NOW_GLASS_WIDTH + x] =
-                    LCD_RGBPACK(red / samples,
-                                green / samples,
-                                blue / samples);
-        }
+    if(!crazypod_image_render_glass_rgb565(
+           framebuffer, LCD_WIDTH, LCD_HEIGHT, LCD_WIDTH,
+           CRAZYPOD_NOW_POPUP_X, CRAZYPOD_NOW_POPUP_Y,
+           CRAZYPOD_NOW_POPUP_WIDTH, CRAZYPOD_NOW_POPUP_HEIGHT,
+           CRAZYPOD_GLASS_TINT_COLOR,
+           CRAZYPOD_GLASS_BAKE_TINT_OPA,
+           now_glass_pixels, now_glass_scratch,
+           sizeof(now_glass_pixels) / sizeof(now_glass_pixels[0]),
+           now_glass_render_pixels,
+           CRAZYPOD_NOW_POPUP_WIDTH, CRAZYPOD_NOW_POPUP_HEIGHT)) {
+        now_glass_valid = false;
+        return;
     }
-
-    for(y = 0; y < CRAZYPOD_NOW_GLASS_HEIGHT; ++y) {
-        int x;
-        for(x = 0; x < CRAZYPOD_NOW_GLASS_WIDTH; ++x) {
-            unsigned red = 0;
-            unsigned green = 0;
-            unsigned blue = 0;
-            unsigned samples = 0;
-            int offset;
-
-            for(offset = -2; offset <= 2; ++offset) {
-                int sample_x = x + offset;
-                fb_data pixel;
-                if(sample_x < 0)
-                    sample_x = 0;
-                if(sample_x >= CRAZYPOD_NOW_GLASS_WIDTH)
-                    sample_x = CRAZYPOD_NOW_GLASS_WIDTH - 1;
-                pixel = now_glass_pixels[
-                    y * CRAZYPOD_NOW_GLASS_WIDTH + sample_x];
-                red += RGB_UNPACK_RED(pixel);
-                green += RGB_UNPACK_GREEN(pixel);
-                blue += RGB_UNPACK_BLUE(pixel);
-                ++samples;
-            }
-            now_glass_scratch[
-                y * CRAZYPOD_NOW_GLASS_WIDTH + x] =
-                    LCD_RGBPACK(red / samples,
-                                green / samples,
-                                blue / samples);
-        }
-    }
-
-    for(y = 0; y < CRAZYPOD_NOW_GLASS_HEIGHT; ++y) {
-        int x;
-        for(x = 0; x < CRAZYPOD_NOW_GLASS_WIDTH; ++x) {
-            unsigned red = 0;
-            unsigned green = 0;
-            unsigned blue = 0;
-            unsigned samples = 0;
-            int offset;
-            fb_data blurred;
-            fb_data tint = LCD_RGBPACK(18, 19, 27);
-
-            for(offset = -2; offset <= 2; ++offset) {
-                int sample_y = y + offset;
-                fb_data pixel;
-                if(sample_y < 0)
-                    sample_y = 0;
-                if(sample_y >= CRAZYPOD_NOW_GLASS_HEIGHT)
-                    sample_y = CRAZYPOD_NOW_GLASS_HEIGHT - 1;
-                pixel = now_glass_scratch[
-                    sample_y * CRAZYPOD_NOW_GLASS_WIDTH + x];
-                red += RGB_UNPACK_RED(pixel);
-                green += RGB_UNPACK_GREEN(pixel);
-                blue += RGB_UNPACK_BLUE(pixel);
-                ++samples;
-            }
-            blurred = LCD_RGBPACK(red / samples,
-                                  green / samples,
-                                  blue / samples);
-            now_glass_pixels[
-                y * CRAZYPOD_NOW_GLASS_WIDTH + x] =
-                    desktop_blend565(tint, blurred, 104);
-        }
-    }
-
-    crazypod_image_scale_rgb565(
-        now_glass_pixels,
-        CRAZYPOD_NOW_GLASS_WIDTH, CRAZYPOD_NOW_GLASS_HEIGHT,
-        CRAZYPOD_NOW_GLASS_WIDTH,
-        now_glass_render_pixels,
+    if(now_glass_descriptor.header.magic == LV_IMAGE_HEADER_MAGIC)
+        lv_image_cache_drop(&now_glass_descriptor);
+    now_glass_valid = crazypod_image_configure_rgb565(
+        &now_glass_descriptor, now_glass_render_pixels,
         CRAZYPOD_NOW_POPUP_WIDTH, CRAZYPOD_NOW_POPUP_HEIGHT);
-
-    memset(&now_glass_descriptor, 0, sizeof(now_glass_descriptor));
-    now_glass_descriptor.header.magic = LV_IMAGE_HEADER_MAGIC;
-    now_glass_descriptor.header.cf = LV_COLOR_FORMAT_RGB565;
-    now_glass_descriptor.header.w = CRAZYPOD_NOW_POPUP_WIDTH;
-    now_glass_descriptor.header.h = CRAZYPOD_NOW_POPUP_HEIGHT;
-    now_glass_descriptor.header.stride =
-        CRAZYPOD_NOW_POPUP_WIDTH * sizeof(fb_data);
-    now_glass_descriptor.data_size = sizeof(now_glass_render_pixels);
-    now_glass_descriptor.data =
-        (const uint8_t *)now_glass_render_pixels;
-    now_glass_valid = true;
 }
 
 static bool prepare_now_backdrop(const lv_image_dsc_t *artwork, int bank)
@@ -1640,21 +2224,10 @@ static bool prepare_now_presentation(
 
 static void draw_now_wave_event(lv_event_t *event)
 {
-    static const uint8_t bar_height[
-        CRAZYPOD_NOW_SPECTRUM_BAR_COUNT] = {
-         2,  4,  3,  7,  5, 10,  4, 13,  6, 18,  8, 12,
-        22,  7, 15, 10, 24, 12,  8, 17,  6, 20, 11,  5,
-        14,  9, 23, 13,  7, 19, 10, 16,  6, 21, 12,  8,
-        18,  5, 14,  9, 24, 11, 17,  7, 20, 13,  6, 15,
-        10, 22,  8, 16,  5, 19, 12,  7, 23,  9, 14,  6,
-        18, 11,  4, 15,  8, 12,  5, 10,  3,  7,  4,  2
-    };
     lv_obj_t *surface = lv_event_get_target(event);
     lv_layer_t *layer;
     lv_area_t area;
-    lv_draw_rect_dsc_t bar;
     bool playing;
-    int index;
 
     if(lv_event_get_code(event) != LV_EVENT_DRAW_MAIN)
         return;
@@ -1662,36 +2235,12 @@ static void draw_now_wave_event(lv_event_t *event)
     lv_obj_get_coords(surface, &area);
     playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
               (audio_status() & AUDIO_STATUS_PAUSE) == 0;
-
-    lv_draw_rect_dsc_init(&bar);
-    bar.bg_color = lv_color_hex(COLOR_WHITE);
-    bar.bg_opa = playing ? 220 : 120;
-    bar.radius = 0;
-    for(index = 0;
-        index < CRAZYPOD_NOW_SPECTRUM_BAR_COUNT;
-        ++index) {
-        lv_area_t bar_area;
-        int height;
-
-        if(playing) {
-            int modulation =
-                ((index * 13 + now_wave_phase * 7) ^
-                 (index * 3 + now_wave_phase)) % 5;
-            height = bar_height[index] + modulation - 2;
-            if(height < 2)
-                height = 2;
-            if(height > 25)
-                height = 25;
-        }
-        else {
-            height = 2 + bar_height[index] % 3;
-        }
-        bar_area.x1 = area.x1 + index * 4;
-        bar_area.x2 = bar_area.x1 + 1;
-        bar_area.y2 = area.y2;
-        bar_area.y1 = bar_area.y2 - height + 1;
-        lv_draw_rect(layer, &bar, &bar_area);
-    }
+    crazypod_sound_wave_draw_bar(
+        layer, &area,
+        (enum crazypod_sound_wave_style)
+            crazypod_appearance_get()->sound_wave_style,
+        now_wave_phase, playing,
+        highlight_primary(), highlight_secondary());
 }
 
 static void tick_now_playing_wave(void)
@@ -1722,14 +2271,10 @@ static void tick_now_playing_wave(void)
 
 static void draw_desktop_capsule_spectrum_event(lv_event_t *event)
 {
-    static const uint8_t base_height[5] = { 8, 15, 22, 12, 18 };
     lv_obj_t *surface = lv_event_get_target(event);
     lv_layer_t *layer;
     lv_area_t area;
-    lv_draw_rect_dsc_t bar;
     bool playing;
-    int start_x;
-    int i;
 
     if(lv_event_get_code(event) != LV_EVENT_DRAW_MAIN)
         return;
@@ -1738,36 +2283,12 @@ static void draw_desktop_capsule_spectrum_event(lv_event_t *event)
     lv_obj_get_coords(surface, &area);
     playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
               (audio_status() & AUDIO_STATUS_PAUSE) == 0;
-
-    lv_draw_rect_dsc_init(&bar);
-    bar.bg_color = lv_color_hex(COLOR_WHITE);
-    bar.bg_opa = LV_OPA_COVER;
-    bar.radius = 2;
-
-    start_x = area.x1 + ((lv_area_get_width(&area) - 23) / 2);
-    for(i = 0; i < 5; ++i) {
-        lv_area_t bar_area;
-        int height;
-
-        if(playing) {
-            int modulation =
-                ((desktop_capsule_spectrum_phase + i * 3) % 5) - 2;
-            height = base_height[i] + modulation * 2;
-            if(height < 5)
-                height = 5;
-            if(height > 22)
-                height = 22;
-        }
-        else {
-            height = 5 + (i % 2) * 2;
-        }
-
-        bar_area.x1 = start_x + i * 5;
-        bar_area.x2 = bar_area.x1 + 2;
-        bar_area.y2 = area.y1 + (lv_area_get_height(&area) + 22) / 2 - 1;
-        bar_area.y1 = bar_area.y2 - height + 1;
-        lv_draw_rect(layer, &bar, &bar_area);
-    }
+    crazypod_sound_wave_draw_ball(
+        layer, &area,
+        (enum crazypod_sound_wave_style)
+            crazypod_appearance_get()->sound_wave_style,
+        desktop_capsule_spectrum_phase, playing,
+        highlight_primary(), highlight_secondary());
 }
 
 static void tick_desktop_capsule_spectrum(void)
@@ -1782,6 +2303,7 @@ static void tick_desktop_capsule_spectrum(void)
     if(!playing) {
         if(desktop_capsule_spectrum_playing_seen) {
             desktop_capsule_spectrum_playing_seen = false;
+            refresh_desktop_wave_ball_appearance();
             lv_obj_invalidate(desktop_capsule_spectrum);
         }
         return;
@@ -1793,46 +2315,183 @@ static void tick_desktop_capsule_spectrum(void)
         return;
 
     last_desktop_capsule_spectrum_tick = current_tick;
-    desktop_capsule_spectrum_playing_seen = true;
+    if(!desktop_capsule_spectrum_playing_seen) {
+        desktop_capsule_spectrum_playing_seen = true;
+        refresh_desktop_wave_ball_appearance();
+    }
     desktop_capsule_spectrum_phase =
         (desktop_capsule_spectrum_phase + 1) & 0x7fff;
     lv_obj_invalidate(desktop_capsule_spectrum);
 }
 
-static lv_obj_t *make_glass_panel(lv_obj_t *parent, int x, int y,
-                                  int width, int height)
+static uint32_t glass_material_tint(enum crazypod_glass_material material)
+{
+    (void)material;
+    return CRAZYPOD_GLASS_TINT_COLOR;
+}
+
+static lv_opa_t glass_material_tint_opa(
+    enum crazypod_glass_material material)
+{
+    (void)material;
+    return CRAZYPOD_GLASS_PANEL_TINT_OPA;
+}
+
+static lv_opa_t glass_material_border_opa(
+    enum crazypod_glass_material material)
+{
+    if(material == CRAZYPOD_GLASS_MENU_PANEL ||
+       material == CRAZYPOD_GLASS_MENU_TOPBAR)
+        return LV_OPA_TRANSP;
+    return CRAZYPOD_GLASS_BORDER_OPA;
+}
+
+static lv_opa_t glass_material_shadow_opa(
+    enum crazypod_glass_material material)
+{
+    if(material == CRAZYPOD_GLASS_MENU_PANEL ||
+       material == CRAZYPOD_GLASS_MENU_TOPBAR)
+        return LV_OPA_TRANSP;
+    return CRAZYPOD_GLASS_SHADOW_OPA;
+}
+
+static bool render_glass_descriptor(
+    const fb_data *source, int source_width, int source_height,
+    int source_stride, int source_x, int source_y,
+    int width, int height, enum crazypod_glass_material material,
+    fb_data *render_pixels, lv_image_dsc_t *descriptor)
+{
+    if(width <= 0 || height <= 0 ||
+       render_pixels == NULL || descriptor == NULL)
+        return false;
+
+    keep_cpu_boosted(HZ / 4);
+    if(!crazypod_image_render_glass_rgb565(
+           source, source_width, source_height, source_stride,
+           source_x, source_y, width, height,
+           glass_material_tint(material),
+           CRAZYPOD_GLASS_BAKE_TINT_OPA,
+           glass_sample_pixels, glass_sample_scratch,
+           sizeof(glass_sample_pixels) /
+               sizeof(glass_sample_pixels[0]),
+           render_pixels, width, height))
+        return false;
+    if(descriptor->header.magic == LV_IMAGE_HEADER_MAGIC)
+        lv_image_cache_drop(descriptor);
+    return crazypod_image_configure_rgb565(
+        descriptor, render_pixels, width, height);
+}
+
+static void prepare_glass_descriptor(int source_x, int source_y,
+                                     int width, int height,
+                                     enum crazypod_glass_material material,
+                                     fb_data *render_pixels,
+                                     lv_image_dsc_t *descriptor)
+{
+    const fb_data *framebuffer =
+        (const fb_data *)lcd_framebuffer_default.data;
+
+    lv_refr_now(NULL);
+    render_glass_descriptor(
+        framebuffer, LCD_WIDTH, LCD_HEIGHT, LCD_WIDTH,
+        source_x, source_y, width, height, material,
+        render_pixels, descriptor);
+}
+
+static bool prepare_menu_glass_descriptor(
+    int source_x, int source_y, int width, int height,
+    enum crazypod_glass_material material,
+    fb_data *render_pixels, lv_image_dsc_t *descriptor)
+{
+    const lv_image_dsc_t *wallpaper =
+        crazypod_custom_menu_wallpaper();
+    fb_data solid_pixel;
+    const fb_data *source;
+    int source_width;
+    int source_height;
+    int source_stride;
+
+    if(wallpaper != NULL &&
+       wallpaper->header.cf == LV_COLOR_FORMAT_RGB565 &&
+       wallpaper->data != NULL &&
+       wallpaper->header.stride % sizeof(fb_data) == 0) {
+        source = (const fb_data *)wallpaper->data;
+        source_width = wallpaper->header.w;
+        source_height = wallpaper->header.h;
+        source_stride =
+            wallpaper->header.stride / sizeof(fb_data);
+    }
+    else {
+        uint32_t color = crazypod_appearance_menu_color();
+
+        solid_pixel = LCD_RGBPACK(
+            (color >> 16) & 0xff,
+            (color >> 8) & 0xff,
+            color & 0xff);
+        source = &solid_pixel;
+        source_width = 1;
+        source_height = 1;
+        source_stride = 1;
+        source_x = 0;
+        source_y = 0;
+    }
+
+    return render_glass_descriptor(
+        source, source_width, source_height, source_stride,
+        source_x, source_y, width, height, material,
+        render_pixels, descriptor);
+}
+
+static lv_obj_t *make_glass_material_panel(
+    lv_obj_t *parent, int x, int y, int width, int height,
+    int radius, enum crazypod_glass_material material,
+    const lv_image_dsc_t *descriptor)
 {
     lv_obj_t *panel = make_box(
         parent, x, y, width, height,
-        CRAZYPOD_NOW_POPUP_RADIUS, COLOR_PANEL, LV_OPA_COVER);
+        radius, COLOR_PANEL, LV_OPA_COVER);
     lv_obj_t *tint;
     lv_obj_t *border;
+    lv_opa_t shadow_opa = glass_material_shadow_opa(material);
 
     lv_obj_set_style_clip_corner(panel, true, 0);
-    lv_obj_set_style_shadow_width(panel, 12, 0);
-    lv_obj_set_style_shadow_offset_y(panel, 6, 0);
-    lv_obj_set_style_shadow_color(panel, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_shadow_opa(panel, 92, 0);
+    if(shadow_opa > 0) {
+        lv_obj_set_style_shadow_width(panel, 12, 0);
+        lv_obj_set_style_shadow_offset_y(panel, 6, 0);
+        lv_obj_set_style_shadow_color(panel, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_shadow_opa(panel, shadow_opa, 0);
+    }
 
-    if(now_glass_valid) {
+    if(descriptor != NULL &&
+       descriptor->header.magic == LV_IMAGE_HEADER_MAGIC) {
         lv_obj_t *image = lv_image_create(panel);
-        lv_image_set_src(image, &now_glass_descriptor);
-        lv_obj_center(image);
+        lv_image_set_src(image, descriptor);
+        lv_obj_set_pos(image, 0, 0);
         lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
     }
 
-    tint = make_box(panel, 0, 0, width, height,
-                    CRAZYPOD_NOW_POPUP_RADIUS, 0x11131A, 92);
+    tint = make_box(panel, 0, 0, width, height, radius,
+                    glass_material_tint(material),
+                    glass_material_tint_opa(material));
     lv_obj_remove_flag(tint, LV_OBJ_FLAG_CLICKABLE);
-    border = make_box(panel, 0, 0, width, height,
-                      CRAZYPOD_NOW_POPUP_RADIUS,
+    border = make_box(panel, 0, 0, width, height, radius,
                       COLOR_WHITE, LV_OPA_TRANSP);
     lv_obj_set_style_border_width(border, 1, 0);
     lv_obj_set_style_border_color(
         border, lv_color_hex(COLOR_WHITE), 0);
-    lv_obj_set_style_border_opa(border, 38, 0);
+    lv_obj_set_style_border_opa(
+        border, glass_material_border_opa(material), 0);
     lv_obj_remove_flag(border, LV_OBJ_FLAG_CLICKABLE);
     return panel;
+}
+
+static lv_obj_t *make_glass_panel(lv_obj_t *parent, int x, int y,
+                                  int width, int height)
+{
+    return make_glass_material_panel(
+        parent, x, y, width, height, CRAZYPOD_NOW_POPUP_RADIUS,
+        CRAZYPOD_GLASS_POPUP,
+        now_glass_valid ? &now_glass_descriptor : NULL);
 }
 
 static lv_obj_t *make_now_glass_panel(int x, int y, int width, int height)
@@ -2001,7 +2660,7 @@ static void render_desktop_carousel_native(void)
     int distance_layer;
     int row;
 
-    if(product_active || !desktop_native_dirty)
+    if(product_active || usb_prompt_visible() || !desktop_native_dirty)
         return;
 
     if(!desktop_native_backdrop_ready) {
@@ -2169,7 +2828,8 @@ static void create_now_playing_capsule(void)
     lv_obj_t *wave_ball;
 
     desktop_capsule = make_box(desktop_screen, 8, 174, 304, 58, 29,
-                               COLOR_WHITE, 34);
+                               COLOR_WHITE,
+                               CRAZYPOD_DESKTOP_CAPSULE_FALLBACK_OPA);
     capsule = desktop_capsule;
 
     desktop_capsule_artwork = make_box(
@@ -2225,25 +2885,38 @@ static void create_now_playing_capsule(void)
                                  LV_GRAD_DIR_HOR, 0);
 
     wave_ball = make_box(capsule, 253, 8, 42, 42,
-                         LV_RADIUS_CIRCLE, 0x2ECC71, LV_OPA_COVER);
-    lv_obj_set_style_bg_grad_color(wave_ball,
-                                   lv_color_hex(COLOR_CYAN), 0);
-    lv_obj_set_style_bg_grad_dir(wave_ball, LV_GRAD_DIR_HOR, 0);
+                         LV_RADIUS_CIRCLE, 0x080A14, LV_OPA_COVER);
+    desktop_capsule_wave_ball = wave_ball;
+    lv_obj_set_style_bg_grad_color(
+        wave_ball, lv_color_hex(0x1A1F38), 0);
+    lv_obj_set_style_bg_grad_dir(wave_ball, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_clip_corner(wave_ball, true, 0);
+    lv_obj_set_style_border_width(wave_ball, 1, 0);
+    lv_obj_set_style_border_color(
+        wave_ball, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(wave_ball, 66, 0);
+    desktop_capsule_wave_glow = make_box(
+        wave_ball, 0, 0, 32, 32, LV_RADIUS_CIRCLE,
+        highlight_primary(), 82);
+    lv_obj_center(desktop_capsule_wave_glow);
     desktop_capsule_spectrum = lv_obj_create(wave_ball);
     set_plain_object(desktop_capsule_spectrum);
-    lv_obj_set_size(desktop_capsule_spectrum, 28, 24);
+    lv_obj_set_size(desktop_capsule_spectrum, 42, 42);
     lv_obj_center(desktop_capsule_spectrum);
     lv_obj_remove_flag(desktop_capsule_spectrum, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(desktop_capsule_spectrum,
                         draw_desktop_capsule_spectrum_event,
                         LV_EVENT_DRAW_MAIN, NULL);
+    refresh_desktop_wave_ball_appearance();
 
     glass_border = make_box(capsule, 0, 0, 304, 58, 29,
                             COLOR_WHITE, LV_OPA_TRANSP);
     lv_obj_set_style_border_width(glass_border, 1, 0);
     lv_obj_set_style_border_color(
         glass_border, lv_color_hex(COLOR_WHITE), 0);
-    lv_obj_set_style_border_opa(glass_border, 58, 0);
+    lv_obj_set_style_border_opa(
+        glass_border,
+        glass_material_border_opa(CRAZYPOD_GLASS_HOME_CAPSULE), 0);
     lv_obj_remove_flag(glass_border, LV_OBJ_FLAG_CLICKABLE);
 }
 
@@ -2251,6 +2924,7 @@ static void update_desktop_capsule_artwork(
     const struct crazypod_track *track)
 {
     const lv_image_dsc_t *descriptor = NULL;
+    enum crazypod_artwork_state state = CRAZYPOD_ARTWORK_EMPTY;
 
     if(desktop_capsule_artwork == NULL)
         return;
@@ -2259,6 +2933,14 @@ static void update_desktop_capsule_artwork(
         descriptor = crazypod_artwork_load(
             CRAZYPOD_CAPSULE_ARTWORK_SLOT, track,
             CRAZYPOD_CAPSULE_ARTWORK_SIZE);
+        state = crazypod_artwork_state(
+            CRAZYPOD_CAPSULE_ARTWORK_SLOT, track,
+            CRAZYPOD_CAPSULE_ARTWORK_SIZE);
+        (void)crazypod_artwork_load_priority(
+            CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT, track,
+            CRAZYPOD_NOW_ARTWORK_CACHE_SIZE, 8);
+        if(state == CRAZYPOD_ARTWORK_PENDING)
+            return;
         if(strcmp(desktop_capsule_artwork_path, track->path) != 0) {
             snprintf(desktop_capsule_artwork_path,
                      sizeof(desktop_capsule_artwork_path),
@@ -2373,6 +3055,92 @@ static void create_product_screen(void)
     lv_obj_move_background(product_screen);
 }
 
+static void create_lock_screen(void)
+{
+    lv_obj_t *scrim;
+    lv_obj_t *halo;
+    lv_obj_t *icon;
+    lv_obj_t *keyhole;
+
+    lock_screen = lv_obj_create(desktop_screen);
+    set_plain_object(lock_screen);
+    lv_obj_set_pos(lock_screen, 0, 0);
+    lv_obj_set_size(lock_screen, LCD_WIDTH, LCD_HEIGHT);
+    lv_obj_set_style_bg_opa(lock_screen, LV_OPA_COVER, 0);
+
+    lock_wallpaper = lv_image_create(lock_screen);
+    lv_obj_set_pos(lock_wallpaper, 0, 0);
+    lv_obj_remove_flag(lock_wallpaper, LV_OBJ_FLAG_CLICKABLE);
+    scrim = make_box(lock_screen, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0,
+                     0x03050A, 132);
+    lv_obj_remove_flag(scrim, LV_OBJ_FLAG_CLICKABLE);
+
+    lock_time_label = make_label(
+        lock_screen, "09:41", &lv_font_montserrat_48,
+        COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(lock_time_label, LCD_WIDTH);
+    lv_obj_set_style_text_align(
+        lock_time_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(lock_time_label, 0, 27);
+
+    lock_date_label = make_label(
+        lock_screen, "", &lv_font_montserrat_10,
+        0xD6E2EA, 184);
+    lv_obj_set_width(lock_date_label, LCD_WIDTH);
+    lv_obj_set_style_text_align(
+        lock_date_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(lock_date_label, 0, 87);
+
+    lock_progress_surface = lv_obj_create(lock_screen);
+    set_plain_object(lock_progress_surface);
+    lv_obj_set_pos(lock_progress_surface, 124, 111);
+    lv_obj_set_size(lock_progress_surface, 72, 72);
+    lv_obj_remove_flag(
+        lock_progress_surface, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(
+        lock_progress_surface, draw_lock_progress_event,
+        LV_EVENT_DRAW_MAIN, NULL);
+    halo = make_box(lock_progress_surface, 10, 10, 52, 52,
+                    LV_RADIUS_CIRCLE, COLOR_CYAN, 12);
+    lv_obj_set_style_shadow_width(halo, 12, 0);
+    lv_obj_set_style_shadow_color(
+        halo, lv_color_hex(COLOR_CYAN), 0);
+    lv_obj_set_style_shadow_opa(halo, 38, 0);
+    icon = lv_obj_create(lock_progress_surface);
+    set_plain_object(icon);
+    lv_obj_set_pos(icon, 14, 12);
+    lv_obj_set_size(icon, 44, 48);
+    lock_icon_shackle = make_box(
+        icon, 12, 3, 20, 23, 10, COLOR_WHITE, LV_OPA_TRANSP);
+    lv_obj_set_style_border_width(lock_icon_shackle, 3, 0);
+    lv_obj_set_style_border_color(
+        lock_icon_shackle, lv_color_hex(0xDDF9FF), 0);
+    lv_obj_set_style_border_opa(
+        lock_icon_shackle, LV_OPA_COVER, 0);
+    lock_icon_body = make_box(
+        icon, 6, 19, 32, 23, 7, 0xDDF9FF, LV_OPA_COVER);
+    keyhole = make_box(lock_icon_body, 14, 7, 5, 8,
+                       LV_RADIUS_CIRCLE, 0x0A1620, 225);
+    make_box(keyhole, 2, 4, 1, 6, 0,
+             0x0A1620, LV_OPA_COVER);
+
+    lock_hint_label = make_label(
+        lock_screen, "HOLD SELECT  1.5s",
+        &lv_font_montserrat_8, COLOR_WHITE, 135);
+    lv_obj_set_width(lock_hint_label, LCD_WIDTH);
+    lv_obj_set_style_text_align(
+        lock_hint_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(lock_hint_label, 0, 201);
+    lv_obj_set_style_text_letter_space(lock_hint_label, 1, 0);
+
+    refresh_lock_appearance();
+    refresh_lock_clock();
+    reset_lock_hold();
+    create_screen_corner_masks(lock_screen, 2);
+    lv_obj_add_flag(lock_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_background(lock_screen);
+}
+
 static struct route_state *current_route(void)
 {
     return &route_stack[route_depth - 1];
@@ -2477,6 +3245,9 @@ static const char *settings_item_title(int item)
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION: return "Sleep Timer";
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP: return "Timer on Boot";
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS: return "Key Reset Timer";
+#ifdef HAVE_USB_CHARGING_ENABLE
+    case SETTINGS_ITEM_USB_CHARGING: return "USB Charging";
+#endif
     case SETTINGS_ITEM_BEEP: return "System Beep";
     case SETTINGS_ITEM_KEYCLICK: return "Keyclick";
 #ifdef HAVE_HARDWARE_CLICK
@@ -2507,6 +3278,9 @@ static const char *settings_item_symbol(int item)
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
+#ifdef HAVE_USB_CHARGING_ENABLE
+    case SETTINGS_ITEM_USB_CHARGING:
+#endif
         return LV_SYMBOL_POWER;
     default:
         return LV_SYMBOL_SETTINGS;
@@ -2519,7 +3293,7 @@ static const char *settings_group_detail(int index)
     case 0: return "EQ, tone and balance";
     case 1: return "Backlight, sleep and brightness";
     case 2: return "Shuffle and repeat";
-    case 3: return "Sleep timer behavior";
+    case 3: return "Charging and sleep timer";
     case 4: return "Beeps and wheel feedback";
     default: return "";
     }
@@ -2640,6 +3414,10 @@ static int settings_item_current_value(int item)
         return global_settings.sleeptimer_on_startup ? 1 : 0;
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
         return global_settings.keypress_restarts_sleeptimer ? 1 : 0;
+#ifdef HAVE_USB_CHARGING_ENABLE
+    case SETTINGS_ITEM_USB_CHARGING:
+        return global_settings.usb_charging;
+#endif
     case SETTINGS_ITEM_BEEP:
         return global_settings.beep;
     case SETTINGS_ITEM_KEYCLICK:
@@ -2667,6 +3445,10 @@ static int settings_choice_count(int item)
 #endif
     case SETTINGS_ITEM_KEYCLICK_REPEATS:
         return 2;
+#ifdef HAVE_USB_CHARGING_ENABLE
+    case SETTINGS_ITEM_USB_CHARGING:
+        return 3;
+#endif
     case SETTINGS_ITEM_BASS:
         return range_choice_count(sound_min(SOUND_BASS),
                                   sound_max(SOUND_BASS),
@@ -2688,9 +3470,11 @@ static int settings_choice_count(int item)
 #if CONFIG_CHARGING
     case SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED:
 #endif
-    case SETTINGS_ITEM_LCD_SLEEP:
         return (int)(sizeof(setting_timeout_values) /
                      sizeof(setting_timeout_values[0]));
+    case SETTINGS_ITEM_LCD_SLEEP:
+        return (int)(sizeof(setting_lcd_sleep_values) /
+                     sizeof(setting_lcd_sleep_values[0]));
     case SETTINGS_ITEM_REPEAT:
         return (int)(sizeof(setting_repeat_values) /
                      sizeof(setting_repeat_values[0]));
@@ -2717,6 +3501,14 @@ static int settings_choice_value(int item, int index)
 #endif
     case SETTINGS_ITEM_KEYCLICK_REPEATS:
         return index > 0 ? 1 : 0;
+#ifdef HAVE_USB_CHARGING_ENABLE
+    case SETTINGS_ITEM_USB_CHARGING:
+        if(index < USB_CHARGING_DISABLE)
+            return USB_CHARGING_DISABLE;
+        if(index > USB_CHARGING_FORCE)
+            return USB_CHARGING_FORCE;
+        return index;
+#endif
     case SETTINGS_ITEM_BASS:
         return range_choice_value(index, sound_min(SOUND_BASS),
                                   sound_max(SOUND_BASS),
@@ -2738,8 +3530,9 @@ static int settings_choice_value(int item, int index)
 #if CONFIG_CHARGING
     case SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED:
 #endif
-    case SETTINGS_ITEM_LCD_SLEEP:
         return setting_timeout_values[index];
+    case SETTINGS_ITEM_LCD_SLEEP:
+        return setting_lcd_sleep_values[index];
     case SETTINGS_ITEM_REPEAT:
         return setting_repeat_values[index];
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
@@ -2777,6 +3570,14 @@ static int settings_choice_index(int item)
 #endif
     case SETTINGS_ITEM_KEYCLICK_REPEATS:
         return current ? 1 : 0;
+#ifdef HAVE_USB_CHARGING_ENABLE
+    case SETTINGS_ITEM_USB_CHARGING:
+        if(current < USB_CHARGING_DISABLE)
+            return USB_CHARGING_DISABLE;
+        if(current > USB_CHARGING_FORCE)
+            return USB_CHARGING_FORCE;
+        return current;
+#endif
     case SETTINGS_ITEM_BASS:
         return range_choice_index(current, sound_min(SOUND_BASS),
                                   sound_max(SOUND_BASS),
@@ -2798,11 +3599,16 @@ static int settings_choice_index(int item)
 #if CONFIG_CHARGING
     case SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED:
 #endif
-    case SETTINGS_ITEM_LCD_SLEEP:
         return find_value_index(
             setting_timeout_values,
             (int)(sizeof(setting_timeout_values) /
                   sizeof(setting_timeout_values[0])),
+            current);
+    case SETTINGS_ITEM_LCD_SLEEP:
+        return find_value_index(
+            setting_lcd_sleep_values,
+            (int)(sizeof(setting_lcd_sleep_values) /
+                  sizeof(setting_lcd_sleep_values[0])),
             current);
     case SETTINGS_ITEM_REPEAT:
         return find_value_index(
@@ -2844,6 +3650,20 @@ static const char *settings_level_title(int value)
     default: return "Off";
     }
 }
+
+#ifdef HAVE_USB_CHARGING_ENABLE
+static const char *settings_usb_charging_title(int value)
+{
+    switch(value) {
+    case USB_CHARGING_ENABLE:
+        return "On";
+    case USB_CHARGING_FORCE:
+        return "Force";
+    default:
+        return "Off";
+    }
+}
+#endif
 
 static const char *settings_choice_title(int item, int index)
 {
@@ -2887,6 +3707,10 @@ static const char *settings_choice_title(int item, int index)
         return settings_repeat_title(value);
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
         return format_sleep_timer_value(value);
+#ifdef HAVE_USB_CHARGING_ENABLE
+    case SETTINGS_ITEM_USB_CHARGING:
+        return settings_usb_charging_title(value);
+#endif
     case SETTINGS_ITEM_BEEP:
     case SETTINGS_ITEM_KEYCLICK:
         return settings_level_title(value);
@@ -2963,6 +3787,12 @@ static void settings_apply_choice(int item, int index)
         set_keypress_restarts_sleep_timer(
             global_settings.keypress_restarts_sleeptimer);
         break;
+#ifdef HAVE_USB_CHARGING_ENABLE
+    case SETTINGS_ITEM_USB_CHARGING:
+        global_settings.usb_charging = value;
+        usb_charging_enable(global_settings.usb_charging);
+        break;
+#endif
     case SETTINGS_ITEM_BEEP:
         global_settings.beep = value;
         break;
@@ -3320,7 +4150,7 @@ static int route_item_count(const struct route_state *state)
     case MUSIC_ROUTE_SONGS:
         return crazypod_music_track_count();
     case MUSIC_ROUTE_SEARCH:
-        return CRAZYPOD_EDITOR_CHAR_COUNT + 4;
+        return CRAZYPOD_EDITOR_CHAR_COUNT + 3;
     case MUSIC_ROUTE_SEARCH_RESULTS:
         return crazypod_music_search_count(search_query);
     case MUSIC_ROUTE_PLAYLISTS:
@@ -3381,7 +4211,8 @@ static int route_item_count(const struct route_state *state)
         return appearance_choice_count(
             (enum crazypod_appearance_field)state->group);
     case DIY_ROUTE_BACKGROUNDS:
-        return 2;
+        return (int)(sizeof(diy_background_titles) /
+                     sizeof(diy_background_titles[0]));
     case DIY_ROUTE_BACKGROUND_CHOICES:
         return CRAZYPOD_APPEARANCE_COLOR_COUNT + 2;
     case DIY_ROUTE_WALLPAPER_FILES:
@@ -3458,11 +4289,9 @@ static const char *route_item_title(const struct route_state *state, int index)
         if(index == CRAZYPOD_EDITOR_CHAR_COUNT)
             return "Space";
         if(index == CRAZYPOD_EDITOR_CHAR_COUNT + 1)
-            return "Backspace";
+            return "Delete";
         if(index == CRAZYPOD_EDITOR_CHAR_COUNT + 2)
-            return "Clear";
-        if(index == CRAZYPOD_EDITOR_CHAR_COUNT + 3)
-            return "Show Results";
+            return "View Results";
         return "";
     case MUSIC_ROUTE_PLAYLISTS: {
         const struct crazypod_playlist *playlist =
@@ -3542,11 +4371,15 @@ static const char *route_item_title(const struct route_state *state, int index)
                   (enum crazypod_appearance_field)state->group, index)
             : "";
     case DIY_ROUTE_BACKGROUNDS:
-        return index >= 0 && index < 2
+        return index >= 0 &&
+               index < (int)(sizeof(diy_background_titles) /
+                             sizeof(diy_background_titles[0]))
             ? diy_background_titles[index] : "";
     case DIY_ROUTE_BACKGROUND_CHOICES:
         if(index == 0)
-            return "Default";
+            return state->group ==
+                   CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
+                ? "Follow Home" : "Default";
         if(index <= CRAZYPOD_APPEARANCE_COLOR_COUNT)
             return crazypod_appearance_color_name(index - 1);
         return index == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1
@@ -3620,15 +4453,22 @@ static const char *route_title(const struct route_state *state)
             (enum crazypod_appearance_field)state->group);
     case DIY_ROUTE_BACKGROUNDS: return "BACKGROUNDS";
     case DIY_ROUTE_BACKGROUND_CHOICES:
-        return state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-            ? "HOME" : "MENU";
+        return background_field_title(
+            (enum crazypod_appearance_field)state->group);
     case DIY_ROUTE_WALLPAPER_FILES:
-        return state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-            ? "HOME PICTURE" : "MENU PICTURE";
+        if(state->group == CRAZYPOD_APPEARANCE_MENU_BACKGROUND)
+            return "MENU PICTURE";
+        if(state->group == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND)
+            return "LOCK PICTURE";
+        return "HOME PICTURE";
     case DIY_ROUTE_WALLPAPER_CROP:
-        return wallpaper_crop_target ==
-                   CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-            ? "CROP HOME" : "CROP MENU";
+        if(wallpaper_crop_target ==
+           CRAZYPOD_APPEARANCE_MENU_BACKGROUND)
+            return "CROP MENU";
+        if(wallpaper_crop_target ==
+           CRAZYPOD_APPEARANCE_LOCK_BACKGROUND)
+            return "CROP LOCK";
+        return "CROP HOME";
     case DIY_ROUTE_LAYOUT: return "LAYOUT";
     }
     return "";
@@ -3649,10 +4489,9 @@ static bool route_item_is_current(const struct route_state *state, int index)
                appearance_field_value(field);
     }
     case DIY_ROUTE_BACKGROUND_CHOICES: {
-        const char *path =
-            state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-                ? appearance->home_wallpaper
-                : appearance->menu_wallpaper;
+        const char *path = background_wallpaper(
+            appearance,
+            (enum crazypod_appearance_field)state->group);
         if(index == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1)
             return path[0] != '\0';
         return path[0] == '\0' &&
@@ -3660,10 +4499,9 @@ static bool route_item_is_current(const struct route_state *state, int index)
                    (enum crazypod_appearance_field)state->group);
     }
     case DIY_ROUTE_WALLPAPER_FILES: {
-        const char *path =
-            state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-                ? appearance->home_wallpaper
-                : appearance->menu_wallpaper;
+        const char *path = background_wallpaper(
+            appearance,
+            (enum crazypod_appearance_field)state->group);
         return index >= 0 && index < crazypod_photo_count() &&
                strcmp(path, crazypod_photo_path(index)) == 0;
     }
@@ -3740,18 +4578,177 @@ static lv_obj_t *create_artwork(lv_obj_t *parent,
 
 static void create_panel_backgrounds(void)
 {
-    lv_obj_t *left = make_box(product_content, 8, CRAZYPOD_MENU_PANEL_Y,
-                              148, CRAZYPOD_MENU_PANEL_HEIGHT, 12,
-                              crazypod_appearance_menu_color(), 230);
-    lv_obj_t *right = make_box(product_content, 164, CRAZYPOD_MENU_PANEL_Y,
-                               148, CRAZYPOD_MENU_PANEL_HEIGHT, 12,
-                               crazypod_appearance_menu_color(), 184);
+    lv_obj_t *top;
+    lv_obj_t *left;
+    bool top_glass_valid;
+    bool left_glass_valid;
+
+    top_glass_valid = prepare_menu_glass_descriptor(
+        0, 0, LCD_WIDTH, CRAZYPOD_STATUS_BAR_HEIGHT,
+        CRAZYPOD_GLASS_MENU_TOPBAR,
+        menu_topbar_glass_pixels, &menu_topbar_glass_descriptor);
+    top = make_glass_material_panel(
+        product_content, 0, 0,
+        LCD_WIDTH, CRAZYPOD_STATUS_BAR_HEIGHT, 0,
+        CRAZYPOD_GLASS_MENU_TOPBAR,
+        top_glass_valid ? &menu_topbar_glass_descriptor : NULL);
+    left_glass_valid = prepare_menu_glass_descriptor(
+        0, CRAZYPOD_MENU_PANEL_Y,
+        CRAZYPOD_MENU_PANEL_WIDTH, CRAZYPOD_MENU_PANEL_HEIGHT,
+        CRAZYPOD_GLASS_MENU_PANEL,
+        menu_panel_glass_pixels, &menu_panel_glass_descriptor);
+    left = make_glass_material_panel(
+        product_content, 0, CRAZYPOD_MENU_PANEL_Y,
+        CRAZYPOD_MENU_PANEL_WIDTH, CRAZYPOD_MENU_PANEL_HEIGHT, 0,
+        CRAZYPOD_GLASS_MENU_PANEL,
+        left_glass_valid ? &menu_panel_glass_descriptor : NULL);
+    lv_obj_remove_flag(top, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_border_width(top, 1, 0);
+    lv_obj_set_style_border_side(top, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(top, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(top, 22, 0);
     lv_obj_set_style_border_width(left, 1, 0);
+    lv_obj_set_style_border_side(left, LV_BORDER_SIDE_RIGHT, 0);
     lv_obj_set_style_border_color(left, lv_color_hex(COLOR_WHITE), 0);
     lv_obj_set_style_border_opa(left, 22, 0);
-    lv_obj_set_style_border_width(right, 1, 0);
-    lv_obj_set_style_border_color(right, lv_color_hex(COLOR_WHITE), 0);
-    lv_obj_set_style_border_opa(right, 22, 0);
+}
+
+static bool is_music_preview_route(enum crazypod_route route)
+{
+    switch(route) {
+    case MUSIC_ROUTE_MENU:
+    case MUSIC_ROUTE_ALL:
+    case MUSIC_ROUTE_PLAYLISTS:
+    case MUSIC_ROUTE_PLAYLIST_SONGS:
+    case MUSIC_ROUTE_ARTISTS:
+    case MUSIC_ROUTE_ARTIST_SONGS:
+    case MUSIC_ROUTE_ALBUMS:
+    case MUSIC_ROUTE_ALBUM_SONGS:
+    case MUSIC_ROUTE_SONGS:
+    case MUSIC_ROUTE_SEARCH_RESULTS:
+    case MUSIC_ROUTE_QUEUE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void menu_preview_x_anim(void *target, int32_t value)
+{
+    lv_obj_set_x(target, value);
+}
+
+static void settle_menu_preview_motion(void)
+{
+    if(menu_preview_content == NULL)
+        return;
+
+    lv_anim_delete(menu_preview_content, menu_preview_x_anim);
+    lv_obj_set_x(menu_preview_content, -CRAZYPOD_MENU_PANEL_WIDTH);
+}
+
+static bool menu_preview_motion_active(void)
+{
+    return menu_preview_content != NULL &&
+        lv_anim_get(menu_preview_content, menu_preview_x_anim) != NULL;
+}
+
+static void reset_menu_preview_root(void)
+{
+    settle_menu_preview_motion();
+    if(menu_preview_root == NULL) {
+        menu_preview_root = lv_obj_create(product_content);
+        set_plain_object(menu_preview_root);
+        lv_obj_set_pos(menu_preview_root,
+                       CRAZYPOD_MENU_PANEL_WIDTH,
+                       CRAZYPOD_STATUS_BAR_HEIGHT);
+        lv_obj_set_size(
+            menu_preview_root,
+            LCD_WIDTH - CRAZYPOD_MENU_PANEL_WIDTH,
+            LCD_HEIGHT - CRAZYPOD_STATUS_BAR_HEIGHT);
+        lv_obj_set_style_bg_opa(
+            menu_preview_root, LV_OPA_TRANSP, 0);
+        lv_obj_remove_flag(
+            menu_preview_root, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(
+            menu_preview_root, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    }
+    else {
+        menu_preview_content = NULL;
+        lv_obj_clean(menu_preview_root);
+    }
+
+    menu_preview_content = lv_obj_create(menu_preview_root);
+    set_plain_object(menu_preview_content);
+    lv_obj_set_pos(menu_preview_content,
+                   -CRAZYPOD_MENU_PANEL_WIDTH,
+                   -CRAZYPOD_STATUS_BAR_HEIGHT);
+    lv_obj_set_size(menu_preview_content, LCD_WIDTH, LCD_HEIGHT);
+    lv_obj_set_style_bg_opa(
+        menu_preview_content, LV_OPA_TRANSP, 0);
+    lv_obj_remove_flag(
+        menu_preview_content, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void start_menu_preview_property_anim(
+    lv_obj_t *target, lv_anim_exec_xcb_t callback,
+    int32_t from, int32_t to)
+{
+    lv_anim_t animation;
+
+    lv_anim_delete(target, callback);
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, target);
+    lv_anim_set_exec_cb(&animation, callback);
+    lv_anim_set_values(&animation, from, to);
+    lv_anim_set_delay(&animation, CRAZYPOD_PREVIEW_ENTRANCE_DELAY_MS);
+    lv_anim_set_duration(
+        &animation, CRAZYPOD_PREVIEW_ENTRANCE_DURATION_MS);
+    lv_anim_set_path_cb(&animation, lv_anim_path_custom_bezier3);
+    lv_anim_set_bezier3_param(
+        &animation,
+        LV_BEZIER_VAL_FLOAT(0.20), LV_BEZIER_VAL_FLOAT(0.78),
+        LV_BEZIER_VAL_FLOAT(0.24), LV_BEZIER_VAL_FLOAT(1.00));
+    lv_anim_set_early_apply(&animation, true);
+    lv_anim_start(&animation);
+}
+
+static void start_menu_preview_entrance(void)
+{
+    int final_x = -CRAZYPOD_MENU_PANEL_WIDTH;
+
+    if(menu_preview_content == NULL)
+        return;
+
+    lv_obj_set_x(
+        menu_preview_content,
+        final_x + CRAZYPOD_PREVIEW_ENTRANCE_OFFSET_X);
+    start_menu_preview_property_anim(
+        menu_preview_content, menu_preview_x_anim,
+        final_x + CRAZYPOD_PREVIEW_ENTRANCE_OFFSET_X, final_x);
+}
+
+static lv_obj_t *preview_parent(void)
+{
+    return menu_preview_content != NULL
+        ? menu_preview_content : product_content;
+}
+
+static lv_obj_t *make_preview_text_panel(int y, int height)
+{
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *panel;
+
+    if(height > CRAZYPOD_PREVIEW_TEXT_PANEL_MAX_HEIGHT)
+        height = CRAZYPOD_PREVIEW_TEXT_PANEL_MAX_HEIGHT;
+    prepare_glass_descriptor(
+        170, y, CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH, height,
+        CRAZYPOD_GLASS_TEXT_PANEL,
+        preview_text_glass_pixels, &preview_text_glass_descriptor);
+    panel = make_glass_material_panel(
+        parent, 170, y, CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH, height, 10,
+        CRAZYPOD_GLASS_TEXT_PANEL, &preview_text_glass_descriptor);
+    return panel;
 }
 
 static void render_empty_state(const char *title, const char *message)
@@ -3776,6 +4773,8 @@ static void render_empty_state(const char *title, const char *message)
 
 static void render_root_preview(int selected)
 {
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *text_panel = NULL;
     lv_obj_t *title;
     lv_obj_t *detail;
     char count_text[96];
@@ -3784,38 +4783,31 @@ static void render_root_preview(int selected)
     switch(selected) {
     case 0: {
         const struct crazypod_track *track = current_track();
-        create_artwork(product_content, track, 200, 76, 80,
-                       CRAZYPOD_PREVIEW_ARTWORK_SLOT);
-        title = make_label(product_content,
+        make_music_preview_icon(
+            parent, CRAZYPOD_PREVIEW_ICON_NOW_PLAYING, 192, 52);
+        text_panel = make_preview_text_panel(154, 56);
+        title = make_label(text_panel,
                            track != NULL ? track->title : "No Track",
                            CRAZYPOD_METADATA_FONT,
                            COLOR_WHITE, LV_OPA_COVER);
-        lv_obj_set_pos(title, 177, 167);
+        lv_obj_set_pos(title, 7, 6);
         lv_obj_set_width(title, 126);
         lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_DOTS);
-        detail = make_label(product_content,
+        detail = make_label(text_panel,
                             track != NULL ? track->artist : "Local Music",
                             CRAZYPOD_METADATA_FONT,
                             COLOR_WHITE, 130);
-        lv_obj_set_pos(detail, 177, 186);
+        lv_obj_set_pos(detail, 7, 25);
         lv_obj_set_width(detail, 126);
         lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
         break;
     }
     case 1:
-    {
-        int album_index = initial_album_index();
         count = crazypod_music_album_count();
-        create_artwork_cached(
-            product_content,
-            count > 0
-                ? crazypod_music_album_track(album_index, 0) : NULL,
-            204, 82, 72, 120,
-            CRAZYPOD_PREVIEW_ARTWORK_SLOT);
-        crazypod_coverflow_warm(album_index);
+        make_music_preview_icon(
+            parent, CRAZYPOD_PREVIEW_ICON_ALBUM_FLOW, 192, 52);
         break;
-    }
     case 2: count = crazypod_music_track_count(); break;
     case 3: count = crazypod_music_playlist_count(); break;
     case 4: count = crazypod_music_artist_count(); break;
@@ -3825,12 +4817,26 @@ static void render_root_preview(int selected)
     }
 
     if(selected != 0) {
-        title = make_label(product_content, music_menu_titles[selected],
+        static const enum crazypod_preview_icon icons[] = {
+            CRAZYPOD_PREVIEW_ICON_NOW_PLAYING,
+            CRAZYPOD_PREVIEW_ICON_ALBUM_FLOW,
+            CRAZYPOD_PREVIEW_ICON_ALL_MUSIC,
+            CRAZYPOD_PREVIEW_ICON_PLAYLISTS,
+            CRAZYPOD_PREVIEW_ICON_ARTIST,
+            CRAZYPOD_PREVIEW_ICON_ALBUMS,
+            CRAZYPOD_PREVIEW_ICON_SONGS,
+            CRAZYPOD_PREVIEW_ICON_SEARCH
+        };
+
+        if(selected != 1)
+            make_music_preview_icon(parent, icons[selected], 192, 52);
+        text_panel = make_preview_text_panel(154, 56);
+        title = make_label(text_panel, music_menu_titles[selected],
                            &lv_font_montserrat_12,
                            COLOR_WHITE, LV_OPA_COVER);
         lv_obj_set_width(title, 132);
         lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(title, 174, selected == 1 ? 166 : 111);
+        lv_obj_set_pos(title, 4, 6);
         if(selected == 7)
             snprintf(count_text, sizeof(count_text),
                      "%d local tracks", count);
@@ -3839,18 +4845,12 @@ static void render_root_preview(int selected)
                      selected == 3 ? "playlists" :
                      selected == 4 ? "artists" :
                      selected == 5 || selected == 1 ? "albums" : "songs");
-        detail = make_label(product_content, count_text,
+        detail = make_label(text_panel, count_text,
                             &lv_font_montserrat_8,
                             COLOR_WHITE, 125);
         lv_obj_set_width(detail, 132);
         lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(detail, 174, selected == 1 ? 187 : 136);
-        if(selected != 1) {
-            lv_obj_t *symbol = make_label(
-                product_content, music_menu_symbols[selected],
-                &lv_font_montserrat_24, COLOR_CYAN, 205);
-            lv_obj_set_pos(symbol, 228, 79);
-        }
+        lv_obj_set_pos(detail, 4, 30);
     }
 }
 
@@ -3858,6 +4858,8 @@ static void render_item_preview(const struct route_state *state)
 {
     const struct crazypod_track *track =
         route_track(state, state->selected);
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *text_panel = make_preview_text_panel(153, 70);
     lv_obj_t *title;
     lv_obj_t *detail;
     char text[96];
@@ -3865,56 +4867,52 @@ static void render_item_preview(const struct route_state *state)
     if(state->route == MUSIC_ROUTE_ARTISTS) {
         const char *artist = crazypod_music_artist(state->selected);
         int count = crazypod_music_artist_track_count(state->selected);
-        lv_obj_t *symbol = make_label(product_content, LV_SYMBOL_HOME,
-                                      &lv_font_montserrat_24,
-                                      COLOR_CYAN, 210);
-        lv_obj_set_pos(symbol, 228, 83);
-        title = make_label(product_content, artist != NULL ? artist : "",
+        make_music_preview_icon(
+            parent, CRAZYPOD_PREVIEW_ICON_ARTIST, 192, 52);
+        title = make_label(text_panel, artist != NULL ? artist : "",
                            CRAZYPOD_METADATA_FONT,
                            COLOR_WHITE, LV_OPA_COVER);
         snprintf(text, sizeof(text), "%d songs", count);
-        detail = make_label(product_content, text, &lv_font_montserrat_8,
+        detail = make_label(text_panel, text, &lv_font_montserrat_8,
                             COLOR_WHITE, 130);
     }
     else if(state->route == MUSIC_ROUTE_ALBUMS) {
         const struct crazypod_album *album =
             crazypod_music_album(state->selected);
         track = crazypod_music_album_track(state->selected, 0);
-        create_artwork(product_content, track, 204, 76, 72,
+        create_artwork(parent, track, 204, 76, 72,
                        CRAZYPOD_PREVIEW_ARTWORK_SLOT);
-        title = make_label(product_content,
+        title = make_label(text_panel,
                            album != NULL ? album->title : "",
                            CRAZYPOD_METADATA_FONT,
                            COLOR_WHITE, LV_OPA_COVER);
-        detail = make_label(product_content,
+        detail = make_label(text_panel,
                             album != NULL ? album->artist : "",
                             CRAZYPOD_METADATA_FONT, COLOR_WHITE, 135);
     }
     else if(state->route == MUSIC_ROUTE_PLAYLISTS) {
         const struct crazypod_playlist *playlist =
             crazypod_music_playlist(state->selected);
-        lv_obj_t *symbol = make_label(product_content, LV_SYMBOL_LIST,
-                                      &lv_font_montserrat_24,
-                                      COLOR_CYAN, 210);
-        lv_obj_set_pos(symbol, 228, 83);
-        title = make_label(product_content,
+        make_music_preview_icon(
+            parent, CRAZYPOD_PREVIEW_ICON_PLAYLISTS, 192, 52);
+        title = make_label(text_panel,
                            playlist != NULL ? playlist->name : "",
                            CRAZYPOD_METADATA_FONT,
                            COLOR_WHITE, LV_OPA_COVER);
         snprintf(text, sizeof(text), "%d songs",
                  playlist != NULL ? playlist->track_count : 0);
-        detail = make_label(product_content, text, &lv_font_montserrat_8,
+        detail = make_label(text_panel, text, &lv_font_montserrat_8,
                             COLOR_WHITE, 130);
     }
     else {
         char duration[16];
-        create_artwork(product_content, track, 204, 72, 72,
+        create_artwork(parent, track, 204, 72, 72,
                        CRAZYPOD_PREVIEW_ARTWORK_SLOT);
-        title = make_label(product_content,
+        title = make_label(text_panel,
                            track != NULL ? track->title : "No Track",
                            CRAZYPOD_METADATA_FONT,
                            COLOR_WHITE, LV_OPA_COVER);
-        detail = make_label(product_content,
+        detail = make_label(text_panel,
                             track != NULL ? track->artist : "",
                             CRAZYPOD_METADATA_FONT, COLOR_WHITE, 155);
         if(track != NULL) {
@@ -3922,14 +4920,14 @@ static void render_item_preview(const struct route_state *state)
             snprintf(text, sizeof(text), "%s  " LV_SYMBOL_BULLET "  %s",
                      track->album, duration);
             {
-                lv_obj_t *album = make_label(product_content, text,
+                lv_obj_t *album = make_label(text_panel, text,
                                               CRAZYPOD_METADATA_FONT,
                                               COLOR_WHITE, 95);
                 lv_obj_set_width(album, 126);
                 lv_obj_set_height(album, 16);
                 lv_label_set_long_mode(album, LV_LABEL_LONG_MODE_DOTS);
                 lv_obj_set_style_text_align(album, LV_TEXT_ALIGN_CENTER, 0);
-                lv_obj_set_pos(album, 177, 207);
+                lv_obj_set_pos(album, 7, 49);
             }
         }
     }
@@ -3938,12 +4936,12 @@ static void render_item_preview(const struct route_state *state)
     lv_obj_set_height(title, 18);
     lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 177, 158);
+    lv_obj_set_pos(title, 7, 6);
     lv_obj_set_width(detail, 126);
     lv_obj_set_height(detail, 16);
     lv_label_set_long_mode(detail, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(detail, 177, 181);
+    lv_obj_set_pos(detail, 7, 29);
 }
 
 static const char *diy_current_value(const struct route_state *state)
@@ -3980,19 +4978,21 @@ static const char *diy_current_value(const struct route_state *state)
             ? "Current selection" : "Select to apply";
     }
     if(state->route == DIY_ROUTE_BACKGROUNDS) {
-        const char *path = state->selected == 0
-            ? value->home_wallpaper : value->menu_wallpaper;
-        int color = state->selected == 0
-            ? value->home_background : value->menu_background;
+        enum crazypod_appearance_field background_field =
+            background_field_for_index(state->selected);
+        const char *path =
+            background_wallpaper(value, background_field);
+        int color = appearance_field_value(background_field);
         if(path[0] != '\0')
             return path_basename(path);
-        return color == 0 ? "Default"
+        return color == 0
+            ? background_field == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
+                ? "Follow Home" : "Default"
                           : crazypod_appearance_color_name(color - 1);
     }
     if(state->route == DIY_ROUTE_BACKGROUND_CHOICES) {
-        const char *path =
-            state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-                ? value->home_wallpaper : value->menu_wallpaper;
+        const char *path = background_wallpaper(
+            value, (enum crazypod_appearance_field)state->group);
         int color = appearance_field_value(
             (enum crazypod_appearance_field)state->group);
         if(state->selected == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1)
@@ -4002,9 +5002,8 @@ static const char *diy_current_value(const struct route_state *state)
             ? "Current selection" : "Select to apply";
     }
     if(state->route == DIY_ROUTE_WALLPAPER_FILES) {
-        const char *current_path =
-            state->group == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-                ? value->home_wallpaper : value->menu_wallpaper;
+        const char *current_path = background_wallpaper(
+            value, (enum crazypod_appearance_field)state->group);
         return strcmp(current_path,
                       crazypod_photo_path(state->selected)) == 0
             ? "Current picture" : "Select to crop";
@@ -4015,11 +5014,12 @@ static const char *diy_current_value(const struct route_state *state)
 static void render_editor_preview(const char *value, const char *empty_text,
                                   const char *detail)
 {
+    lv_obj_t *parent = preview_parent();
     lv_obj_t *card;
     lv_obj_t *symbol;
     lv_obj_t *label;
 
-    card = make_box(product_content, 181, 78, 118, 64, 14,
+    card = make_box(parent, 181, 78, 118, 64, 14,
                     highlight_primary(), 210);
     lv_obj_set_style_bg_grad_color(
         card, lv_color_hex(highlight_secondary()), 0);
@@ -4036,12 +5036,210 @@ static void render_editor_preview(const char *value, const char *empty_text,
     lv_obj_set_width(label, 98);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
 
-    label = make_label(product_content, detail, &lv_font_montserrat_8,
+    card = make_preview_text_panel(154, 46);
+    label = make_label(card, detail, &lv_font_montserrat_8,
                        COLOR_WHITE, 125);
-    lv_obj_set_pos(label, 181, 158);
+    lv_obj_set_pos(label, 11, 8);
     lv_obj_set_width(label, 118);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+}
+
+static void render_search_screen(const struct route_state *state)
+{
+    int count = route_item_count(state);
+    int start;
+    int row;
+    int result_count = search_query[0] != '\0'
+        ? crazypod_music_search_count(search_query) : 0;
+    lv_obj_t *label;
+    lv_obj_t *query_box;
+    char text[96];
+
+    menu_view.valid = true;
+    menu_view.route = state->route;
+    create_panel_backgrounds();
+
+    label = make_label(product_content, "SEARCH",
+                       CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, 85);
+    lv_obj_set_pos(label, CRAZYPOD_MENU_HEADER_X,
+                   CRAZYPOD_MENU_HEADER_Y);
+    lv_obj_set_width(label, CRAZYPOD_MENU_HEADER_WIDTH);
+    lv_obj_set_height(label, CRAZYPOD_MENU_HEADER_HEIGHT);
+
+    prepare_glass_descriptor(
+        170, 43, 136, 38, CRAZYPOD_GLASS_TEXT_PANEL,
+        search_query_glass_pixels, &search_query_glass_descriptor);
+    query_box = make_glass_material_panel(
+        product_content, 170, 43, 136, 38, 12,
+        CRAZYPOD_GLASS_TEXT_PANEL, &search_query_glass_descriptor);
+    if(search_query[0] != '\0') {
+        lv_obj_t *active = make_box(
+            query_box, 0, 0, 136, 38, 12,
+            highlight_primary(), 82);
+
+        if(crazypod_appearance_get()->highlight_style != 0) {
+            lv_obj_set_style_bg_grad_color(
+                active, lv_color_hex(highlight_secondary()), 0);
+            lv_obj_set_style_bg_grad_dir(active, LV_GRAD_DIR_HOR, 0);
+        }
+        lv_obj_remove_flag(active, LV_OBJ_FLAG_CLICKABLE);
+    }
+    label = make_label(query_box, LV_SYMBOL_KEYBOARD,
+                       &lv_font_montserrat_12,
+                       COLOR_WHITE, search_query[0] != '\0' ? 235 : 90);
+    lv_obj_set_pos(label, 10, 12);
+    label = make_label(query_box,
+                       search_query[0] != '\0'
+                           ? search_query : "Start typing",
+                       CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE,
+                       search_query[0] != '\0' ? 255 : 120);
+    lv_obj_set_pos(label, 31, 10);
+    lv_obj_set_width(label, 92);
+    lv_obj_set_height(label, 18);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+
+    if(count <= CRAZYPOD_VISIBLE_ROWS) {
+        start = 0;
+    }
+    else {
+        start = state->selected - CRAZYPOD_VISIBLE_ROWS / 2;
+        if(start < 0)
+            start = 0;
+        if(start > count - CRAZYPOD_VISIBLE_ROWS)
+            start = count - CRAZYPOD_VISIBLE_ROWS;
+    }
+
+    for(row = 0; row < CRAZYPOD_VISIBLE_ROWS; ++row) {
+        int index = start + row;
+        int y = CRAZYPOD_MENU_ROW_Y + row * CRAZYPOD_MENU_ROW_STEP;
+        bool selected = index == state->selected;
+        lv_obj_t *row_box;
+        lv_obj_t *marker;
+        const char *title;
+
+        if(index >= count)
+            break;
+
+        row_box = make_box(product_content,
+                           CRAZYPOD_MENU_ROW_X, y,
+                           CRAZYPOD_MENU_ROW_WIDTH,
+                           CRAZYPOD_MENU_ROW_HEIGHT, 8,
+                           selected ? highlight_primary() : COLOR_PANEL,
+                           selected ? 220 : LV_OPA_TRANSP);
+        menu_view.rows[row] = row_box;
+        if(selected) {
+            if(crazypod_appearance_get()->highlight_style != 0) {
+                lv_obj_set_style_bg_grad_color(
+                    row_box, lv_color_hex(highlight_secondary()), 0);
+                lv_obj_set_style_bg_grad_dir(row_box, LV_GRAD_DIR_HOR, 0);
+            }
+            lv_obj_set_style_border_width(row_box, 1, 0);
+            lv_obj_set_style_border_color(row_box,
+                                           lv_color_hex(COLOR_WHITE), 0);
+            lv_obj_set_style_border_opa(row_box, 90, 0);
+        }
+
+        title = route_item_title(state, index);
+        label = make_label(row_box, title != NULL ? title : "",
+                           CRAZYPOD_METADATA_FONT,
+                           COLOR_WHITE,
+                           selected ? 255 : 150);
+        lv_obj_set_pos(label, 14, 5);
+        lv_obj_set_width(label, 104);
+        lv_obj_set_height(label, 16);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+
+        marker = make_label(row_box,
+                            selected ? LV_SYMBOL_PLAY : "",
+                            &lv_font_montserrat_8,
+                            COLOR_WHITE, selected ? 205 : 75);
+        lv_obj_set_pos(marker, 128, 8);
+        menu_view.labels[row] = label;
+        menu_view.markers[row] = marker;
+    }
+
+    prepare_glass_descriptor(
+        170, 91, 136, 104, CRAZYPOD_GLASS_TEXT_PANEL,
+        search_results_glass_pixels, &search_results_glass_descriptor);
+    make_glass_material_panel(
+        product_content, 170, 91, 136, 104, 12,
+        CRAZYPOD_GLASS_TEXT_PANEL, &search_results_glass_descriptor);
+    snprintf(text, sizeof(text), "%d match%s",
+             result_count, result_count == 1 ? "" : "es");
+    label = make_label(product_content,
+                       search_query[0] != '\0'
+                           ? text : "Live results",
+                       &lv_font_montserrat_10,
+                       COLOR_WHITE,
+                       search_query[0] != '\0' ? 205 : 105);
+    lv_obj_set_pos(label, 182, 101);
+    lv_obj_set_width(label, 112);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+
+    if(search_query[0] == '\0') {
+        label = make_label(product_content,
+                           "Choose a letter, then press Select.",
+                           &lv_font_montserrat_8,
+                           COLOR_WHITE, 100);
+        lv_obj_set_pos(label, 182, 125);
+        lv_obj_set_width(label, 112);
+        lv_obj_set_height(label, 40);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+    }
+    else if(result_count <= 0) {
+        label = make_label(product_content,
+                           "No title, artist or album matched.",
+                           &lv_font_montserrat_8,
+                           COLOR_WHITE, 105);
+        lv_obj_set_pos(label, 182, 125);
+        lv_obj_set_width(label, 112);
+        lv_obj_set_height(label, 45);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+    }
+    else {
+        int shown = result_count < CRAZYPOD_SEARCH_PREVIEW_ROWS
+            ? result_count : CRAZYPOD_SEARCH_PREVIEW_ROWS;
+        int i;
+        for(i = 0; i < shown; ++i) {
+            const struct crazypod_track *track =
+                crazypod_music_search_track(search_query, i);
+            int y = 124 + i * 17;
+            if(track == NULL)
+                continue;
+            label = make_label(product_content, track->title,
+                               &lv_font_montserrat_8,
+                               COLOR_WHITE, i == 0 ? 210 : 145);
+            lv_obj_set_pos(label, 182, y);
+            lv_obj_set_width(label, 112);
+            lv_obj_set_height(label, 10);
+            lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+            label = make_label(product_content, track->artist,
+                               &lv_font_montserrat_8,
+                               COLOR_WHITE, 75);
+            lv_obj_set_pos(label, 182, y + 9);
+            lv_obj_set_width(label, 112);
+            lv_obj_set_height(label, 10);
+            lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+        }
+    }
+
+    label = make_label(product_content,
+                       "Wheel Choose  Select Action",
+                       &lv_font_montserrat_8,
+                       COLOR_WHITE, 125);
+    lv_obj_set_pos(label, 174, 202);
+    lv_obj_set_width(label, 128);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    label = make_label(product_content,
+                       "Choose View Results to listen",
+                       &lv_font_montserrat_8,
+                       COLOR_WHITE, 95);
+    lv_obj_set_pos(label, 174, 216);
+    lv_obj_set_width(label, 128);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
 }
 
 static void render_diy_preview(const struct route_state *state)
@@ -4050,6 +5248,8 @@ static void render_diy_preview(const struct route_state *state)
     const char *detail = diy_current_value(state);
     const char *symbol = LV_SYMBOL_SETTINGS;
     uint32_t swatch_color = highlight_primary();
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *text_panel;
     lv_obj_t *glyph;
     lv_obj_t *label;
     lv_obj_t *swatch;
@@ -4058,8 +5258,8 @@ static void render_diy_preview(const struct route_state *state)
         symbol = diy_menu_symbols[state->selected];
         detail = state->selected == 0 ? "Save and reuse appearances" :
                  state->selected == 1 ? "16 complete icon themes" :
-                 state->selected == 2 ? "Size, glow and highlights" :
-                 state->selected == 3 ? "Home and menu pictures" :
+                 state->selected == 2 ? "Wave, size, glow and colors" :
+                 state->selected == 3 ? "Home, menu and lock pictures" :
                                        "Screen corner radius";
     }
     else if(state->route == DIY_ROUTE_PRESETS) {
@@ -4105,17 +5305,19 @@ static void render_diy_preview(const struct route_state *state)
         enum crazypod_appearance_field field =
             (enum crazypod_appearance_field)state->group;
         int value = appearance_choice_value(field, state->selected);
+        if(field == CRAZYPOD_APPEARANCE_SOUND_WAVE_STYLE)
+            symbol = LV_SYMBOL_AUDIO;
         if(field == CRAZYPOD_APPEARANCE_PRIMARY ||
            field == CRAZYPOD_APPEARANCE_SECONDARY)
             swatch_color = crazypod_appearance_color(value);
     }
     else if(state->route == DIY_ROUTE_BACKGROUNDS) {
-        int surface = state->selected == 0
-            ? crazypod_appearance_get()->home_background
-            : crazypod_appearance_get()->menu_background;
+        enum crazypod_appearance_field background_field =
+            background_field_for_index(state->selected);
+        int surface = appearance_field_value(background_field);
         symbol = LV_SYMBOL_DIRECTORY;
         swatch_color = surface == 0
-            ? (state->selected == 0 ? 0x141419 : 0x08080D)
+            ? background_default_color(background_field)
             : crazypod_appearance_color(surface - 1);
     }
     else if(state->route == DIY_ROUTE_BACKGROUND_CHOICES) {
@@ -4133,11 +5335,14 @@ static void render_diy_preview(const struct route_state *state)
     else if(state->route == DIY_ROUTE_LAYOUT) {
         symbol = LV_SYMBOL_SHUFFLE;
     }
-    else if(state->route == DIY_ROUTE_DETAILS && state->selected == 4) {
-        swatch_color = highlight_secondary();
+    else if(state->route == DIY_ROUTE_DETAILS) {
+        if(state->selected == 1)
+            symbol = LV_SYMBOL_AUDIO;
+        else if(state->selected == 5)
+            swatch_color = highlight_secondary();
     }
 
-    swatch = make_box(product_content, 204, 76, 72, 72, 16,
+    swatch = make_box(parent, 204, 76, 72, 72, 16,
                       swatch_color, LV_OPA_COVER);
     if(state->route != DIY_ROUTE_BACKGROUNDS &&
        crazypod_appearance_get()->highlight_style != 0) {
@@ -4149,19 +5354,20 @@ static void render_diy_preview(const struct route_state *state)
                        COLOR_WHITE, 225);
     lv_obj_center(glyph);
 
-    label = make_label(product_content, title != NULL ? title : "",
+    text_panel = make_preview_text_panel(158, 50);
+    label = make_label(text_panel, title != NULL ? title : "",
                        &lv_font_montserrat_12,
                        COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(label, 126);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 177, 163);
-    label = make_label(product_content, detail, &lv_font_montserrat_8,
+    lv_obj_set_pos(label, 7, 6);
+    label = make_label(text_panel, detail, &lv_font_montserrat_8,
                        COLOR_WHITE, 135);
     lv_obj_set_width(label, 126);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 177, 187);
+    lv_obj_set_pos(label, 7, 30);
 }
 
 static void render_settings_preview(const struct route_state *state)
@@ -4170,6 +5376,8 @@ static void render_settings_preview(const struct route_state *state)
     const char *detail = "";
     const char *symbol = LV_SYMBOL_SETTINGS;
     uint32_t swatch_color = highlight_primary();
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *text_panel;
     lv_obj_t *swatch;
     lv_obj_t *glyph;
     lv_obj_t *label;
@@ -4194,7 +5402,7 @@ static void render_settings_preview(const struct route_state *state)
             swatch_color = 0x30D158;
     }
 
-    swatch = make_box(product_content, 204, 76, 72, 72, 16,
+    swatch = make_box(parent, 204, 76, 72, 72, 16,
                       swatch_color, LV_OPA_COVER);
     if(crazypod_appearance_get()->highlight_style != 0) {
         lv_obj_set_style_bg_grad_color(
@@ -4205,20 +5413,21 @@ static void render_settings_preview(const struct route_state *state)
                        COLOR_WHITE, 225);
     lv_obj_center(glyph);
 
-    label = make_label(product_content, title != NULL ? title : "",
+    text_panel = make_preview_text_panel(158, 50);
+    label = make_label(text_panel, title != NULL ? title : "",
                        &lv_font_montserrat_12,
                        COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(label, 126);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 177, 163);
-    label = make_label(product_content, detail,
+    lv_obj_set_pos(label, 7, 6);
+    label = make_label(text_panel, detail,
                        &lv_font_montserrat_8,
                        COLOR_WHITE, 135);
     lv_obj_set_width(label, 126);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 177, 187);
+    lv_obj_set_pos(label, 7, 30);
 }
 
 static int photo_route_index(const struct route_state *state, int position)
@@ -4289,11 +5498,13 @@ static void render_photos_preview(const struct route_state *state)
         ? crazypod_photo_thumbnail(
               CRAZYPOD_PHOTO_THUMB_SLOTS - 1, photo_index)
         : NULL;
+    lv_obj_t *parent = preview_parent();
     lv_obj_t *preview;
     lv_obj_t *label;
+    lv_obj_t *text_panel;
     char detail[48];
 
-    preview = make_box(product_content, 194, 69, 92, 92, 10,
+    preview = make_box(parent, 194, 69, 92, 92, 10,
                        0x050507, LV_OPA_COVER);
     lv_obj_set_style_border_width(preview, 1, 0);
     lv_obj_set_style_border_color(preview, lv_color_hex(COLOR_WHITE), 0);
@@ -4310,20 +5521,48 @@ static void render_photos_preview(const struct route_state *state)
     }
     snprintf(detail, sizeof(detail), "%d photo%s",
              count, count == 1 ? "" : "s");
-    label = make_label(product_content, detail,
+    text_panel = make_preview_text_panel(166, 52);
+    label = make_label(text_panel, detail,
                        &lv_font_montserrat_10,
                        COLOR_WHITE, 190);
     lv_obj_set_width(label, 126);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 177, 171);
+    lv_obj_set_pos(label, 7, 6);
     label = make_label(
-        product_content,
+        text_panel,
         state->selected == 0 ? "All pictures in /Pictures"
                              : "Saved favorites",
         &lv_font_montserrat_8, COLOR_WHITE, 100);
     lv_obj_set_width(label, 132);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 174, 190);
+    lv_obj_set_pos(label, 4, 25);
+}
+
+static void render_menu_preview(const struct route_state *state,
+                                bool animated)
+{
+    bool should_animate =
+        animated && menu_preview_motion_ready &&
+        is_music_preview_route(state->route);
+
+    reset_menu_preview_root();
+    if(state->route == MUSIC_ROUTE_SEARCH)
+        render_editor_preview(search_query, "Any track",
+                              "Searches title, artist and album.");
+    else if(state->route == MUSIC_ROUTE_MENU)
+        render_root_preview(state->selected);
+    else if(state->route == PHOTOS_ROUTE_MENU)
+        render_photos_preview(state);
+    else if(is_settings_route(state->route))
+        render_settings_preview(state);
+    else if(state->route >= DIY_ROUTE_MENU)
+        render_diy_preview(state);
+    else
+        render_item_preview(state);
+    menu_preview_pending = false;
+    menu_preview_motion_ready = true;
+    if(should_animate)
+        start_menu_preview_entrance();
 }
 
 static void render_photo_favorite_status(int photo_index)
@@ -4339,11 +5578,12 @@ static void render_photo_favorite_status(int photo_index)
 
     if(!show_progress && !show_feedback)
         return;
-    panel = make_box(product_content, 64, 172, 192, 34, 12,
-                     0x08080D, 232);
-    lv_obj_set_style_border_width(panel, 1, 0);
-    lv_obj_set_style_border_color(panel, lv_color_hex(COLOR_WHITE), 0);
-    lv_obj_set_style_border_opa(panel, 42, 0);
+    prepare_glass_descriptor(
+        64, 172, 192, 34, CRAZYPOD_GLASS_INFO_TOAST,
+        info_toast_glass_pixels, &info_toast_glass_descriptor);
+    panel = make_glass_material_panel(
+        product_content, 64, 172, 192, 34, 12,
+        CRAZYPOD_GLASS_INFO_TOAST, &info_toast_glass_descriptor);
     make_pixel_heart(panel, 11, 10, 2,
                      photo_favorite_feedback_error
                          ? COLOR_MUTED : 0xFF375F,
@@ -4490,12 +5730,17 @@ static void render_photo_grid(const struct route_state *state)
 
 static void render_photo_detail(const struct route_state *state)
 {
+    const int info_x = 10;
+    const int info_y = 196;
+    const int info_width = LCD_WIDTH - 20;
+    const int info_height = 34;
+    const int info_radius = 12;
     const lv_image_dsc_t *descriptor =
         crazypod_photo_render_viewport(
             state->group, photo_zoom_percent,
             &photo_pan_x, &photo_pan_y);
     lv_obj_t *viewport = make_box(
-        product_content, 0, 40, LCD_WIDTH, LCD_HEIGHT - 40,
+        product_content, 0, 0, LCD_WIDTH, LCD_HEIGHT,
         0, 0x000000, LV_OPA_COVER);
     lv_obj_t *label;
     char zoom_label[24];
@@ -4512,23 +5757,29 @@ static void render_photo_detail(const struct route_state *state)
         label = make_label(viewport, LV_SYMBOL_REFRESH,
                            &lv_font_montserrat_24,
                            COLOR_WHITE, 130);
-        lv_obj_set_pos(label, 148, 69);
+        lv_obj_set_pos(label, 148, 89);
         label = make_label(viewport, "Loading photo",
                            &lv_font_montserrat_10,
                            COLOR_WHITE, 160);
         lv_obj_set_width(label, 200);
         lv_obj_set_style_text_align(
             label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(label, 60, 104);
+        lv_obj_set_pos(label, 60, 124);
     }
-    make_box(viewport, 0, 169, LCD_WIDTH, 31, 0,
-             0x000000, 145);
+    prepare_glass_descriptor(
+        info_x, info_y, info_width, info_height,
+        CRAZYPOD_GLASS_TEXT_PANEL,
+        info_bar_glass_pixels, &info_bar_glass_descriptor);
+    make_glass_material_panel(
+        viewport, info_x, info_y, info_width, info_height,
+        info_radius,
+        CRAZYPOD_GLASS_TEXT_PANEL, &info_bar_glass_descriptor);
     label = make_label(
         viewport, crazypod_photo_name(state->group),
         &lv_font_montserrat_8, COLOR_WHITE, 225);
-    lv_obj_set_width(label, 214);
+    lv_obj_set_width(label, 204);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 12, 178);
+    lv_obj_set_pos(label, info_x + 12, info_y + 11);
     if(photo_zoom_percent > 100) {
         int tenths = (photo_zoom_percent + 5) / 10;
 
@@ -4539,14 +5790,14 @@ static void render_photo_detail(const struct route_state *state)
         snprintf(zoom_label, sizeof(zoom_label), "FIT");
     }
     if(crazypod_photo_is_favorite(state->group))
-        make_pixel_heart(viewport, 231, 181, 1,
+        make_pixel_heart(viewport, info_x + 216, info_y + 13, 1,
                          0xFF375F, LV_OPA_COVER);
     label = make_label(
         viewport, zoom_label,
         &lv_font_montserrat_8, COLOR_WHITE, 210);
-    lv_obj_set_width(label, 64);
+    lv_obj_set_width(label, 54);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(label, 244, 178);
+    lv_obj_set_pos(label, info_x + 234, info_y + 11);
     render_photo_favorite_status(state->group);
 }
 
@@ -4767,9 +6018,17 @@ static void render_wallpaper_crop(void)
             LV_OPA_COVER);
     }
     {
-        lv_obj_t *hint = make_box(
+        lv_obj_t *hint;
+
+        prepare_glass_descriptor(
+            6, 45, LCD_WIDTH - 12, 34,
+            CRAZYPOD_GLASS_INFO_TOAST,
+            info_bar_alt_glass_pixels,
+            &info_bar_alt_glass_descriptor);
+        hint = make_glass_material_panel(
             viewport, 6, 5, LCD_WIDTH - 12, 34, 10,
-            0x000000, 205);
+            CRAZYPOD_GLASS_INFO_TOAST,
+            &info_bar_alt_glass_descriptor);
 
         label = make_label(
             hint,
@@ -4791,14 +6050,18 @@ static void render_wallpaper_crop(void)
         lv_obj_set_pos(label, 6, 18);
     }
     if(wallpaper_crop_phase == WALLPAPER_CROP_APPLYING) {
-        lv_obj_t *panel = make_box(
-            viewport, 45, 67, 230, 50, 12,
-            0x000000, 225);
+        lv_obj_t *panel;
         lv_obj_t *track;
         char progress_text[40];
         int fill_width =
             wallpaper_crop_apply_progress * 200 / 100;
 
+        prepare_glass_descriptor(
+            45, 107, 230, 50, CRAZYPOD_GLASS_INFO_TOAST,
+            info_toast_glass_pixels, &info_toast_glass_descriptor);
+        panel = make_glass_material_panel(
+            viewport, 45, 67, 230, 50, 12,
+            CRAZYPOD_GLASS_INFO_TOAST, &info_toast_glass_descriptor);
         if(fill_width < 2)
             fill_width = 2;
         if(fill_width > 200)
@@ -4824,8 +6087,12 @@ static void render_wallpaper_crop(void)
             LV_RADIUS_CIRCLE, COLOR_CYAN,
             LV_OPA_COVER);
     }
-    make_box(viewport, 0, 168, LCD_WIDTH, 32,
-             0, 0x000000, 220);
+    prepare_glass_descriptor(
+        0, 208, LCD_WIDTH, 32, CRAZYPOD_GLASS_TEXT_PANEL,
+        info_bar_glass_pixels, &info_bar_glass_descriptor);
+    make_glass_material_panel(
+        viewport, 0, 168, LCD_WIDTH, 32, 0,
+        CRAZYPOD_GLASS_TEXT_PANEL, &info_bar_glass_descriptor);
     label = make_label(
         viewport,
         crazypod_photo_name(wallpaper_crop_photo_index),
@@ -4850,15 +6117,43 @@ static void render_wallpaper_crop(void)
     if(wallpaper_crop_phase == WALLPAPER_CROP_APPLYING)
         instruction = "Applying wallpaper...";
     else if(wallpaper_crop_phase == WALLPAPER_CROP_APPLIED)
-        instruction =
-            wallpaper_crop_target ==
-                CRAZYPOD_APPEARANCE_HOME_BACKGROUND
+        instruction = wallpaper_crop_target ==
+                          CRAZYPOD_APPEARANCE_HOME_BACKGROUND
             ? "Applied to Home"
-            : "Applied to Menu";
-    else if(wallpaper_crop_phase == WALLPAPER_CROP_ERROR)
-        instruction = wallpaper_crop_error_loading
-            ? "Picture is still loading"
-            : "Could not save wallpaper";
+            : wallpaper_crop_target ==
+                  CRAZYPOD_APPEARANCE_MENU_BACKGROUND
+                ? "Applied to Menu"
+                : "Applied to Lock Screen";
+    else if(wallpaper_crop_phase == WALLPAPER_CROP_ERROR) {
+        if(wallpaper_crop_error_loading)
+            instruction = "Picture is still loading";
+        else if(wallpaper_crop_apply_result ==
+                CRAZYPOD_WALLPAPER_APPLY_INVALID_SOURCE)
+            instruction = "Invalid crop area";
+        else if(wallpaper_crop_apply_result ==
+                CRAZYPOD_WALLPAPER_APPLY_WORKSPACE_FAILED)
+            instruction = "Not enough image workspace";
+        else if(wallpaper_crop_apply_result ==
+                CRAZYPOD_WALLPAPER_APPLY_DECODE_FAILED)
+            instruction = "Could not decode full picture";
+        else if(wallpaper_crop_apply_result ==
+                CRAZYPOD_WALLPAPER_APPLY_CACHE_OPEN_FAILED)
+            instruction = "Could not open wallpaper cache";
+        else if(wallpaper_crop_apply_result ==
+                CRAZYPOD_WALLPAPER_APPLY_CACHE_WRITE_FAILED)
+            instruction = "Could not write wallpaper cache";
+        else if(wallpaper_crop_apply_result ==
+                CRAZYPOD_WALLPAPER_APPLY_CACHE_PUBLISH_FAILED)
+            instruction = "Could not publish wallpaper cache";
+        else if(wallpaper_crop_apply_result ==
+                CRAZYPOD_WALLPAPER_APPLY_SETTINGS_FAILED)
+            instruction = "Could not save wallpaper setting";
+        else if(wallpaper_crop_apply_result ==
+                CRAZYPOD_WALLPAPER_APPLY_ACTIVATE_FAILED)
+            instruction = "Could not activate wallpaper";
+        else
+            instruction = "Could not apply wallpaper";
+    }
     else if(wallpaper_crop_menu_armed)
         instruction = "Release MENU to Cancel";
     else if(wallpaper_crop_play_armed)
@@ -5036,19 +6331,7 @@ static void render_menu_screen(const struct route_state *state)
         menu_view.scroll_thumb = bar;
     }
 
-    if(state->route == MUSIC_ROUTE_SEARCH)
-        render_editor_preview(search_query, "Any track",
-                              "Searches title, artist and album.");
-    else if(state->route == MUSIC_ROUTE_MENU)
-        render_root_preview(state->selected);
-    else if(state->route == PHOTOS_ROUTE_MENU)
-        render_photos_preview(state);
-    else if(is_settings_route(state->route))
-        render_settings_preview(state);
-    else if(state->route >= DIY_ROUTE_MENU)
-        render_diy_preview(state);
-    else
-        render_item_preview(state);
+    render_menu_preview(state, false);
 }
 
 static void refresh_menu_rows(const struct route_state *state)
@@ -5088,7 +6371,10 @@ static void refresh_menu_rows(const struct route_state *state)
         lv_obj_remove_flag(row_box, LV_OBJ_FLAG_HIDDEN);
         title = route_item_title(state, index);
         lv_label_set_text(label, title != NULL ? title : "");
-        lv_obj_set_style_text_opa(label, selected ? 255 : 195, 0);
+        lv_obj_set_style_text_opa(
+            label,
+            selected ? 255 :
+            state->route == MUSIC_ROUTE_SEARCH ? 150 : 195, 0);
         lv_obj_set_style_bg_color(
             row_box,
             lv_color_hex(selected ? highlight_primary() : COLOR_PANEL), 0);
@@ -5129,7 +6415,8 @@ static void refresh_menu_rows(const struct route_state *state)
             marker,
             route_item_is_current(state, index)
                 ? LV_SYMBOL_OK :
-            selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET);
+            selected ? LV_SYMBOL_PLAY :
+            state->route == MUSIC_ROUTE_SEARCH ? "" : LV_SYMBOL_BULLET);
         lv_obj_set_style_text_opa(marker, selected ? 205 : 90, 0);
     }
 
@@ -5484,8 +6771,7 @@ static void render_now_playing(void)
     if(track != NULL) {
         snprintf(rendered_track_path, sizeof(rendered_track_path),
                  "%s", track->path);
-        if(strcmp(now_prefetch_track_path, track->path) == 0)
-            artwork_slot = CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT;
+        artwork_slot = now_playing_artwork_slot_for_track(track);
         artwork = crazypod_artwork_load_priority(
             artwork_slot, track,
             CRAZYPOD_NOW_ARTWORK_CACHE_SIZE, 0);
@@ -5514,8 +6800,11 @@ static void render_now_playing(void)
     }
 
     presentation_bank = now_presentation_active_bank;
-    if(presentation_bank >= 0 &&
-       now_presentation_valid[presentation_bank]) {
+    if(track != NULL &&
+       presentation_bank >= 0 &&
+       now_presentation_valid[presentation_bank] &&
+       strcmp(now_presentation_track_path[presentation_bank],
+              track->path) == 0) {
         lyrics_artwork =
             &now_lyrics_cover_descriptor[presentation_bank];
         presentation_backdrop =
@@ -5677,8 +6966,8 @@ static void render_now_playing(void)
 
     now_wave_surface = lv_obj_create(product_content);
     set_plain_object(now_wave_surface);
-    lv_obj_set_pos(now_wave_surface, 16, 183);
-    lv_obj_set_size(now_wave_surface, 288, 27);
+    lv_obj_set_pos(now_wave_surface, 16, 181);
+    lv_obj_set_size(now_wave_surface, 288, 34);
     lv_obj_set_style_bg_opa(now_wave_surface, LV_OPA_TRANSP, 0);
     lv_obj_remove_flag(now_wave_surface, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(now_wave_surface, draw_now_wave_event,
@@ -5687,11 +6976,14 @@ static void render_now_playing(void)
         (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
         (audio_status() & AUDIO_STATUS_PAUSE) == 0;
     last_now_wave_tick = current_tick;
-    make_box(product_content, 18, 212, 284, 2,
-             LV_RADIUS_CIRCLE, COLOR_WHITE, 60);
-    now_progress_fill = make_box(
-        product_content, 18, 212, 4, 2,
-        LV_RADIUS_CIRCLE, COLOR_WHITE, 185);
+    now_progress_marker = make_box(
+        now_wave_surface, 0, 14, 7, 7,
+        LV_RADIUS_CIRCLE, COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_style_shadow_width(now_progress_marker, 6, 0);
+    lv_obj_set_style_shadow_color(
+        now_progress_marker, lv_color_hex(highlight_primary()), 0);
+    lv_obj_set_style_shadow_opa(now_progress_marker, 190, 0);
+    lv_obj_remove_flag(now_progress_marker, LV_OBJ_FLAG_CLICKABLE);
     now_elapsed = make_label(product_content, "0:00",
                              &lv_font_montserrat_8,
                              COLOR_WHITE, 180);
@@ -6233,10 +7525,8 @@ static int choice_overlay_current_index(enum choice_overlay_kind kind, int id)
         return appearance_choice_index(
             (enum crazypod_appearance_field)id);
     case CHOICE_OVERLAY_BACKGROUND: {
-        const char *path =
-            id == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-                ? appearance->home_wallpaper
-                : appearance->menu_wallpaper;
+        const char *path = background_wallpaper(
+            appearance, (enum crazypod_appearance_field)id);
         if(path[0] != '\0')
             return CRAZYPOD_APPEARANCE_COLOR_COUNT + 1;
         return appearance_field_value(
@@ -6258,8 +7548,8 @@ static const char *choice_overlay_title(void)
         return appearance_field_title(
             (enum crazypod_appearance_field)choice_overlay.id);
     case CHOICE_OVERLAY_BACKGROUND:
-        return choice_overlay.id == CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-            ? "HOME" : "MENU";
+        return background_field_title(
+            (enum crazypod_appearance_field)choice_overlay.id);
     case CHOICE_OVERLAY_SETTING:
         return settings_item_title(choice_overlay.id);
     default:
@@ -6277,7 +7567,9 @@ static const char *choice_overlay_item_title(int index)
             (enum crazypod_appearance_field)choice_overlay.id, index);
     case CHOICE_OVERLAY_BACKGROUND:
         if(index == 0)
-            return "Default";
+            return choice_overlay.id ==
+                   CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
+                ? "Follow Home" : "Default";
         if(index <= CRAZYPOD_APPEARANCE_COLOR_COUNT)
             return crazypod_appearance_color_name(index - 1);
         return "Choose Picture";
@@ -6313,9 +7605,8 @@ static bool choice_overlay_item_color(int index, uint32_t *color)
         if(index > 0 && index <= CRAZYPOD_APPEARANCE_COLOR_COUNT)
             *color = crazypod_appearance_color(index - 1);
         else
-            *color = choice_overlay.id ==
-                     CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-                         ? 0x141419 : 0x08080D;
+            *color = background_default_color(
+                (enum crazypod_appearance_field)choice_overlay.id);
         return true;
     }
     return false;
@@ -6576,21 +7867,21 @@ static void activate_choice_overlay(void)
     else if(kind == CHOICE_OVERLAY_BACKGROUND) {
         enum crazypod_appearance_field field =
             (enum crazypod_appearance_field)id;
-        bool menu = field == CRAZYPOD_APPEARANCE_MENU_BACKGROUND;
+        enum crazypod_wallpaper_target target =
+            wallpaper_target_for_field(field);
 
         if(selected == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1) {
             const struct crazypod_appearance *appearance =
                 crazypod_appearance_get();
-            const char *path = menu
-                ? appearance->menu_wallpaper
-                : appearance->home_wallpaper;
+            const char *path =
+                background_wallpaper(appearance, field);
 
             dismiss_choice_overlay(false);
             push_route_selected(DIY_ROUTE_WALLPAPER_FILES, field,
                                 photo_index_for_path(path));
         }
         else {
-            crazypod_wallpaper_clear(menu);
+            crazypod_wallpaper_clear(target);
             crazypod_appearance_set_value(field, selected);
             refresh_desktop_appearance();
             dismiss_choice_overlay(true);
@@ -6628,8 +7919,12 @@ static void render_current_route(bool transition)
     clear_now_overlay_objects();
     clear_choice_overlay_objects();
     memset(&menu_view, 0, sizeof(menu_view));
+    menu_preview_root = NULL;
+    menu_preview_content = NULL;
+    menu_preview_pending = false;
+    menu_preview_motion_ready = false;
     route_render_pending = false;
-    now_progress_fill = NULL;
+    now_progress_marker = NULL;
     now_elapsed = NULL;
     now_remaining = NULL;
     now_wave_surface = NULL;
@@ -6678,6 +7973,8 @@ static void render_current_route(bool transition)
         render_eq_studio();
     else if(state->route == MUSIC_ROUTE_ALBUM_FLOW)
         render_album_flow(state);
+    else if(state->route == MUSIC_ROUTE_SEARCH)
+        render_search_screen(state);
     else if(state->route == PHOTOS_ROUTE_LIBRARY ||
             state->route == PHOTOS_ROUTE_FAVORITES ||
             state->route == DIY_ROUTE_WALLPAPER_FILES)
@@ -6921,6 +8218,8 @@ static void close_product(void)
         return;
     dismiss_choice_overlay(false);
     dismiss_now_overlay(false);
+    now_playing_open_pending = false;
+    pending_now_playing_track_path[0] = '\0';
     product_active = false;
     route_depth = 0;
     lv_obj_add_flag(product_screen, LV_OBJ_FLAG_HIDDEN);
@@ -6947,6 +8246,95 @@ static void push_route_selected(enum crazypod_route route, int group,
 static void push_route(enum crazypod_route route, int group)
 {
     push_route_selected(route, group, 0);
+}
+
+static void request_now_playing_route(void)
+{
+    const struct crazypod_track *track = current_track();
+    enum crazypod_artwork_state state;
+    int artwork_slot;
+
+    now_playing_open_pending = false;
+    pending_now_playing_track_path[0] = '\0';
+    if(track == NULL) {
+        push_route(MUSIC_ROUTE_NOW_PLAYING, -1);
+        return;
+    }
+
+    artwork_slot = now_playing_artwork_slot_for_track(track);
+    (void)crazypod_artwork_load_priority(
+        artwork_slot, track,
+        CRAZYPOD_NOW_ARTWORK_CACHE_SIZE, 0);
+    state = crazypod_artwork_state(
+        artwork_slot, track,
+        CRAZYPOD_NOW_ARTWORK_CACHE_SIZE);
+    if(state != CRAZYPOD_ARTWORK_PENDING) {
+        now_artwork_generation_seen =
+            crazypod_artwork_slot_generation(
+                CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT);
+        now_prefetch_artwork_generation_seen =
+            crazypod_artwork_slot_generation(
+                CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT);
+        push_route(MUSIC_ROUTE_NOW_PLAYING, -1);
+        return;
+    }
+
+    now_playing_open_pending = true;
+    pending_now_playing_route_depth = route_depth;
+    pending_now_playing_route = current_route()->route;
+    snprintf(pending_now_playing_track_path,
+             sizeof(pending_now_playing_track_path),
+             "%s", track->path);
+    keep_cpu_boosted(HZ / 2);
+}
+
+static void process_pending_now_playing_open(void)
+{
+    const struct crazypod_track *track;
+    enum crazypod_artwork_state state;
+    int artwork_slot;
+
+    if(!now_playing_open_pending)
+        return;
+    if(!product_active || route_depth <= 0 ||
+       route_depth != pending_now_playing_route_depth ||
+       current_route()->route != pending_now_playing_route) {
+        now_playing_open_pending = false;
+        pending_now_playing_track_path[0] = '\0';
+        return;
+    }
+
+    track = current_track();
+    if(track == NULL) {
+        now_playing_open_pending = false;
+        pending_now_playing_track_path[0] = '\0';
+        push_route(MUSIC_ROUTE_NOW_PLAYING, -1);
+        return;
+    }
+    if(strcmp(pending_now_playing_track_path, track->path) != 0) {
+        snprintf(pending_now_playing_track_path,
+                 sizeof(pending_now_playing_track_path),
+                 "%s", track->path);
+    }
+    artwork_slot = now_playing_artwork_slot_for_track(track);
+    (void)crazypod_artwork_load_priority(
+        artwork_slot, track,
+        CRAZYPOD_NOW_ARTWORK_CACHE_SIZE, 0);
+    state = crazypod_artwork_state(
+        artwork_slot, track,
+        CRAZYPOD_NOW_ARTWORK_CACHE_SIZE);
+    if(state == CRAZYPOD_ARTWORK_PENDING)
+        return;
+
+    now_playing_open_pending = false;
+    pending_now_playing_track_path[0] = '\0';
+    now_artwork_generation_seen =
+        crazypod_artwork_slot_generation(
+            CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT);
+    now_prefetch_artwork_generation_seen =
+        crazypod_artwork_slot_generation(
+            CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT);
+    push_route(MUSIC_ROUTE_NOW_PLAYING, -1);
 }
 
 static void pop_route(void)
@@ -6998,7 +8386,7 @@ static void play_selected_track(struct route_state *state)
     {
         crazypod_state_forget_resume();
         crazypod_state_mark_dirty();
-        push_route(MUSIC_ROUTE_NOW_PLAYING, -1);
+        request_now_playing_route();
     }
 }
 
@@ -7079,7 +8467,7 @@ static void activate_selected(void)
     switch(state->route) {
     case MUSIC_ROUTE_MENU:
         switch(state->selected) {
-        case 0: push_route(MUSIC_ROUTE_NOW_PLAYING, -1); break;
+        case 0: request_now_playing_route(); break;
         case 1:
             push_route_selected(MUSIC_ROUTE_ALBUM_FLOW, -1,
                                 initial_album_index());
@@ -7103,12 +8491,12 @@ static void activate_selected(void)
             editor_append(search_query, sizeof(search_query), " ");
         else if(state->selected == CRAZYPOD_EDITOR_CHAR_COUNT + 1)
             editor_backspace(search_query);
-        else if(state->selected == CRAZYPOD_EDITOR_CHAR_COUNT + 2)
-            search_query[0] = '\0';
-        else
+        else if(search_query[0] != '\0' &&
+                crazypod_music_search_count(search_query) > 0) {
             push_route(MUSIC_ROUTE_SEARCH_RESULTS, -1);
-        if(current_route()->route == MUSIC_ROUTE_SEARCH)
-            render_current_route(false);
+            break;
+        }
+        render_current_route(false);
         break;
     case MUSIC_ROUTE_PLAYLISTS:
         push_route(MUSIC_ROUTE_PLAYLIST_SONGS, state->selected);
@@ -7292,13 +8680,11 @@ static void activate_selected(void)
         break;
     }
     case DIY_ROUTE_BACKGROUNDS: {
-        enum crazypod_appearance_field field = state->selected == 0
-            ? CRAZYPOD_APPEARANCE_HOME_BACKGROUND
-            : CRAZYPOD_APPEARANCE_MENU_BACKGROUND;
+        enum crazypod_appearance_field field =
+            background_field_for_index(state->selected);
         const struct crazypod_appearance *appearance =
             crazypod_appearance_get();
-        const char *path = state->selected == 0
-            ? appearance->home_wallpaper : appearance->menu_wallpaper;
+        const char *path = background_wallpaper(appearance, field);
         int selected = path[0] != '\0'
             ? CRAZYPOD_APPEARANCE_COLOR_COUNT + 1
             : appearance_field_value(field);
@@ -7308,21 +8694,21 @@ static void activate_selected(void)
     case DIY_ROUTE_BACKGROUND_CHOICES: {
         enum crazypod_appearance_field field =
             (enum crazypod_appearance_field)state->group;
-        bool menu = field == CRAZYPOD_APPEARANCE_MENU_BACKGROUND;
+        enum crazypod_wallpaper_target target =
+            wallpaper_target_for_field(field);
         if(state->selected ==
            CRAZYPOD_APPEARANCE_COLOR_COUNT + 1) {
             const struct crazypod_appearance *appearance =
                 crazypod_appearance_get();
-            const char *path = menu
-                ? appearance->menu_wallpaper
-                : appearance->home_wallpaper;
+            const char *path =
+                background_wallpaper(appearance, field);
 
             push_route_selected(
                 DIY_ROUTE_WALLPAPER_FILES, field,
                 photo_index_for_path(path));
         }
         else {
-            crazypod_wallpaper_clear(menu);
+            crazypod_wallpaper_clear(target);
             crazypod_appearance_set_value(field, state->selected);
             refresh_desktop_appearance();
             render_current_route(false);
@@ -7349,6 +8735,8 @@ static void activate_selected(void)
             wallpaper_crop_select_armed = false;
             wallpaper_crop_load_progress_seen = -2;
             wallpaper_crop_apply_progress = 0;
+            wallpaper_crop_apply_result =
+                CRAZYPOD_WALLPAPER_APPLY_OK;
             crazypod_photo_view(wallpaper_crop_photo_index);
             push_route(
                 DIY_ROUTE_WALLPAPER_CROP,
@@ -7465,14 +8853,24 @@ static void move_selection(int direction)
     if(next == state->selected)
         return;
     state->selected = next;
-    if(menu_view.valid && menu_view.route == state->route) {
+    if(state->route == MUSIC_ROUTE_SEARCH) {
         refresh_menu_rows(state);
-        route_render_due = current_tick + CRAZYPOD_GESTURE_SETTLE_TICKS;
+        return;
+    }
+    if(menu_view.valid && menu_view.route == state->route) {
+        if(is_music_preview_route(state->route))
+            settle_menu_preview_motion();
+        refresh_menu_rows(state);
+        menu_preview_due = current_tick +
+            (is_music_preview_route(state->route)
+                ? CRAZYPOD_MUSIC_PREVIEW_SETTLE_TICKS
+                : CRAZYPOD_PREVIEW_SETTLE_TICKS);
+        menu_preview_pending = true;
     }
     else {
         route_render_due = current_tick;
+        route_render_pending = true;
     }
-    route_render_pending = true;
 }
 
 static void toggle_playback(void)
@@ -7494,6 +8892,24 @@ static void toggle_playback(void)
                        crazypod_state_take_resume_elapsed(), 0);
     if(now_overlay == NOW_OVERLAY_QUEUE)
         refresh_now_queue_popup();
+}
+
+static void previous_or_restart_track(void)
+{
+    const struct mp3entry *id3;
+
+    if(crazypod_queue_count() <= 0)
+        return;
+
+    id3 = audio_current_track();
+    if(id3 != NULL &&
+       id3->elapsed >= CRAZYPOD_PREVIOUS_RESTART_THRESHOLD_MS) {
+        audio_pre_ff_rewind();
+        audio_ff_rewind(0);
+    }
+    else {
+        audio_prev();
+    }
 }
 
 static void cycle_playback_mode(void)
@@ -7633,7 +9049,18 @@ static void update_playback_ui(lv_timer_t *timer)
         return;
 
     if(track != NULL && strcmp(rendered_track_path, track->path) != 0) {
+        int artwork_slot =
+            now_playing_artwork_slot_for_track(track);
         enum now_playing_overlay overlay = now_overlay;
+
+        (void)crazypod_artwork_load_priority(
+            artwork_slot, track,
+            CRAZYPOD_NOW_ARTWORK_CACHE_SIZE, 0);
+        if(crazypod_artwork_state(
+               artwork_slot, track,
+               CRAZYPOD_NOW_ARTWORK_CACHE_SIZE) ==
+           CRAZYPOD_ARTWORK_PENDING)
+            return;
         render_current_route(false);
         restore_now_overlay(overlay);
         return;
@@ -7651,17 +9078,18 @@ static void update_playback_ui(lv_timer_t *timer)
     if(id3 != NULL)
         refresh_now_playing_lyrics((uint32_t)id3->elapsed);
 
-    if(id3 != NULL && id3->length > 0 && now_progress_fill != NULL) {
-        int width = 284 * id3->elapsed / id3->length;
+    if(id3 != NULL && id3->length > 0 &&
+       now_progress_marker != NULL) {
+        int x = 281 * id3->elapsed / id3->length;
         char elapsed[16];
         char remaining[16];
         unsigned long left = id3->length > id3->elapsed
             ? id3->length - id3->elapsed : 0;
-        if(width < 4)
-            width = 4;
-        if(width > 284)
-            width = 284;
-        lv_obj_set_width(now_progress_fill, width);
+        if(x < 0)
+            x = 0;
+        if(x > 281)
+            x = 281;
+        lv_obj_set_x(now_progress_marker, x);
         format_time_ms(id3->elapsed, elapsed, sizeof(elapsed));
         format_time_ms(left, remaining + 1, sizeof(remaining) - 1);
         remaining[0] = '-';
@@ -7680,6 +9108,7 @@ static void process_artwork_updates(void)
         update_desktop_capsule_artwork(current_track());
     }
     if(!product_active || route_depth <= 0 || route_render_pending ||
+       menu_preview_pending ||
        crazypod_coverflow_active() ||
        current_route()->route >= DIY_ROUTE_MENU)
         return;
@@ -7707,9 +9136,19 @@ static void process_artwork_updates(void)
             CRAZYPOD_PREVIEW_ARTWORK_SLOT);
         if(generation == preview_artwork_generation_seen)
             return;
+        if(menu_view.valid &&
+           menu_view.route == current_route()->route &&
+           is_music_preview_route(current_route()->route) &&
+           menu_preview_motion_active())
+            return;
         preview_artwork_generation_seen = generation;
     }
-    render_current_route(false);
+    if(menu_view.valid &&
+       menu_view.route == current_route()->route &&
+       is_music_preview_route(current_route()->route))
+        render_menu_preview(current_route(), false);
+    else
+        render_current_route(false);
 }
 
 static void process_photo_updates(void)
@@ -7718,7 +9157,7 @@ static void process_photo_updates(void)
     unsigned generation;
 
     if(!product_active || route_depth <= 0 ||
-       route_render_pending)
+       route_render_pending || menu_preview_pending)
         return;
     route = current_route()->route;
     if(route == PHOTOS_ROUTE_DETAIL ||
@@ -7761,6 +9200,261 @@ static int wheel_step(intptr_t data, int maximum)
     if(step > maximum)
         step = maximum;
     return step;
+}
+
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+static void clear_usb_prompt_objects(void)
+{
+    memset(&usb_prompt_view, 0, sizeof(usb_prompt_view));
+}
+
+static void refresh_usb_prompt(void)
+{
+    int index;
+
+    if(usb_prompt_view.root == NULL)
+        return;
+
+    for(index = 0; index < 2; ++index) {
+        bool selected = index == usb_prompt_view.selected;
+
+        lv_obj_set_style_bg_color(
+            usb_prompt_view.rows[index],
+            lv_color_hex(selected ? COLOR_WHITE : COLOR_PANEL), 0);
+        lv_obj_set_style_bg_opa(
+            usb_prompt_view.rows[index], selected ? 34 : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(
+            usb_prompt_view.rows[index], selected ? 1 : 0, 0);
+        lv_obj_set_style_border_color(
+            usb_prompt_view.rows[index], lv_color_hex(COLOR_WHITE), 0);
+        lv_obj_set_style_border_opa(
+            usb_prompt_view.rows[index], selected ? 72 : 0, 0);
+        lv_label_set_text(
+            usb_prompt_view.markers[index],
+            selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET);
+        lv_obj_set_style_text_opa(
+            usb_prompt_view.markers[index], selected ? 210 : 90, 0);
+        lv_obj_set_style_text_opa(
+            usb_prompt_view.hints[index], selected ? 190 : 120, 0);
+    }
+}
+
+static void dismiss_usb_prompt(void)
+{
+    if(usb_prompt_view.root != NULL) {
+        lv_anim_delete(usb_prompt_view.panel, NULL);
+        lv_obj_delete(usb_prompt_view.root);
+    }
+    clear_usb_prompt_objects();
+    desktop_native_backdrop_ready = false;
+    desktop_native_dirty = true;
+}
+
+static void apply_usb_prompt_charge_mode(void)
+{
+#ifdef HAVE_USB_CHARGING_ENABLE
+    if(global_settings.usb_charging != USB_CHARGING_FORCE) {
+        global_settings.usb_charging = USB_CHARGING_FORCE;
+        usb_charging_enable(global_settings.usb_charging);
+        crazypod_state_mark_dirty();
+    }
+#endif
+}
+
+static void show_usb_prompt(unsigned request)
+{
+    static const char *const titles[] = { "Charge", "Data" };
+    static const char *const hints[] = {
+        "Keep CrazyPod running",
+        "Mount disk on computer"
+    };
+    static const char *const symbols[] = {
+        LV_SYMBOL_CHARGE,
+        LV_SYMBOL_DOWNLOAD
+    };
+    lv_obj_t *title;
+    lv_obj_t *detail;
+    int index;
+
+    if(desktop_screen == NULL) {
+        usb_prompt_result = USB_MODE_CHARGE;
+        if(usb_prompt_waiting)
+            semaphore_release(&usb_prompt_response);
+        return;
+    }
+
+    dismiss_usb_prompt();
+    if(choice_overlay.kind != CHOICE_OVERLAY_NONE)
+        dismiss_choice_overlay(false);
+    if(now_overlay != NOW_OVERLAY_NONE)
+        dismiss_now_overlay(false);
+
+    prepare_now_overlay_glass();
+    usb_prompt_view.request = request;
+    usb_prompt_view.selected = 0;
+    usb_prompt_view.root = make_box(desktop_screen, 0, 0,
+                                    LCD_WIDTH, LCD_HEIGHT, 0,
+                                    0x000000, 86);
+    lv_obj_remove_flag(usb_prompt_view.root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_move_foreground(usb_prompt_view.root);
+    desktop_native_backdrop_ready = false;
+    usb_prompt_view.panel = make_glass_panel(
+        usb_prompt_view.root, 35, 55, 250, 132);
+
+    title = make_label(usb_prompt_view.panel, "USB CONNECTED",
+                       &lv_font_montserrat_10, COLOR_WHITE, 110);
+    lv_obj_set_width(title, 250);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(title, 0, 14);
+
+    detail = make_label(usb_prompt_view.panel, "Choose Mode",
+                        &lv_font_montserrat_12, COLOR_WHITE, 235);
+    lv_obj_set_width(detail, 250);
+    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(detail, 0, 29);
+
+    for(index = 0; index < 2; ++index) {
+        lv_obj_t *symbol;
+        lv_obj_t *label;
+        int y = 53 + index * 35;
+
+        usb_prompt_view.rows[index] = make_box(
+            usb_prompt_view.panel, 16, y, 218, 30, 9,
+            COLOR_WHITE, LV_OPA_TRANSP);
+        symbol = make_label(usb_prompt_view.rows[index], symbols[index],
+                            &lv_font_montserrat_12,
+                            COLOR_WHITE, 220);
+        lv_obj_set_pos(symbol, 13, 7);
+        label = make_label(usb_prompt_view.rows[index], titles[index],
+                           &lv_font_montserrat_10,
+                           COLOR_WHITE, 235);
+        lv_obj_set_pos(label, 39, 4);
+        lv_obj_set_size(label, 86, 14);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+        usb_prompt_view.hints[index] = make_label(
+            usb_prompt_view.rows[index], hints[index],
+            &lv_font_montserrat_8, COLOR_WHITE, 130);
+        lv_obj_set_pos(usb_prompt_view.hints[index], 39, 17);
+        lv_obj_set_size(usb_prompt_view.hints[index], 142, 11);
+        lv_label_set_long_mode(
+            usb_prompt_view.hints[index], LV_LABEL_LONG_MODE_DOTS);
+        usb_prompt_view.markers[index] = make_label(
+            usb_prompt_view.rows[index], LV_SYMBOL_BULLET,
+            &lv_font_montserrat_8, COLOR_WHITE, 90);
+        lv_obj_set_width(usb_prompt_view.markers[index], 24);
+        lv_obj_set_style_text_align(
+            usb_prompt_view.markers[index], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(usb_prompt_view.markers[index], 184, 11);
+    }
+
+    refresh_usb_prompt();
+    animate_now_popup(usb_prompt_view.panel, 55);
+}
+
+static void finish_usb_prompt(int mode)
+{
+    unsigned request = usb_prompt_view.request;
+
+    if(usb_prompt_view.root == NULL)
+        return;
+
+    usb_prompt_result = mode;
+    if(mode == USB_MODE_CHARGE)
+        apply_usb_prompt_charge_mode();
+    dismiss_usb_prompt();
+    if(usb_prompt_waiting && request == usb_prompt_request_id)
+        semaphore_release(&usb_prompt_response);
+}
+
+static void move_usb_prompt(int direction)
+{
+    int next;
+
+    if(usb_prompt_view.root == NULL)
+        return;
+    next = usb_prompt_view.selected + (direction > 0 ? 1 : -1);
+    if(next < 0)
+        next = 0;
+    if(next > 1)
+        next = 1;
+    if(next == usb_prompt_view.selected)
+        return;
+    usb_prompt_view.selected = next;
+    refresh_usb_prompt();
+}
+
+static bool handle_usb_prompt_button(long base, bool repeated,
+                                     intptr_t data)
+{
+    if(usb_prompt_view.root == NULL)
+        return false;
+    if(base == BUTTON_SCROLL_FWD)
+        move_usb_prompt(wheel_step(data, 12));
+    else if(base == BUTTON_SCROLL_BACK)
+        move_usb_prompt(-wheel_step(data, 12));
+    else if(base == BUTTON_RIGHT)
+        move_usb_prompt(1);
+    else if(base == BUTTON_LEFT)
+        move_usb_prompt(-1);
+    else if(base == BUTTON_SELECT && !repeated)
+        finish_usb_prompt(usb_prompt_view.selected == 0
+                          ? USB_MODE_CHARGE
+                          : USB_MODE_MASS_STORAGE);
+    else if(base == BUTTON_MENU && !repeated)
+        finish_usb_prompt(USB_MODE_CHARGE);
+    else if(base == BUTTON_PLAY && !repeated)
+        finish_usb_prompt(USB_MODE_MASS_STORAGE);
+    return true;
+}
+
+static void usb_prompt_inserted_event(unsigned short id, void *data)
+{
+    int *mode = (int *)data;
+
+    (void)id;
+    if(mode == NULL)
+        return;
+
+    if(!usb_prompt_registered || !usb_prompt_ui_ready) {
+        apply_usb_prompt_charge_mode();
+        *mode = USB_MODE_CHARGE;
+        return;
+    }
+
+    while(semaphore_wait(&usb_prompt_response, TIMEOUT_NOBLOCK) ==
+          OBJ_WAIT_SUCCEEDED) {
+        /* Drain a stale response from a timed-out prompt. */
+    }
+
+    usb_prompt_result = USB_MODE_CHARGE;
+    usb_prompt_waiting = true;
+    ++usb_prompt_request_id;
+    button_queue_post(CRAZYPOD_USB_PROMPT_REQUEST,
+                      usb_prompt_request_id);
+
+    if(semaphore_wait(&usb_prompt_response,
+                      CRAZYPOD_USB_PROMPT_TIMEOUT) !=
+       OBJ_WAIT_SUCCEEDED)
+        usb_prompt_result = USB_MODE_CHARGE;
+
+    if(usb_prompt_result == USB_MODE_CHARGE)
+        apply_usb_prompt_charge_mode();
+    *mode = usb_prompt_result;
+    usb_prompt_waiting = false;
+    button_queue_post(CRAZYPOD_USB_PROMPT_DONE, usb_prompt_request_id);
+}
+#endif
+
+void crazypod_ui_usb_prompt_init(void)
+{
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+    if(usb_prompt_registered)
+        return;
+    semaphore_init(&usb_prompt_response, 1, 0);
+    usb_prompt_result = USB_MODE_CHARGE;
+    usb_prompt_registered =
+        add_event(SYS_EVENT_USB_INSERTED, usb_prompt_inserted_event);
+#endif
 }
 
 static void adjust_photo_zoom(int direction, int steps)
@@ -7891,18 +9585,20 @@ static void apply_wallpaper_crop(void)
         crazypod_photo_view(wallpaper_crop_photo_index);
     const char *path =
         crazypod_photo_path(wallpaper_crop_photo_index);
-    bool menu =
-        wallpaper_crop_target ==
-        CRAZYPOD_APPEARANCE_MENU_BACKGROUND;
+    enum crazypod_wallpaper_target target =
+        wallpaper_target_for_field(wallpaper_crop_target);
     int crop_x;
     int crop_y;
     int crop_width;
     int crop_height;
+    enum crazypod_wallpaper_apply_result result;
 
     if(!wallpaper_crop_rect(
            source, &crop_x, &crop_y, &crop_width, &crop_height)) {
         wallpaper_crop_phase = WALLPAPER_CROP_ERROR;
         wallpaper_crop_error_loading = true;
+        wallpaper_crop_apply_result =
+            CRAZYPOD_WALLPAPER_APPLY_INVALID_SOURCE;
         wallpaper_crop_render_pending = true;
         return;
     }
@@ -7914,10 +9610,12 @@ static void apply_wallpaper_crop(void)
     /* The original-image decode starts immediately below and can take a
      * noticeable time.  Present this first frame before entering it. */
     crazypod_present_now();
-    if(!crazypod_wallpaper_apply_crop(
-           menu, path, source, crop_x, crop_y,
-           crop_width, crop_height,
-           wallpaper_crop_apply_progress_update, NULL)) {
+    result = crazypod_wallpaper_apply_crop(
+        target, path, source, crop_x, crop_y,
+        crop_width, crop_height,
+        wallpaper_crop_apply_progress_update, NULL);
+    wallpaper_crop_apply_result = result;
+    if(result != CRAZYPOD_WALLPAPER_APPLY_OK) {
         wallpaper_crop_phase = WALLPAPER_CROP_ERROR;
         wallpaper_crop_error_loading = false;
         render_current_route(false);
@@ -8238,6 +9936,17 @@ static void handle_button(long button, intptr_t data)
     if(button == BUTTON_NONE)
         return;
     if(button & SYS_EVENT) {
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+        if(button == CRAZYPOD_USB_PROMPT_REQUEST) {
+            show_usb_prompt((unsigned)data);
+        }
+        else if(button == CRAZYPOD_USB_PROMPT_DONE) {
+            if(usb_prompt_view.root != NULL &&
+               usb_prompt_view.request == (unsigned)data)
+                dismiss_usb_prompt();
+        }
+        else
+#endif
         if(button == SYS_USB_CONNECTED) {
             usb_storage_active = true;
             music_scan_pending = true;
@@ -8268,7 +9977,22 @@ static void handle_button(long button, intptr_t data)
         return;
     }
 
+    if(handle_lock_button(button))
+        return;
+
     play_wheel_feedback(button);
+
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+    if(usb_prompt_view.root != NULL) {
+        if(button & BUTTON_REL)
+            return;
+        repeated = (button & BUTTON_REPEAT) != 0;
+        base = button & ~BUTTON_REPEAT;
+        backlight_on();
+        handle_usb_prompt_button(base, repeated, data);
+        return;
+    }
+#endif
 
     if(product_active && route_depth > 0 &&
        current_route()->route == DIY_ROUTE_WALLPAPER_CROP) {
@@ -8442,7 +10166,7 @@ static void handle_button(long button, intptr_t data)
             }
             else if(photo_release && !photo_repeat &&
                     crazypod_wallpaper_select(
-                        false,
+                        CRAZYPOD_WALLPAPER_HOME,
                         crazypod_photo_path(photo_state->group))) {
                 refresh_desktop_appearance();
             }
@@ -8471,10 +10195,12 @@ static void handle_button(long button, intptr_t data)
             int count = wheel_step(data, 4);
             move_desktop_selection(-count);
         }
-        else if(base == BUTTON_RIGHT)
-            move_desktop_selection(1);
-        else if(base == BUTTON_LEFT)
-            move_desktop_selection(-1);
+        else if(base == BUTTON_RIGHT && !repeated) {
+            if(crazypod_queue_count() > 0)
+                audio_next();
+        }
+        else if(base == BUTTON_LEFT && !repeated)
+            previous_or_restart_track();
         else if(base == BUTTON_SELECT) {
             if(selected_app == 0)
                 open_music();
@@ -8485,33 +10211,22 @@ static void handle_button(long button, intptr_t data)
                     crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0);
                     crazypod_state_forget_resume();
                     crazypod_state_mark_dirty();
-                    push_route(MUSIC_ROUTE_NOW_PLAYING, -1);
+                    request_now_playing_route();
                 }
             }
             else if(selected_app == 7)
                 open_diy();
             else if(selected_app == 6)
                 open_photos();
+            else if(selected_app == 4)
+                show_lock_screen(true);
             else if(selected_app == 13)
                 open_settings();
             else
                 open_placeholder(&apps[selected_app]);
         }
-        else if(base == BUTTON_PLAY) {
-            if(crazypod_queue_count() > 0) {
-                product_active = true;
-                lv_obj_remove_flag(product_screen, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_move_foreground(product_screen);
-                route_depth = 1;
-                route_stack[0].route = MUSIC_ROUTE_NOW_PLAYING;
-                route_stack[0].selected = 0;
-                route_stack[0].group = -1;
-                render_current_route(true);
-            }
-            else {
-                toggle_playback();
-            }
-        }
+        else if(base == BUTTON_PLAY && !repeated)
+            toggle_playback();
         return;
     }
 
@@ -8544,6 +10259,34 @@ static void handle_button(long button, intptr_t data)
             eq_studio_editing = false;
             crazypod_state_save(false);
             pop_route();
+        }
+        return;
+    }
+
+    if(current_route()->route == MUSIC_ROUTE_SEARCH) {
+        if(base == BUTTON_SCROLL_FWD)
+            move_selection(wheel_step(data, 12));
+        else if(base == BUTTON_SCROLL_BACK)
+            move_selection(-wheel_step(data, 12));
+        else if(base == BUTTON_RIGHT)
+            move_selection(1);
+        else if(base == BUTTON_LEFT)
+            move_selection(-1);
+        else if(base == BUTTON_SELECT && !repeated)
+            activate_selected();
+        else if(base == BUTTON_MENU && !repeated) {
+            if(search_query[0] != '\0') {
+                editor_backspace(search_query);
+                render_current_route(false);
+            }
+            else {
+                pop_route();
+            }
+        }
+        else if(base == BUTTON_PLAY && !repeated &&
+                search_query[0] != '\0' &&
+                crazypod_music_search_count(search_query) > 0) {
+            push_route(MUSIC_ROUTE_SEARCH_RESULTS, -1);
         }
         return;
     }
@@ -8640,7 +10383,9 @@ static void display_flush(lv_display_t *display, const lv_area_t *area,
         destination += LCD_WIDTH;
         source += source_stride;
     }
-    if(!product_active &&
+    if(!screen_locked &&
+       !product_active &&
+       !usb_prompt_visible() &&
        area->y1 < CRAZYPOD_DESKTOP_NATIVE_BOTTOM &&
        area->y2 >= CRAZYPOD_DESKTOP_NATIVE_TOP) {
         if(desktop_native_backdrop_ready) {
@@ -8694,7 +10439,7 @@ static void display_flush(lv_display_t *display, const lv_area_t *area,
      * with one LCD transfer.
     */
     if(lv_display_flush_is_last(display)) {
-        if(crazypod_coverflow_active()) {
+        if(!screen_locked && crazypod_coverflow_active()) {
             /*
              * CoverFlow presents the complete screen after its native
              * compositor runs. Holding LVGL's partial update here prevents
@@ -8715,13 +10460,22 @@ static void display_flush(lv_display_t *display, const lv_area_t *area,
 
 static void process_deferred_route_render(void)
 {
-    if(!route_render_pending ||
-       TIME_BEFORE(current_tick, route_render_due))
-        return;
-    if(product_active && route_depth > 0)
-        render_current_route(false);
-    else
-        route_render_pending = false;
+    if(route_render_pending &&
+       !TIME_BEFORE(current_tick, route_render_due)) {
+        if(product_active && route_depth > 0)
+            render_current_route(false);
+        else
+            route_render_pending = false;
+    }
+    if(menu_preview_pending &&
+       !TIME_BEFORE(current_tick, menu_preview_due)) {
+        if(product_active && route_depth > 0 &&
+           menu_view.valid &&
+           menu_view.route == current_route()->route)
+            render_menu_preview(current_route(), true);
+        else
+            menu_preview_pending = false;
+    }
 }
 
 static void sync_album_flow_metadata(void)
@@ -8784,19 +10538,20 @@ void crazypod_ui_run(void)
 
     create_desktop();
     create_product_screen();
+    create_lock_screen();
     update_status_bars(NULL);
     lv_timer_create(update_status_bars, 1000, NULL);
     lv_timer_create(update_playback_ui, 250, NULL);
     lv_timer_create(update_persistent_state, 1000, NULL);
 
     lv_screen_load(desktop_screen);
+    refresh_desktop_capsule_material();
     lv_refr_now(display);
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+    usb_prompt_ui_ready = true;
+#endif
     set_cpu_boost(true);
     boost_until = current_tick + HZ / 2;
-    if(crazypod_wallpaper_prepare_frosted_capsule()) {
-        refresh_desktop_capsule_material();
-        lv_refr_now(display);
-    }
     preview_artwork_generation_seen =
         crazypod_artwork_slot_generation(CRAZYPOD_PREVIEW_ARTWORK_SLOT);
     now_artwork_generation_seen =
@@ -8816,11 +10571,15 @@ void crazypod_ui_run(void)
     music_scan_pending = true;
     usb_storage_active = false;
     music_scan_not_before = current_tick + HZ;
+    lock_backlight_was_on = is_backlight_on(false);
+    screen_locked = false;
+    lock_release_guard = false;
 
     while(true) {
         long button;
         int drained = 0;
 
+        process_lock_state();
         button = button_get_w_tmo(1);
         while(button != BUTTON_NONE && drained < 16) {
             intptr_t data = button_get_data();
@@ -8828,26 +10587,34 @@ void crazypod_ui_run(void)
             ++drained;
             button = button_get_w_tmo(0);
         }
-        process_photo_favorite_hold();
-        process_photo_wheel_touch();
-        process_photo_pan_render();
-        process_wallpaper_crop_state();
-        process_wallpaper_crop_loading_progress();
-        process_wallpaper_crop_render();
+        process_lock_state();
+        if(!screen_locked) {
+            process_photo_favorite_hold();
+            process_photo_wheel_touch();
+            process_photo_pan_render();
+            process_wallpaper_crop_state();
+            process_wallpaper_crop_loading_progress();
+            process_wallpaper_crop_render();
+        }
         service_music_scan();
         process_deferred_route_render();
+        process_pending_now_playing_open();
         process_artwork_updates();
         process_photo_updates();
-        tick_desktop_carousel();
-        tick_desktop_capsule_spectrum();
-        tick_now_playing_wave();
+        if(!screen_locked) {
+            tick_desktop_carousel();
+            tick_desktop_capsule_spectrum();
+            tick_now_playing_wave();
+        }
         if(crazypod_frameclock_due(&lvgl_clock, current_tick)) {
             lv_timer_handler();
             crazypod_frameclock_schedule_next(&lvgl_clock, current_tick);
         }
-        render_desktop_carousel_native();
-        crazypod_coverflow_tick();
-        sync_album_flow_metadata();
+        if(!screen_locked) {
+            render_desktop_carousel_native();
+            crazypod_coverflow_tick();
+            sync_album_flow_metadata();
+        }
         crazypod_present_tick();
         if(crazypod_artwork_busy() || crazypod_photos_busy())
             keep_cpu_boosted(HZ / 10);
