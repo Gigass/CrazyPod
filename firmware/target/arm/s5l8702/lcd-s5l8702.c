@@ -113,6 +113,9 @@
 #define R_COLUMN_ADDR_SET         0x2a
 #define R_ROW_ADDR_SET            0x2b
 #define R_MEMORY_WRITE            0x2c
+#ifdef IPOD_6G
+#define R_GET_SCANLINE            0x45
+#endif
 
 
 /** globals **/
@@ -232,7 +235,7 @@ static void s5l_lcd_send_cmd8(uint8_t cmd, int len, uint8_t *data)
         s5l_lcd_write_data(*data++);
 }
 
-#ifdef S5L_LCD_WITH_READID
+#if defined(S5L_LCD_WITH_READID) || defined(IPOD_6G)
 static void s5l_lcd_recv_cmd8(uint8_t cmd, int len, uint8_t *buf)
 {
     s5l_lcd_write_cmd(cmd);
@@ -377,6 +380,98 @@ static void displaylcd_wait_dma(void)
         yield();
 }
 
+#ifdef IPOD_6G
+/*
+ * The 8-bit panels expose the current gate scan line through DCS 45h.
+ * Start a full-frame GRAM write at the scan counter wrap so the LCD DMA
+ * stays ahead of the panel scanout instead of cutting an old/new-frame
+ * seam through a moving image.
+ */
+enum lcd_scan_sync_state
+{
+    LCD_SCAN_SYNC_UNKNOWN = 0,
+    LCD_SCAN_SYNC_ACTIVE,
+    LCD_SCAN_SYNC_UNAVAILABLE,
+};
+
+static enum lcd_scan_sync_state lcd_scan_sync;
+
+#define LCD_SCAN_SYNC_POLL_US             20
+#define LCD_SCAN_SYNC_TIMEOUT_US       25000
+#define LCD_SCAN_SYNC_PROBE_TIMEOUT_US 40000
+#define LCD_SCAN_SYNC_WRAP_LINES          64
+
+static unsigned displaylcd_get_scanline(void) ICODE_ATTR;
+static unsigned displaylcd_get_scanline(void)
+{
+    uint8_t data[3];
+
+    /* The first byte returned by a DBI read is a dummy byte. */
+    s5l_lcd_recv_cmd8(R_GET_SCANLINE, 3, data);
+    return ((data[1] & 0x03) << 8) | data[2];
+}
+
+static void displaylcd_wait_frame_start(void) ICODE_ATTR;
+static void displaylcd_wait_frame_start(void)
+{
+    if (lcd_info->cmdset != LCD_CMDSET_8BIT ||
+        lcd_scan_sync == LCD_SCAN_SYNC_UNAVAILABLE)
+        return;
+
+    s5l_lcd_set_command_mode();
+
+    unsigned timeout = lcd_scan_sync == LCD_SCAN_SYNC_UNKNOWN
+                     ? LCD_SCAN_SYNC_PROBE_TIMEOUT_US
+                     : LCD_SCAN_SYNC_TIMEOUT_US;
+    unsigned deadline = USEC_TIMER + timeout;
+    unsigned previous = displaylcd_get_scanline();
+    int direction = 0;
+    unsigned stable_steps = 0;
+
+    while (TIME_BEFORE(USEC_TIMER, deadline))
+    {
+        udelay(LCD_SCAN_SYNC_POLL_US);
+
+        unsigned current = displaylcd_get_scanline();
+        int delta = (int)current - (int)previous;
+
+        if (delta >= LCD_SCAN_SYNC_WRAP_LINES ||
+            delta <= -LCD_SCAN_SYNC_WRAP_LINES)
+        {
+            if (lcd_scan_sync == LCD_SCAN_SYNC_ACTIVE || stable_steps >= 3)
+            {
+                lcd_scan_sync = LCD_SCAN_SYNC_ACTIVE;
+                return;
+            }
+
+            /* The probe started on a frame boundary; validate one full cycle. */
+            direction = 0;
+            stable_steps = 0;
+        }
+        else if (delta != 0)
+        {
+            int step_direction = delta > 0 ? 1 : -1;
+
+            if (direction == 0 || direction == step_direction)
+            {
+                direction = step_direction;
+                stable_steps++;
+            }
+            else
+            {
+                direction = step_direction;
+                stable_steps = 1;
+            }
+        }
+
+        previous = current;
+    }
+
+    /* Do not add a permanent frame-sized stall to panels lacking DCS 45h. */
+    lcd_scan_sync = LCD_SCAN_SYNC_UNAVAILABLE;
+}
+#endif
+
 /* Update a fraction of the display. */
 void lcd_update_rect(int, int, int, int) ICODE_ATTR;
 void lcd_update_rect(int x, int y, int width, int height)
@@ -397,21 +492,27 @@ void lcd_update_rect(int x, int y, int width, int height)
 
         displaylcd_wait_dma();
 
-        displaylcd_setup(x, y, width, height);
-
         /* Copy display bitmap to hardware */
         if (LCD_WIDTH == width) {
             /* Write all lines at once */
             memcpy(out, p, pixels * 2);
         } else {
+            int rows = height;
+
             do {
                 /* Write a single line */
                 memcpy(out, p, width * 2);
                 p += LCD_WIDTH;
                 out += width;
-            } while (--height);
+            } while (--rows);
         }
 
+#ifdef IPOD_6G
+        if (x == 0 && y == 0 && width == LCD_WIDTH && height == LCD_HEIGHT)
+            displaylcd_wait_frame_start();
+#endif
+
+        displaylcd_setup(x, y, width, height);
         displaylcd_dma(pixels);
     }
     mutex_unlock(&lcd_mutex);
@@ -537,6 +638,9 @@ void lcd_awake(void)
                                  // XXX: Do not change modes while data is being sent
     s5l_lcd_set_command_mode();
     lcd_run_seq(lcd_info->seq_awake);
+#ifdef IPOD_6G
+    lcd_scan_sync = LCD_SCAN_SYNC_UNKNOWN;
+#endif
     lcd_ispowered = true;       // XXX: we have to put the lcd_ispowered before the lcd_update()
 
     lcd_update();               // XXX: update the display and wait for the update to finish before returning,

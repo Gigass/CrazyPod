@@ -23,7 +23,9 @@
 #include "plugin.h"
 #include "mpegplayer.h"
 #include "libmpeg2/mpeg2dec_config.h"
+#ifndef CRAZYPOD_VIDEO_CORE
 #include "lib/grey.h"
+#endif
 #include "video_out.h"
 #include "mpeg_settings.h"
 
@@ -73,7 +75,7 @@ struct stream video_str IBSS_ATTR;
 #define MAX_EARLINESS       (120*TS_SECOND/1000)
 
 #if defined(DEBUG) || defined(SIMULATOR)
-static unsigned char pic_coding_type_char(unsigned type)
+static unsigned char UNUSED_ATTR pic_coding_type_char(unsigned type)
 {
     switch (type)
     {
@@ -1056,4 +1058,3 @@ void video_thread_get_stats(struct video_output_stats *s)
     if (now > start)
         s->fps = muldiv_uint32(CLOCK_RATE*100, s->num_drawn, now - start);
 }
-

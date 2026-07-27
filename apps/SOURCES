@@ -3,12 +3,25 @@ crazypod/crazypod_lcd.c
 crazypod/crazypod_frameclock.c
 crazypod/crazypod_image.c
 crazypod/crazypod_photos.c
+crazypod/crazypod_videos.c
+crazypod/crazypod_video_mpeg_misc.c
 crazypod/crazypod_artwork.c
 crazypod/crazypod_coverflow.c
 crazypod/crazypod_music.c
 crazypod/crazypod_playlist.c
 crazypod/crazypod_audio_shims.c
 crazypod/crazypod_soundwave.c
+crazypod/crazypod_apps.c
+crazypod/crazypod_crypto.c
+crazypod/crazypod_miniapps.c
+crazypod/crazypod_miniapp_input.c
+crazypod/crazypod_miniapp_font.c
+crazypod/crazypod_notes.c
+crazypod/crazypod_books.c
+crazypod/crazypod_epub.c
+crazypod/crazypod_book_cover.c
+crazypod/crazypod_organizer.c
+crazypod/crazypod_workouts.c
 crazypod/crazypod_state.c
 crazypod/crazypod_appearance.c
 crazypod/crazypod_presets.c
@@ -27,6 +40,31 @@ pcmbuf.c
 codec_thread.c
 playback.c
 codecs.c
+
+plugins/mpegplayer/libmpeg2/decode.c
+plugins/mpegplayer/libmpeg2/header.c
+plugins/mpegplayer/libmpeg2/idct.c
+plugins/mpegplayer/libmpeg2/motion_comp.c
+plugins/mpegplayer/libmpeg2/slice.c
+#ifdef CPU_ARM
+#if ARM_ARCH >= 6
+plugins/mpegplayer/libmpeg2/idct_armv6.S
+#else
+plugins/mpegplayer/libmpeg2/idct_arm.S
+#endif
+plugins/mpegplayer/libmpeg2/motion_comp_arm_c.c
+plugins/mpegplayer/libmpeg2/motion_comp_arm_s.S
+#else
+plugins/mpegplayer/libmpeg2/motion_comp_c.c
+#endif
+plugins/mpegplayer/alloc.c
+plugins/mpegplayer/audio_thread.c
+plugins/mpegplayer/disk_buf.c
+plugins/mpegplayer/mpeg_parser.c
+plugins/mpegplayer/pcm_output.c
+plugins/mpegplayer/stream_mgr.c
+plugins/mpegplayer/video_out_rockbox.c
+plugins/mpegplayer/video_thread.c
 
 beep.c
 

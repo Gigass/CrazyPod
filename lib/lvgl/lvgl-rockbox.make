@@ -15,6 +15,7 @@ LVGL_SRC := \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_10.c \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_12.c \
 	$(LVGL_DIR)/src/font/lv_font_source_han_sans_sc_14_cjk.c \
+	$(LVGL_DIR)/src/font/lv_font_source_han_sans_sc_16_cjk.c \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_16.c \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_24.c \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_48.c \
@@ -29,6 +30,7 @@ LVGL_SRC := \
 	$(shell find $(LVGL_DIR)/src/stdlib/builtin -maxdepth 1 -type f -name '*.c') \
 	$(LVGL_DIR)/src/themes/lv_theme.c \
 	$(LVGL_DIR)/src/tick/lv_tick.c \
+	$(LVGL_DIR)/src/widgets/arc/lv_arc.c \
 	$(LVGL_DIR)/src/widgets/image/lv_image.c \
 	$(LVGL_DIR)/src/widgets/label/lv_label.c
 

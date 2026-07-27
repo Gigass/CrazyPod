@@ -29,6 +29,7 @@
 #include "timefuncs.h"
 #include "pathfuncs.h"
 #include "crc32.h"
+#include "inflate.h"
 #include "rbendian.h"
 
 #define zip_core_alloc(N) core_alloc_ex((N),&buflib_ops_locked)
@@ -37,8 +38,10 @@ enum {
     ZIP_SIG_ED = 0x06054b50,
     ZIP_SIG_CD = 0x02014b50,
     ZIP_SIG_LF = 0x04034b50,
+    ZIP_BIT_ENCRYPTED = 0x0001,
     ZIP_BIT_DD = 0x0008,
     ZIP_METHOD_STORE = 0x0000,
+    ZIP_METHOD_DEFLATE = 0x0008,
     ZIP_MAX_LENGTH = 0xffff,
     ZIP_BUFFER_SIZE = 4096,
 };
@@ -95,6 +98,8 @@ struct zip_cd_disk {
 } __attribute__((packed));
 
 struct zip_cd {
+    uint16_t flags;
+    uint16_t method;
     uint32_t crc;
     uint32_t compressed_size;
     uint32_t uncompressed_size;
@@ -166,6 +171,16 @@ struct zip_extract {
     char* name;
     int file;
     char path[MAX_PATH];
+};
+
+struct zip_inflate {
+    struct zip* z;
+    struct zip_args* args;
+    uint32_t compressed_left;
+    uint32_t padding_left;
+    uint32_t output_size;
+    uint32_t crc;
+    int callback_result;
 };
 
 static int zip_read_ed(struct zip* z) {
@@ -254,6 +269,7 @@ static int zip_read_cd(struct zip* z, bool use_cb) {
     struct zip_args* args = &z->args;
     struct zip_cd_disk* cdd;
     struct zip_cd* cd;
+    uint8_t* mem_end;
     uint16_t name_length;
     int rv;
 
@@ -271,6 +287,7 @@ static int zip_read_cd(struct zip* z, bool use_cb) {
 
     cds = core_get_data(cds_handle);
     mem = core_get_data(mem_handle);
+    mem_end = mem + cd_size;
 
     if (z->seek(z, cd_offset, SEEK_SET) < 0) {
         rv = -9;
@@ -293,6 +310,12 @@ static int zip_read_cd(struct zip* z, bool use_cb) {
     cdd = (struct zip_cd_disk*) mem;
 
     for (uint16_t i = 0; i < cd_entries; i++) {
+        uint32_t variable_size;
+
+        if (mem_end - mem < (ptrdiff_t)sizeof(struct zip_cd_disk)) {
+            rv = -11;
+            goto bail;
+        }
         if (cdd->signature != sig) {
             rv = -11;
             goto bail;
@@ -300,6 +323,8 @@ static int zip_read_cd(struct zip* z, bool use_cb) {
 
         cd = &cds[i];
 
+        cd->flags = letoh16(cdd->flags);
+        cd->method = letoh16(cdd->method);
         cd->crc = letoh32(cdd->crc);
         cd->compressed_size = letoh32(cdd->compressed_size);
         cd->uncompressed_size = letoh32(cdd->uncompressed_size);
@@ -307,6 +332,13 @@ static int zip_read_cd(struct zip* z, bool use_cb) {
 
         mem += sizeof(struct zip_cd_disk);
         name_length = letoh16(cdd->name_length);
+        variable_size = (uint32_t)name_length +
+            letoh16(cdd->extra_length) +
+            letoh16(cdd->comment_length);
+        if ((uint32_t)(mem_end - mem) < variable_size) {
+            rv = -12;
+            goto bail;
+        }
         if (use_cb) {
             if (name_length >= sizeof(lf->name)) {
                 rv = -12;
@@ -378,11 +410,16 @@ static int zip_read_lf(struct zip* z, uint16_t i) {
     lf->name_length = name_length;
     lf->name[name_length] = '\0';
 
-    if ((lf->flags & ZIP_BIT_DD) == ZIP_BIT_DD) {
-        lf->crc = cd->crc;
-        lf->compressed_size = cd->compressed_size;
-        lf->uncompressed_size = cd->uncompressed_size;
-    }
+    if (lf->flags != cd->flags || lf->method != cd->method)
+        return -20;
+    if ((lf->flags & ZIP_BIT_ENCRYPTED) != 0)
+        return -20;
+
+    /* The central directory is authoritative, including data-descriptor
+       entries whose local size and CRC fields are intentionally zero. */
+    lf->crc = cd->crc;
+    lf->compressed_size = cd->compressed_size;
+    lf->uncompressed_size = cd->uncompressed_size;
 
     return 0;
 }
@@ -425,6 +462,104 @@ static int zip_read_store(struct zip* z, void* mem, uint32_t mem_size) {
     return 0;
 }
 
+static uint32_t zip_inflate_reader(void* block, uint32_t block_size,
+                                   void* ctx) {
+    struct zip_inflate* zi = ctx;
+    uint32_t requested = block_size;
+    ssize_t count;
+
+    block_size = MIN(block_size, zi->compressed_left);
+    if (block_size == 0) {
+        /* The Rockbox inflater uses a maximum-code-length lookahead.
+           Raw Deflate streams may legally end before that lookahead even
+           though the end-of-block symbol and byte padding are complete. */
+        block_size = MIN(requested, zi->padding_left);
+        if (block_size == 0)
+            return 0;
+        memset(block, 0, block_size);
+        zi->padding_left -= block_size;
+        return block_size;
+    }
+
+    count = zi->z->read(zi->z, block, block_size);
+    if (count <= 0)
+        return 0;
+
+    zi->compressed_left -= count;
+    return count;
+}
+
+static uint32_t zip_inflate_writer(const void* block, uint32_t block_size,
+                                   void* ctx) {
+    struct zip_inflate* zi = ctx;
+    struct zip_args* args = zi->args;
+    int rv;
+
+    if (zi->output_size > args->file_size ||
+        block_size > args->file_size - zi->output_size)
+        return 0;
+
+    args->block = (void*)block;
+    args->block_size = block_size;
+    args->read_size = zi->output_size + block_size;
+    zi->crc = crc_32r(block, block_size, zi->crc);
+
+    rv = zi->z->cb(args, ZIP_PASS_DATA, zi->z->ctx);
+    if (rv != 0) {
+        zi->callback_result = rv;
+        return 0;
+    }
+
+    zi->output_size += block_size;
+    return block_size;
+}
+
+static int zip_read_deflate(struct zip* z) {
+    const struct zip_lf* lf = &z->lf;
+    struct zip_inflate zi;
+    int inflate_handle = -1;
+    uint8_t* inflate_mem;
+    struct inflate* inflater;
+    uint32_t allocation_size;
+    int rv;
+
+    if (inflate_align == 0)
+        return -25;
+
+    allocation_size = inflate_size + inflate_align - 1;
+    if ((inflate_handle = zip_core_alloc(allocation_size)) < 0)
+        return -26;
+
+    inflate_mem = core_get_data(inflate_handle);
+    inflater = (struct inflate*)(((uintptr_t)inflate_mem +
+        inflate_align - 1) & ~((uintptr_t)inflate_align - 1));
+
+    memset(&zi, 0, sizeof(zi));
+    zi.z = z;
+    zi.args = &z->args;
+    zi.compressed_left = lf->compressed_size;
+    zi.padding_left = 2;
+    zi.crc = 0xffffffff;
+
+    rv = inflate(inflater, INFLATE_RAW,
+                 zip_inflate_reader, &zi,
+                 zip_inflate_writer, &zi);
+    core_free(inflate_handle);
+
+    if (zi.callback_result != 0)
+        return zi.callback_result < 0 ? 0 : zi.callback_result;
+    if (rv != 0)
+        return rv;
+    if (zi.compressed_left != 0)
+        return -27;
+    if (zi.output_size != lf->uncompressed_size)
+        return -28;
+    if (~zi.crc != lf->crc)
+        return -29;
+
+    return 0;
+}
+
 static int zip_read_entry(struct zip* z, uint16_t i, void* mem, uint32_t mem_size) {
     const struct zip_lf* lf = &z->lf;
     struct zip_args* args = &z->args;
@@ -448,6 +583,9 @@ static int zip_read_entry(struct zip* z, uint16_t i, void* mem, uint32_t mem_siz
 
     if (lf->method == ZIP_METHOD_STORE) {
         if ((rv = zip_read_store(z, mem, mem_size)) != 0)
+            return rv;
+    } else if (lf->method == ZIP_METHOD_DEFLATE) {
+        if ((rv = zip_read_deflate(z)) != 0)
             return rv;
     } else {
         return -20;
@@ -487,7 +625,7 @@ static int zip_read_entries(struct zip* z) {
     args->name = lf->name;
 
     for (uint16_t i = 0; i < cd_entries; i++)
-        if ((rv = zip_read_entry(z, i, mem, mem_size)) > 0)
+        if ((rv = zip_read_entry(z, i, mem, mem_size)) != 0)
             goto bail;
 
     z->state = ZIP_STATE_LF_EXIT;
@@ -618,6 +756,23 @@ static int zip_extract_start(const struct zip_args* args, struct zip_extract* ze
     size_t name_length;
     const char* dir;
     size_t dir_length;
+
+    const char* component = args->name;
+
+    if (component[0] == '\0' || component[0] == PATH_SEPCH)
+        return 5;
+    while (*component != '\0') {
+        const char* end = strchr(component, PATH_SEPCH);
+        size_t length = end != NULL
+            ? (size_t)(end - component) : strlen(component);
+        if ((length == 1 && component[0] == '.') ||
+            (length == 2 && component[0] == '.' &&
+             component[1] == '.'))
+            return 5;
+        if (end == NULL)
+            break;
+        component = end + 1;
+    }
 
     if ((name_length = strlcpy(ze->name, args->name, ze->name_size)) >= ze->name_size)
         return 5;
@@ -855,8 +1010,11 @@ int zip_extract(struct zip* z, const char* root, zip_callback cb, void* ctx) {
 
 bail:
     if (ze_handle >= 0) {
-        if (ze->file >= 0)
+        if (ze->file >= 0) {
             close(ze->file);
+            if (rv != 0)
+                remove(ze->path);
+        }
 
         core_free(ze_handle);
     }

@@ -1,0 +1,13 @@
+format=2
+id=pomodoro
+name=Pomodoro
+version=1.2.0
+version_code=102000
+abi=1
+target=@TARGET@
+binary=@BINARY@
+icon=icon.bmp
+resources=resources.bin
+symbol=O
+accent=C94A78
+summary=Background focus timer

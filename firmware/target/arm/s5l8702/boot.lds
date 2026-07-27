@@ -77,9 +77,10 @@ SECTIONS
     _dataend = . ;
   } > LOAD_AREA
 
-  .stack (NOLOAD) :
+  .stack ALIGN(8) (NOLOAD) :
   {
      *(.stack)
+     . = ALIGN(8);
      _stackbegin = .;
      stackbegin = .;
      . += 0x2000;
@@ -92,6 +93,9 @@ SECTIONS
      . += 0x400;
      _fiqstackend = .;
   } > LOAD_AREA
+  ASSERT(((_stackbegin | _stackend | _irqstackbegin |
+           _irqstackend | _fiqstackbegin | _fiqstackend) & 7) == 0,
+         "s5l8702 stacks must be 8-byte aligned")
 
   .bss (NOLOAD) : {
      _edata = .;

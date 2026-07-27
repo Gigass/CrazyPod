@@ -25,10 +25,10 @@
 #include <string.h>
 #include "panic.h"
 #include "lcd.h"
-#ifndef IPOD_6G
-#include "font.h"
-#else
+#if defined(IPOD_6G) && !defined(BOOTLOADER)
 #include "crazypod/crazypod_lcd.h"
+#else
+#include "font.h"
 #endif
 #include "debug.h"
 #include "led.h"
@@ -49,7 +49,7 @@ char panic_buf[128];
 static char panic_buf[128];
 #endif
 
-#ifndef IPOD_6G
+#if !defined(IPOD_6G) || defined(BOOTLOADER)
 #define LINECHARS (LCD_WIDTH/SYSFONT_WIDTH) - 2
 #endif
 
@@ -103,7 +103,7 @@ void panicf( const char *fmt, ...)
     vsnprintf( panic_buf, sizeof(panic_buf), fmt, ap );
     va_end( ap );
 
-#ifdef IPOD_6G
+#if defined(IPOD_6G) && !defined(BOOTLOADER)
 #if defined(HAVE_RB_BACKTRACE)
     (void)pc;
     (void)sp;
@@ -132,8 +132,11 @@ void panicf( const char *fmt, ...)
         }
     }
 
-#if defined(HAVE_RB_BACKTRACE)
+#if defined(HAVE_RB_BACKTRACE) && !defined(BOOTLOADER)
     rb_backtrace(pc, sp, &y);
+#elif defined(HAVE_RB_BACKTRACE)
+    (void)pc;
+    (void)sp;
 #endif
 #ifdef ROCKBOX_HAS_LOGF
     logf_panic_dump(&y);

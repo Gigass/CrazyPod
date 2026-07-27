@@ -25,7 +25,9 @@ endif
 FIRMLIB_SRC += $(call preprocess, $(FIRMDIR)/asm/SOURCES)
 FIRMLIB_SRC += $(call preprocess, $(FIRMDIR)/SOURCES)
 FIRMLIB_OBJ := $(call c2obj, $(FIRMLIB_SRC))
-ifneq ($(MODELNAME),ipod6g)
+ifneq (,$(findstring -DBOOTLOADER,$(EXTRA_DEFINES)))
+FIRMLIB_OBJ += $(BUILDDIR)/sysfont.o
+else ifneq ($(MODELNAME),ipod6g)
 FIRMLIB_OBJ += $(BUILDDIR)/sysfont.o
 endif
 OTHER_SRC += $(FIRMLIB_SRC)
@@ -69,6 +71,11 @@ SVNVERSION:=$(shell VERSION='$(VERSION)' $(TOOLSDIR)/version.sh $(ROOTDIR))
 OLDSVNVERSION:=$(shell grep 'RBVERSION' $(BUILDDIR)/rbversion.h 2>/dev/null|cut -d '"' -f 2 || echo "NOREVISION")
 
 CORE_LIBS:=$(FIRMLIB)
+ifeq ($(MODELNAME),ipod6g)
+ifeq (,$(findstring -DBOOTLOADER,$(EXTRA_DEFINES)))
+CORE_LIBS += $(BUILDDIR)/lib/rbcodec/codecs/libmad-mpeg.a
+endif
+endif
 
 ifneq ($(SVNVERSION),$(OLDSVNVERSION))
 .PHONY: $(BUILDDIR)/rbversion.h

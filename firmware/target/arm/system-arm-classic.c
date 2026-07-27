@@ -22,14 +22,14 @@
 #include "system.h"
 #include <stdio.h>
 #include "lcd.h"
-#ifndef IPOD_6G
-#include "font.h"
-#else
+#if defined(IPOD_6G) && !defined(BOOTLOADER)
 #include "crazypod/crazypod_lcd.h"
+#else
+#include "font.h"
 #endif
 #include "gcc_extensions.h"
 
-#ifndef IPOD_6G
+#if !defined(IPOD_6G) && !defined(BOOTLOADER)
 #include <get_sp.h>
 #include <backtrace.h>
 #endif
@@ -97,7 +97,7 @@ void __attribute__((weak,naked)) undef_instr_handler(void)
  */
 void NORETURN_ATTR UIE(unsigned int pc, unsigned int num)
 {
-#ifdef IPOD_6G
+#if defined(IPOD_6G) && !defined(BOOTLOADER)
     char report[96];
 
     snprintf(report, sizeof(report), "%s\nPC %08x",
@@ -156,7 +156,7 @@ void NORETURN_ATTR UIE(unsigned int pc, unsigned int num)
     }   /* num == 1 || num == 2 // prefetch/data abort */
 #endif /* !defined(CPU_ARM7TDMI */
 
-#ifdef HAVE_RB_BACKTRACE
+#if defined(HAVE_RB_BACKTRACE) && !defined(BOOTLOADER)
     if (!triggered)
     {
         triggered = true;

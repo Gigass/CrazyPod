@@ -1,0 +1,13 @@
+format=2
+id=calculator
+name=Calculator
+version=1.2.0
+version_code=102000
+abi=1
+target=@TARGET@
+binary=@BINARY@
+icon=icon.bmp
+resources=resources.bin
+symbol=+
+accent=26CFF5
+summary=Standard click-wheel calculator

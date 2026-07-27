@@ -63,14 +63,25 @@
  * packet length field */
 #define DISK_GUARDBUF_SIZE     ALIGN_UP(65535+6, 4)
 
-#ifdef HAVE_LCD_COLOR
+#ifdef CRAZYPOD_VIDEO_CORE
+#define mylcd_splash         rb->splash
+#define mylcd_get_foreground rb->lcd_get_foreground
+#define mylcd_set_foreground rb->lcd_set_foreground
+#define mylcd_get_background rb->lcd_get_background
+#define mylcd_set_background rb->lcd_set_background
+#define mylcd_fillrect       rb->lcd_fillrect
+#define mylcd_update_rect    rb->lcd_update_rect
+#define MYLCD_BLACK           LCD_BLACK
+#elif defined(HAVE_LCD_COLOR)
 #define mylcd_splash         rb->splash
 #else
 #include "lib/grey.h"
 #define mylcd_splash         grey_splash
 #endif
 
+#ifndef CRAZYPOD_VIDEO_CORE
 #include "lib/mylcd.h"
+#endif
 
 #include "libmpeg2/mpeg2.h"
 #include "video_out.h"

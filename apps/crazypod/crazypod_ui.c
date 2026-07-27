@@ -25,28 +25,41 @@
 #include "system.h"
 #include "timefuncs.h"
 #include "usb.h"
+#ifdef SIMULATOR
+#include "screendump.h"
+#endif
 
 #include "lvgl.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
 
 #include "crazypod_audio_shims.h"
+#include "crazypod_apps.h"
 #include "crazypod_artwork.h"
 #include "crazypod_appearance.h"
+#include "crazypod_book_cover.h"
+#include "crazypod_books.h"
 #include "crazypod_coverflow.h"
 #include "crazypod_frameclock.h"
 #include "crazypod_image.h"
 #include "crazypod_icons.h"
 #include "crazypod_lyrics.h"
+#include "crazypod_lcd.h"
 #include "crazypod_music.h"
+#include "crazypod_miniapps.h"
+#include "crazypod_miniapp_input.h"
+#include "crazypod_miniapp_font.h"
+#include "crazypod_notes.h"
+#include "crazypod_organizer.h"
 #include "crazypod_playlist.h"
 #include "crazypod_photos.h"
 #include "crazypod_presets.h"
 #include "crazypod_soundwave.h"
 #include "crazypod_state.h"
 #include "crazypod_ui.h"
+#include "crazypod_videos.h"
 #include "crazypod_wallpaper.h"
+#include "crazypod_workouts.h"
 
-#define CRAZYPOD_APP_COUNT 14
 #define CRAZYPOD_STATUS_BAR_COUNT 2
 #define CRAZYPOD_CORNER_SCREEN_COUNT 3
 #define CRAZYPOD_DRAW_ROWS 40
@@ -71,18 +84,26 @@
 #define CRAZYPOD_MENU_SCROLL_Y 66
 #define CRAZYPOD_MENU_SCROLL_HEIGHT 164
 #define CRAZYPOD_PREVIEW_SETTLE_TICKS \
-    ((HZ * 140 / 1000) > 0 ? (HZ * 140 / 1000) : 1)
+    ((HZ * 120 / 1000) > 0 ? (HZ * 120 / 1000) : 1)
 #define CRAZYPOD_MUSIC_PREVIEW_SETTLE_TICKS \
-    ((HZ * 260 / 1000) > 0 ? (HZ * 260 / 1000) : 1)
-#define CRAZYPOD_PREVIEW_ENTRANCE_OFFSET_X 18
-#define CRAZYPOD_PREVIEW_ENTRANCE_DELAY_MS 20
-#define CRAZYPOD_PREVIEW_ENTRANCE_DURATION_MS 340
+    CRAZYPOD_PREVIEW_SETTLE_TICKS
+#define CRAZYPOD_PREVIEW_PART_COUNT 20
+#define CRAZYPOD_PREVIEW_ENTER_DURATION_MS 380
+#define CRAZYPOD_PREVIEW_EXIT_DURATION_MS 180
+#define CRAZYPOD_PREVIEW_REDUCED_DURATION_MS 80
+#define CRAZYPOD_PREVIEW_PART_TIME_NUMERATOR 3
+#define CRAZYPOD_PREVIEW_PART_TIME_DENOMINATOR 2
 #define CRAZYPOD_EDITOR_CHAR_COUNT 36
 #define CRAZYPOD_SEARCH_QUERY_SIZE 33
 #define CRAZYPOD_ALBUM_FLOW_CARD_COUNT 5
 #define CRAZYPOD_ALBUM_FLOW_COVER_SIZE 120
 #define CRAZYPOD_NOW_ARTWORK_CACHE_SIZE \
     CRAZYPOD_COVERFLOW_ARTWORK_SIZE
+#define CRAZYPOD_MENU_ARTWORK_CACHE_SIZE 72
+#define CRAZYPOD_MENU_NOW_ARTWORK_SIZE 68
+#define CRAZYPOD_MENU_FLOW_ARTWORK_SIZE 58
+#define CRAZYPOD_MENU_ALBUM_ARTWORK_SIZE 67
+#define CRAZYPOD_MENU_ARTWORK_PRIORITY 20
 #define CRAZYPOD_NOW_LYRICS_COVER_SIZE 108
 #define CRAZYPOD_NOW_POPUP_X 35
 #define CRAZYPOD_NOW_POPUP_Y 32
@@ -125,11 +146,20 @@
     ((HZ / 2) > 0 ? (HZ / 2) : 1)
 #define CRAZYPOD_WALLPAPER_CROP_SUCCESS_TICKS \
     ((HZ * 2 / 5) > 0 ? (HZ * 2 / 5) : 1)
-#define CRAZYPOD_UNLOCK_HOLD_TICKS \
-    ((HZ * 3 / 2) > 0 ? (HZ * 3 / 2) : 1)
+#define CRAZYPOD_UNLOCK_WHEEL_STEPS 19
+#define CRAZYPOD_UNLOCK_WHEEL_IDLE_TICKS \
+    ((HZ * 9 / 10) > 0 ? (HZ * 9 / 10) : 1)
+#define CRAZYPOD_UNLOCK_WHEEL_DECAY_TICKS \
+    ((HZ * 3 / 5) > 0 ? (HZ * 3 / 5) : 1)
+#define CRAZYPOD_UNLOCK_DIRECTION_HINT_TICKS \
+    ((HZ * 6 / 5) > 0 ? (HZ * 6 / 5) : 1)
 #define CRAZYPOD_UNLOCK_OPEN_TICKS \
     ((HZ / 4) > 0 ? (HZ / 4) : 1)
+#define CRAZYPOD_UNLOCK_INPUT_GUARD_TICKS \
+    ((HZ / 4) > 0 ? (HZ / 4) : 1)
+#define CRAZYPOD_POWER_HOLD_TICKS (3 * HZ)
 #define CRAZYPOD_PREVIOUS_RESTART_THRESHOLD_MS 3000
+#define CRAZYPOD_BOOT_FADE_DURATION_MS 220
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
 #define CRAZYPOD_USB_PROMPT_REQUEST \
     MAKE_SYS_EVENT(SYS_EVENT_CLS_PRIVATE, 0x31)
@@ -154,9 +184,6 @@
     (CRAZYPOD_MENU_PANEL_WIDTH * CRAZYPOD_MENU_PANEL_HEIGHT)
 #define CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH 140
 #define CRAZYPOD_PREVIEW_TEXT_PANEL_MAX_HEIGHT 70
-#define CRAZYPOD_PREVIEW_TEXT_PANEL_PIXELS \
-    (CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH * \
-     CRAZYPOD_PREVIEW_TEXT_PANEL_MAX_HEIGHT)
 #define CRAZYPOD_SEARCH_QUERY_PIXELS (136 * 38)
 #define CRAZYPOD_SEARCH_RESULTS_PIXELS (136 * 104)
 #define CRAZYPOD_INFO_TOAST_PIXELS (230 * 50)
@@ -206,6 +233,7 @@ enum crazypod_route {
     MUSIC_ROUTE_NOW_PLAYING,
     PHOTOS_ROUTE_MENU,
     PHOTOS_ROUTE_LIBRARY,
+    PHOTOS_ROUTE_VIDEOS,
     PHOTOS_ROUTE_FAVORITES,
     PHOTOS_ROUTE_DETAIL,
     SETTINGS_ROUTE_MENU,
@@ -215,6 +243,62 @@ enum crazypod_route {
     SETTINGS_ROUTE_PLAYBACK,
     SETTINGS_ROUTE_POWER,
     SETTINGS_ROUTE_CONTROLS,
+    SETTINGS_ROUTE_MAIN_MENU,
+    SETTINGS_ROUTE_MAIN_MENU_ACTIONS,
+    EXTRAS_ROUTE_MENU,
+    NOTES_ROUTE_MENU,
+    NOTES_ROUTE_COMPOSER,
+    NOTES_ROUTE_EXIT_ACTIONS,
+    NOTES_ROUTE_DISCARD_CONFIRM,
+    NOTES_ROUTE_SEARCH,
+    NOTES_ROUTE_SEARCH_RESULTS,
+    NOTES_ROUTE_READER,
+    NOTES_ROUTE_ACTIONS,
+    NOTES_ROUTE_DELETED,
+    NOTES_ROUTE_DELETED_ACTIONS,
+    NOTES_ROUTE_DELETE_CONFIRM,
+    NOTES_ROUTE_PERMANENT_CONFIRM,
+    NOTES_ROUTE_EMPTY_TRASH_CONFIRM,
+    BOOKS_ROUTE_MENU,
+    BOOKS_ROUTE_RECENTS,
+    BOOKS_ROUTE_LIBRARY,
+    BOOKS_ROUTE_FAVORITES,
+    BOOKS_ROUTE_READER,
+    BOOKS_ROUTE_ACTIONS,
+    BOOKS_ROUTE_CHAPTERS,
+    BOOKS_ROUTE_BOOKMARKS,
+    BOOKS_ROUTE_DELETE_CONFIRM,
+    BOOKS_ROUTE_STATS,
+    BOOKS_ROUTE_READING_SETTINGS,
+    BOOKS_ROUTE_INFO,
+    PODCASTS_ROUTE_MENU,
+    UTILITIES_ROUTE_MENU,
+    MINIAPP_ROUTE_VIEW,
+    CLOCK_ROUTE_MENU,
+    CLOCK_ROUTE_SLEEP_TIMER,
+    CLOCK_ROUTE_VIEW,
+    STOPWATCH_ROUTE_VIEW,
+    WORKOUT_ROUTE_MENU,
+    WORKOUT_ROUTE_TYPES,
+    WORKOUT_ROUTE_READY,
+    WORKOUT_ROUTE_ACTIVE,
+    WORKOUT_ROUTE_FINISH_CONFIRM,
+    WORKOUT_ROUTE_HISTORY,
+    WORKOUT_ROUTE_SUMMARY,
+    WORKOUT_ROUTE_DETAIL,
+    WORKOUT_ROUTE_DELETE_CONFIRM,
+    CALENDAR_ROUTE_MENU,
+    CALENDAR_ROUTE_TODAY,
+    CALENDAR_ROUTE_UPCOMING,
+    CALENDAR_ROUTE_MONTH,
+    CALENDAR_ROUTE_DAY_EVENTS,
+    CALENDAR_ROUTE_EDITOR,
+    CALENDAR_ROUTE_TITLE_EDITOR,
+    CALENDAR_ROUTE_DETAIL,
+    CALENDAR_ROUTE_ACTIONS,
+    CALENDAR_ROUTE_DELETE_CONFIRM,
+    CONTACTS_ROUTE_LIST,
+    CONTACTS_ROUTE_DETAIL,
     DIY_ROUTE_MENU,
     DIY_ROUTE_PRESETS,
     DIY_ROUTE_PRESET_LIBRARY,
@@ -249,6 +333,7 @@ struct route_state {
 };
 
 struct crazypod_app {
+    enum crazypod_app_id id;
     const char *name;
     const char *symbol;
     uint32_t color;
@@ -257,7 +342,9 @@ struct crazypod_app {
 
 struct status_bar {
     lv_obj_t *time;
+    lv_obj_t *battery;
     lv_obj_t *battery_fill;
+    lv_obj_t *battery_cap;
     lv_obj_t *charge;
     lv_obj_t *playing;
 };
@@ -297,6 +384,8 @@ enum choice_overlay_kind {
     CHOICE_OVERLAY_APPEARANCE,
     CHOICE_OVERLAY_BACKGROUND,
     CHOICE_OVERLAY_SETTING,
+    CHOICE_OVERLAY_BOOK_FONT_SIZE,
+    CHOICE_OVERLAY_BOOK_THEME,
 };
 
 enum crazypod_glass_material {
@@ -325,6 +414,7 @@ enum settings_item {
     SETTINGS_ITEM_BACKLIGHT_TIMEOUT,
     SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED,
     SETTINGS_ITEM_LCD_SLEEP,
+    SETTINGS_ITEM_REDUCE_MOTION,
     SETTINGS_ITEM_SHUFFLE,
     SETTINGS_ITEM_REPEAT,
     SETTINGS_ITEM_SLEEP_TIMER_DURATION,
@@ -405,22 +495,75 @@ struct usb_prompt_view {
 };
 #endif
 
-static struct crazypod_app apps[CRAZYPOD_APP_COUNT] = {
-    { "Music",       LV_SYMBOL_AUDIO,      0xFF2E54, NULL },
-    { "Podcasts",    LV_SYMBOL_VOLUME_MAX, 0xA95BDE, NULL },
-    { "Mini Apps",   LV_SYMBOL_LIST,       0xFF9F0A, NULL },
-    { "Shuffle",     LV_SYMBOL_SHUFFLE,    0xFF375F, NULL },
-    { "Lock",        LV_SYMBOL_EYE_CLOSE,  0x59606B, NULL },
-    { "Camera",      LV_SYMBOL_IMAGE,      0x18B8EF, NULL },
-    { "Photos",      LV_SYMBOL_IMAGE,      0x3478F6, NULL },
-    { "Customize",   LV_SYMBOL_EDIT,       0xBF5AF2, NULL },
-    { "Fitness",     LV_SYMBOL_CHARGE,     0x30D158, NULL },
-    { "Voice Memos", LV_SYMBOL_VOLUME_MAX, 0xFF453A, NULL },
-    { "Books",       LV_SYMBOL_FILE,       0xFF9F0A, NULL },
-    { "Notes",       LV_SYMBOL_EDIT,       0xFFD60A, NULL },
-    { "Extras",      LV_SYMBOL_DIRECTORY,  0x64D2FF, NULL },
-    { "Settings",    LV_SYMBOL_SETTINGS,   0x8E8E93, NULL },
+struct power_prompt_view {
+    lv_obj_t *root;
+    lv_obj_t *panel;
+    lv_obj_t *rows[2];
+    lv_obj_t *markers[2];
+    lv_obj_t *hints[2];
+    int selected;
 };
+
+static struct crazypod_app apps[CRAZYPOD_APP_COUNT] = {
+    { CRAZYPOD_APP_MUSIC, "Music", LV_SYMBOL_AUDIO, 0xFF2E54, NULL },
+    { CRAZYPOD_APP_PODCASTS, "Podcasts", LV_SYMBOL_VOLUME_MAX,
+      0xA95BDE, NULL },
+    { CRAZYPOD_APP_MINI_APPS, "Mini Apps", LV_SYMBOL_LIST,
+      0xFF9F0A, NULL },
+    { CRAZYPOD_APP_SHUFFLE, "Shuffle", LV_SYMBOL_SHUFFLE,
+      0xFF375F, NULL },
+    { CRAZYPOD_APP_LOCK, "Lock", LV_SYMBOL_EYE_CLOSE, 0x59606B, NULL },
+    { CRAZYPOD_APP_PHOTOS, "Media", LV_SYMBOL_IMAGE, 0x3478F6, NULL },
+    { CRAZYPOD_APP_CUSTOMIZE, "Customize", LV_SYMBOL_EDIT,
+      0xBF5AF2, NULL },
+    { CRAZYPOD_APP_WORKOUTS, "Workouts", LV_SYMBOL_PLAY,
+      0xA8F12D, NULL },
+    { CRAZYPOD_APP_BOOKS, "Books", LV_SYMBOL_FILE, 0xFF9F0A, NULL },
+    { CRAZYPOD_APP_NOTES, "Notes", LV_SYMBOL_EDIT, 0xFFD60A, NULL },
+    { CRAZYPOD_APP_CLOCK, "Clock", LV_SYMBOL_HOME, 0xF26D5B, NULL },
+    { CRAZYPOD_APP_CONTACTS, "Contacts", LV_SYMBOL_HOME,
+      0x4F9BFF, NULL },
+    { CRAZYPOD_APP_CALENDAR, "Calendar", LV_SYMBOL_LIST,
+      0xFF453A, NULL },
+    { CRAZYPOD_APP_STOPWATCH, "Stopwatch", LV_SYMBOL_REFRESH,
+      0xFFB340, NULL },
+    { CRAZYPOD_APP_EXTRAS, "More Features", LV_SYMBOL_DIRECTORY,
+      0x64D2FF, NULL },
+    { CRAZYPOD_APP_SETTINGS, "Settings", LV_SYMBOL_SETTINGS,
+      0x8E8E93, NULL },
+};
+
+static int app_catalog_index(enum crazypod_app_id id)
+{
+    int i;
+
+    for(i = 0; i < CRAZYPOD_APP_COUNT; ++i) {
+        if(apps[i].id == id)
+            return i;
+    }
+    return -1;
+}
+
+static struct crazypod_app *app_for_id(enum crazypod_app_id id)
+{
+    int index = app_catalog_index(id);
+    return index >= 0 ? &apps[index] : NULL;
+}
+
+static struct crazypod_app *visible_app(int index)
+{
+    return app_for_id(crazypod_apps_visible_id(index));
+}
+
+static struct crazypod_app *ordered_app(int index)
+{
+    return app_for_id(crazypod_apps_ordered_id(index));
+}
+
+static struct crazypod_app *hidden_app(int index)
+{
+    return app_for_id(crazypod_apps_hidden_id(index));
+}
 
 static const char *music_menu_titles[] = {
     "Now Playing", "Album Flow", "All Music", "Playlists",
@@ -488,12 +631,20 @@ static const char *const diy_background_titles[] = {
 };
 
 static const char *const settings_menu_titles[] = {
-    "Sound", "Display", "Playback", "Power", "Controls"
+    "Sound", "Display", "Playback", "Power", "Controls", "Main Menu"
 };
 
 static const char *const settings_menu_symbols[] = {
     LV_SYMBOL_AUDIO, LV_SYMBOL_EYE_OPEN, LV_SYMBOL_PLAY,
-    LV_SYMBOL_POWER, LV_SYMBOL_SETTINGS
+    LV_SYMBOL_POWER, LV_SYMBOL_SETTINGS, LV_SYMBOL_LIST
+};
+
+static const char *const main_menu_action_titles[] = {
+    "Hide", "Up", "Down"
+};
+
+static const char *const workout_menu_titles[] = {
+    "Start Workout", "History", "Summary"
 };
 
 static const int settings_sound_items[] = {
@@ -512,6 +663,7 @@ static const int settings_display_items[] = {
     SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED,
 #endif
     SETTINGS_ITEM_LCD_SLEEP,
+    SETTINGS_ITEM_REDUCE_MOTION,
 };
 
 static const int settings_playback_items[] = {
@@ -556,11 +708,19 @@ static const int setting_repeat_values[] = {
 };
 
 static const char *const photos_menu_titles[] = {
-    "Library", "Favorites"
+    "Photos", "Videos", "Favorites"
 };
 
 static const char *const photos_menu_symbols[] = {
-    LV_SYMBOL_IMAGE, LV_SYMBOL_OK
+    LV_SYMBOL_IMAGE, LV_SYMBOL_PLAY, LV_SYMBOL_OK
+};
+
+static const uint32_t book_page_colors[] = {
+    0xE8D5A4, 0xF8F8F4, 0xDDEFE3, 0x17181D
+};
+
+static const uint32_t book_ink_colors[] = {
+    0x302A22, 0x252525, 0x24382D, 0xECECF1
 };
 
 static struct status_bar status_bars[CRAZYPOD_STATUS_BAR_COUNT];
@@ -608,16 +768,81 @@ static lv_obj_t *music_loading_title;
 static lv_obj_t *music_loading_detail;
 static lv_group_t *desktop_group;
 static int selected_app;
+static struct crazypod_note_draft note_editor;
+static struct crazypod_note_draft note_editor_baseline;
+static bool note_draft_available;
+static bool note_editor_body_active;
+static size_t note_editor_title_cursor;
+static size_t note_editor_body_cursor;
+static bool note_draft_save_pending;
+static long note_draft_save_due;
+static char note_reader_body[CRAZYPOD_NOTE_BODY_SIZE];
+static char note_search_query[CRAZYPOD_SEARCH_QUERY_SIZE];
+static int selected_book_index = -1;
+static uint32_t book_page_offset;
+static uint32_t book_next_offset;
+static uint32_t book_page_history[64];
+static int book_page_history_count;
+static char book_page_text[2048];
+static bool books_metadata_ready;
+static lv_obj_t *book_loading_progress_fill;
+static lv_obj_t *book_loading_progress_label;
+static lv_obj_t *book_loading_percent_label;
+static bool stopwatch_running;
+static long stopwatch_started_at;
+static long stopwatch_accumulated_ticks;
+static long stopwatch_last_render_tick;
+static long stopwatch_laps[32];
+static int stopwatch_lap_count;
+static int stopwatch_style_index;
+static long stopwatch_reset_armed_until;
+static bool workout_running;
+static long workout_started_at;
+static long workout_accumulated_ticks;
+static long workout_last_render_tick;
+static int workout_activity;
+static long clock_last_render_tick;
+static int calendar_focus_year;
+static int calendar_focus_month;
+static int calendar_focus_day;
+static uint32_t calendar_editor_id;
+static int calendar_editor_date;
+static int calendar_editor_minutes;
+static char calendar_editor_summary[96];
+static size_t calendar_editor_cursor;
+static int calendar_editor_error;
+static struct cp_scene miniapp_scene;
+static fb_data miniapp_bitmap_pixels[160 * 160];
+static lv_image_dsc_t miniapp_bitmap_descriptor;
+static char miniapp_bitmap_id[CP_MINIAPP_RESOURCE_ID_SIZE];
+static int miniapp_bitmap_app_index = -1;
+static uint32_t miniapp_bitmap_crc;
+static uint16_t miniapp_bitmap_width;
+static uint16_t miniapp_bitmap_height;
+static long miniapp_last_service_tick;
+static char miniapp_alert_id[CRAZYPOD_MINIAPP_ID_SIZE];
+static uint32_t miniapp_alert_deadline;
+static uint32_t miniapp_alert_token;
+static int miniapp_alert_remaining;
+static long miniapp_alert_next_tick;
+static bool miniapp_alert_delivery_pending;
+static bool miniapp_render_pending;
+static int miniapp_last_error;
+static struct crazypod_miniapp_input_queue miniapp_input_queue;
 static int route_depth;
 static bool product_active;
 static bool screen_locked;
 static bool lock_backlight_was_on;
 static bool lock_wait_for_wake_release;
-static bool lock_select_holding;
 static bool lock_release_guard;
 static bool lock_opening;
-static long lock_select_hold_start;
+static bool lock_wrong_direction;
+static long lock_release_guard_until;
 static long lock_opening_start;
+static long lock_wrong_direction_until;
+static long lock_wheel_last_input_tick;
+static int lock_wheel_steps;
+static int lock_wheel_decay_start_steps;
 static int lock_progress_percent;
 static bool music_library_loaded;
 static bool music_scan_screen;
@@ -633,11 +858,13 @@ static bool desktop_native_dirty;
 static bool desktop_native_backdrop_ready;
 static unsigned music_scan_generation_seen;
 static unsigned preview_artwork_generation_seen;
+static unsigned menu_preview_artwork_generation_seen;
 static unsigned now_prefetch_artwork_generation_seen;
 static unsigned now_artwork_generation_seen;
 static unsigned capsule_artwork_generation_seen;
 static unsigned photo_generation_seen;
 static unsigned photo_view_generation_seen;
+static unsigned video_generation_seen;
 static long route_render_due;
 static long menu_preview_due;
 static long boost_until;
@@ -648,10 +875,60 @@ static int desktop_motion_step_accumulator;
 static int desktop_position_q8;
 static int desktop_velocity_q8;
 static struct menu_view_state menu_view;
+
+struct menu_preview_motion_part {
+    lv_obj_t *object;
+    int final_x;
+    int final_y;
+    int final_scale;
+    int final_rotation;
+    int final_opacity;
+    int enter_dx;
+    int enter_dy;
+    int enter_scale;
+    int enter_rotation;
+    int enter_opacity;
+    int exit_dx;
+    int exit_dy;
+    int exit_scale;
+    int exit_rotation;
+    int enter_delay;
+    int enter_duration;
+};
+
+struct menu_preview_scene {
+    lv_obj_t *content;
+    struct menu_preview_motion_part parts[CRAZYPOD_PREVIEW_PART_COUNT];
+    int part_count;
+};
+
+enum menu_preview_motion_phase {
+    MENU_PREVIEW_MOTION_IDLE = 0,
+    MENU_PREVIEW_MOTION_ENTERING,
+    MENU_PREVIEW_MOTION_EXITING,
+};
+
+enum menu_preview_motion_profile {
+    MENU_PREVIEW_PROFILE_DEFAULT = 0,
+    MENU_PREVIEW_PROFILE_MUSIC,
+    MENU_PREVIEW_PROFILE_PHOTOS,
+    MENU_PREVIEW_PROFILE_NOTES,
+    MENU_PREVIEW_PROFILE_BOOKS,
+};
+
 static lv_obj_t *menu_preview_root;
 static lv_obj_t *menu_preview_content;
+static struct menu_preview_scene menu_preview_scene;
 static bool menu_preview_pending;
 static bool menu_preview_motion_ready;
+static bool menu_preview_build_defer_media;
+static bool menu_preview_media_deferred;
+static bool menu_preview_media_refresh_pending;
+static bool menu_preview_motion_reduced;
+static long menu_preview_media_due;
+static enum menu_preview_motion_phase menu_preview_motion_phase;
+static enum menu_preview_motion_profile menu_preview_motion_profile;
+static int menu_preview_navigation_direction = 1;
 static struct now_queue_popup_view now_queue_view;
 static struct now_actions_popup_view now_actions_view;
 static struct now_volume_popup_view now_volume_view;
@@ -666,6 +943,9 @@ static volatile bool usb_prompt_waiting;
 static volatile unsigned usb_prompt_request_id;
 static volatile int usb_prompt_result;
 #endif
+static struct power_prompt_view power_prompt_view;
+static bool power_play_holding;
+static long power_play_hold_start;
 static int now_action_selected;
 static int now_queue_selected;
 static int eq_studio_band = 5;
@@ -761,9 +1041,6 @@ static fb_data menu_topbar_glass_pixels[CRAZYPOD_MENU_TOPBAR_PIXELS]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static fb_data menu_panel_glass_pixels[CRAZYPOD_MENU_PANEL_PIXELS]
     CACHEALIGN_AT_LEAST_ATTR(16);
-static fb_data preview_text_glass_pixels[
-    CRAZYPOD_PREVIEW_TEXT_PANEL_PIXELS]
-    CACHEALIGN_AT_LEAST_ATTR(16);
 static fb_data search_query_glass_pixels[CRAZYPOD_SEARCH_QUERY_PIXELS]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static fb_data search_results_glass_pixels[CRAZYPOD_SEARCH_RESULTS_PIXELS]
@@ -776,7 +1053,6 @@ static fb_data info_bar_alt_glass_pixels[CRAZYPOD_INFO_BAR_ALT_PIXELS]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static lv_image_dsc_t menu_topbar_glass_descriptor;
 static lv_image_dsc_t menu_panel_glass_descriptor;
-static lv_image_dsc_t preview_text_glass_descriptor;
 static lv_image_dsc_t search_query_glass_descriptor;
 static lv_image_dsc_t search_results_glass_descriptor;
 static lv_image_dsc_t info_toast_glass_descriptor;
@@ -819,14 +1095,28 @@ static void layout_desktop_carousel(bool animated);
 static void refresh_menu_rows(const struct route_state *state);
 static struct route_state *current_route(void);
 static void render_current_route(bool transition);
+static void render_menu_preview(const struct route_state *state,
+                                bool animated);
 static void cycle_playback_mode(void);
 static void show_now_actions_popup(void);
 static void show_now_queue_popup(void);
 static void show_now_volume_popup(void);
 static void dismiss_now_overlay(bool refresh_now_playing);
 static void dismiss_choice_overlay(bool refresh_route);
+static void apply_book_font_size(int value);
+static void rescan_books_with_progress(void);
+static void render_book_loading_screen(
+    const struct crazypod_book *book, const char *title,
+    const char *detail);
+static void book_prepare_progress_callback(
+    int percent, const char *stage, void *context);
+static void load_book_metadata_with_progress(
+    int start_percent, int end_percent);
+static void request_now_playing_route(void);
+static void play_wheel_feedback(long button);
 static void push_route_selected(enum crazypod_route route, int group,
                                 int selected);
+static void pop_route(void);
 static void prepare_glass_descriptor(int source_x, int source_y,
                                      int width, int height,
                                      enum crazypod_glass_material material,
@@ -840,6 +1130,16 @@ static bool usb_prompt_visible(void)
 #else
     return false;
 #endif
+}
+
+static bool power_prompt_visible(void)
+{
+    return power_prompt_view.root != NULL;
+}
+
+static bool modal_prompt_visible(void)
+{
+    return usb_prompt_visible() || power_prompt_visible();
 }
 
 static void set_cpu_boost(bool enabled)
@@ -1335,6 +1635,7 @@ static void draw_lock_progress_event(lv_event_t *event)
         arc.width = lock_opening ? 4 : 3;
         arc.color = lv_color_hex(
             lock_opening ? 0xB8FFE2 :
+            lock_wrong_direction ? 0xFFB36B :
             progress >= 72 ? 0xFF739E : COLOR_CYAN);
         arc.opa = lock_opening ? 255 : 235;
         lv_draw_arc(layer, &arc);
@@ -1355,16 +1656,35 @@ static void refresh_lock_progress(void)
         return;
     if(lock_opening)
         lv_label_set_text(lock_hint_label, "UNLOCKED");
-    else if(lock_select_holding)
-        lv_label_set_text(lock_hint_label, "KEEP HOLDING");
+    else if(lock_wrong_direction)
+        lv_label_set_text(lock_hint_label, "TURN CLOCKWISE");
+    else if(lock_progress_percent > 0)
+        lv_label_set_text(lock_hint_label, "KEEP TURNING CLOCKWISE");
     else
-        lv_label_set_text(lock_hint_label, "HOLD SELECT  1.5s");
+        lv_label_set_text(lock_hint_label, "TURN CLOCKWISE TO UNLOCK");
+    if(!lock_opening && lock_icon_shackle != NULL) {
+        int lift = lock_progress_percent * 2 / 100;
+        lv_obj_set_pos(lock_icon_shackle, 12, 3 - lift);
+        lv_obj_set_style_transform_rotation(
+            lock_icon_shackle, 0, 0);
+    }
+    if(!lock_opening && lock_icon_body != NULL)
+        lv_obj_set_style_bg_color(
+            lock_icon_body,
+            lv_color_hex(lock_wrong_direction
+                ? 0xFFE1C7
+                : lock_progress_percent >= 72
+                    ? 0xFFE2EC : 0xDDF9FF),
+            0);
 }
 
-static void reset_lock_hold(void)
+static void reset_lock_wheel(void)
 {
-    lock_select_holding = false;
     lock_opening = false;
+    lock_wrong_direction = false;
+    lock_wheel_steps = 0;
+    lock_wheel_decay_start_steps = 0;
+    lock_wheel_last_input_tick = 0;
     lock_progress_percent = 0;
     if(lock_icon_shackle != NULL) {
         lv_obj_set_pos(lock_icon_shackle, 12, 3);
@@ -1384,7 +1704,7 @@ static void show_lock_screen(bool turn_display_off)
     screen_locked = true;
     lock_release_guard = false;
     lock_wait_for_wake_release = turn_display_off;
-    reset_lock_hold();
+    reset_lock_wheel();
     refresh_lock_appearance();
     refresh_lock_clock();
     lv_obj_remove_flag(lock_screen, LV_OBJ_FLAG_HIDDEN);
@@ -1399,10 +1719,15 @@ static void show_lock_screen(bool turn_display_off)
 static void finish_unlock(void)
 {
     screen_locked = false;
-    lock_select_holding = false;
     lock_opening = false;
+    lock_wrong_direction = false;
+    lock_wheel_steps = 0;
+    lock_wheel_decay_start_steps = 0;
+    lock_wheel_last_input_tick = 0;
     lock_progress_percent = 0;
     lock_release_guard = true;
+    lock_release_guard_until =
+        current_tick + CRAZYPOD_UNLOCK_INPUT_GUARD_TICKS;
     lock_wait_for_wake_release = false;
     lv_obj_add_flag(lock_screen, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_background(lock_screen);
@@ -1420,41 +1745,46 @@ static void process_lock_state(void)
         if(!screen_locked)
             show_lock_screen(false);
         else
-            reset_lock_hold();
+            reset_lock_wheel();
         lock_wait_for_wake_release = false;
     }
     else if(!lock_backlight_was_on && backlight_is_on &&
             screen_locked) {
         lock_wait_for_wake_release = button_status() != BUTTON_NONE;
-        reset_lock_hold();
+        reset_lock_wheel();
         refresh_lock_clock();
     }
     lock_backlight_was_on = backlight_is_on;
 
     if(!screen_locked)
         return;
-    if(lock_select_holding && !lock_opening) {
-        long elapsed = current_tick - lock_select_hold_start;
-        int progress;
+    if(lock_wrong_direction &&
+       !TIME_BEFORE(current_tick, lock_wrong_direction_until)) {
+        lock_wrong_direction = false;
+        refresh_lock_progress();
+    }
+    if(!lock_opening && lock_wheel_steps > 0 &&
+       lock_wheel_last_input_tick != 0) {
+        long idle = current_tick - lock_wheel_last_input_tick;
 
-        if(elapsed < 0)
-            elapsed = 0;
-        progress = (int)(elapsed * 100 /
-                         CRAZYPOD_UNLOCK_HOLD_TICKS);
-        if(progress > 100)
-            progress = 100;
-        if(progress != lock_progress_percent) {
-            lock_progress_percent = progress;
-            refresh_lock_progress();
-        }
-        if(elapsed >= CRAZYPOD_UNLOCK_HOLD_TICKS) {
-            lock_opening = true;
-            lock_opening_start = current_tick;
-            lock_progress_percent = 100;
-            if(lock_icon_body != NULL)
-                lv_obj_set_style_bg_color(
-                    lock_icon_body, lv_color_hex(0xB8FFE2), 0);
-            refresh_lock_progress();
+        if(idle > CRAZYPOD_UNLOCK_WHEEL_IDLE_TICKS) {
+            long decay =
+                idle - CRAZYPOD_UNLOCK_WHEEL_IDLE_TICKS;
+            int steps;
+
+            if(decay >= CRAZYPOD_UNLOCK_WHEEL_DECAY_TICKS)
+                steps = 0;
+            else
+                steps = (int)(
+                    lock_wheel_decay_start_steps *
+                    (CRAZYPOD_UNLOCK_WHEEL_DECAY_TICKS - decay) /
+                    CRAZYPOD_UNLOCK_WHEEL_DECAY_TICKS);
+            if(steps != lock_wheel_steps) {
+                lock_wheel_steps = steps;
+                lock_progress_percent =
+                    steps * 100 / CRAZYPOD_UNLOCK_WHEEL_STEPS;
+                refresh_lock_progress();
+            }
         }
     }
     if(lock_opening) {
@@ -1468,7 +1798,7 @@ static void process_lock_state(void)
             shift = 5;
         if(lock_icon_shackle != NULL) {
             lv_obj_set_pos(lock_icon_shackle,
-                           12 + shift, 3 - shift);
+                           12 + shift, 1 - shift);
             lv_obj_set_style_transform_rotation(
                 lock_icon_shackle, shift * 30, 0);
         }
@@ -1477,56 +1807,98 @@ static void process_lock_state(void)
     }
 }
 
-static bool handle_lock_button(long button)
+static int lock_wheel_event_steps(intptr_t data)
+{
+    int steps = ((unsigned int)data >> 24) & 0x7f;
+
+    if(steps < 1)
+        steps = 1;
+    if(steps > CRAZYPOD_UNLOCK_WHEEL_STEPS)
+        steps = CRAZYPOD_UNLOCK_WHEEL_STEPS;
+    return steps;
+}
+
+static long main_button_base(long button)
+{
+    return button & BUTTON_MAIN;
+}
+
+static bool handle_lock_button(long button, intptr_t data)
 {
     long base;
     bool release;
-    bool repeated;
+    bool scroll;
 
     if(lock_release_guard) {
-        base = button & ~(BUTTON_REL | BUTTON_REPEAT);
-        if(base == BUTTON_SELECT) {
-            if(button & BUTTON_REL)
-                lock_release_guard = false;
+        base = main_button_base(button);
+        if(TIME_BEFORE(current_tick, lock_release_guard_until) &&
+           (base == BUTTON_SCROLL_FWD ||
+            base == BUTTON_SCROLL_BACK))
             return true;
-        }
         lock_release_guard = false;
     }
     if(!screen_locked)
         return false;
     release = (button & BUTTON_REL) != 0;
-    repeated = (button & BUTTON_REPEAT) != 0;
-    base = button & ~(BUTTON_REL | BUTTON_REPEAT);
+    base = main_button_base(button);
+    scroll = base == BUTTON_SCROLL_FWD ||
+             base == BUTTON_SCROLL_BACK;
 
     if(release) {
         lock_wait_for_wake_release = false;
-        if(base == BUTTON_SELECT && lock_select_holding)
-            reset_lock_hold();
         return true;
     }
     backlight_on();
     if(!lock_backlight_was_on) {
         lock_backlight_was_on = true;
-        lock_wait_for_wake_release = true;
-        reset_lock_hold();
+        /*
+         * Click-wheel motion is posted directly to the button queue and
+         * never produces BUTTON_REL. Consume only the wake event; do not
+         * leave subsequent motion waiting for a release that cannot arrive.
+         */
+        lock_wait_for_wake_release = !scroll;
+        reset_lock_wheel();
         return true;
     }
     if(lock_wait_for_wake_release) {
-        return true;
+        if(scroll)
+            lock_wait_for_wake_release = false;
+        else
+            return true;
     }
     if(lock_opening)
         return true;
-    if(base != BUTTON_SELECT) {
-        if(lock_select_holding)
-            reset_lock_hold();
+    if(!scroll)
         return true;
+
+    play_wheel_feedback(button);
+    if(base == BUTTON_SCROLL_FWD) {
+        lock_wrong_direction = false;
+        lock_wheel_steps += lock_wheel_event_steps(data);
+        if(lock_wheel_steps > CRAZYPOD_UNLOCK_WHEEL_STEPS)
+            lock_wheel_steps = CRAZYPOD_UNLOCK_WHEEL_STEPS;
     }
-    if(!repeated && !lock_select_holding) {
-        lock_select_holding = true;
-        lock_select_hold_start = current_tick;
-        lock_progress_percent = 1;
-        refresh_lock_progress();
+    else {
+        lock_wrong_direction = true;
+        lock_wrong_direction_until =
+            current_tick + CRAZYPOD_UNLOCK_DIRECTION_HINT_TICKS;
+        lock_wheel_steps -= lock_wheel_event_steps(data);
+        if(lock_wheel_steps < 0)
+            lock_wheel_steps = 0;
     }
+    lock_wheel_decay_start_steps = lock_wheel_steps;
+    lock_wheel_last_input_tick = current_tick;
+    lock_progress_percent =
+        lock_wheel_steps * 100 / CRAZYPOD_UNLOCK_WHEEL_STEPS;
+    if(lock_wheel_steps >= CRAZYPOD_UNLOCK_WHEEL_STEPS) {
+        lock_opening = true;
+        lock_opening_start = current_tick;
+        lock_progress_percent = 100;
+        if(lock_icon_body != NULL)
+            lv_obj_set_style_bg_color(
+                lock_icon_body, lv_color_hex(0xB8FFE2), 0);
+    }
+    refresh_lock_progress();
     return true;
 }
 
@@ -1847,9 +2219,6 @@ static void update_status_bars(lv_timer_t *timer)
 
 static void create_status_bar(lv_obj_t *screen, struct status_bar *bar)
 {
-    lv_obj_t *battery;
-    lv_obj_t *battery_cap;
-
     bar->time = make_label(screen, "00:00", &lv_font_montserrat_12,
                            COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_pos(bar->time, 34, 10);
@@ -1860,16 +2229,35 @@ static void create_status_bar(lv_obj_t *screen, struct status_bar *bar)
     lv_obj_set_pos(bar->playing, 241, 11);
     lv_obj_add_flag(bar->playing, LV_OBJ_FLAG_HIDDEN);
 
-    battery = make_box(screen, 258, 11, 27, 12, 3, COLOR_WHITE, 64);
-    bar->battery_fill = make_box(battery, 1, 1, 24, 10, 2,
+    bar->battery = make_box(
+        screen, 258, 11, 27, 12, 3, COLOR_WHITE, 64);
+    bar->battery_fill = make_box(bar->battery, 1, 1, 24, 10, 2,
                                  COLOR_WHITE, LV_OPA_COVER);
-    bar->charge = make_label(battery, LV_SYMBOL_CHARGE,
+    bar->charge = make_label(bar->battery, LV_SYMBOL_CHARGE,
                              &lv_font_montserrat_8,
                              COLOR_DETAIL, LV_OPA_COVER);
     lv_obj_center(bar->charge);
 
-    battery_cap = make_box(screen, 287, 15, 2, 5, 1, COLOR_WHITE, 128);
-    (void)battery_cap;
+    bar->battery_cap = make_box(
+        screen, 287, 15, 2, 5, 1, COLOR_WHITE, 128);
+}
+
+static void set_status_bar_palette(struct status_bar *bar,
+                                   uint32_t foreground,
+                                   uint32_t background)
+{
+    lv_obj_set_style_text_color(
+        bar->time, lv_color_hex(foreground), 0);
+    lv_obj_set_style_text_color(
+        bar->playing, lv_color_hex(foreground), 0);
+    lv_obj_set_style_bg_color(
+        bar->battery, lv_color_hex(foreground), 0);
+    lv_obj_set_style_bg_color(
+        bar->battery_fill, lv_color_hex(foreground), 0);
+    lv_obj_set_style_bg_color(
+        bar->battery_cap, lv_color_hex(foreground), 0);
+    lv_obj_set_style_text_color(
+        bar->charge, lv_color_hex(background), 0);
 }
 
 static int appearance_tile_size(void)
@@ -1892,14 +2280,21 @@ static int interpolate_pose(const int *values, int absolute_q8)
 static void update_desktop_selection_chrome(void)
 {
     int indicator_x = 95;
+    int visible_count = crazypod_apps_visible_count();
+    struct crazypod_app *selected = visible_app(selected_app);
     int i;
 
-    if(desktop_title != NULL)
-        lv_label_set_text(desktop_title, apps[selected_app].name);
+    if(desktop_title != NULL && selected != NULL)
+        lv_label_set_text(desktop_title, selected->name);
     for(i = 0; i < CRAZYPOD_APP_COUNT; ++i) {
         int width = i == selected_app ? 14 : 5;
         if(desktop_indicators[i] == NULL)
             continue;
+        if(i >= visible_count) {
+            lv_obj_add_flag(desktop_indicators[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_remove_flag(desktop_indicators[i], LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_pos(desktop_indicators[i], indicator_x, 166);
         lv_obj_set_size(desktop_indicators[i], width, 4);
         lv_obj_set_style_bg_opa(desktop_indicators[i],
@@ -1958,7 +2353,7 @@ static bool prepare_now_cover(const lv_image_dsc_t *source, int bank)
     return true;
 }
 
-static void prepare_now_overlay_glass(void)
+static void prepare_now_overlay_glass(bool refresh)
 {
     const fb_data *framebuffer =
         (const fb_data *)lcd_framebuffer_default.data;
@@ -1969,7 +2364,8 @@ static void prepare_now_overlay_glass(void)
      * The popup reuses this frozen material; no blur work runs while the
      * wheel is moving and the full 250x176 source never needs a second copy.
      */
-    lv_refr_now(NULL);
+    if(refresh)
+        lv_refr_now(NULL);
     if(!crazypod_image_render_glass_rgb565(
            framebuffer, LCD_WIDTH, LCD_HEIGHT, LCD_WIDTH,
            CRAZYPOD_NOW_POPUP_X, CRAZYPOD_NOW_POPUP_Y,
@@ -2660,7 +3056,7 @@ static void render_desktop_carousel_native(void)
     int distance_layer;
     int row;
 
-    if(product_active || usb_prompt_visible() || !desktop_native_dirty)
+    if(product_active || modal_prompt_visible() || !desktop_native_dirty)
         return;
 
     if(!desktop_native_backdrop_ready) {
@@ -2681,7 +3077,9 @@ static void render_desktop_carousel_native(void)
 
     for(distance_layer = 2; distance_layer >= 0; --distance_layer) {
         int i;
-        for(i = 0; i < CRAZYPOD_APP_COUNT; ++i) {
+        for(i = 0; i < crazypod_apps_visible_count(); ++i) {
+            int catalog_index =
+                app_catalog_index(crazypod_apps_visible_id(i));
             int distance_q8 = i * 256 - desktop_position_q8;
             int absolute_q8 =
                 distance_q8 < 0 ? -distance_q8 : distance_q8;
@@ -2701,8 +3099,9 @@ static void render_desktop_carousel_native(void)
             center_y = 91 + 4 * absolute_q8 / 256;
             icon_size = base_size *
                 interpolate_pose(size_percent, absolute_q8) / 100;
-            draw_desktop_icon(i, center_x, center_y,
-                              icon_size, 255);
+            if(catalog_index >= 0)
+                draw_desktop_icon(catalog_index, center_x, center_y,
+                                  icon_size, 255);
         }
     }
 
@@ -2785,21 +3184,26 @@ static void tick_desktop_carousel(void)
 static void app_focus_event(lv_event_t *event)
 {
     struct crazypod_app *app = lv_event_get_user_data(event);
+    int visible_index;
 
     if(lv_event_get_code(event) != LV_EVENT_FOCUSED)
         return;
-    selected_app = (int)(app - apps);
+    visible_index = crazypod_apps_visible_index(app->id);
+    if(visible_index < 0)
+        return;
+    selected_app = visible_index;
     layout_desktop_carousel(true);
 }
 
 static void move_desktop_selection(int direction)
 {
     int next = selected_app + direction;
+    int count = crazypod_apps_visible_count();
 
     if(next < 0)
         next = 0;
-    if(next >= CRAZYPOD_APP_COUNT)
-        next = CRAZYPOD_APP_COUNT - 1;
+    if(next >= count)
+        next = count - 1;
     if(next == selected_app)
         return;
     selected_app = next;
@@ -3014,7 +3418,7 @@ static void create_desktop(void)
         create_launcher_app(i);
     lv_obj_add_flag(desktop_carousel, LV_OBJ_FLAG_HIDDEN);
 
-    desktop_title = make_label(desktop_screen, apps[0].name,
+    desktop_title = make_label(desktop_screen, visible_app(0)->name,
                                &lv_font_montserrat_16,
                                COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(desktop_title, LCD_WIDTH);
@@ -3030,8 +3434,24 @@ static void create_desktop(void)
     desktop_native_dirty = true;
     desktop_native_backdrop_ready = false;
     layout_desktop_carousel(false);
-    lv_group_focus_obj(apps[0].cell);
+    lv_group_focus_obj(visible_app(0)->cell);
     create_screen_corner_masks(desktop_screen, 0);
+}
+
+static lv_obj_t *create_boot_screen(void)
+{
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_t *logo;
+
+    set_plain_object(screen);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+
+    logo = lv_image_create(screen);
+    lv_image_set_src(logo, crazypod_lcd_boot_logo_image());
+    lv_obj_center(logo);
+    lv_obj_remove_flag(logo, LV_OBJ_FLAG_CLICKABLE);
+    return screen;
 }
 
 static void create_product_screen(void)
@@ -3125,7 +3545,7 @@ static void create_lock_screen(void)
              0x0A1620, LV_OPA_COVER);
 
     lock_hint_label = make_label(
-        lock_screen, "HOLD SELECT  1.5s",
+        lock_screen, "TURN CLOCKWISE TO UNLOCK",
         &lv_font_montserrat_8, COLOR_WHITE, 135);
     lv_obj_set_width(lock_hint_label, LCD_WIDTH);
     lv_obj_set_style_text_align(
@@ -3135,7 +3555,7 @@ static void create_lock_screen(void)
 
     refresh_lock_appearance();
     refresh_lock_clock();
-    reset_lock_hold();
+    reset_lock_wheel();
     create_screen_corner_masks(lock_screen, 2);
     lv_obj_add_flag(lock_screen, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_background(lock_screen);
@@ -3154,7 +3574,9 @@ static bool is_settings_route(enum crazypod_route route)
            route == SETTINGS_ROUTE_DISPLAY ||
            route == SETTINGS_ROUTE_PLAYBACK ||
            route == SETTINGS_ROUTE_POWER ||
-           route == SETTINGS_ROUTE_CONTROLS;
+           route == SETTINGS_ROUTE_CONTROLS ||
+           route == SETTINGS_ROUTE_MAIN_MENU ||
+           route == SETTINGS_ROUTE_MAIN_MENU_ACTIONS;
 }
 
 static int array_count_int(const int *items, int bytes)
@@ -3186,6 +3608,8 @@ static int settings_route_item_count(enum crazypod_route route)
     case SETTINGS_ROUTE_CONTROLS:
         return array_count_int(settings_controls_items,
                                sizeof(settings_controls_items));
+    case SETTINGS_ROUTE_MAIN_MENU:
+        return crazypod_apps_count();
     default:
         return 0;
     }
@@ -3229,6 +3653,322 @@ static int settings_route_item(enum crazypod_route route, int index)
         ? items[index] : -1;
 }
 
+static const struct crazypod_miniapp_metadata *
+miniapp_metadata(int index)
+{
+    return crazypod_miniapps_metadata(index);
+}
+
+static const char *miniapp_symbol(int index)
+{
+    const struct crazypod_miniapp_metadata *metadata =
+        miniapp_metadata(index);
+
+    return metadata != NULL && metadata->symbol[0] != '\0'
+        ? metadata->symbol : LV_SYMBOL_FILE;
+}
+
+static int notes_home_note_start(void)
+{
+    return note_draft_available ? 2 : 1;
+}
+
+static int notes_home_deleted_index(void)
+{
+    return notes_home_note_start() + crazypod_notes_count(false) + 1;
+}
+
+static int notes_home_search_index(void)
+{
+    return notes_home_deleted_index() - 1;
+}
+
+static const struct crazypod_note *notes_home_note(int index)
+{
+    int note_index = index - notes_home_note_start();
+    return note_index >= 0 ? crazypod_note_get(false, note_index) : NULL;
+}
+
+static int utf8_character_size(const char *text)
+{
+    unsigned char value = (unsigned char)text[0];
+
+    if((value & 0x80) == 0)
+        return 1;
+    if((value & 0xe0) == 0xc0 && text[1] != '\0')
+        return 2;
+    if((value & 0xf0) == 0xe0 && text[1] != '\0' &&
+       text[2] != '\0')
+        return 3;
+    if((value & 0xf8) == 0xf0 && text[1] != '\0' &&
+       text[2] != '\0' && text[3] != '\0')
+        return 4;
+    return 1;
+}
+
+static int note_body_line_count(const char *body)
+{
+    const char *cursor = body;
+    int column = 0;
+    int lines = 1;
+
+    while(cursor != NULL && *cursor != '\0') {
+        int bytes;
+        if(*cursor == '\n') {
+            ++lines;
+            column = 0;
+            ++cursor;
+            continue;
+        }
+        bytes = utf8_character_size(cursor);
+        cursor += bytes;
+        ++column;
+        if(column >= 34) {
+            ++lines;
+            column = 0;
+        }
+    }
+    return lines;
+}
+
+static void format_note_body_window(const char *body, int first_line,
+                                    char *output, size_t size)
+{
+    const char *cursor = body;
+    size_t used = 0;
+    int line = 0;
+    int column = 0;
+
+    if(size == 0)
+        return;
+    while(cursor != NULL && *cursor != '\0' && line < first_line + 9) {
+        int bytes;
+        bool newline = *cursor == '\n';
+
+        if(newline) {
+            bytes = 1;
+        }
+        else {
+            bytes = utf8_character_size(cursor);
+        }
+        if(line >= first_line) {
+            int i;
+            for(i = 0; i < bytes && used + 1 < size; ++i)
+                output[used++] = cursor[i];
+        }
+        cursor += bytes;
+        if(newline || ++column >= 34) {
+            if(!newline && line >= first_line && used + 1 < size)
+                output[used++] = '\n';
+            ++line;
+            column = 0;
+        }
+    }
+    output[used] = '\0';
+}
+
+static const char *note_text_with_cursor(const char *text, size_t cursor,
+                                         char *output, size_t size)
+{
+    size_t length;
+
+    if(output == NULL || size < 2)
+        return text;
+    length = strlen(text);
+    if(cursor > length)
+        cursor = length;
+    if(length + 2 > size)
+        length = size - 2;
+    if(cursor > length)
+        cursor = length;
+    memcpy(output, text, cursor);
+    output[cursor] = '|';
+    memcpy(output + cursor + 1, text + cursor, length - cursor);
+    output[length + 1] = '\0';
+    return output;
+}
+
+static bool books_has_continue(void)
+{
+    int index = crazypod_books_recent_index();
+    const struct crazypod_book *book = crazypod_book_get(index);
+    return book != NULL && book->progress > 0;
+}
+
+static int books_route_book_index(const struct route_state *state,
+                                  int position)
+{
+    if(state->route == BOOKS_ROUTE_LIBRARY)
+        return position;
+    if(state->route == BOOKS_ROUTE_RECENTS)
+        return crazypod_books_recent_at(position);
+    if(state->route == BOOKS_ROUTE_FAVORITES)
+        return crazypod_books_favorite_at(position);
+    return state->group;
+}
+
+static bool is_podcast_path(const char *path)
+{
+    return path != NULL &&
+           (strstr(path, "/Podcasts/") != NULL ||
+            strstr(path, "/podcasts/") != NULL);
+}
+
+static int podcast_count(void)
+{
+    int count = 0;
+    int i;
+    for(i = 0; i < crazypod_music_track_count(); ++i) {
+        const struct crazypod_track *track = crazypod_music_track(i);
+        if(track != NULL && is_podcast_path(track->path))
+            ++count;
+    }
+    return count;
+}
+
+static int podcast_track_index(int position)
+{
+    int visible = 0;
+    int i;
+    for(i = 0; i < crazypod_music_track_count(); ++i) {
+        const struct crazypod_track *track = crazypod_music_track(i);
+        if(track != NULL && is_podcast_path(track->path) &&
+           visible++ == position)
+            return i;
+    }
+    return -1;
+}
+
+static int days_in_month(int year, int month);
+static bool note_editor_dirty(void);
+
+static int calendar_focus_date(void)
+{
+    return calendar_focus_year * 10000 +
+           (calendar_focus_month + 1) * 100 +
+           calendar_focus_day;
+}
+
+static int calendar_event_index_on_focus(int position)
+{
+    int visible = 0;
+    int i;
+    int date = calendar_focus_date();
+
+    for(i = 0; i < crazypod_calendar_event_count(); ++i) {
+        const struct crazypod_calendar_event *event =
+            crazypod_calendar_event_get(i);
+        if(event != NULL && event->date == date &&
+           visible++ == position)
+            return i;
+    }
+    return -1;
+}
+
+static int calendar_today_date(void)
+{
+    struct tm *now = get_time();
+
+    return (now->tm_year + 1900) * 10000 +
+           (now->tm_mon + 1) * 100 + now->tm_mday;
+}
+
+static int calendar_upcoming_event_index(int position)
+{
+    int visible = 0;
+    int today = calendar_today_date();
+    int i;
+
+    for(i = 0; i < crazypod_calendar_event_count(); ++i) {
+        const struct crazypod_calendar_event *event =
+            crazypod_calendar_event_get(i);
+        if(event != NULL && event->date >= today &&
+           visible++ == position)
+            return i;
+    }
+    return -1;
+}
+
+static int calendar_route_event_index(
+    const struct route_state *state, int position)
+{
+    if(state->route == CALENDAR_ROUTE_UPCOMING)
+        return calendar_upcoming_event_index(position);
+    if(state->route == CALENDAR_ROUTE_TODAY) {
+        int saved_year = calendar_focus_year;
+        int saved_month = calendar_focus_month;
+        int saved_day = calendar_focus_day;
+        int today = calendar_today_date();
+        int result;
+
+        calendar_focus_year = today / 10000;
+        calendar_focus_month = today / 100 % 100 - 1;
+        calendar_focus_day = today % 100;
+        result = calendar_event_index_on_focus(position);
+        calendar_focus_year = saved_year;
+        calendar_focus_month = saved_month;
+        calendar_focus_day = saved_day;
+        return result;
+    }
+    if(state->route == CALENDAR_ROUTE_DAY_EVENTS)
+        return calendar_event_index_on_focus(position);
+    return -1;
+}
+
+static int calendar_route_event_count(const struct route_state *state)
+{
+    int count = 0;
+
+    while(calendar_route_event_index(state, count) >= 0)
+        ++count;
+    return count;
+}
+
+static int calendar_shifted_date(int date, int direction)
+{
+    int year = date / 10000;
+    int month = date / 100 % 100 - 1;
+    int day = date % 100;
+
+    if(direction > 0) {
+        ++day;
+        if(day > days_in_month(year, month)) {
+            day = 1;
+            if(++month > 11) {
+                month = 0;
+                ++year;
+            }
+        }
+    }
+    else if(direction < 0) {
+        if(--day < 1) {
+            if(--month < 0) {
+                month = 11;
+                --year;
+            }
+            day = days_in_month(year, month);
+        }
+    }
+    return year * 10000 + (month + 1) * 100 + day;
+}
+
+static int calendar_parse_minutes(const char *time)
+{
+    if(time == NULL || strlen(time) < 5 || time[2] != ':')
+        return -1;
+    return ((time[0] - '0') * 10 + time[1] - '0') * 60 +
+           (time[3] - '0') * 10 + time[4] - '0';
+}
+
+static void calendar_format_time(char *buffer, size_t size, int minutes)
+{
+    if(minutes < 0)
+        buffer[0] = '\0';
+    else
+        snprintf(buffer, size, "%02d:%02d",
+                 minutes / 60, minutes % 60);
+}
+
 static const char *settings_item_title(int item)
 {
     switch(item) {
@@ -3240,6 +3980,7 @@ static const char *settings_item_title(int item)
     case SETTINGS_ITEM_BACKLIGHT_TIMEOUT: return "Backlight";
     case SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED: return "Charging Light";
     case SETTINGS_ITEM_LCD_SLEEP: return "LCD Sleep";
+    case SETTINGS_ITEM_REDUCE_MOTION: return "Reduce Motion";
     case SETTINGS_ITEM_SHUFFLE: return "Shuffle";
     case SETTINGS_ITEM_REPEAT: return "Repeat";
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION: return "Sleep Timer";
@@ -3271,6 +4012,8 @@ static const char *settings_item_symbol(int item)
     case SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED:
     case SETTINGS_ITEM_LCD_SLEEP:
         return LV_SYMBOL_EYE_OPEN;
+    case SETTINGS_ITEM_REDUCE_MOTION:
+        return LV_SYMBOL_EYE_CLOSE;
     case SETTINGS_ITEM_SHUFFLE:
         return LV_SYMBOL_SHUFFLE;
     case SETTINGS_ITEM_REPEAT:
@@ -3295,6 +4038,7 @@ static const char *settings_group_detail(int index)
     case 2: return "Shuffle and repeat";
     case 3: return "Charging and sleep timer";
     case 4: return "Beeps and wheel feedback";
+    case 5: return "Reorder or hide entries";
     default: return "";
     }
 }
@@ -3404,6 +4148,8 @@ static int settings_item_current_value(int item)
 #endif
     case SETTINGS_ITEM_LCD_SLEEP:
         return global_settings.lcd_sleep_after_backlight_off;
+    case SETTINGS_ITEM_REDUCE_MOTION:
+        return crazypod_state_reduce_motion() ? 1 : 0;
     case SETTINGS_ITEM_SHUFFLE:
         return global_settings.playlist_shuffle ? 1 : 0;
     case SETTINGS_ITEM_REPEAT:
@@ -3437,6 +4183,7 @@ static int settings_choice_count(int item)
 {
     switch(item) {
     case SETTINGS_ITEM_EQ_ENABLED:
+    case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
@@ -3493,6 +4240,7 @@ static int settings_choice_value(int item, int index)
 {
     switch(item) {
     case SETTINGS_ITEM_EQ_ENABLED:
+    case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
@@ -3562,6 +4310,7 @@ static int settings_choice_index(int item)
 
     switch(item) {
     case SETTINGS_ITEM_EQ_ENABLED:
+    case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
@@ -3672,6 +4421,7 @@ static const char *settings_choice_title(int item, int index)
 
     switch(item) {
     case SETTINGS_ITEM_EQ_ENABLED:
+    case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
@@ -3766,6 +4516,9 @@ static void settings_apply_choice(int item, int index)
         global_settings.lcd_sleep_after_backlight_off = value;
         lcd_set_sleep_after_backlight_off(
             global_settings.lcd_sleep_after_backlight_off);
+        break;
+    case SETTINGS_ITEM_REDUCE_MOTION:
+        crazypod_state_set_reduce_motion(value != 0);
         break;
     case SETTINGS_ITEM_SHUFFLE:
         crazypod_queue_set_shuffle(value != 0);
@@ -4171,13 +4924,115 @@ static int route_item_count(const struct route_state *state)
     case MUSIC_ROUTE_NOW_PLAYING:
         return 1;
     case PHOTOS_ROUTE_MENU:
-        return 2;
+        return 3;
     case PHOTOS_ROUTE_LIBRARY:
         return crazypod_photo_count();
+    case PHOTOS_ROUTE_VIDEOS:
+        return crazypod_video_count();
     case PHOTOS_ROUTE_FAVORITES:
         return crazypod_photo_favorite_count();
     case PHOTOS_ROUTE_DETAIL:
         return 2;
+    case EXTRAS_ROUTE_MENU:
+        return crazypod_apps_hidden_count();
+    case NOTES_ROUTE_MENU:
+        return notes_home_deleted_index() + 1;
+    case NOTES_ROUTE_COMPOSER:
+        return CRAZYPOD_EDITOR_CHAR_COUNT + 3;
+    case NOTES_ROUTE_EXIT_ACTIONS:
+        return 3;
+    case NOTES_ROUTE_DISCARD_CONFIRM:
+        return 1;
+    case NOTES_ROUTE_SEARCH:
+        return CRAZYPOD_EDITOR_CHAR_COUNT + 3;
+    case NOTES_ROUTE_SEARCH_RESULTS:
+        return crazypod_notes_search_count(note_search_query);
+    case NOTES_ROUTE_READER:
+        return note_body_line_count(note_reader_body) > 9
+            ? note_body_line_count(note_reader_body) - 8 : 1;
+    case NOTES_ROUTE_ACTIONS:
+        return 4;
+    case NOTES_ROUTE_DELETED:
+        return crazypod_notes_count(true) > 0
+            ? crazypod_notes_count(true) + 1 : 0;
+    case NOTES_ROUTE_DELETED_ACTIONS:
+        return 2;
+    case NOTES_ROUTE_DELETE_CONFIRM:
+    case NOTES_ROUTE_PERMANENT_CONFIRM:
+    case NOTES_ROUTE_EMPTY_TRASH_CONFIRM:
+        return 1;
+    case BOOKS_ROUTE_MENU:
+        return books_has_continue() ? 6 : 5;
+    case BOOKS_ROUTE_RECENTS:
+        return crazypod_books_recent_count();
+    case BOOKS_ROUTE_LIBRARY:
+        return crazypod_books_count();
+    case BOOKS_ROUTE_FAVORITES:
+        return crazypod_books_favorite_count();
+    case BOOKS_ROUTE_READER:
+    case BOOKS_ROUTE_STATS:
+    case BOOKS_ROUTE_INFO:
+        return 1;
+    case BOOKS_ROUTE_ACTIONS: {
+        return 6;
+    }
+    case BOOKS_ROUTE_CHAPTERS:
+        return crazypod_book_chapter_count(state->group);
+    case BOOKS_ROUTE_BOOKMARKS: {
+        const struct crazypod_book *book =
+            crazypod_book_get(state->group);
+        return book != NULL && book->bookmark > 0 ? 1 : 0;
+    }
+    case BOOKS_ROUTE_DELETE_CONFIRM:
+        return 1;
+    case BOOKS_ROUTE_READING_SETTINGS:
+        return 3;
+    case PODCASTS_ROUTE_MENU:
+        return podcast_count();
+    case UTILITIES_ROUTE_MENU:
+        return crazypod_miniapps_count();
+    case MINIAPP_ROUTE_VIEW:
+        return 1;
+    case CLOCK_ROUTE_MENU:
+        return 3;
+    case CLOCK_ROUTE_SLEEP_TIMER:
+        return get_sleep_timer_active() ? 2 : 4;
+    case CLOCK_ROUTE_VIEW:
+    case STOPWATCH_ROUTE_VIEW:
+    case WORKOUT_ROUTE_READY:
+    case WORKOUT_ROUTE_ACTIVE:
+    case WORKOUT_ROUTE_SUMMARY:
+    case WORKOUT_ROUTE_DETAIL:
+    case CALENDAR_ROUTE_DETAIL:
+    case CONTACTS_ROUTE_DETAIL:
+        return 1;
+    case WORKOUT_ROUTE_MENU:
+        return 3;
+    case WORKOUT_ROUTE_TYPES:
+        return CRAZYPOD_WORKOUT_ACTIVITY_COUNT;
+    case WORKOUT_ROUTE_FINISH_CONFIRM:
+    case WORKOUT_ROUTE_DELETE_CONFIRM:
+        return 1;
+    case WORKOUT_ROUTE_HISTORY:
+        return crazypod_workouts_count();
+    case CALENDAR_ROUTE_MENU:
+        return 4;
+    case CALENDAR_ROUTE_TODAY:
+    case CALENDAR_ROUTE_UPCOMING:
+    case CALENDAR_ROUTE_DAY_EVENTS:
+        return calendar_route_event_count(state) + 1;
+    case CALENDAR_ROUTE_MONTH:
+        return 1;
+    case CALENDAR_ROUTE_EDITOR:
+        return 4;
+    case CALENDAR_ROUTE_TITLE_EDITOR:
+        return CRAZYPOD_EDITOR_CHAR_COUNT + 3;
+    case CALENDAR_ROUTE_ACTIONS:
+        return 2;
+    case CALENDAR_ROUTE_DELETE_CONFIRM:
+        return 1;
+    case CONTACTS_ROUTE_LIST:
+        return crazypod_contacts_count();
     case SETTINGS_ROUTE_MENU:
     case SETTINGS_ROUTE_SOUND:
     case SETTINGS_ROUTE_EQ_STUDIO:
@@ -4185,7 +5040,12 @@ static int route_item_count(const struct route_state *state)
     case SETTINGS_ROUTE_PLAYBACK:
     case SETTINGS_ROUTE_POWER:
     case SETTINGS_ROUTE_CONTROLS:
+    case SETTINGS_ROUTE_MAIN_MENU:
         return settings_route_item_count(state->route);
+    case SETTINGS_ROUTE_MAIN_MENU_ACTIONS:
+        return crazypod_apps_is_fixed(
+                   (enum crazypod_app_id)state->group)
+            ? 2 : 3;
     case DIY_ROUTE_MENU:
         return (int)(sizeof(diy_menu_titles) /
                      sizeof(diy_menu_titles[0]));
@@ -4226,6 +5086,18 @@ static int route_item_count(const struct route_state *state)
     return 0;
 }
 
+static struct crazypod_app *route_app(const struct route_state *state,
+                                     int index)
+{
+    if(state->route == SETTINGS_ROUTE_MAIN_MENU)
+        return ordered_app(index);
+    if(state->route == EXTRAS_ROUTE_MENU)
+        return hidden_app(index);
+    if(state->route == SETTINGS_ROUTE_MAIN_MENU_ACTIONS)
+        return app_for_id((enum crazypod_app_id)state->group);
+    return NULL;
+}
+
 static const struct crazypod_track *route_track(
     const struct route_state *state, int index)
 {
@@ -4245,6 +5117,8 @@ static const struct crazypod_track *route_track(
         const char *path = crazypod_queue_path(index);
         return crazypod_music_track(crazypod_music_find_track(path));
     }
+    case PODCASTS_ROUTE_MENU:
+        return crazypod_music_track(podcast_track_index(index));
     default:
         return NULL;
     }
@@ -4257,9 +5131,11 @@ static const char *route_item_title(const struct route_state *state, int index)
     case MUSIC_ROUTE_MENU:
         return index >= 0 && index < 8 ? music_menu_titles[index] : "";
     case PHOTOS_ROUTE_MENU:
-        return index >= 0 && index < 2 ? photos_menu_titles[index] : "";
+        return index >= 0 && index < 3 ? photos_menu_titles[index] : "";
     case PHOTOS_ROUTE_LIBRARY:
         return crazypod_photo_name(index);
+    case PHOTOS_ROUTE_VIDEOS:
+        return crazypod_video_name(index);
     case PHOTOS_ROUTE_FAVORITES:
         return crazypod_photo_name(crazypod_photo_favorite_index(index));
     case PHOTOS_ROUTE_DETAIL:
@@ -4269,6 +5145,293 @@ static const char *route_item_title(const struct route_state *state, int index)
                index < (int)(sizeof(settings_menu_titles) /
                              sizeof(settings_menu_titles[0]))
             ? settings_menu_titles[index] : "";
+    case SETTINGS_ROUTE_MAIN_MENU: {
+        struct crazypod_app *app = ordered_app(index);
+        return app != NULL ? app->name : "";
+    }
+    case SETTINGS_ROUTE_MAIN_MENU_ACTIONS:
+        if(index == 0 &&
+           !crazypod_apps_is_fixed(
+               (enum crazypod_app_id)state->group))
+            return crazypod_apps_is_enabled(
+                       (enum crazypod_app_id)state->group)
+                ? "Hide" : "Show";
+        index += crazypod_apps_is_fixed(
+                     (enum crazypod_app_id)state->group)
+            ? 1 : 0;
+        return index >= 1 && index < 3
+            ? main_menu_action_titles[index] : "";
+    case EXTRAS_ROUTE_MENU: {
+        struct crazypod_app *app = hidden_app(index);
+        return app != NULL ? app->name : "";
+    }
+    case NOTES_ROUTE_MENU: {
+        const struct crazypod_note *note;
+        if(index == 0)
+            return "New Note";
+        if(note_draft_available && index == 1)
+            return "Continue Draft";
+        if(index == notes_home_search_index())
+            return "Search";
+        if(index == notes_home_deleted_index())
+            return "Deleted";
+        note = notes_home_note(index);
+        return note != NULL ? note->title : "";
+    }
+    case NOTES_ROUTE_COMPOSER:
+        if(index >= 0 && index < CRAZYPOD_EDITOR_CHAR_COUNT)
+            return editor_characters[index];
+        if(index == CRAZYPOD_EDITOR_CHAR_COUNT)
+            return "Space";
+        if(index == CRAZYPOD_EDITOR_CHAR_COUNT + 1)
+            return "Backspace";
+        if(index == CRAZYPOD_EDITOR_CHAR_COUNT + 2)
+            return "Save Note";
+        return "";
+    case NOTES_ROUTE_EXIT_ACTIONS:
+        return index == 0 ? "Save" :
+               index == 1 ? "Keep" :
+               index == 2 ? "Discard" : "";
+    case NOTES_ROUTE_DISCARD_CONFIRM:
+        return "Hold Center to Discard";
+    case NOTES_ROUTE_SEARCH:
+        if(index >= 0 && index < CRAZYPOD_EDITOR_CHAR_COUNT)
+            return editor_characters[index];
+        if(index == CRAZYPOD_EDITOR_CHAR_COUNT)
+            return "Space";
+        if(index == CRAZYPOD_EDITOR_CHAR_COUNT + 1)
+            return "Backspace";
+        if(index == CRAZYPOD_EDITOR_CHAR_COUNT + 2)
+            return "View Results";
+        return "";
+    case NOTES_ROUTE_SEARCH_RESULTS: {
+        const struct crazypod_note *note =
+            crazypod_notes_search_get(note_search_query, index);
+        return note != NULL ? note->title : "";
+    }
+    case NOTES_ROUTE_ACTIONS: {
+        const struct crazypod_note *note =
+            crazypod_note_find((uint32_t)state->group);
+        if(index == 0)
+            return note != NULL && note->pinned ? "Unpin" : "Pin";
+        return index == 1 ? "Edit" :
+               index == 2 ? "Duplicate" :
+               index == 3 ? "Delete" : "";
+    }
+    case NOTES_ROUTE_DELETED:
+        if(index == crazypod_notes_count(true))
+            return "Empty Deleted";
+        else {
+            const struct crazypod_note *note =
+                crazypod_note_get(true, index);
+            return note != NULL ? note->title : "";
+        }
+    case NOTES_ROUTE_DELETED_ACTIONS:
+        return index == 0 ? "Restore" :
+               index == 1 ? "Erase Forever" : "";
+    case NOTES_ROUTE_DELETE_CONFIRM:
+        return "Hold Center to Delete";
+    case NOTES_ROUTE_PERMANENT_CONFIRM:
+        return "Hold Center to Erase";
+    case NOTES_ROUTE_EMPTY_TRASH_CONFIRM:
+        return "Hold Center to Empty";
+    case BOOKS_ROUTE_MENU: {
+        static const char *const titles[] = {
+            "Recents", "Books", "Favorites", "Stats", "Reading"
+        };
+        int logical;
+        if(books_has_continue() && index == 0)
+            return "Continue";
+        logical = index - (books_has_continue() ? 1 : 0);
+        return logical >= 0 && logical < 5 ? titles[logical] : "";
+    }
+    case BOOKS_ROUTE_RECENTS:
+    case BOOKS_ROUTE_LIBRARY:
+    case BOOKS_ROUTE_FAVORITES: {
+        const struct crazypod_book *book =
+            crazypod_book_get(books_route_book_index(state, index));
+        return book != NULL ? book->title : "";
+    }
+    case BOOKS_ROUTE_ACTIONS: {
+        const struct crazypod_book *book =
+            crazypod_book_get(state->group);
+        if(index == 0)
+            return "Read";
+        if(index == 1)
+            return "Bookmarks";
+        if(index == 2)
+            return "Chapters";
+        if(index == 3)
+            return book != NULL && book->favorite
+                ? "Remove Favorite" : "Favorite";
+        if(index == 4)
+            return "Info";
+        return index == 5 ? "Delete" : "";
+    }
+    case BOOKS_ROUTE_CHAPTERS: {
+        static char chapter_title[96];
+        uint32_t offset;
+        if(crazypod_book_chapter_get(
+               state->group, index, chapter_title,
+               sizeof(chapter_title), &offset))
+            return chapter_title;
+        return "";
+    }
+    case BOOKS_ROUTE_BOOKMARKS:
+        return "Saved Page";
+    case BOOKS_ROUTE_DELETE_CONFIRM:
+        return "Hold Center to Delete";
+    case BOOKS_ROUTE_READING_SETTINGS:
+        if(index == 0) {
+            static const char *const sizes[] = {
+                "Text Size: Small", "Text Size: Medium",
+                "Text Size: Large"
+            };
+            return sizes[crazypod_books_font_size()];
+        }
+        if(index == 1) {
+            static const char *const themes[] = {
+                "Page: Parchment", "Page: Light",
+                "Page: Mint", "Page: Dark"
+            };
+            return themes[crazypod_books_theme()];
+        }
+        return index == 2 ? "Import / Rescan" : "";
+    case BOOKS_ROUTE_STATS:
+        return "Library Summary";
+    case BOOKS_ROUTE_INFO:
+        return "Book Details";
+    case PODCASTS_ROUTE_MENU: {
+        int track_index = podcast_track_index(index);
+        const struct crazypod_track *track =
+            crazypod_music_track(track_index);
+        return track != NULL ? track->title : "";
+    }
+    case UTILITIES_ROUTE_MENU:
+    {
+        const struct crazypod_miniapp_metadata *metadata =
+            miniapp_metadata(index);
+        return metadata != NULL ? metadata->name : "";
+    }
+    case MINIAPP_ROUTE_VIEW:
+    {
+        const struct crazypod_miniapp_metadata *metadata =
+            miniapp_metadata(state->group);
+        return metadata != NULL ? metadata->name : "Mini App";
+    }
+    case CLOCK_ROUTE_MENU:
+        return index == 0 ? "Local Time" :
+               index == 1 ? "Sleep Timer" :
+               index == 2 ? "Stopwatch" : "";
+    case CLOCK_ROUTE_SLEEP_TIMER:
+        if(get_sleep_timer_active())
+            return index == 0 ? "Cancel Timer" :
+                   index == 1 ? "End Now" : "";
+        else {
+            static const char *const durations[] = {
+                "15 Minutes", "30 Minutes", "45 Minutes", "60 Minutes"
+            };
+            return index >= 0 && index < 4 ? durations[index] : "";
+        }
+    case CLOCK_ROUTE_VIEW:
+        return "Current Time";
+    case STOPWATCH_ROUTE_VIEW:
+        return stopwatch_running ? "Pause" : "Start";
+    case WORKOUT_ROUTE_MENU:
+        return index >= 0 && index < 3
+            ? workout_menu_titles[index] : "";
+    case WORKOUT_ROUTE_TYPES:
+        return crazypod_workout_activity_title(index);
+    case WORKOUT_ROUTE_READY:
+        return "Start";
+    case WORKOUT_ROUTE_ACTIVE:
+        return workout_running ? "Pause" : "Resume";
+    case WORKOUT_ROUTE_FINISH_CONFIRM:
+        return "Hold Center to Save";
+    case WORKOUT_ROUTE_HISTORY: {
+        const struct crazypod_workout *workout =
+            crazypod_workout_get(index);
+        return workout != NULL
+            ? crazypod_workout_activity_title(workout->activity) : "";
+    }
+    case WORKOUT_ROUTE_SUMMARY:
+        return "Workout Summary";
+    case WORKOUT_ROUTE_DETAIL:
+        return "Workout Details";
+    case WORKOUT_ROUTE_DELETE_CONFIRM:
+        return "Hold Center to Delete";
+    case CALENDAR_ROUTE_MENU:
+        return index == 0 ? "Today" :
+               index == 1 ? "Upcoming" :
+               index == 2 ? "Month" :
+               index == 3 ? "Add Event" : "";
+    case CALENDAR_ROUTE_TODAY:
+    case CALENDAR_ROUTE_UPCOMING:
+    case CALENDAR_ROUTE_DAY_EVENTS: {
+        int event_count = calendar_route_event_count(state);
+        const struct crazypod_calendar_event *event;
+        if(index == event_count)
+            return "Add Event";
+        event = crazypod_calendar_event_get(
+            calendar_route_event_index(state, index));
+        return event != NULL ? event->summary : "";
+    }
+    case CALENDAR_ROUTE_MONTH:
+        return "Month";
+    case CALENDAR_ROUTE_EDITOR: {
+        static char text[128];
+        char time[16];
+        if(index == 0) {
+            snprintf(text, sizeof(text), "Title: %s",
+                     calendar_editor_summary[0] != '\0'
+                         ? calendar_editor_summary : "Untitled");
+            return text;
+        }
+        if(index == 1) {
+            snprintf(text, sizeof(text), "Date: %04d-%02d-%02d",
+                     calendar_editor_date / 10000,
+                     calendar_editor_date / 100 % 100,
+                     calendar_editor_date % 100);
+            return text;
+        }
+        if(index == 2) {
+            calendar_format_time(time, sizeof(time),
+                                 calendar_editor_minutes);
+            snprintf(text, sizeof(text), "Time: %s",
+                     time[0] != '\0' ? time : "All Day");
+            return text;
+        }
+        if(index == 3)
+            return calendar_editor_error == 1
+                ? "Title Required"
+                : calendar_editor_error == 2
+                    ? "Storage Error" : "Save Event";
+        return "";
+    }
+    case CALENDAR_ROUTE_TITLE_EDITOR:
+        if(index >= 0 && index < CRAZYPOD_EDITOR_CHAR_COUNT)
+            return editor_characters[index];
+        if(index == CRAZYPOD_EDITOR_CHAR_COUNT)
+            return "Space";
+        if(index == CRAZYPOD_EDITOR_CHAR_COUNT + 1)
+            return "Backspace";
+        if(index == CRAZYPOD_EDITOR_CHAR_COUNT + 2)
+            return "Done";
+        return "";
+    case CALENDAR_ROUTE_DETAIL:
+        return "Event Details";
+    case CALENDAR_ROUTE_ACTIONS:
+        return index == 0 ? "Edit" :
+               index == 1 ? "Delete" : "";
+    case CALENDAR_ROUTE_DELETE_CONFIRM:
+        return "Hold Center to Delete";
+    case CONTACTS_ROUTE_LIST: {
+        const struct crazypod_contact *contact =
+            crazypod_contact_get(index);
+        return contact != NULL ? contact->name : "";
+    }
+    case CONTACTS_ROUTE_DETAIL:
+        return "Contact Details";
     case SETTINGS_ROUTE_EQ_STUDIO: {
         static const char *const labels[EQ_NUM_BANDS] = {
             "32Hz", "64Hz", "125Hz", "250Hz", "500Hz",
@@ -4425,8 +5588,9 @@ static const char *route_title(const struct route_state *state)
     case MUSIC_ROUTE_QUEUE: return "UP NEXT";
     case MUSIC_ROUTE_ALBUM_FLOW: return "ALBUMS";
     case MUSIC_ROUTE_NOW_PLAYING: return "NOW PLAYING";
-    case PHOTOS_ROUTE_MENU: return "PHOTOS";
-    case PHOTOS_ROUTE_LIBRARY: return "LIBRARY";
+    case PHOTOS_ROUTE_MENU: return "MEDIA";
+    case PHOTOS_ROUTE_LIBRARY: return "PHOTOS";
+    case PHOTOS_ROUTE_VIDEOS: return "VIDEOS";
     case PHOTOS_ROUTE_FAVORITES: return "FAVORITES";
     case PHOTOS_ROUTE_DETAIL: return "PHOTO";
     case SETTINGS_ROUTE_MENU: return "SETTINGS";
@@ -4436,6 +5600,82 @@ static const char *route_title(const struct route_state *state)
     case SETTINGS_ROUTE_PLAYBACK: return "PLAYBACK";
     case SETTINGS_ROUTE_POWER: return "POWER";
     case SETTINGS_ROUTE_CONTROLS: return "CONTROLS";
+    case SETTINGS_ROUTE_MAIN_MENU: return "MAIN MENU";
+    case SETTINGS_ROUTE_MAIN_MENU_ACTIONS: {
+        struct crazypod_app *app =
+            app_for_id((enum crazypod_app_id)state->group);
+        return app != NULL ? app->name : "MAIN MENU";
+    }
+    case EXTRAS_ROUTE_MENU: return "MORE FEATURES";
+    case NOTES_ROUTE_MENU: return "NOTES";
+    case NOTES_ROUTE_COMPOSER:
+        return note_editor_body_active ? "EDIT BODY" : "EDIT TITLE";
+    case NOTES_ROUTE_EXIT_ACTIONS:
+        return "UNSAVED NOTE";
+    case NOTES_ROUTE_DISCARD_CONFIRM:
+        return "DISCARD DRAFT";
+    case NOTES_ROUTE_SEARCH: return "SEARCH NOTES";
+    case NOTES_ROUTE_SEARCH_RESULTS: return "RESULTS";
+    case NOTES_ROUTE_READER: {
+        const struct crazypod_note *note =
+            crazypod_note_find((uint32_t)state->group);
+        return note != NULL ? note->title : "NOTE";
+    }
+    case NOTES_ROUTE_ACTIONS: return "NOTE ACTIONS";
+    case NOTES_ROUTE_DELETED: return "DELETED";
+    case NOTES_ROUTE_DELETED_ACTIONS: return "DELETED NOTE";
+    case NOTES_ROUTE_DELETE_CONFIRM: return "DELETE NOTE";
+    case NOTES_ROUTE_PERMANENT_CONFIRM: return "ERASE NOTE";
+    case NOTES_ROUTE_EMPTY_TRASH_CONFIRM: return "EMPTY DELETED";
+    case BOOKS_ROUTE_MENU: return "BOOKS";
+    case BOOKS_ROUTE_RECENTS: return "RECENTS";
+    case BOOKS_ROUTE_LIBRARY: return "BOOKS";
+    case BOOKS_ROUTE_FAVORITES: return "FAVORITES";
+    case BOOKS_ROUTE_READER: {
+        const struct crazypod_book *book =
+            crazypod_book_get(state->group);
+        return book != NULL ? book->title : "BOOK";
+    }
+    case BOOKS_ROUTE_ACTIONS: return "BOOK ACTIONS";
+    case BOOKS_ROUTE_CHAPTERS: return "CHAPTERS";
+    case BOOKS_ROUTE_BOOKMARKS: return "BOOKMARKS";
+    case BOOKS_ROUTE_DELETE_CONFIRM: return "DELETE BOOK";
+    case BOOKS_ROUTE_STATS: return "READING STATS";
+    case BOOKS_ROUTE_READING_SETTINGS: return "READING";
+    case BOOKS_ROUTE_INFO: return "BOOK INFO";
+    case PODCASTS_ROUTE_MENU: return "PODCASTS";
+    case UTILITIES_ROUTE_MENU: return "MINI APPS";
+    case MINIAPP_ROUTE_VIEW: {
+        const struct crazypod_miniapp_metadata *metadata =
+            miniapp_metadata(state->group);
+        return metadata != NULL ? metadata->name : "MINI APP";
+    }
+    case CLOCK_ROUTE_MENU: return "CLOCK";
+    case CLOCK_ROUTE_SLEEP_TIMER: return "SLEEP TIMER";
+    case CLOCK_ROUTE_VIEW: return "CLOCK";
+    case STOPWATCH_ROUTE_VIEW: return "STOPWATCH";
+    case WORKOUT_ROUTE_MENU: return "WORKOUTS";
+    case WORKOUT_ROUTE_TYPES: return "CHOOSE WORKOUT";
+    case WORKOUT_ROUTE_READY: return "WORKOUT";
+    case WORKOUT_ROUTE_ACTIVE: return "WORKOUT";
+    case WORKOUT_ROUTE_FINISH_CONFIRM: return "END WORKOUT";
+    case WORKOUT_ROUTE_HISTORY: return "HISTORY";
+    case WORKOUT_ROUTE_SUMMARY: return "SUMMARY";
+    case WORKOUT_ROUTE_DETAIL: return "WORKOUT";
+    case WORKOUT_ROUTE_DELETE_CONFIRM: return "DELETE WORKOUT";
+    case CALENDAR_ROUTE_MENU: return "CALENDAR";
+    case CALENDAR_ROUTE_TODAY: return "TODAY";
+    case CALENDAR_ROUTE_UPCOMING: return "UPCOMING";
+    case CALENDAR_ROUTE_MONTH: return "MONTH";
+    case CALENDAR_ROUTE_DAY_EVENTS: return "EVENTS";
+    case CALENDAR_ROUTE_EDITOR:
+        return calendar_editor_id != 0 ? "EDIT EVENT" : "ADD EVENT";
+    case CALENDAR_ROUTE_TITLE_EDITOR: return "EVENT TITLE";
+    case CALENDAR_ROUTE_DETAIL: return "EVENT";
+    case CALENDAR_ROUTE_ACTIONS: return "EVENT ACTIONS";
+    case CALENDAR_ROUTE_DELETE_CONFIRM: return "DELETE EVENT";
+    case CONTACTS_ROUTE_LIST: return "CONTACTS";
+    case CONTACTS_ROUTE_DETAIL: return "CONTACT";
     case DIY_ROUTE_MENU: return "CUSTOMIZE";
     case DIY_ROUTE_PRESETS: return "PRESETS";
     case DIY_ROUTE_PRESET_LIBRARY: return "SAVED";
@@ -4480,6 +5720,9 @@ static bool route_item_is_current(const struct route_state *state, int index)
         crazypod_appearance_get();
 
     switch(state->route) {
+    case SETTINGS_ROUTE_MAIN_MENU:
+        return crazypod_apps_is_enabled(
+            crazypod_apps_ordered_id(index));
     case DIY_ROUTE_ICONS:
         return index == appearance->icon_theme;
     case DIY_ROUTE_CHOICES: {
@@ -4566,7 +5809,7 @@ static lv_obj_t *create_artwork_cached(lv_obj_t *parent,
             ? crazypod_artwork_load(slot, track, cache_size) : NULL;
 
     return create_artwork_descriptor(
-        parent, track, x, y, display_size, descriptor, true);
+        parent, track, x, y, display_size, descriptor, false);
 }
 
 static lv_obj_t *create_artwork(lv_obj_t *parent,
@@ -4633,29 +5876,396 @@ static bool is_music_preview_route(enum crazypod_route route)
     }
 }
 
-static void menu_preview_x_anim(void *target, int32_t value)
+static bool is_skeuomorphic_preview_route(enum crazypod_route route)
 {
-    lv_obj_set_x(target, value);
+    return route == MUSIC_ROUTE_MENU ||
+           route == PHOTOS_ROUTE_MENU ||
+           route == NOTES_ROUTE_MENU ||
+           route == BOOKS_ROUTE_MENU;
+}
+
+static void menu_preview_register_motion(
+    lv_obj_t *object,
+    int enter_dx, int enter_dy, int enter_scale,
+    int enter_rotation, int enter_opacity,
+    int enter_delay, int enter_duration,
+    int exit_dx, int exit_dy, int exit_scale, int exit_rotation)
+{
+    struct menu_preview_motion_part *part;
+
+    if(object == NULL ||
+       menu_preview_scene.part_count >= CRAZYPOD_PREVIEW_PART_COUNT)
+        return;
+    part = &menu_preview_scene.parts[menu_preview_scene.part_count++];
+    part->object = object;
+    /*
+     * Preview objects are registered immediately after creation, before
+     * LVGL has run layout. lv_obj_get_x/y() still report zero at that
+     * point, which made every animated part settle outside the clipped
+     * preview pane. The authored positions already live in the local
+     * style, so read those directly.
+     */
+    part->final_x = lv_obj_get_style_x(object, 0);
+    part->final_y = lv_obj_get_style_y(object, 0);
+    part->final_scale =
+        lv_obj_get_style_transform_scale_x(object, 0);
+    part->final_rotation =
+        lv_obj_get_style_transform_rotation(object, 0);
+    part->final_opacity = lv_obj_get_style_opa(object, 0);
+    part->enter_dx = enter_dx;
+    part->enter_dy = enter_dy;
+    part->enter_scale =
+        enter_scale > 0 ? enter_scale : part->final_scale;
+    part->enter_rotation = enter_rotation;
+    part->enter_opacity = enter_opacity;
+    part->exit_dx = exit_dx;
+    part->exit_dy = exit_dy;
+    part->exit_scale =
+        exit_scale > 0 ? exit_scale : part->final_scale;
+    part->exit_rotation = exit_rotation;
+    part->enter_delay = enter_delay;
+    part->enter_duration = enter_duration;
+}
+
+static void settle_menu_preview_scene(struct menu_preview_scene *scene)
+{
+    int index;
+
+    if(scene->content != NULL && lv_obj_is_valid(scene->content)) {
+        lv_anim_delete(scene->content, NULL);
+        lv_obj_set_pos(
+            scene->content,
+            -CRAZYPOD_MENU_PANEL_WIDTH,
+            -CRAZYPOD_STATUS_BAR_HEIGHT);
+        lv_obj_set_style_opa(scene->content, LV_OPA_COVER, 0);
+    }
+    for(index = 0; index < scene->part_count; ++index) {
+        struct menu_preview_motion_part *part = &scene->parts[index];
+        if(part->object == NULL || !lv_obj_is_valid(part->object))
+            continue;
+        lv_anim_delete(part->object, NULL);
+        lv_obj_set_pos(part->object, part->final_x, part->final_y);
+        lv_obj_set_style_transform_scale(
+            part->object, part->final_scale, 0);
+        lv_obj_set_style_transform_rotation(
+            part->object, part->final_rotation, 0);
+        lv_obj_set_style_opa(
+            part->object, (lv_opa_t)part->final_opacity, 0);
+    }
+}
+
+static int menu_preview_clamp_progress(int value)
+{
+    if(value < 0)
+        return 0;
+    if(value > 1024)
+        return 1024;
+    return value;
+}
+
+static int menu_preview_ease_out(int progress)
+{
+    int inverse = 1024 - menu_preview_clamp_progress(progress);
+
+    return 1024 - inverse * inverse / 1024;
+}
+
+static int menu_preview_ease_in(int progress)
+{
+    int clamped = menu_preview_clamp_progress(progress);
+
+    return clamped * clamped / 1024;
+}
+
+static int menu_preview_back_out(int progress)
+{
+    int shifted = menu_preview_clamp_progress(progress) - 1024;
+    int squared = shifted * shifted / 1024;
+    int cubed = squared * shifted / 1024;
+
+    return 1024 + (2766 * cubed + 1742 * squared) / 1024;
+}
+
+static int menu_preview_smooth_step(int progress)
+{
+    int clamped = menu_preview_clamp_progress(progress);
+    int squared = clamped * clamped / 1024;
+
+    return squared * (3072 - 2 * clamped) / 1024;
+}
+
+static int menu_preview_arc(int progress)
+{
+    int clamped = menu_preview_clamp_progress(progress);
+
+    return clamped * (1024 - clamped) / 256;
+}
+
+static int menu_preview_lerp(int from, int to, int progress)
+{
+    return from + (to - from) * progress / 1024;
+}
+
+static void menu_preview_profile_arc_offset(
+    int index, int arc, bool exiting, int *x, int *y)
+{
+    int visual_count = menu_preview_scene.part_count - 1;
+    bool is_caption = index == menu_preview_scene.part_count - 1;
+    int spread = visual_count > 1
+        ? index * 2 - (visual_count - 1) : 0;
+    int direction = menu_preview_navigation_direction;
+
+    *x = 0;
+    *y = 0;
+    if(is_caption) {
+        *y = -arc * (exiting ? 1 : 2) / 1024;
+        return;
+    }
+
+    switch(menu_preview_motion_profile) {
+    case MENU_PREVIEW_PROFILE_MUSIC:
+        *x = arc * direction *
+            ((index & 1) != 0 ? -3 : 3) / 1024;
+        *y = -arc * (3 + index % 3) / 1024;
+        break;
+    case MENU_PREVIEW_PROFILE_PHOTOS:
+        *x = arc * spread * (exiting ? -2 : 2) / 1024;
+        *y = -arc * (exiting ? 3 : 6) / 1024;
+        break;
+    case MENU_PREVIEW_PROFILE_NOTES:
+        *x = arc * direction *
+            ((index & 1) != 0 ? -4 : 4) / 1024;
+        *y = -arc * (exiting ? 2 : 5) / 1024;
+        break;
+    case MENU_PREVIEW_PROFILE_BOOKS:
+        *x = arc * spread / 1024;
+        *y = -arc * (exiting ? 3 : 7) / 1024;
+        break;
+    default:
+        *y = -arc * 2 / 1024;
+        break;
+    }
+}
+
+static int menu_preview_scaled_part_time(int duration)
+{
+    return duration * CRAZYPOD_PREVIEW_PART_TIME_NUMERATOR /
+        CRAZYPOD_PREVIEW_PART_TIME_DENOMINATOR;
+}
+
+static int menu_preview_part_raw_progress(
+    const struct menu_preview_motion_part *part, int elapsed)
+{
+    int duration = part->enter_duration > 0
+        ? part->enter_duration : CRAZYPOD_PREVIEW_ENTER_DURATION_MS;
+    int delay = menu_preview_scaled_part_time(part->enter_delay);
+
+    duration = menu_preview_scaled_part_time(duration);
+    return menu_preview_clamp_progress(
+        (elapsed - delay) * 1024 / duration);
+}
+
+static void menu_preview_timeline_anim(void *target, int32_t elapsed)
+{
+    lv_obj_t *content = target;
+    int index;
+
+    if(content == NULL || content != menu_preview_content ||
+       !lv_obj_is_valid(content))
+        return;
+
+    if(menu_preview_motion_phase == MENU_PREVIEW_MOTION_ENTERING) {
+        int content_raw_progress = menu_preview_clamp_progress(
+            elapsed * 1024 /
+            (menu_preview_motion_reduced
+                ? CRAZYPOD_PREVIEW_REDUCED_DURATION_MS
+                : CRAZYPOD_PREVIEW_ENTER_DURATION_MS));
+        int content_position_progress =
+            menu_preview_motion_reduced
+                ? menu_preview_ease_out(content_raw_progress)
+                : menu_preview_back_out(content_raw_progress);
+        int content_opacity_progress =
+            menu_preview_smooth_step(content_raw_progress);
+
+        lv_obj_set_pos(
+            content,
+            menu_preview_lerp(
+                -CRAZYPOD_MENU_PANEL_WIDTH + 8,
+                -CRAZYPOD_MENU_PANEL_WIDTH,
+                content_position_progress),
+            menu_preview_lerp(
+                -CRAZYPOD_STATUS_BAR_HEIGHT +
+                    menu_preview_navigation_direction * 5,
+                -CRAZYPOD_STATUS_BAR_HEIGHT,
+                menu_preview_ease_out(content_raw_progress)));
+        lv_obj_set_style_opa(
+            content,
+            (lv_opa_t)menu_preview_lerp(
+                0, LV_OPA_COVER, content_opacity_progress),
+            0);
+        if(menu_preview_motion_reduced)
+            return;
+
+        for(index = 0; index < menu_preview_scene.part_count; ++index) {
+            struct menu_preview_motion_part *part =
+                &menu_preview_scene.parts[index];
+            lv_obj_t *object = part->object;
+            int raw_progress;
+            int position_progress;
+            int opacity_progress;
+            int arc_x;
+            int arc_y;
+
+            if(object == NULL || !lv_obj_is_valid(object))
+                continue;
+            raw_progress =
+                menu_preview_part_raw_progress(part, elapsed);
+            position_progress =
+                menu_preview_back_out(raw_progress);
+            opacity_progress =
+                menu_preview_smooth_step(
+                    menu_preview_clamp_progress(
+                        (raw_progress - 64) * 1024 / 960));
+            menu_preview_profile_arc_offset(
+                index, menu_preview_arc(raw_progress),
+                false, &arc_x, &arc_y);
+            lv_obj_set_pos(
+                object,
+                menu_preview_lerp(
+                    part->final_x + part->enter_dx,
+                    part->final_x, position_progress) + arc_x,
+                menu_preview_lerp(
+                    part->final_y + part->enter_dy,
+                    part->final_y, position_progress) + arc_y);
+            lv_obj_set_style_opa(
+                object,
+                (lv_opa_t)menu_preview_lerp(
+                    part->enter_opacity,
+                    part->final_opacity, opacity_progress),
+                0);
+        }
+    }
+    else if(menu_preview_motion_phase == MENU_PREVIEW_MOTION_EXITING) {
+        int duration = menu_preview_motion_reduced
+            ? CRAZYPOD_PREVIEW_REDUCED_DURATION_MS
+            : CRAZYPOD_PREVIEW_EXIT_DURATION_MS;
+        int progress = menu_preview_ease_in(
+            menu_preview_clamp_progress(elapsed * 1024 / duration));
+        int raw_progress = menu_preview_clamp_progress(
+            elapsed * 1024 / duration);
+
+        lv_obj_set_pos(
+            content,
+            menu_preview_lerp(
+                -CRAZYPOD_MENU_PANEL_WIDTH,
+                -CRAZYPOD_MENU_PANEL_WIDTH - 6,
+                progress),
+            menu_preview_lerp(
+                -CRAZYPOD_STATUS_BAR_HEIGHT,
+                -CRAZYPOD_STATUS_BAR_HEIGHT -
+                    menu_preview_navigation_direction * 4,
+                progress));
+        lv_obj_set_style_opa(
+            content,
+            (lv_opa_t)menu_preview_lerp(
+                LV_OPA_COVER, 0, progress),
+            0);
+        if(menu_preview_motion_reduced)
+            return;
+
+        for(index = 0; index < menu_preview_scene.part_count; ++index) {
+            struct menu_preview_motion_part *part =
+                &menu_preview_scene.parts[index];
+            lv_obj_t *object = part->object;
+            int arc_x;
+            int arc_y;
+
+            if(object == NULL || !lv_obj_is_valid(object))
+                continue;
+            menu_preview_profile_arc_offset(
+                index, menu_preview_arc(raw_progress),
+                true, &arc_x, &arc_y);
+            lv_obj_set_pos(
+                object,
+                menu_preview_lerp(
+                    part->final_x,
+                    part->final_x + part->exit_dx,
+                    progress) + arc_x,
+                menu_preview_lerp(
+                    part->final_y,
+                    part->final_y + part->exit_dy,
+                    progress) + arc_y);
+        }
+    }
 }
 
 static void settle_menu_preview_motion(void)
 {
-    if(menu_preview_content == NULL)
-        return;
-
-    lv_anim_delete(menu_preview_content, menu_preview_x_anim);
-    lv_obj_set_x(menu_preview_content, -CRAZYPOD_MENU_PANEL_WIDTH);
+    menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
+    menu_preview_media_deferred = false;
+    menu_preview_media_refresh_pending = false;
+    settle_menu_preview_scene(&menu_preview_scene);
 }
 
 static bool menu_preview_motion_active(void)
 {
-    return menu_preview_content != NULL &&
-        lv_anim_get(menu_preview_content, menu_preview_x_anim) != NULL;
+    return menu_preview_motion_phase != MENU_PREVIEW_MOTION_IDLE;
+}
+
+static void menu_preview_timeline_completed(lv_anim_t *animation)
+{
+    lv_obj_t *content = lv_anim_get_user_data(animation);
+    enum menu_preview_motion_phase completed_phase =
+        menu_preview_motion_phase;
+
+    if(content == NULL || content != menu_preview_content)
+        return;
+    menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
+    if(completed_phase == MENU_PREVIEW_MOTION_ENTERING) {
+        settle_menu_preview_scene(&menu_preview_scene);
+        if(menu_preview_media_deferred) {
+            menu_preview_media_deferred = false;
+            menu_preview_media_refresh_pending = true;
+            menu_preview_media_due = current_tick + 1;
+        }
+        return;
+    }
+    if(completed_phase != MENU_PREVIEW_MOTION_EXITING)
+        return;
+
+    if(lv_obj_is_valid(content))
+        lv_obj_delete(content);
+    menu_preview_content = NULL;
+    memset(&menu_preview_scene, 0, sizeof(menu_preview_scene));
+    if(product_active && route_depth > 0 &&
+       menu_view.valid &&
+       menu_view.route == current_route()->route)
+        render_menu_preview(current_route(), true);
+}
+
+static bool start_menu_preview_timeline(int duration)
+{
+    lv_anim_t animation;
+
+    if(menu_preview_content == NULL)
+        return false;
+    lv_anim_delete(menu_preview_content, menu_preview_timeline_anim);
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, menu_preview_content);
+    lv_anim_set_exec_cb(&animation, menu_preview_timeline_anim);
+    lv_anim_set_values(&animation, 0, duration);
+    lv_anim_set_duration(&animation, duration);
+    lv_anim_set_path_cb(&animation, lv_anim_path_linear);
+    lv_anim_set_completed_cb(
+        &animation, menu_preview_timeline_completed);
+    lv_anim_set_user_data(&animation, menu_preview_content);
+    lv_anim_set_early_apply(&animation, true);
+    return lv_anim_start(&animation) != NULL;
 }
 
 static void reset_menu_preview_root(void)
 {
-    settle_menu_preview_motion();
+    menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
     if(menu_preview_root == NULL) {
         menu_preview_root = lv_obj_create(product_content);
         set_plain_object(menu_preview_root);
@@ -4674,7 +6284,9 @@ static void reset_menu_preview_root(void)
             menu_preview_root, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
     }
     else {
+        settle_menu_preview_scene(&menu_preview_scene);
         menu_preview_content = NULL;
+        memset(&menu_preview_scene, 0, sizeof(menu_preview_scene));
         lv_obj_clean(menu_preview_root);
     }
 
@@ -4688,50 +6300,122 @@ static void reset_menu_preview_root(void)
         menu_preview_content, LV_OPA_TRANSP, 0);
     lv_obj_remove_flag(
         menu_preview_content, LV_OBJ_FLAG_CLICKABLE);
+    memset(&menu_preview_scene, 0, sizeof(menu_preview_scene));
+    menu_preview_scene.content = menu_preview_content;
 }
 
-static void start_menu_preview_property_anim(
-    lv_obj_t *target, lv_anim_exec_xcb_t callback,
-    int32_t from, int32_t to)
+static void start_menu_preview_scene_entrance(void)
 {
-    lv_anim_t animation;
-
-    lv_anim_delete(target, callback);
-    lv_anim_init(&animation);
-    lv_anim_set_var(&animation, target);
-    lv_anim_set_exec_cb(&animation, callback);
-    lv_anim_set_values(&animation, from, to);
-    lv_anim_set_delay(&animation, CRAZYPOD_PREVIEW_ENTRANCE_DELAY_MS);
-    lv_anim_set_duration(
-        &animation, CRAZYPOD_PREVIEW_ENTRANCE_DURATION_MS);
-    lv_anim_set_path_cb(&animation, lv_anim_path_custom_bezier3);
-    lv_anim_set_bezier3_param(
-        &animation,
-        LV_BEZIER_VAL_FLOAT(0.20), LV_BEZIER_VAL_FLOAT(0.78),
-        LV_BEZIER_VAL_FLOAT(0.24), LV_BEZIER_VAL_FLOAT(1.00));
-    lv_anim_set_early_apply(&animation, true);
-    lv_anim_start(&animation);
-}
-
-static void start_menu_preview_entrance(void)
-{
-    int final_x = -CRAZYPOD_MENU_PANEL_WIDTH;
+    bool reduced = crazypod_state_reduce_motion();
+    int duration = reduced
+        ? CRAZYPOD_PREVIEW_REDUCED_DURATION_MS : 0;
+    int index;
 
     if(menu_preview_content == NULL)
         return;
+    if(!reduced) {
+        duration = CRAZYPOD_PREVIEW_ENTER_DURATION_MS;
+        for(index = 0; index < menu_preview_scene.part_count; ++index) {
+            struct menu_preview_motion_part *part =
+                &menu_preview_scene.parts[index];
+            int part_end = menu_preview_scaled_part_time(
+                part->enter_delay +
+                (part->enter_duration > 0
+                    ? part->enter_duration
+                    : CRAZYPOD_PREVIEW_ENTER_DURATION_MS));
 
-    lv_obj_set_x(
-        menu_preview_content,
-        final_x + CRAZYPOD_PREVIEW_ENTRANCE_OFFSET_X);
-    start_menu_preview_property_anim(
-        menu_preview_content, menu_preview_x_anim,
-        final_x + CRAZYPOD_PREVIEW_ENTRANCE_OFFSET_X, final_x);
+            if(part_end > duration)
+                duration = part_end;
+        }
+    }
+    keep_cpu_boosted((duration * HZ + 999) / 1000 + HZ / 10);
+    menu_preview_motion_reduced = reduced;
+    menu_preview_motion_phase = MENU_PREVIEW_MOTION_ENTERING;
+    if(!start_menu_preview_timeline(duration)) {
+        menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
+        settle_menu_preview_scene(&menu_preview_scene);
+    }
+}
+
+static void start_menu_preview_scene_exit(void)
+{
+    bool reduced = crazypod_state_reduce_motion();
+    int duration = reduced
+        ? CRAZYPOD_PREVIEW_REDUCED_DURATION_MS
+        : CRAZYPOD_PREVIEW_EXIT_DURATION_MS;
+    if(menu_preview_content == NULL)
+        return;
+    keep_cpu_boosted((duration * HZ + 999) / 1000 + HZ / 10);
+    menu_preview_motion_reduced = reduced;
+    menu_preview_motion_phase = MENU_PREVIEW_MOTION_EXITING;
+    if(!start_menu_preview_timeline(duration)) {
+        menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
+        render_menu_preview(current_route(), true);
+    }
 }
 
 static lv_obj_t *preview_parent(void)
 {
     return menu_preview_content != NULL
         ? menu_preview_content : product_content;
+}
+
+static void preview_add_bevel(
+    lv_obj_t *object, int width, int height,
+    uint32_t light, uint32_t dark)
+{
+    if(object == NULL || width < 8 || height < 8)
+        return;
+    make_box(object, 3, 2, width - 6, 1, 0, light, 72);
+    make_box(object, 3, height - 3, width - 6, 1, 0, dark, 112);
+}
+
+static void preview_add_fastener(
+    lv_obj_t *parent, int x, int y, uint32_t metal)
+{
+    lv_obj_t *fastener = make_box(
+        parent, x, y, 5, 5, LV_RADIUS_CIRCLE,
+        metal, LV_OPA_COVER);
+
+    lv_obj_set_style_border_width(fastener, 1, 0);
+    lv_obj_set_style_border_color(
+        fastener, lv_color_hex(0x1C2022), 0);
+    lv_obj_set_style_border_opa(fastener, 125, 0);
+    make_box(fastener, 1, 2, 3, 1, 0, 0x303538, 185);
+}
+
+static lv_obj_t *make_preview_plinth(
+    lv_obj_t *parent, int x, int y, int width,
+    uint32_t top, uint32_t base)
+{
+    lv_obj_t *plinth = make_box(
+        parent, x, y, width, 9, 3,
+        base, LV_OPA_COVER);
+
+    lv_obj_set_style_border_width(plinth, 1, 0);
+    lv_obj_set_style_border_color(
+        plinth, lv_color_hex(0x0B0D0E), 0);
+    lv_obj_set_style_border_opa(plinth, 185, 0);
+    make_box(plinth, 4, 1, width - 8, 2, 1,
+             top, 205);
+    make_box(plinth, 8, 6, width - 16, 1, 0,
+             0x000000, 145);
+    return plinth;
+}
+
+static void preview_add_paper_rules(
+    lv_obj_t *paper, int width, int top, int count,
+    int spacing, uint32_t ink)
+{
+    int index;
+
+    make_box(paper, 9, top - 3, 1,
+             count * spacing - 1, 0,
+             0xC96F64, 62);
+    for(index = 0; index < count; ++index)
+        make_box(paper, 13, top + index * spacing,
+                 width - 21 - (index == count - 1 ? 12 : 0),
+                 1, 0, ink, index == 0 ? 105 : 68);
 }
 
 static lv_obj_t *make_preview_text_panel(int y, int height)
@@ -4741,24 +6425,50 @@ static lv_obj_t *make_preview_text_panel(int y, int height)
 
     if(height > CRAZYPOD_PREVIEW_TEXT_PANEL_MAX_HEIGHT)
         height = CRAZYPOD_PREVIEW_TEXT_PANEL_MAX_HEIGHT;
-    prepare_glass_descriptor(
-        170, y, CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH, height,
-        CRAZYPOD_GLASS_TEXT_PANEL,
-        preview_text_glass_pixels, &preview_text_glass_descriptor);
-    panel = make_glass_material_panel(
-        parent, 170, y, CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH, height, 10,
-        CRAZYPOD_GLASS_TEXT_PANEL, &preview_text_glass_descriptor);
+    panel = make_box(
+        parent, 170, y, CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH, height,
+        9, 0x11171A, 242);
+    lv_obj_set_style_bg_grad_color(
+        panel, lv_color_hex(0x060809), 0);
+    lv_obj_set_style_bg_grad_dir(panel, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_color(
+        panel, lv_color_hex(0x89959A), 0);
+    lv_obj_set_style_border_opa(panel, 72, 0);
+    preview_add_bevel(
+        panel, CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH,
+        height, 0xEEF5F7, 0x000000);
+    preview_add_fastener(panel, 5, 5, 0xAEB7BB);
+    preview_add_fastener(
+        panel, CRAZYPOD_PREVIEW_TEXT_PANEL_WIDTH - 10,
+        5, 0xAEB7BB);
     return panel;
 }
 
-static void render_empty_state(const char *title, const char *message)
+static void render_empty_state(const char *symbol_text,
+                               const char *title, const char *message)
 {
     lv_obj_t *symbol;
     lv_obj_t *label;
 
-    symbol = make_label(product_content, LV_SYMBOL_AUDIO,
-                        &lv_font_montserrat_24, COLOR_WHITE, 80);
-    lv_obj_set_pos(symbol, 148, 96);
+    if(symbol_text != NULL) {
+        symbol = make_label(product_content, symbol_text,
+                            &lv_font_montserrat_24, COLOR_WHITE, 80);
+        lv_obj_set_pos(symbol, 148, 96);
+    }
+    else {
+        lv_obj_t *outline = make_box(
+            product_content, 145, 91, 30, 30,
+            LV_RADIUS_CIRCLE, COLOR_WHITE, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(outline, 2, 0);
+        lv_obj_set_style_border_color(
+            outline, lv_color_hex(COLOR_WHITE), 0);
+        lv_obj_set_style_border_opa(outline, 80, 0);
+        make_box(outline, 10, 6, 10, 10,
+                 LV_RADIUS_CIRCLE, COLOR_WHITE, 80);
+        make_box(outline, 6, 17, 18, 8,
+                 LV_RADIUS_CIRCLE, COLOR_WHITE, 80);
+    }
     label = make_label(product_content, title, &lv_font_montserrat_12,
                        COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(label, 260);
@@ -4771,87 +6481,691 @@ static void render_empty_state(const char *title, const char *message)
     lv_obj_set_pos(label, 30, 158);
 }
 
+static lv_obj_t *make_procedural_record_sleeve(
+    lv_obj_t *parent, const struct crazypod_track *track,
+    int x, int y, int size, int seed,
+    int artwork_slot, bool cache_only)
+{
+    const char *primary_key =
+        track != NULL && track->album[0] != '\0'
+            ? track->album : "CrazyPod";
+    const char *secondary_key =
+        track != NULL && track->artist[0] != '\0'
+            ? track->artist : "Local Music";
+    uint32_t primary = artwork_color(primary_key, seed);
+    uint32_t secondary = artwork_color(secondary_key, seed + 11);
+    lv_obj_t *sleeve = make_box(
+        parent, x, y, size, size, size > 40 ? 5 : 3,
+        primary, LV_OPA_COVER);
+    lv_obj_t *label;
+    const lv_image_dsc_t *descriptor = NULL;
+
+    if(track != NULL) {
+        if(menu_preview_build_defer_media) {
+            descriptor = crazypod_artwork_load_priority(
+                artwork_slot, track, size,
+                CRAZYPOD_MENU_ARTWORK_PRIORITY);
+            if(descriptor == NULL)
+                menu_preview_media_deferred = true;
+        }
+        else {
+            descriptor = cache_only
+                ? crazypod_artwork_load_cached_priority(
+                      artwork_slot, track, size, 180)
+                : crazypod_artwork_load(
+                      artwork_slot, track, size);
+        }
+    }
+
+    lv_obj_set_style_bg_grad_color(
+        sleeve, lv_color_hex(secondary), 0);
+    lv_obj_set_style_bg_grad_dir(
+        sleeve, seed % 2 == 0
+            ? LV_GRAD_DIR_HOR : LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_border_width(sleeve, 1, 0);
+    lv_obj_set_style_border_color(
+        sleeve, lv_color_hex(0xF3F5F6), 0);
+    lv_obj_set_style_border_opa(sleeve, 62, 0);
+    preview_add_bevel(
+        sleeve, size, size, 0xFFFFFF, 0x111315);
+    make_box(
+        sleeve, 3, 4, 2, size - 8, 1,
+        0xFFFFFF, 36);
+    label = make_box(
+        sleeve, size / 3, size / 3,
+        size / 3, size / 3,
+        LV_RADIUS_CIRCLE, 0xF2E7CA, 210);
+    make_box(
+        label, size / 9, size / 9,
+        size / 9, size / 9,
+        LV_RADIUS_CIRCLE, 0x25282A, 235);
+    make_box(sleeve, size / 7, size - size / 5,
+             size * 3 / 7, 2, 1,
+             0xFFFFFF, 105);
+    make_box(sleeve, size - size / 4, size - size / 5,
+             size / 10, 2, 1, 0xFFFFFF, 62);
+    lv_obj_set_style_clip_corner(sleeve, true, 0);
+    if(descriptor != NULL) {
+        lv_obj_t *image = lv_image_create(sleeve);
+        lv_image_set_src(image, descriptor);
+        lv_obj_center(image);
+        lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
+    }
+    return sleeve;
+}
+
+static void prefetch_music_preview_artwork(
+    const struct route_state *state)
+{
+    const struct crazypod_track *track = NULL;
+    int i;
+    int count;
+
+    if(state == NULL)
+        return;
+
+    if(state->route == MUSIC_ROUTE_MENU) {
+        if(state->selected == 0) {
+            track = current_track();
+            if(track != NULL)
+                (void)crazypod_artwork_load_priority(
+                    CRAZYPOD_PREVIEW_ARTWORK_SLOT, track,
+                    CRAZYPOD_MENU_NOW_ARTWORK_SIZE,
+                    CRAZYPOD_MENU_ARTWORK_PRIORITY);
+        }
+        else if(state->selected == 1) {
+            count = crazypod_music_album_count();
+            for(i = 0; i < 3 && i < count; ++i) {
+                track = crazypod_music_album_track(i, 0);
+                if(track != NULL)
+                    (void)crazypod_artwork_load_priority(
+                        i, track, CRAZYPOD_MENU_FLOW_ARTWORK_SIZE,
+                        CRAZYPOD_MENU_ARTWORK_PRIORITY);
+            }
+        }
+        else if(state->selected == 5 &&
+                crazypod_music_album_count() > 0) {
+            track = crazypod_music_album_track(0, 0);
+            if(track != NULL)
+                (void)crazypod_artwork_load_priority(
+                    CRAZYPOD_PREVIEW_ARTWORK_SLOT, track,
+                    CRAZYPOD_MENU_ALBUM_ARTWORK_SIZE,
+                    CRAZYPOD_MENU_ARTWORK_PRIORITY);
+        }
+        return;
+    }
+
+    if(state->route == MUSIC_ROUTE_ALBUMS)
+        track = crazypod_music_album_track(state->selected, 0);
+    else if(state->route == MUSIC_ROUTE_ARTISTS ||
+            state->route == MUSIC_ROUTE_PLAYLISTS)
+        return;
+    else if(is_music_preview_route(state->route))
+        track = route_track(state, state->selected);
+
+    if(track != NULL)
+        (void)crazypod_artwork_load_priority(
+            CRAZYPOD_PREVIEW_ARTWORK_SLOT, track,
+            CRAZYPOD_MENU_ARTWORK_CACHE_SIZE,
+            CRAZYPOD_MENU_ARTWORK_PRIORITY);
+}
+
+static void music_preview_title_initial(
+    const struct crazypod_track *track, char initial[5])
+{
+    const char *text =
+        track != NULL && track->title[0] != '\0'
+            ? track->title : NULL;
+    unsigned char first;
+    int length = 1;
+    int index;
+
+    initial[0] = '-';
+    initial[1] = '\0';
+    if(text == NULL)
+        return;
+    while(*text != '\0') {
+        first = (unsigned char)*text;
+        if(first >= 0x80 ||
+           (first >= '0' && first <= '9') ||
+           (first >= 'A' && first <= 'Z') ||
+           (first >= 'a' && first <= 'z'))
+            break;
+        ++text;
+    }
+    if(*text == '\0')
+        return;
+
+    first = (unsigned char)*text;
+    if(first < 0x80) {
+        initial[0] =
+            first >= 'a' && first <= 'z'
+                ? (char)(first - 'a' + 'A') : (char)first;
+        initial[1] = '\0';
+        return;
+    }
+    if((first & 0xE0) == 0xC0)
+        length = 2;
+    else if((first & 0xF0) == 0xE0)
+        length = 3;
+    else if((first & 0xF8) == 0xF0)
+        length = 4;
+    for(index = 0; index < length && text[index] != '\0'; ++index)
+        initial[index] = text[index];
+    initial[index] = '\0';
+}
+
+static lv_obj_t *make_music_initial_cover(
+    lv_obj_t *parent, const struct crazypod_track *track,
+    int x, int y, int size, int seed)
+{
+    const char *primary_key =
+        track != NULL && track->title[0] != '\0'
+            ? track->title : "Local Music";
+    const char *secondary_key =
+        track != NULL && track->artist[0] != '\0'
+            ? track->artist : primary_key;
+    uint32_t primary = artwork_color(primary_key, seed);
+    uint32_t secondary = artwork_color(secondary_key, seed + 17);
+    lv_obj_t *cover = make_box(
+        parent, x, y, size, size, size > 32 ? 5 : 4,
+        primary, track != NULL ? LV_OPA_COVER : 105);
+    lv_obj_t *badge;
+    lv_obj_t *label;
+    char initial[5];
+
+    music_preview_title_initial(track, initial);
+    lv_obj_set_style_bg_grad_color(
+        cover, lv_color_hex(secondary), 0);
+    lv_obj_set_style_bg_grad_dir(
+        cover, seed % 2 == 0
+            ? LV_GRAD_DIR_VER : LV_GRAD_DIR_HOR, 0);
+    lv_obj_set_style_border_width(cover, 1, 0);
+    lv_obj_set_style_border_color(
+        cover, lv_color_hex(0xF2F5F6), 0);
+    lv_obj_set_style_border_opa(cover, 62, 0);
+    preview_add_bevel(
+        cover, size, size, 0xF7FBFC, 0x101315);
+    make_box(cover, 3, 4, 3, size - 8, 1,
+             0xF7FBFC, track != NULL ? 74 : 38);
+    badge = make_box(
+        cover, size / 2 - size / 5, size / 2 - size / 5,
+        size * 2 / 5, size * 2 / 5,
+        LV_RADIUS_CIRCLE, 0x111619,
+        track != NULL ? 145 : 72);
+    make_box(
+        badge, size / 5 - 2, size / 5 - 2, 4, 4,
+        LV_RADIUS_CIRCLE, 0xE9F0F2,
+        track != NULL ? 180 : 75);
+    label = make_label(
+        badge, initial, CRAZYPOD_METADATA_FONT,
+        COLOR_WHITE, track != NULL ? 235 : 100);
+    lv_obj_center(label);
+    make_box(
+        cover, size / 4, size - 6, size / 2, 2, 1,
+        0xF4F7F8, track != NULL ? 68 : 30);
+    return cover;
+}
+
 static void render_root_preview(int selected)
 {
     lv_obj_t *parent = preview_parent();
-    lv_obj_t *text_panel = NULL;
+    lv_obj_t *text_panel;
     lv_obj_t *title;
     lv_obj_t *detail;
+    lv_obj_t *stage;
+    lv_obj_t *part;
     char count_text[96];
     int count = 0;
+    int i;
 
     switch(selected) {
     case 0: {
         const struct crazypod_track *track = current_track();
-        make_music_preview_icon(
-            parent, CRAZYPOD_PREVIEW_ICON_NOW_PLAYING, 192, 52);
-        text_panel = make_preview_text_panel(154, 56);
-        title = make_label(text_panel,
-                           track != NULL ? track->title : "No Track",
-                           CRAZYPOD_METADATA_FONT,
-                           COLOR_WHITE, LV_OPA_COVER);
-        lv_obj_set_pos(title, 7, 6);
-        lv_obj_set_width(title, 126);
-        lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-        lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_DOTS);
-        detail = make_label(text_panel,
-                            track != NULL ? track->artist : "Local Music",
-                            CRAZYPOD_METADATA_FONT,
-                            COLOR_WHITE, 130);
-        lv_obj_set_pos(detail, 7, 25);
-        lv_obj_set_width(detail, 126);
-        lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_t *disc = make_box(
+            parent, 242, 69, 59, 59,
+            LV_RADIUS_CIRCLE, 0xC7D1D8, 235);
+        lv_obj_set_style_border_width(disc, 2, 0);
+        lv_obj_set_style_border_color(
+            disc, lv_color_hex(0xF8FFFF), 0);
+        lv_obj_set_style_border_opa(disc, 105, 0);
+        part = make_box(
+            disc, 4, 4, 51, 51, LV_RADIUS_CIRCLE,
+            0xD9E4E8, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(part, 1, 0);
+        lv_obj_set_style_border_color(
+            part, lv_color_hex(0xF7FCFF), 0);
+        lv_obj_set_style_border_opa(part, 96, 0);
+        make_box(disc, 9, 9, 41, 41, LV_RADIUS_CIRCLE,
+                 0x627582, 215);
+        part = make_box(
+            disc, 14, 14, 31, 31, LV_RADIUS_CIRCLE,
+            0x738693, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(part, 1, 0);
+        lv_obj_set_style_border_color(
+            part, lv_color_hex(0xD7E5EA), 0);
+        lv_obj_set_style_border_opa(part, 65, 0);
+        make_box(disc, 23, 23, 13, 13, LV_RADIUS_CIRCLE,
+                 0x101820, LV_OPA_COVER);
+        make_box(disc, 27, 27, 5, 5, LV_RADIUS_CIRCLE,
+                 0xE9F2F5, 195);
+        make_preview_plinth(
+            parent, 184, 143, 118, 0xB9C3C7, 0x283035);
+        stage = make_box(parent, 190, 50, 82, 91, 5,
+                         0xD9E4E8, 58);
+        lv_obj_set_style_border_width(stage, 2, 0);
+        lv_obj_set_style_border_color(
+            stage, lv_color_hex(0xEAFBFF), 0);
+        lv_obj_set_style_border_opa(stage, 145, 0);
+        preview_add_bevel(
+            stage, 82, 91, 0xF4FBFD, 0x182025);
+        preview_add_fastener(stage, 3, 3, 0xB7C1C5);
+        preview_add_fastener(stage, 74, 3, 0xB7C1C5);
+        make_procedural_record_sleeve(
+            stage, track, 7, 7, CRAZYPOD_MENU_NOW_ARTWORK_SIZE, 0,
+            CRAZYPOD_PREVIEW_ARTWORK_SLOT, false);
+        part = make_box(stage, 8, 80, 66, 4,
+                        LV_RADIUS_CIRCLE, 0x20313A, 95);
+        make_box(part, 0, 0, track != NULL ? 24 : 3, 4,
+                 LV_RADIUS_CIRCLE, COLOR_CYAN, 225);
+        for(i = 0; i < 4; ++i)
+            make_box(parent, 199 + i * 18, 146, 10, 3,
+                     LV_RADIUS_CIRCLE, COLOR_CYAN,
+                     i < 2 ? 210 : 55);
+        menu_preview_register_motion(
+            disc, 24, 0, 214, 110, 0, 20, 260,
+            -24, 0, 214, -80);
+        menu_preview_register_motion(
+            stage, 10, -8, 230, -25, 0, 0, 240,
+            -9, 5, 230, 20);
+        count = crazypod_music_track_count();
         break;
     }
-    case 1:
+    case 1: {
         count = crazypod_music_album_count();
-        make_music_preview_icon(
-            parent, CRAZYPOD_PREVIEW_ICON_ALBUM_FLOW, 192, 52);
+        static const int positions[] = { 180, 211, 242 };
+        static const int rotations[] = { -90, 0, 90 };
+        make_preview_plinth(
+            parent, 178, 143, 122, 0xC5CED2, 0x242A2D);
+        make_box(parent, 183, 139, 112, 3,
+                 LV_RADIUS_CIRCLE, 0xAEB9BD, 215);
+        for(i = 0; i < 3; ++i) {
+            const struct crazypod_track *track =
+                i < count ? crazypod_music_album_track(i, 0) : NULL;
+            part = make_procedural_record_sleeve(
+                parent, track, positions[i],
+                i == 1 ? 55 : 69,
+                CRAZYPOD_MENU_FLOW_ARTWORK_SIZE, i, i, false);
+            lv_obj_set_style_transform_rotation(
+                part, rotations[i], 0);
+            menu_preview_register_motion(
+                part, (i - 1) * 24, 12, 178,
+                rotations[i] + (i - 1) * 80, 0,
+                i * 40, 280,
+                (i - 1) * -20, 8, 184,
+                rotations[i] + (i - 1) * -60);
+        }
+        part = make_box(parent, 257, 108, 34, 34,
+                        LV_RADIUS_CIRCLE, 0xD7E2E8, 205);
+        lv_obj_set_style_border_width(part, 1, 0);
+        lv_obj_set_style_border_color(
+            part, lv_color_hex(0xF4FBFD), 0);
+        lv_obj_set_style_border_opa(part, 115, 0);
+        make_box(part, 5, 5, 24, 24,
+                 LV_RADIUS_CIRCLE, 0xAAB7BD, 85);
+        make_box(part, 12, 12, 10, 10,
+                 LV_RADIUS_CIRCLE, 0x25313A, 245);
+        make_box(part, 15, 15, 4, 4,
+                 LV_RADIUS_CIRCLE, 0xE8EFF1, 210);
+        menu_preview_register_motion(
+            part, 20, 0, 190, 180, 0, 80, 260,
+            18, 0, 190, 260);
         break;
-    case 2: count = crazypod_music_track_count(); break;
-    case 3: count = crazypod_music_playlist_count(); break;
-    case 4: count = crazypod_music_artist_count(); break;
-    case 5: count = crazypod_music_album_count(); break;
-    case 6: count = crazypod_music_track_count(); break;
-    case 7: count = crazypod_music_track_count(); break;
+    }
+    case 2: {
+        static const int positions[] = { 7, 31, 55, 79 };
+        static const int heights[] = { 28, 23, 27, 21 };
+        static const int rotations[] = { -24, 13, -10, 20 };
+        lv_obj_t *cavity;
+        lv_obj_t *rail;
+
+        count = crazypod_music_track_count();
+        make_preview_plinth(
+            parent, 175, 153, 130, 0xBFC9CD, 0x22282B);
+        stage = make_box(parent, 176, 47, 128, 106, 8,
+                         0x394247, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            stage, lv_color_hex(0x171C1F), 0);
+        lv_obj_set_style_bg_grad_dir(stage, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(stage, 2, 0);
+        lv_obj_set_style_border_color(
+            stage, lv_color_hex(0xAAB5BA), 0);
+        lv_obj_set_style_border_opa(stage, 135, 0);
+        preview_add_bevel(
+            stage, 128, 106, 0xECF3F5, 0x080A0B);
+        preview_add_fastener(stage, 5, 5, 0xB8C2C6);
+        preview_add_fastener(stage, 118, 5, 0xB8C2C6);
+        make_box(stage, 16, 7, 96, 3, 1,
+                 0xD5DEE1, 72);
+        title = make_label(
+            stage, "A  /  Z", &lv_font_montserrat_8,
+            0xD9E3E6, 125);
+        lv_obj_set_width(title, 64);
+        lv_obj_set_style_text_align(
+            title, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(title, 32, 10);
+        cavity = make_box(
+            stage, 5, 20, 118, 77, 5,
+            0x07090A, 238);
+        lv_obj_set_style_border_width(cavity, 1, 0);
+        lv_obj_set_style_border_color(
+            cavity, lv_color_hex(0x7E8A8F), 0);
+        lv_obj_set_style_border_opa(cavity, 82, 0);
+        make_box(cavity, 4, 4, 110, 2, 1,
+                 0xB9C4C8, 35);
+        for(i = 0; i < 4; ++i) {
+            int track_index = -1;
+            const struct crazypod_track *track = NULL;
+
+            if(i < count) {
+                track_index = count > 4
+                    ? i * (count - 1) / 3 : i;
+                track = crazypod_music_track(track_index);
+            }
+            part = make_music_initial_cover(
+                stage, track, positions[i], heights[i],
+                46, track_index >= 0 ? track_index : i);
+            lv_obj_set_style_transform_rotation(
+                part, rotations[i], 0);
+            menu_preview_register_motion(
+                part, (i - 1) * 5, 34 + i * 3,
+                210, rotations[i], 0,
+                i * 35, 260,
+                (i - 1) * 7, 28,
+                210, rotations[i]);
+        }
+        rail = make_box(stage, 5, 78, 118, 20, 4,
+                        0x2C3438, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            rail, lv_color_hex(0x111619), 0);
+        lv_obj_set_style_bg_grad_dir(rail, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(rail, 1, 0);
+        lv_obj_set_style_border_color(
+            rail, lv_color_hex(0x9DA8AD), 0);
+        lv_obj_set_style_border_opa(rail, 112, 0);
+        preview_add_bevel(
+            rail, 118, 20, 0xE1E8EA, 0x050708);
+        preview_add_fastener(rail, 6, 7, 0xAAB4B8);
+        preview_add_fastener(rail, 107, 7, 0xAAB4B8);
+        make_box(rail, 28, 8, 62, 4, 2,
+                 0x060809, 210);
+        make_box(rail, 39, 9, 40, 2, 1,
+                 COLOR_CYAN, 105);
+        menu_preview_register_motion(
+            stage, 0, 13, 232, 0, 0, 0, 260,
+            -8, 8, 232, 0);
+        break;
+    }
+    case 3: {
+        count = crazypod_music_playlist_count();
+        stage = make_box(parent, 184, 60, 112, 84, 9,
+                         0xB7A986, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            stage, lv_color_hex(0x544936), 0);
+        lv_obj_set_style_bg_grad_dir(stage, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(stage, 2, 0);
+        lv_obj_set_style_border_color(
+            stage, lv_color_hex(0xD8C99F), 0);
+        lv_obj_set_style_border_opa(stage, 125, 0);
+        preview_add_bevel(
+            stage, 112, 84, 0xE8D9B4, 0x20170F);
+        preview_add_fastener(stage, 5, 5, 0xB9A982);
+        preview_add_fastener(stage, 102, 5, 0xB9A982);
+        make_box(stage, 13, 11, 86, 15, 2, 0xE8E0CA, 215);
+        title = make_label(
+            stage, "PLAYLIST / A",
+            &lv_font_montserrat_8, 0x443A2E, 155);
+        lv_obj_set_pos(title, 25, 14);
+        part = make_box(stage, 15, 32, 82, 36, 4,
+                        0x24211D, 235);
+        lv_obj_set_style_border_width(part, 1, 0);
+        lv_obj_set_style_border_color(
+            part, lv_color_hex(0xB7A986), 0);
+        lv_obj_set_style_border_opa(part, 72, 0);
+        for(i = 0; i < 2; ++i) {
+            lv_obj_t *reel = make_box(
+                part, 12 + i * 43, 6, 24, 24,
+                LV_RADIUS_CIRCLE, 0xD8D1BC, 235);
+            make_box(reel, 7, 7, 10, 10,
+                     LV_RADIUS_CIRCLE, 0x34312C, 240);
+            make_box(reel, 10, 10, 4, 4,
+                     LV_RADIUS_CIRCLE, 0xE6DDC8, 185);
+            menu_preview_register_motion(
+                reel, 0, -5, 184, (i ? 120 : -120), 0,
+                60 + i * 30, 240,
+                0, 4, 184, i ? 140 : -140);
+        }
+        make_box(part, 30, 16, 22, 2,
+                 LV_RADIUS_CIRCLE, 0x8F7651, 115);
+        make_box(stage, 47, 70, 18, 8, 2,
+                 0xBFC6C8, 220);
+        make_box(stage, 54, 70, 3, 8, 1,
+                 0x34383A, 190);
+        make_box(stage, 27, 76, 58, 2,
+                 LV_RADIUS_CIRCLE, 0xF4D35E, 145);
+        menu_preview_register_motion(
+            stage, 0, -13, 228, -18, 0, 0, 260,
+            0, -9, 228, 15);
+        break;
+    }
+    case 4: {
+        count = crazypod_music_artist_count();
+        make_box(parent, 184, 55, 112, 92, 46,
+                 0xD8B96B, 22);
+        stage = make_box(
+            parent, 211, 47, 58, 70, 25,
+            0xC7D0D4, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(stage, 2, 0);
+        lv_obj_set_style_border_color(
+            stage, lv_color_hex(0x818B90), 0);
+        lv_obj_set_style_border_opa(stage, 165, 0);
+        part = make_box(parent, 218, 53, 44, 58, 21,
+                        0xB8C1C6, 245);
+        lv_obj_set_style_bg_grad_color(
+            part, lv_color_hex(0x3A4146), 0);
+        lv_obj_set_style_bg_grad_dir(part, LV_GRAD_DIR_HOR, 0);
+        for(i = 0; i < 5; ++i)
+            make_box(part, 8, 10 + i * 8, 28, 2,
+                     LV_RADIUS_CIRCLE, 0x171A1D, 145);
+        for(i = 0; i < 3; ++i)
+            make_box(part, 11 + i * 10, 8, 1, 42,
+                     0, 0xF0F4F5, 45);
+        make_box(parent, 228, 109, 24, 8, 3,
+                 0x7A858A, 235);
+        stage = make_box(parent, 237, 107, 6, 36, 3,
+                         0xAEB7BC, 245);
+        make_preview_plinth(
+            parent, 213, 139, 54, 0xD6DEE1, 0x697277);
+        make_box(parent, 264, 142, 23, 2,
+                 LV_RADIUS_CIRCLE, 0x6A7174, 120);
+        menu_preview_register_motion(
+            part, 0, 22, 204, 0, 0, 20, 280,
+            0, 20, 204, 0);
+        menu_preview_register_motion(
+            stage, 0, 15, 224, 0, 0, 0, 240,
+            0, 12, 224, 0);
+        break;
+    }
+    case 5: {
+        const struct crazypod_track *track =
+            crazypod_music_album_count() > 0
+                ? crazypod_music_album_track(0, 0) : NULL;
+        count = crazypod_music_album_count();
+        stage = make_box(parent, 178, 62, 124, 83, 8,
+                         0x50463B, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            stage, lv_color_hex(0x201C18), 0);
+        lv_obj_set_style_bg_grad_dir(stage, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(stage, 1, 0);
+        lv_obj_set_style_border_color(
+            stage, lv_color_hex(0x8D785F), 0);
+        lv_obj_set_style_border_opa(stage, 135, 0);
+        preview_add_bevel(
+            stage, 124, 83, 0xAE9471, 0x120D09);
+        preview_add_fastener(stage, 5, 5, 0x8F826F);
+        preview_add_fastener(stage, 114, 72, 0x8F826F);
+        part = make_box(stage, 55, 12, 62, 62,
+                        LV_RADIUS_CIRCLE, 0x111111, LV_OPA_COVER);
+        make_box(part, 10, 10, 42, 42,
+                 LV_RADIUS_CIRCLE, 0x252525, 235);
+        make_box(part, 16, 16, 30, 30,
+                 LV_RADIUS_CIRCLE, 0x171717, 235);
+        make_box(part, 25, 25, 12, 12,
+                 LV_RADIUS_CIRCLE, 0xD8A94D, 245);
+        make_box(part, 29, 29, 4, 4,
+                 LV_RADIUS_CIRCLE, 0xF5E8CA, 225);
+        menu_preview_register_motion(
+            part, 0, 0, 192, -180, 0, 20, 300,
+            0, 0, 192, 180);
+        part = make_procedural_record_sleeve(
+            parent, track, 183, 54,
+            CRAZYPOD_MENU_ALBUM_ARTWORK_SIZE, 23,
+            CRAZYPOD_PREVIEW_ARTWORK_SLOT, false);
+        menu_preview_register_motion(
+            part, -28, 0, 224, -35, 0, 0, 280,
+            -25, 0, 224, -45);
+        part = make_box(stage, 105, 8, 4, 54, 2,
+                        0xD8D4C8, 240);
+        lv_obj_set_style_transform_rotation(part, 160, 0);
+        make_box(stage, 99, 5, 15, 15,
+                 LV_RADIUS_CIRCLE, 0x969A9A, 245);
+        make_box(stage, 104, 10, 5, 5,
+                 LV_RADIUS_CIRCLE, 0x303234, 230);
+        make_box(stage, 98, 57, 18, 7, 3, 0xD8D4C8, 235);
+        menu_preview_register_motion(
+            part, 8, -7, 220, 310, 0, 80, 240,
+            8, -7, 220, 310);
+        break;
+    }
+    case 6: {
+        count = crazypod_music_track_count();
+        stage = make_box(parent, 181, 61, 118, 84, 7,
+                         0x78634D, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            stage, lv_color_hex(0x3B2D23), 0);
+        lv_obj_set_style_bg_grad_dir(stage, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(stage, 1, 0);
+        lv_obj_set_style_border_color(
+            stage, lv_color_hex(0xB99A74), 0);
+        lv_obj_set_style_border_opa(stage, 120, 0);
+        preview_add_bevel(
+            stage, 118, 84, 0xC7AB87, 0x1B120D);
+        preview_add_fastener(stage, 4, 4, 0x9A836D);
+        preview_add_fastener(stage, 109, 4, 0x9A836D);
+        make_box(stage, 8, 9, 102, 12, 3,
+                 0x251F1A, 210);
+        make_box(stage, 13, 13, 34, 3, 1,
+                 0xD8C7A7, 115);
+        for(i = 3; i >= 0; --i) {
+            part = make_box(stage, 16 + i * 4, 28 + i * 12,
+                            82, 29, 3, 0xF1E4C9, LV_OPA_COVER);
+            lv_obj_set_style_border_width(part, 1, 0);
+            lv_obj_set_style_border_color(
+                part, lv_color_hex(0xC8B997), 0);
+            lv_obj_set_style_border_opa(part, 105, 0);
+            make_box(part, 58, 2, 16, 4, 1,
+                     0xD6C39F, 165);
+            make_box(part, 8, 8, 47 - i * 3, 2, 1,
+                     0x6A5C4D, 105);
+            make_box(part, 8, 15, 60, 2, 1,
+                     0x6A5C4D, 70);
+            menu_preview_register_motion(
+                part, 0, 18 + i * 5, 230, i * 12, 0,
+                (3 - i) * 30, 240,
+                0, 19 + i * 4, 230, i * -12);
+        }
+        menu_preview_register_motion(
+            stage, 0, 8, 238, 0, 0, 0, 220,
+            0, -6, 238, 0);
+        break;
+    }
+    default: {
+        count = crazypod_music_track_count();
+        stage = make_box(parent, 187, 58, 99, 91, 5,
+                         0xF0E6D2, LV_OPA_COVER);
+        lv_obj_set_style_border_width(stage, 1, 0);
+        lv_obj_set_style_border_color(
+            stage, lv_color_hex(0xC7B99C), 0);
+        lv_obj_set_style_border_opa(stage, 135, 0);
+        preview_add_bevel(
+            stage, 99, 91, 0xFFFFFF, 0x8D806D);
+        preview_add_paper_rules(
+            stage, 99, 18, 5, 13, 0x6E7780);
+        make_box(stage, 13, 9, 42, 3, 1,
+                 0x384A58, 120);
+        make_box(stage, 84, 3, 10, 10, 1,
+                 0xD4C7AC, 210);
+        part = make_box(parent, 218, 68, 45, 45,
+                        LV_RADIUS_CIRCLE, 0x8DD9EA, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(part, 7, 0);
+        lv_obj_set_style_border_color(
+            part, lv_color_hex(COLOR_CYAN), 0);
+        lv_obj_set_style_border_opa(part, 235, 0);
+        title = make_box(
+            part, 6, 6, 33, 33, LV_RADIUS_CIRCLE,
+            0xD7F5FA, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(title, 1, 0);
+        lv_obj_set_style_border_color(
+            title, lv_color_hex(0xE9FCFF), 0);
+        lv_obj_set_style_border_opa(title, 115, 0);
+        title = make_box(parent, 258, 107, 8, 34, 4,
+                         0x76858C, 245);
+        preview_add_bevel(
+            title, 8, 34, 0xE3EAEC, 0x262E31);
+        make_box(title, 2, 22, 4, 8, 2,
+                 0x23282A, 220);
+        menu_preview_register_motion(
+            stage, 0, 10, 236, 0, 0, 0, 240,
+            -8, 4, 236, 0);
+        menu_preview_register_motion(
+            part, 38, -4, 190, 120, 0, 40, 300,
+            34, 5, 190, 160);
+        break;
+    }
     }
 
-    if(selected != 0) {
-        static const enum crazypod_preview_icon icons[] = {
-            CRAZYPOD_PREVIEW_ICON_NOW_PLAYING,
-            CRAZYPOD_PREVIEW_ICON_ALBUM_FLOW,
-            CRAZYPOD_PREVIEW_ICON_ALL_MUSIC,
-            CRAZYPOD_PREVIEW_ICON_PLAYLISTS,
-            CRAZYPOD_PREVIEW_ICON_ARTIST,
-            CRAZYPOD_PREVIEW_ICON_ALBUMS,
-            CRAZYPOD_PREVIEW_ICON_SONGS,
-            CRAZYPOD_PREVIEW_ICON_SEARCH
-        };
-
-        if(selected != 1)
-            make_music_preview_icon(parent, icons[selected], 192, 52);
-        text_panel = make_preview_text_panel(154, 56);
-        title = make_label(text_panel, music_menu_titles[selected],
-                           &lv_font_montserrat_12,
-                           COLOR_WHITE, LV_OPA_COVER);
-        lv_obj_set_width(title, 132);
-        lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(title, 4, 6);
-        if(selected == 7)
-            snprintf(count_text, sizeof(count_text),
-                     "%d local tracks", count);
-        else
-            snprintf(count_text, sizeof(count_text), "%d %s", count,
-                     selected == 3 ? "playlists" :
-                     selected == 4 ? "artists" :
-                     selected == 5 || selected == 1 ? "albums" : "songs");
-        detail = make_label(text_panel, count_text,
-                            &lv_font_montserrat_8,
-                            COLOR_WHITE, 125);
-        lv_obj_set_width(detail, 132);
-        lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(detail, 4, 30);
-    }
+    text_panel = make_preview_text_panel(158, 58);
+    title = make_label(
+        text_panel,
+        selected == 0 && current_track() != NULL
+            ? current_track()->title : music_menu_titles[selected],
+        &lv_font_montserrat_12,
+        COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(title, 132);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(title, 4, 6);
+    if(selected == 0 && current_track() != NULL)
+        snprintf(count_text, sizeof(count_text), "%s",
+                 current_track()->artist);
+    else if(selected == 7)
+        snprintf(count_text, sizeof(count_text),
+                 "%d local tracks", count);
+    else
+        snprintf(count_text, sizeof(count_text), "%d %s", count,
+                 selected == 3 ? "playlists" :
+                 selected == 4 ? "artists" :
+                 selected == 5 || selected == 1 ? "albums" : "songs");
+    detail = make_label(text_panel, count_text,
+                        &lv_font_montserrat_8,
+                        COLOR_WHITE, 125);
+    lv_obj_set_width(detail, 132);
+    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(detail, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(detail, 4, 32);
+    menu_preview_register_motion(
+        text_panel, 0, 10, 246, 0, 0, 70, 220,
+        0, 6, 246, 0);
 }
 
 static void render_item_preview(const struct route_state *state)
@@ -5381,11 +7695,35 @@ static void render_settings_preview(const struct route_state *state)
     lv_obj_t *swatch;
     lv_obj_t *glyph;
     lv_obj_t *label;
+    char detail_text[48];
     int item;
 
     if(state->route == SETTINGS_ROUTE_MENU) {
         symbol = settings_menu_symbols[state->selected];
         detail = settings_group_detail(state->selected);
+    }
+    else if(state->route == SETTINGS_ROUTE_MAIN_MENU) {
+        struct crazypod_app *app = ordered_app(state->selected);
+        enum crazypod_app_id id = app != NULL
+            ? app->id : CRAZYPOD_APP_INVALID;
+        symbol = app != NULL ? app->symbol : LV_SYMBOL_LIST;
+        swatch_color = app != NULL ? app->color : highlight_primary();
+        snprintf(detail_text, sizeof(detail_text), "%s · Position %d",
+                 crazypod_apps_is_enabled(id) ? "Visible" : "In More",
+                 state->selected + 1);
+        detail = detail_text;
+    }
+    else if(state->route == SETTINGS_ROUTE_MAIN_MENU_ACTIONS) {
+        struct crazypod_app *app =
+            app_for_id((enum crazypod_app_id)state->group);
+        int action = state->selected +
+            (crazypod_apps_is_fixed(
+                 (enum crazypod_app_id)state->group) ? 1 : 0);
+        symbol = app != NULL ? app->symbol : LV_SYMBOL_LIST;
+        swatch_color = app != NULL ? app->color : highlight_primary();
+        detail = action == 0
+            ? "Changes More Features"
+            : "Changes launcher position";
     }
     else {
         item = settings_route_item(state->route, state->selected);
@@ -5453,9 +7791,9 @@ static int photo_index_for_path(const char *path)
     return 0;
 }
 
-static void render_photo_image(lv_obj_t *parent,
-                               const lv_image_dsc_t *descriptor,
-                               int x, int y, int width, int height)
+static lv_obj_t *render_photo_image(
+    lv_obj_t *parent, const lv_image_dsc_t *descriptor,
+    int x, int y, int width, int height)
 {
     lv_obj_t *image;
     uint32_t scale_x;
@@ -5466,7 +7804,7 @@ static void render_photo_image(lv_obj_t *parent,
 
     if(descriptor == NULL || descriptor->header.w <= 0 ||
        descriptor->header.h <= 0)
-        return;
+        return NULL;
     scale_x = (uint32_t)width * LV_SCALE_NONE /
         descriptor->header.w;
     scale_y = (uint32_t)height * LV_SCALE_NONE /
@@ -5485,42 +7823,296 @@ static void render_photo_image(lv_obj_t *parent,
                    x + (width - display_width) / 2,
                    y + (height - display_height) / 2);
     lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
+    return image;
+}
+
+static void render_procedural_photo(
+    lv_obj_t *parent, int x, int y,
+    int width, int height, int seed)
+{
+    static const uint32_t sky_colors[] = {
+        0x8EC5D8, 0xD7A7B8, 0x8AB89B, 0xC8A66A
+    };
+    static const uint32_t ground_colors[] = {
+        0x385869, 0x744A61, 0x46654F, 0x725537
+    };
+    lv_obj_t *scene = make_box(
+        parent, x, y, width, height, 2,
+        sky_colors[seed % 4], LV_OPA_COVER);
+    int horizon = height * 2 / 3;
+
+    lv_obj_set_style_bg_grad_color(
+        scene,
+        lv_color_hex(
+            sky_colors[(seed + 1) % 4]), 0);
+    lv_obj_set_style_bg_grad_dir(
+        scene, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_border_width(scene, 1, 0);
+    lv_obj_set_style_border_color(
+        scene, lv_color_hex(0xF8FAF8), 0);
+    lv_obj_set_style_border_opa(scene, 62, 0);
+    make_box(
+        scene, width * 2 / 3, height / 7,
+        width / 7, width / 7,
+        LV_RADIUS_CIRCLE, 0xF7DE8B, 210);
+    make_box(
+        scene, 0, horizon, width, height - horizon,
+        0, ground_colors[seed % 4], LV_OPA_COVER);
+    make_box(
+        scene, width / 8, horizon - height / 5,
+        width * 3 / 5, height / 4,
+        height / 8, ground_colors[(seed + 1) % 4], 210);
+    make_box(
+        scene, width * 3 / 4, horizon - height / 9,
+        width / 9, height / 3,
+        1, 0x253B35, 145);
+}
+
+static void format_media_duration(char *buffer, size_t size,
+                                  uint32_t seconds)
+{
+    uint32_t hours = seconds / 3600u;
+    uint32_t minutes = seconds / 60u % 60u;
+    uint32_t remainder = seconds % 60u;
+
+    if(seconds == 0)
+        snprintf(buffer, size, "--:--");
+    else if(hours > 0)
+        snprintf(buffer, size, "%lu:%02lu:%02lu",
+                 (unsigned long)hours, (unsigned long)minutes,
+                 (unsigned long)remainder);
+    else
+        snprintf(buffer, size, "%lu:%02lu",
+                 (unsigned long)minutes, (unsigned long)remainder);
+}
+
+static lv_obj_t *render_video_card(lv_obj_t *parent, int video_index,
+                                   int x, int y, int width, int height)
+{
+    const lv_image_dsc_t *poster = NULL;
+    lv_obj_t *card = make_box(parent, x, y, width, height, 6,
+                              0x0B0D12, LV_OPA_COVER);
+    lv_obj_t *play;
+
+    lv_obj_set_style_border_width(card, 2, 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0xAEB7C7), 0);
+    lv_obj_set_style_border_opa(card, 120, 0);
+    if(video_index >= 0) {
+        if(menu_preview_build_defer_media)
+            menu_preview_media_deferred = true;
+        else
+            poster = crazypod_video_poster(video_index);
+    }
+    if(poster != NULL)
+        (void)render_photo_image(card, poster, 3, 3,
+                                 width - 6, height - 6);
+    else {
+        lv_obj_t *empty = make_label(
+            card, LV_SYMBOL_IMAGE, &lv_font_montserrat_24,
+            COLOR_WHITE, 55);
+        lv_obj_center(empty);
+    }
+    play = make_box(card, width / 2 - 15, height / 2 - 15,
+                    30, 30, LV_RADIUS_CIRCLE,
+                    0x05070A, 190);
+    {
+        lv_obj_t *symbol = make_label(
+            play, LV_SYMBOL_PLAY, &lv_font_montserrat_12,
+            COLOR_WHITE, LV_OPA_COVER);
+        lv_obj_center(symbol);
+    }
+    return card;
+}
+
+static void render_videos_preview(const struct route_state *state)
+{
+    int count = crazypod_video_count();
+    int index = count > 0 ? state->selected : -1;
+    const char *name = index >= 0 ? crazypod_video_name(index) : "No Videos";
+    uint32_t resume = index >= 0
+        ? crazypod_video_resume_seconds(index) : 0;
+    uint32_t duration = index >= 0
+        ? crazypod_video_duration_seconds(index) : 0;
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *text_panel;
+    lv_obj_t *label;
+    char time[24];
+    char detail[64];
+
+    make_preview_plinth(parent, 173, 154, 134, 0x8892A2, 0x161A21);
+    render_video_card(parent, index, 173, 48, 134, 102);
+    format_media_duration(time, sizeof(time), duration);
+    if(resume > 0)
+        snprintf(detail, sizeof(detail), "Resume %lu:%02lu  ·  %s",
+                 (unsigned long)(resume / 60u),
+                 (unsigned long)(resume % 60u), time);
+    else
+        snprintf(detail, sizeof(detail), "%s  ·  MPEG", time);
+    text_panel = make_preview_text_panel(160, 52);
+    label = make_label(text_panel, name, &lv_font_montserrat_10,
+                       COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(label, 128);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 6, 6);
+    label = make_label(text_panel, detail, &lv_font_montserrat_8,
+                       COLOR_WHITE, 120);
+    lv_obj_set_width(label, 128);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 6, 28);
 }
 
 static void render_photos_preview(const struct route_state *state)
 {
-    int photo_index = state->selected == 0
-        ? (crazypod_photo_count() > 0 ? 0 : -1)
-        : crazypod_photo_favorite_index(0);
     int count = state->selected == 0
-        ? crazypod_photo_count() : crazypod_photo_favorite_count();
-    const lv_image_dsc_t *descriptor = photo_index >= 0
-        ? crazypod_photo_thumbnail(
-              CRAZYPOD_PHOTO_THUMB_SLOTS - 1, photo_index)
-        : NULL;
+        ? crazypod_photo_count()
+        : state->selected == 1
+            ? crazypod_video_count()
+            : crazypod_photo_favorite_count();
     lv_obj_t *parent = preview_parent();
-    lv_obj_t *preview;
+    lv_obj_t *preview = NULL;
     lv_obj_t *label;
     lv_obj_t *text_panel;
     char detail[48];
+    int i;
 
-    preview = make_box(parent, 194, 69, 92, 92, 10,
-                       0x050507, LV_OPA_COVER);
-    lv_obj_set_style_border_width(preview, 1, 0);
-    lv_obj_set_style_border_color(preview, lv_color_hex(COLOR_WHITE), 0);
-    lv_obj_set_style_border_opa(preview, 28, 0);
-    if(descriptor != NULL)
-        render_photo_image(preview, descriptor, 4, 4, 84, 84);
-    else {
-        label = make_label(preview,
-                           photo_index >= 0
-                               ? LV_SYMBOL_REFRESH : LV_SYMBOL_IMAGE,
-                           &lv_font_montserrat_24,
-                           COLOR_WHITE, photo_index >= 0 ? 110 : 65);
-        lv_obj_center(label);
+    make_preview_plinth(
+        parent, 180, 149, 120, 0xAEB6B9, 0x252A2C);
+    if(state->selected == 0) {
+        static const int x[] = { 181, 213, 244 };
+        static const int y[] = { 70, 57, 72 };
+        static const int angle[] = { -75, 15, 80 };
+        for(i = 0; i < 3; ++i) {
+            const lv_image_dsc_t *descriptor = NULL;
+
+            if(i < count) {
+                if(menu_preview_build_defer_media)
+                    menu_preview_media_deferred = true;
+                else
+                    descriptor = crazypod_photo_thumbnail(
+                        CRAZYPOD_PHOTO_THUMB_SLOTS - 1 - i, i);
+            }
+            preview = make_box(parent, x[i], y[i], 57, 76, 3,
+                               0xF0E9DB, LV_OPA_COVER);
+            lv_obj_set_style_border_width(preview, 1, 0);
+            lv_obj_set_style_border_color(
+                preview, lv_color_hex(0xB8AE9F), 0);
+            lv_obj_set_style_border_opa(preview, 155, 0);
+            preview_add_bevel(
+                preview, 57, 76, 0xFFFFFF, 0x867C6C);
+            render_procedural_photo(
+                preview, 4, 4, 49, 54, i);
+            if(descriptor != NULL) {
+                (void)render_photo_image(
+                    preview, descriptor, 4, 4, 49, 54);
+            }
+            make_box(preview, 12, 65, 33, 2, 1,
+                     0x6C6258, 82);
+            make_box(preview, 17, 70, 23, 1, 0,
+                     0x6C6258, 48);
+            if(i == 1)
+                make_box(preview, 22, 0, 14, 4, 1,
+                         0xD2B879, 185);
+            lv_obj_set_style_transform_rotation(
+                preview, angle[i], 0);
+            menu_preview_register_motion(
+                preview,
+                (i - 1) * 28, 25 + i * 4, 194,
+                angle[i] + (i - 1) * 110, 0,
+                i * 45, 280,
+                (i - 1) * 23, -16, 194,
+                angle[i] + (i - 1) * 80);
+        }
     }
-    snprintf(detail, sizeof(detail), "%d photo%s",
-             count, count == 1 ? "" : "s");
+    else if(state->selected == 1) {
+        int video_index = count > 0 ? 0 : -1;
+
+        preview = render_video_card(parent, video_index,
+                                    173, 48, 134, 102);
+        make_box(parent, 209, 146, 60, 6, 3,
+                 0x252A31, 210);
+        menu_preview_register_motion(
+            preview, 18, 0, 205, 55, 0,
+            0, 280, 18, -4, 205, 80);
+    }
+    else {
+        int photo_index = crazypod_photo_favorite_index(0);
+        const lv_image_dsc_t *descriptor = NULL;
+
+        if(photo_index >= 0) {
+            if(menu_preview_build_defer_media)
+                menu_preview_media_deferred = true;
+            else
+                descriptor = crazypod_photo_thumbnail(
+                    CRAZYPOD_PHOTO_THUMB_SLOTS - 1, photo_index);
+        }
+        preview = make_box(parent, 188, 56, 104, 96, 7,
+                           0x6B4429, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            preview, lv_color_hex(0x2D1B12), 0);
+        lv_obj_set_style_bg_grad_dir(preview, LV_GRAD_DIR_HOR, 0);
+        lv_obj_set_style_border_width(preview, 3, 0);
+        lv_obj_set_style_border_color(
+            preview, lv_color_hex(0xB7834D), 0);
+        lv_obj_set_style_border_opa(preview, 190, 0);
+        preview_add_bevel(
+            preview, 104, 96, 0xD1A36A, 0x160B06);
+        make_box(preview, 5, 5, 1, 86, 0,
+                 0xD8A76B, 70);
+        make_box(preview, 98, 5, 1, 86, 0,
+                 0x160B06, 120);
+        {
+            lv_obj_t *mat = make_box(
+                preview, 9, 9, 86, 77, 3,
+                0xE7DDC9, LV_OPA_COVER);
+            lv_obj_set_style_border_width(mat, 1, 0);
+            lv_obj_set_style_border_color(
+                mat, lv_color_hex(0xBEB39F), 0);
+            lv_obj_set_style_border_opa(mat, 135, 0);
+            if(count > 0) {
+                render_procedural_photo(
+                    mat, 5, 5, 76, 67, 3);
+                (void)render_photo_image(
+                    mat, descriptor, 5, 5, 76, 67);
+            }
+            else {
+                make_box(mat, 5, 5, 76, 67, 2,
+                         0xA8B0B2, LV_OPA_COVER);
+                label = make_label(
+                    mat, LV_SYMBOL_IMAGE,
+                    &lv_font_montserrat_24,
+                    COLOR_WHITE, 82);
+                lv_obj_center(label);
+            }
+        }
+        make_box(parent, 228, 151, 24, 5, 2,
+                 0x6E452A, 225);
+        {
+            lv_obj_t *pin = make_box(
+                parent, 257, 48, 29, 29,
+                LV_RADIUS_CIRCLE, 0x8D243A, LV_OPA_COVER);
+            lv_obj_set_style_border_width(pin, 1, 0);
+            lv_obj_set_style_border_color(
+                pin, lv_color_hex(0xE1B46E), 0);
+            lv_obj_set_style_border_opa(pin, 130, 0);
+            preview_add_bevel(
+                pin, 29, 29, 0xF0CE91, 0x310914);
+            make_pixel_heart(
+                pin, 6, 8, 2, 0xFFE2A8, LV_OPA_COVER);
+            menu_preview_register_motion(
+                pin, 13, -14, 170, 120, 0,
+                80, 240, 11, -11, 170, 180);
+        }
+        menu_preview_register_motion(
+            preview, 17, 0, 214, 65, 0,
+            0, 280, 18, -5, 214, 95);
+    }
+
+    snprintf(detail, sizeof(detail), "%d %s%s",
+             count,
+             state->selected == 1 ? "video" : "photo",
+             count == 1 ? "" : "s");
     text_panel = make_preview_text_panel(166, 52);
     label = make_label(text_panel, detail,
                        &lv_font_montserrat_10,
@@ -5531,11 +8123,1121 @@ static void render_photos_preview(const struct route_state *state)
     label = make_label(
         text_panel,
         state->selected == 0 ? "All pictures in /Pictures"
-                             : "Saved favorites",
+        : state->selected == 1 ? "Converted MPEG files in /Videos"
+                               : "Saved favorites",
         &lv_font_montserrat_8, COLOR_WHITE, 100);
     lv_obj_set_width(label, 132);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(label, 4, 25);
+    menu_preview_register_motion(
+        text_panel, 0, 9, 246, 0, 0, 70, 220,
+        0, 6, 246, 0);
+}
+
+static void render_extras_preview(const struct route_state *state)
+{
+    static lv_image_dsc_t icon_descriptor;
+    struct crazypod_app *app = hidden_app(state->selected);
+    int app_index = app != NULL ? app_catalog_index(app->id) : -1;
+    const struct crazypod_icon *icon =
+        app_index >= 0 ? crazypod_icon_get(app_index) : NULL;
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *text_panel;
+    lv_obj_t *label;
+
+    make_box(parent, 188, 153, 104, 10, LV_RADIUS_CIRCLE,
+             0x000000, 72);
+    if(icon != NULL && icon->pixels != NULL) {
+        memset(&icon_descriptor, 0, sizeof(icon_descriptor));
+        icon_descriptor.header.magic = LV_IMAGE_HEADER_MAGIC;
+        icon_descriptor.header.cf =
+            LV_COLOR_FORMAT_ARGB8888_PREMULTIPLIED;
+        icon_descriptor.header.w = icon->width;
+        icon_descriptor.header.h = icon->height;
+        icon_descriptor.header.stride = icon->stride;
+        icon_descriptor.data_size = icon->stride * icon->height;
+        icon_descriptor.data = icon->pixels;
+        render_photo_image(parent, &icon_descriptor,
+                           174, 37, 132, 132);
+    }
+    else {
+        lv_obj_t *fallback = make_box(
+            parent, 196, 57, 88, 88, 20,
+            app != NULL ? app->color : 0x59606B,
+            LV_OPA_COVER);
+        label = make_label(fallback,
+                           app != NULL ? app->symbol : LV_SYMBOL_LIST,
+                           &lv_font_montserrat_24,
+                           COLOR_WHITE, 230);
+        lv_obj_center(label);
+    }
+
+    text_panel = make_preview_text_panel(168, 52);
+    label = make_label(text_panel,
+                       app != NULL ? app->name : "More Features",
+                       CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(label, 126);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 7, 5);
+    label = make_label(text_panel,
+                       app != NULL
+                           ? "Hidden from Main Menu"
+                           : "No hidden applications",
+                       &lv_font_montserrat_8,
+                       COLOR_WHITE, 135);
+    lv_obj_set_width(label, 126);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 7, 30);
+}
+
+static void render_notes_preview(const struct route_state *state)
+{
+    const char *title = route_item_title(state, state->selected);
+    const char *detail = "";
+    const struct crazypod_note *note = NULL;
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *binder;
+    lv_obj_t *paper;
+    lv_obj_t *label;
+    lv_obj_t *text_panel;
+    lv_obj_t *part;
+    char search_detail[48];
+    bool is_home = state->route == NOTES_ROUTE_MENU;
+    bool is_new = is_home && state->selected == 0;
+    bool is_draft = is_home && note_draft_available &&
+                    state->selected == 1;
+    bool is_search = is_home &&
+                     state->selected == notes_home_search_index();
+    bool is_deleted = is_home &&
+                      state->selected == notes_home_deleted_index();
+    int i;
+
+    if(state->route == NOTES_ROUTE_MENU)
+        note = notes_home_note(state->selected);
+    else if(state->route == NOTES_ROUTE_SEARCH_RESULTS)
+        note = crazypod_notes_search_get(
+            note_search_query, state->selected);
+    else if(state->group > 0)
+        note = crazypod_note_find((uint32_t)state->group);
+    if(state->route == NOTES_ROUTE_SEARCH) {
+        title = note_search_query[0] != '\0'
+            ? note_search_query : "Search Notes";
+        snprintf(search_detail, sizeof(search_detail),
+                 "%d matching note%s",
+                 crazypod_notes_search_count(note_search_query),
+                 crazypod_notes_search_count(note_search_query) == 1
+                    ? "" : "s");
+        detail = search_detail;
+    }
+    else if(note != NULL)
+        detail = note->pinned ? "Pinned note" :
+                 note->deleted ? "Recently deleted" : "Saved note";
+    else if(state->route == NOTES_ROUTE_MENU && state->selected == 0)
+        detail = "Write with the click wheel";
+    else if(state->route == NOTES_ROUTE_MENU &&
+            note_draft_available && state->selected == 1)
+        detail = "Resume unsaved changes";
+    else if(is_search)
+        detail = "Search title and body";
+    else if(is_deleted)
+        detail = "Restore or erase notes";
+    else if(state->route == NOTES_ROUTE_MENU)
+        detail = "Saved note";
+
+    make_preview_plinth(
+        parent, 187, 156, 108, 0xAEB7BA, 0x252A2C);
+    if(is_new) {
+        binder = make_box(parent, 190, 52, 92, 104, 6,
+                          0x6B4B32, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            binder, lv_color_hex(0x392517), 0);
+        lv_obj_set_style_bg_grad_dir(
+            binder, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(binder, 1, 0);
+        lv_obj_set_style_border_color(
+            binder, lv_color_hex(0xA68159), 0);
+        lv_obj_set_style_border_opa(binder, 145, 0);
+        preview_add_bevel(
+            binder, 92, 104, 0xB4936C, 0x1D120B);
+        paper = make_box(binder, 7, 10, 78, 87, 3,
+                         0xF4E9CF, LV_OPA_COVER);
+        lv_obj_set_style_border_width(paper, 1, 0);
+        lv_obj_set_style_border_color(
+            paper, lv_color_hex(0xD5C49F), 0);
+        lv_obj_set_style_border_opa(paper, 165, 0);
+        preview_add_bevel(
+            paper, 78, 87, 0xFFFFFF, 0xA8987C);
+        preview_add_paper_rules(
+            paper, 78, 25, 5, 12, 0x8FA7B5);
+        make_box(paper, 14, 12, 34, 3, 1,
+                 0x6F5540, 125);
+        part = make_box(binder, 29, 2, 34, 13, 5,
+                        0xB9C0C2, LV_OPA_COVER);
+        preview_add_bevel(
+            part, 34, 13, 0xF2F5F6, 0x454B4D);
+        make_box(part, 8, 4, 18, 4, 2,
+                 0x53595B, 185);
+        part = make_box(parent, 270, 70, 7, 77, 3,
+                        0xE5B64A, LV_OPA_COVER);
+        make_box(part, 0, 0, 7, 11, 2, 0xE26D5A, 245);
+        make_box(part, 0, 11, 7, 4, 0,
+                 0xB9BEC0, 240);
+        make_box(part, 1, 69, 5, 8, 2, 0x252525, 245);
+        lv_obj_set_style_transform_rotation(part, 235, 0);
+        menu_preview_register_motion(
+            binder, 0, 18, 228, -15, 0, 0, 260,
+            -8, 12, 228, -25);
+        menu_preview_register_motion(
+            part, 22, -18, 196, 410, 0, 60, 300,
+            18, -14, 196, 430);
+    }
+    else if(is_draft) {
+        binder = make_box(parent, 194, 58, 92, 98, 8,
+                          0x75492D, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            binder, lv_color_hex(0x3B2519), 0);
+        lv_obj_set_style_bg_grad_dir(binder, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(binder, 1, 0);
+        lv_obj_set_style_border_color(
+            binder, lv_color_hex(0xB0835D), 0);
+        lv_obj_set_style_border_opa(binder, 145, 0);
+        preview_add_bevel(
+            binder, 92, 98, 0xC29B73, 0x21150E);
+        paper = make_box(binder, 12, 12, 68, 78, 3,
+                         0xF4E9CF, LV_OPA_COVER);
+        preview_add_bevel(
+            paper, 68, 78, 0xFFFFFF, 0x9C8B70);
+        preview_add_paper_rules(
+            paper, 68, 23, 4, 12, 0x8FA7B5);
+        make_box(paper, 13, 11, 28, 3, 1,
+                 0x6F5540, 115);
+        part = make_box(binder, 30, 3, 33, 12, 5,
+                        0xB8B9B7, LV_OPA_COVER);
+        preview_add_bevel(
+            part, 33, 12, 0xEDF0F1, 0x3A3D3E);
+        make_box(part, 7, 3, 19, 4, 2, 0x4A4C4D, 165);
+        menu_preview_register_motion(
+            binder, 15, 0, 218, 45, 0, 0, 270,
+            14, 5, 218, 70);
+        menu_preview_register_motion(
+            part, 0, -14, 200, 0, 0, 70, 230,
+            0, -10, 200, 0);
+    }
+    else if(is_search) {
+        paper = make_box(parent, 192, 61, 83, 91, 4,
+                         0xF4E9CF, LV_OPA_COVER);
+        lv_obj_set_style_border_width(paper, 1, 0);
+        lv_obj_set_style_border_color(
+            paper, lv_color_hex(0xC9B99A), 0);
+        lv_obj_set_style_border_opa(paper, 135, 0);
+        preview_add_bevel(
+            paper, 83, 91, 0xFFFFFF, 0x998970);
+        preview_add_paper_rules(
+            paper, 83, 18, 5, 14, 0x6E7780);
+        make_box(paper, 14, 8, 33, 3, 1,
+                 0x6F5540, 105);
+        part = make_box(parent, 228, 65, 44, 44,
+                        LV_RADIUS_CIRCLE, COLOR_CYAN, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(part, 7, 0);
+        lv_obj_set_style_border_color(
+            part, lv_color_hex(COLOR_CYAN), 0);
+        lv_obj_set_style_border_opa(part, 230, 0);
+        binder = make_box(
+            part, 6, 6, 32, 32, LV_RADIUS_CIRCLE,
+            0xDAF6FA, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(binder, 1, 0);
+        lv_obj_set_style_border_color(
+            binder, lv_color_hex(0xF1FCFE), 0);
+        lv_obj_set_style_border_opa(binder, 105, 0);
+        binder = make_box(parent, 266, 103, 8, 37, 4,
+                          0x76858C, 245);
+        preview_add_bevel(
+            binder, 8, 37, 0xE3EAEC, 0x262E31);
+        make_box(binder, 2, 25, 4, 8, 2,
+                 0x23282A, 220);
+        menu_preview_register_motion(
+            paper, -8, 7, 232, 0, 0, 0, 240,
+            -10, 5, 232, 0);
+        menu_preview_register_motion(
+            part, 42, 9, 185, 120, 0, 50, 300,
+            38, 9, 185, 160);
+    }
+    else if(is_deleted) {
+        binder = make_box(parent, 205, 94, 72, 61, 7,
+                          0x6D7377, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            binder, lv_color_hex(0x303639), 0);
+        lv_obj_set_style_bg_grad_dir(
+            binder, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(binder, 2, 0);
+        lv_obj_set_style_border_color(
+            binder, lv_color_hex(0xB9C0C4), 0);
+        lv_obj_set_style_border_opa(binder, 150, 0);
+        preview_add_bevel(
+            binder, 72, 61, 0xD6DCDE, 0x16191A);
+        make_box(binder, 3, 4, 66, 4, 2,
+                 0xBCC5C8, 225);
+        for(i = 0; i < 5; ++i)
+            make_box(binder, 9 + i * 12, 8, 2, 43, 1,
+                     0x252A2D, 115);
+        for(i = 0; i < 3; ++i)
+            make_box(binder, 7, 19 + i * 12, 58, 1, 0,
+                     0xD8DEE0, 45);
+        make_box(binder, 9, 54, 10, 5, 2,
+                 0x24282A, 210);
+        make_box(binder, 53, 54, 10, 5, 2,
+                 0x24282A, 210);
+        part = make_box(parent, 225, 59, 37, 37,
+                        LV_RADIUS_CIRCLE, 0xE9DDC4, LV_OPA_COVER);
+        preview_add_bevel(
+            part, 37, 37, 0xFFFFFF, 0xA99D88);
+        make_box(part, 8, 7, 20, 3, 1, 0x756B5F, 90);
+        make_box(part, 13, 16, 16, 3, 1, 0x756B5F, 75);
+        make_box(part, 4, 25, 18, 2, 1, 0x756B5F, 52);
+        lv_obj_set_style_transform_rotation(part, 120, 0);
+        menu_preview_register_motion(
+            binder, 0, 18, 225, 0, 0, 0, 240,
+            0, 13, 225, 0);
+        menu_preview_register_motion(
+            part, -18, -37, 150, -220, 0, 30, 300,
+            13, 31, 160, 270);
+    }
+    else {
+        binder = make_box(parent, 195, 60, 92, 96, 8,
+                          0x5C2D23, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            binder, lv_color_hex(0x2B1514), 0);
+        lv_obj_set_style_bg_grad_dir(binder, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(binder, 2, 0);
+        lv_obj_set_style_border_color(
+            binder, lv_color_hex(0xB06A4A), 0);
+        lv_obj_set_style_border_opa(binder, 145, 0);
+        preview_add_bevel(
+            binder, 92, 96, 0xC17B5C, 0x1B0D0C);
+        make_box(binder, 6, 7, 5, 82, 2,
+                 0x311515, 225);
+        make_box(binder, 12, 7, 1, 82, 0,
+                 0xC17B5C, 65);
+        paper = make_box(binder, 17, 8, 67, 80, 3,
+                         0xF4E9CF, LV_OPA_COVER);
+        preview_add_bevel(
+            paper, 67, 80, 0xFFFFFF, 0x9B8B72);
+        preview_add_paper_rules(
+            paper, 67, 20, 4, 13, 0x8FA7B5);
+        make_box(paper, 13, 9, 34, 3, 1,
+                 0x6F5540, 115);
+        for(i = 0; i < 4; ++i) {
+            make_box(binder, 8, 17 + i * 19, 13, 5,
+                     LV_RADIUS_CIRCLE, 0xD6D7D9, 230);
+            make_box(binder, 9, 18 + i * 19, 9, 2,
+                     LV_RADIUS_CIRCLE, 0x52545A, 180);
+        }
+        part = make_box(binder, 76, 37, 12, 22, 3,
+                        note != NULL && note->pinned
+                            ? 0xF0B43C : 0xBD7B42, 220);
+        menu_preview_register_motion(
+            binder, 16, 0, 215, 55, 0, 0, 280,
+            14, 5, 215, 75);
+        menu_preview_register_motion(
+            paper, 17, 0, 226, 0, 0, 60, 240,
+            15, 0, 226, 0);
+        menu_preview_register_motion(
+            part, 8, -8, 170, 120, 0, 90, 220,
+            8, -7, 170, 160);
+    }
+
+    text_panel = make_preview_text_panel(168, 52);
+    label = make_label(text_panel, title != NULL ? title : "Notes",
+                       CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(label, 126);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 7, 5);
+    label = make_label(text_panel, detail, &lv_font_montserrat_8,
+                       COLOR_WHITE, 135);
+    lv_obj_set_width(label, 126);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 7, 30);
+    menu_preview_register_motion(
+        text_panel, 0, 9, 246, 0, 0, 70, 220,
+        0, 6, 246, 0);
+}
+
+static lv_obj_t *make_book_preview_cover(
+    lv_obj_t *parent, const struct crazypod_book *book,
+    int x, int y, int width, int height)
+{
+    int book_index = crazypod_book_index(book);
+    const lv_image_dsc_t *image =
+        book_index >= 0 && width >= 50
+            ? crazypod_book_cover_get(
+                  book_index, width, height) : NULL;
+    uint32_t color = book != NULL
+        ? artwork_color(book->path, 0) : 0x70462A;
+    lv_obj_t *cover = make_box(
+        parent, x, y, width, height, 4,
+        image != NULL ? 0x090806 : color, LV_OPA_COVER);
+    lv_obj_t *label;
+    int spine_width = width > 50 ? 7 : 4;
+
+    if(image != NULL) {
+        render_photo_image(cover, image, 0, 0, width, height);
+        lv_obj_set_style_border_width(cover, 1, 0);
+        lv_obj_set_style_border_color(
+            cover, lv_color_hex(0xD8D0C2), 0);
+        lv_obj_set_style_border_opa(cover, 105, 0);
+        preview_add_bevel(
+            cover, width, height, 0xFFFFFF, 0x090604);
+        return cover;
+    }
+
+    lv_obj_set_style_bg_grad_color(
+        cover, lv_color_hex((color & 0xFEFEFEu) >> 1), 0);
+    lv_obj_set_style_bg_grad_dir(cover, LV_GRAD_DIR_HOR, 0);
+    lv_obj_set_style_border_width(cover, 1, 0);
+    lv_obj_set_style_border_color(
+        cover, lv_color_hex(0xE0C48D), 0);
+    lv_obj_set_style_border_opa(cover, 125, 0);
+    preview_add_bevel(
+        cover, width, height, 0xF6E5BC, 0x160C08);
+    make_box(cover, spine_width, 5, 2, height - 10, 1,
+             0x1A1010, 82);
+    make_box(cover, spine_width + 3, 5, 1, height - 10, 0,
+             0xF3E2B5, 48);
+    if(width - spine_width >= 18) {
+        make_box(cover, spine_width + 7, 13,
+                 width - spine_width - 12, 2, 1,
+                 0xF3E2B5, 145);
+        make_box(cover, spine_width + 7, 20,
+                 width - spine_width - 14, 1, 0,
+                 0xF3E2B5, 92);
+    }
+    if(width > 26)
+        make_box(cover, width - 4, 7, 2, height - 14, 0,
+                 0xF4E8CB, 115);
+    if(width >= 60) {
+        label = make_label(
+            cover,
+            book != NULL && book->title[0] != '\0'
+                ? book->title : "BOOK",
+            &lv_font_montserrat_8,
+            0xF7E7BE, 205);
+        lv_obj_set_pos(label, spine_width + 7, height / 2 - 4);
+        lv_obj_set_width(label, width - spine_width - 13);
+        lv_obj_set_style_text_align(
+            label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    }
+    return cover;
+}
+
+static void render_books_menu_stage(
+    lv_obj_t *parent, const struct route_state *state,
+    const struct crazypod_book **selected_book,
+    const char **detail)
+{
+    bool has_continue = books_has_continue();
+    int logical = state->selected - (has_continue ? 1 : 0);
+    int count = crazypod_books_count();
+    lv_obj_t *stage;
+    lv_obj_t *part;
+    lv_obj_t *label;
+    int i;
+
+    if(has_continue && state->selected == 0) {
+        int index = crazypod_books_recent_index();
+        const struct crazypod_book *book = crazypod_book_get(index);
+        lv_obj_t *left_page;
+        lv_obj_t *right_page;
+        *selected_book = book;
+        *detail = "Resume saved position";
+        make_preview_plinth(
+            parent, 184, 155, 112, 0xAA8B61, 0x2A1B12);
+        stage = make_box(parent, 185, 71, 110, 77, 5,
+                         0x5B3A25, LV_OPA_COVER);
+        lv_obj_set_style_border_width(stage, 1, 0);
+        lv_obj_set_style_border_color(
+            stage, lv_color_hex(0x9A744C), 0);
+        lv_obj_set_style_border_opa(stage, 140, 0);
+        preview_add_bevel(
+            stage, 110, 77, 0xB58B5F, 0x21140C);
+        left_page = make_box(stage, 5, 5, 49, 66, 3,
+                             0xEFE2C5, LV_OPA_COVER);
+        right_page = make_box(stage, 56, 5, 49, 66, 3,
+                              0xF7EBD2, LV_OPA_COVER);
+        preview_add_bevel(
+            left_page, 49, 66, 0xFFFFFF, 0x9E8A68);
+        preview_add_bevel(
+            right_page, 49, 66, 0xFFFFFF, 0x9E8A68);
+        preview_add_paper_rules(
+            left_page, 49, 15, 4, 10, 0x6E5946);
+        preview_add_paper_rules(
+            right_page, 49, 15, 4, 10, 0x6E5946);
+        make_box(stage, 52, 5, 5, 66, 2,
+                 0xB69565, 190);
+        make_box(stage, 54, 7, 1, 62, 0,
+                 0x5A3821, 145);
+        part = make_box(right_page, 37, 0, 7, 31, 1,
+                        0xB43B45, 225);
+        make_box(part, 1, 0, 2, 31, 0,
+                 0xE77780, 95);
+        menu_preview_register_motion(
+            stage, 0, 11, 225, 0, 0, 0, 250,
+            0, 8, 225, 0);
+        menu_preview_register_motion(
+            left_page, 22, 0, 182, 120, 0, 30, 280,
+            20, 0, 182, 120);
+        menu_preview_register_motion(
+            right_page, -22, 0, 182, -120, 0, 30, 280,
+            -20, 0, 182, -120);
+        menu_preview_register_motion(
+            part, 0, -14, 210, 0, 0, 90, 220,
+            0, -9, 210, 0);
+        return;
+    }
+
+    if(logical == 0) {
+        int recent_count = crazypod_books_recent_count();
+        *detail = recent_count > 0
+            ? "Latest reading activity" : "No recent reading";
+        make_preview_plinth(
+            parent, 181, 152, 118, 0xB38A5E, 0x2C1C12);
+        for(i = 2; i >= 0; --i) {
+            const struct crazypod_book *book =
+                i < recent_count
+                    ? crazypod_book_get(
+                          crazypod_books_recent_at(i))
+                    : NULL;
+            stage = make_book_preview_cover(
+                parent, book,
+                186 + i * 13, 68 - i * 5,
+                70, 86);
+            menu_preview_register_motion(
+                stage, (i - 1) * 20, 14 + i * 3, 195,
+                (i - 1) * 45, 0, (2 - i) * 35, 270,
+                (i - 1) * 18, 9, 195,
+                (i - 1) * 55);
+        }
+        return;
+    }
+
+    if(logical == 1) {
+        *detail = count > 0
+            ? "Browse the local library" : "Import EPUB, TXT or MD";
+        make_box(parent, 183, 70, 114, 83, 4,
+                 0x261A12, 82);
+        stage = make_preview_plinth(
+            parent, 178, 151, 124, 0xB47A3C, 0x3A2416);
+        preview_add_fastener(stage, 5, 2, 0x9A7655);
+        preview_add_fastener(stage, 114, 2, 0x9A7655);
+        menu_preview_register_motion(
+            stage, 0, 16, 230, 0, 0, 0, 220,
+            0, 12, 230, 0);
+        for(i = 0; i < 4; ++i) {
+            const struct crazypod_book *book =
+                i < count ? crazypod_book_get(i) : NULL;
+            part = make_book_preview_cover(
+                parent, book, 188 + i * 27,
+                75 + (i % 2) * 7,
+                21, 76 - (i % 2) * 7);
+            menu_preview_register_motion(
+                part, 0, 44 + (i % 2) * 7, 218,
+                (i - 2) * 12, 0, i * 35, 260,
+                0, 35, 218, (i - 2) * -12);
+        }
+        return;
+    }
+
+    if(logical == 2) {
+        int favorite_count = crazypod_books_favorite_count();
+        *detail = favorite_count > 0
+            ? "Your favorite books" : "No favorites yet";
+        if(favorite_count > 0) {
+            const struct crazypod_book *book =
+                crazypod_book_get(
+                    crazypod_books_favorite_at(0));
+            *selected_book = book;
+            make_preview_plinth(
+                parent, 184, 155, 112, 0xB58D63, 0x301D13);
+            part = make_book_preview_cover(
+                parent, book, 204, 55, 72, 101);
+            stage = make_box(parent, 257, 52, 26, 26,
+                             LV_RADIUS_CIRCLE, 0x6D1526, 240);
+            lv_obj_set_style_border_width(stage, 1, 0);
+            lv_obj_set_style_border_color(
+                stage, lv_color_hex(0xD7B06A), 0);
+            lv_obj_set_style_border_opa(stage, 155, 0);
+            preview_add_bevel(
+                stage, 26, 26, 0xF0CE86, 0x2D0710);
+            make_pixel_heart(stage, 5, 7, 2,
+                             0xF7D788, LV_OPA_COVER);
+            menu_preview_register_motion(
+                part, 0, 21, 210, -25, 0, 0, 270,
+                0, 16, 210, 25);
+            menu_preview_register_motion(
+                stage, 12, -13, 165, 120, 0, 70, 240,
+                10, -10, 165, 170);
+        }
+        else {
+            stage = make_box(parent, 184, 70, 112, 84, 9,
+                             0x5B0F19, LV_OPA_COVER);
+            lv_obj_set_style_bg_grad_color(
+                stage, lv_color_hex(0x250408), 0);
+            lv_obj_set_style_bg_grad_dir(
+                stage, LV_GRAD_DIR_VER, 0);
+            lv_obj_set_style_border_width(stage, 1, 0);
+            lv_obj_set_style_border_color(
+                stage, lv_color_hex(0xE8C875), 0);
+            lv_obj_set_style_border_opa(stage, 48, 0);
+            preview_add_bevel(
+                stage, 112, 84, 0xA84854, 0x120103);
+            preview_add_fastener(
+                stage, 7, 7, 0xA77D4C);
+            preview_add_fastener(
+                stage, 100, 7, 0xA77D4C);
+            make_pixel_heart(stage, 40, 27, 4,
+                             0xE8C875, 88);
+            make_box(stage, 30, 67, 52, 4, 2,
+                     0xD1AE63, 75);
+            menu_preview_register_motion(
+                stage, 0, 20, 208, 0, 0, 0, 260,
+                0, 14, 208, 0);
+        }
+        return;
+    }
+
+    if(logical == 3) {
+        char value[16];
+        *detail = "Library and progress totals";
+        stage = make_box(parent, 184, 61, 112, 94, 10,
+                         0x15110C, 232);
+        lv_obj_set_style_border_width(stage, 1, 0);
+        lv_obj_set_style_border_color(
+            stage, lv_color_hex(0xD4B46A), 0);
+        lv_obj_set_style_border_opa(stage, 82, 0);
+        preview_add_bevel(
+            stage, 112, 94, 0xA58D5B, 0x000000);
+        preview_add_fastener(stage, 5, 5, 0xA89265);
+        preview_add_fastener(stage, 102, 5, 0xA89265);
+        make_box(stage, 55, 13, 1, 48, 0,
+                 0xD4B46A, 55);
+        snprintf(value, sizeof(value), "%d", count);
+        label = make_label(stage, value,
+                           &lv_font_montserrat_24,
+                           0xF6D58C, LV_OPA_COVER);
+        lv_obj_set_width(label, 52);
+        lv_obj_set_style_text_align(
+            label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(label, 4, 14);
+        label = make_label(stage, "BOOKS",
+                           &lv_font_montserrat_8,
+                           COLOR_WHITE, 110);
+        lv_obj_set_width(label, 52);
+        lv_obj_set_style_text_align(
+            label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(label, 4, 44);
+        snprintf(value, sizeof(value), "%d",
+                 crazypod_books_favorite_count());
+        label = make_label(stage, value,
+                           &lv_font_montserrat_24,
+                           0xF6D58C, LV_OPA_COVER);
+        lv_obj_set_width(label, 52);
+        lv_obj_set_style_text_align(
+            label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(label, 56, 14);
+        label = make_label(stage, "FAVORITES",
+                           &lv_font_montserrat_8,
+                           COLOR_WHITE, 110);
+        lv_obj_set_width(label, 52);
+        lv_obj_set_style_text_align(
+            label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(label, 56, 44);
+        make_box(stage, 12, 67, 88, 5,
+                 LV_RADIUS_CIRCLE, COLOR_WHITE, 30);
+        make_box(stage, 12, 67,
+                 count > 0 ? 56 : 4, 5,
+                 LV_RADIUS_CIRCLE, 0xD4B46A, 215);
+        make_box(stage, 12, 77, 88, 1, 0,
+                 0xD4B46A, 52);
+        make_box(stage, 12, 83,
+                 crazypod_books_favorite_count() > 0 ? 34 : 4,
+                 3, 1, 0x8E7447, 165);
+        menu_preview_register_motion(
+            stage, 13, 0, 220, 30, 0, 0, 270,
+            12, 0, 220, 45);
+        return;
+    }
+
+    *detail = "Font, size and page theme";
+    stage = make_box(parent, 193, 57, 94, 101, 6,
+                     0xF4E9CF, LV_OPA_COVER);
+    lv_obj_set_style_border_width(stage, 1, 0);
+    lv_obj_set_style_border_color(
+        stage, lv_color_hex(0xD5BB84), 0);
+    lv_obj_set_style_border_opa(stage, 150, 0);
+    preview_add_bevel(
+        stage, 94, 101, 0xFFFFFF, 0x95815F);
+    make_box(stage, 7, 7, 80, 4, 2,
+             0xB89B68, 95);
+    label = make_label(stage, "Aa",
+                       &lv_font_montserrat_24,
+                       0x4A3524, LV_OPA_COVER);
+    lv_obj_set_pos(label, 31, 17);
+    preview_add_paper_rules(
+        stage, 94, 55, 3, 10, 0x665344);
+    {
+        static const uint32_t colors[] = {
+            0xE8D7B7, 0xF7F7F4, 0xCFE6D8, 0x242424
+        };
+        for(i = 0; i < 4; ++i) {
+            lv_obj_t *swatch = make_box(
+                stage, 18 + i * 16, 84,
+                11, 11, LV_RADIUS_CIRCLE,
+                colors[i], LV_OPA_COVER);
+            if(i == crazypod_books_theme()) {
+                lv_obj_set_style_border_width(swatch, 2, 0);
+                lv_obj_set_style_border_color(
+                    swatch, lv_color_hex(0x9A6A2C), 0);
+                lv_obj_set_style_border_opa(
+                    swatch, LV_OPA_COVER, 0);
+            }
+        }
+    }
+    menu_preview_register_motion(
+        stage, 0, 18, 220, 0, 0, 0, 270,
+        -8, 12, 220, -20);
+}
+
+static void render_books_settings_stage(
+    lv_obj_t *parent, const struct route_state *state,
+    const char **detail)
+{
+    lv_obj_t *page;
+    lv_obj_t *label;
+    int selected = state->selected;
+    int i;
+
+    if(selected == 2) {
+        page = make_box(parent, 198, 67, 84, 84, 18,
+                        0xA56D2E, LV_OPA_COVER);
+        label = make_label(page, LV_SYMBOL_REFRESH,
+                           &lv_font_montserrat_24,
+                           COLOR_WHITE, 235);
+        lv_obj_center(label);
+        *detail = "Scan Books folders again";
+        return;
+    }
+
+    {
+        static const uint32_t page_colors[] = {
+            0xE8D7B7, 0xF7F7F4, 0xCFE6D8, 0x242424
+        };
+        int theme = crazypod_books_theme();
+        uint32_t ink = theme == 3 ? 0xF2F2EE : 0x4A3524;
+        page = make_box(parent, 194, 57, 92, 101, 6,
+                        page_colors[theme], LV_OPA_COVER);
+        lv_obj_set_style_border_width(page, 1, 0);
+        lv_obj_set_style_border_color(
+            page, lv_color_hex(0xD5BB84), 0);
+        lv_obj_set_style_border_opa(page, 135, 0);
+        label = make_label(
+            page, "Aa",
+            crazypod_books_font_size() == 0
+                ? &lv_font_montserrat_16
+                : &lv_font_montserrat_24,
+            ink, LV_OPA_COVER);
+        lv_obj_set_width(label, 92);
+        lv_obj_set_style_text_align(
+            label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(label, 0,
+                       crazypod_books_font_size() == 0 ? 17 : 11);
+        for(i = 0; i < 3; ++i)
+            make_box(page, 17, 54 + i * 10,
+                     58 - i * 7, 2, 1,
+                     ink, 82);
+        if(selected == 1) {
+            static const uint32_t swatch_colors[] = {
+                0xE8D7B7, 0xF7F7F4, 0xCFE6D8, 0x242424
+            };
+            for(i = 0; i < 4; ++i)
+                make_box(page, 15 + i * 17, 84,
+                         12, 12, LV_RADIUS_CIRCLE,
+                         swatch_colors[i],
+                         i == theme ? 255 : 115);
+        }
+    }
+    *detail = selected == 0
+        ? "Choose size in a focused popup"
+        : "Choose a page theme in a popup";
+}
+
+static void render_books_preview(const struct route_state *state)
+{
+    int index = books_route_book_index(state, state->selected);
+    const struct crazypod_book *book;
+    const char *title;
+    const char *detail = "";
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *label;
+    lv_obj_t *text_panel;
+    char detail_text[64];
+
+    if(index >= 0)
+        crazypod_book_probe(index);
+    book = crazypod_book_get(index);
+    title = route_item_title(state, state->selected);
+
+    if(state->route == BOOKS_ROUTE_MENU) {
+        book = NULL;
+        render_books_menu_stage(
+            parent, state, &book, &detail);
+    }
+    else if(state->route == BOOKS_ROUTE_READING_SETTINGS) {
+        book = NULL;
+        render_books_settings_stage(parent, state, &detail);
+    }
+    else {
+        make_box(parent, 182, 157, 116, 8,
+                 LV_RADIUS_CIRCLE, 0x000000, 66);
+        make_book_preview_cover(parent, book, 204, 55, 72, 101);
+        if(book != NULL &&
+           (book->content_size > 0 || book->size > 0)) {
+            uint32_t total = book->content_size > 0
+                ? book->content_size : book->size;
+            snprintf(detail_text, sizeof(detail_text),
+                     "%lu%% read%s",
+                     (unsigned long)(
+                         book->progress * 100u / total),
+                     book->favorite ? " · Favorite" : "");
+            detail = detail_text;
+        }
+        else {
+            snprintf(detail_text, sizeof(detail_text),
+                     "%d book%s", crazypod_books_count(),
+                     crazypod_books_count() == 1 ? "" : "s");
+            detail = detail_text;
+        }
+
+        if(state->route == BOOKS_ROUTE_ACTIONS) {
+            static const char *const symbols[] = {
+                LV_SYMBOL_PLAY, LV_SYMBOL_FILE, LV_SYMBOL_LIST,
+                LV_SYMBOL_OK, LV_SYMBOL_SETTINGS, LV_SYMBOL_TRASH
+            };
+            static const uint32_t colors[] = {
+                0x34C759, 0x4F9BFF, 0xFFB340,
+                0xD4B46A, 0x8E8E93, 0xFF453A
+            };
+            lv_obj_t *badge = make_box(
+                parent, 255, 51, 29, 29,
+                LV_RADIUS_CIRCLE,
+                colors[state->selected],
+                LV_OPA_COVER);
+            label = make_label(
+                badge, symbols[state->selected],
+                &lv_font_montserrat_10,
+                COLOR_WHITE, LV_OPA_COVER);
+            lv_obj_center(label);
+            detail = state->selected == 0
+                ? "Open at saved position"
+                : state->selected == 1
+                    ? "Open the saved bookmark"
+                    : state->selected == 2
+                        ? "Browse EPUB chapters"
+                        : state->selected == 3
+                            ? "Change favorite status"
+                            : state->selected == 4
+                                ? "View file information"
+                                : "Delete this local file";
+        }
+        else if(state->route == BOOKS_ROUTE_CHAPTERS) {
+            snprintf(detail_text, sizeof(detail_text),
+                     "Chapter %d of %d",
+                     state->selected + 1,
+                     crazypod_book_chapter_count(state->group));
+            detail = detail_text;
+        }
+        else if(state->route == BOOKS_ROUTE_BOOKMARKS)
+            detail = "Jump to the saved page";
+        else if(state->route == BOOKS_ROUTE_DELETE_CONFIRM)
+            detail = "Hold center to delete permanently";
+    }
+
+    if(state->route != BOOKS_ROUTE_MENU && book != NULL &&
+       state->route != BOOKS_ROUTE_ACTIONS &&
+       state->route != BOOKS_ROUTE_CHAPTERS &&
+       state->route != BOOKS_ROUTE_BOOKMARKS &&
+       state->route != BOOKS_ROUTE_DELETE_CONFIRM)
+        title = book->title;
+    else if(state->route == BOOKS_ROUTE_MENU &&
+            book != NULL && books_has_continue() &&
+            state->selected == 0)
+        title = book->title;
+
+    text_panel = make_preview_text_panel(172, 50);
+    label = make_label(text_panel,
+                       title != NULL ? title : "Books",
+                       CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(label, 126);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 7, 5);
+    label = make_label(text_panel, detail,
+                       &lv_font_montserrat_8,
+                       COLOR_WHITE, 135);
+    lv_obj_set_width(label, 126);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 7, 30);
+    if(state->route == BOOKS_ROUTE_MENU)
+        menu_preview_register_motion(
+            text_panel, 0, 9, 246, 0, 0, 70, 220,
+            0, 6, 246, 0);
+}
+
+static void render_utility_preview(const struct route_state *state)
+{
+    const char *title = route_item_title(state, state->selected);
+    const char *detail = "";
+    const char *symbol = LV_SYMBOL_HOME;
+    uint32_t color = 0x4F9BFF;
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *swatch;
+    lv_obj_t *label;
+    lv_obj_t *text_panel;
+    char detail_text[96];
+
+    if(state->route == UTILITIES_ROUTE_MENU) {
+        const struct crazypod_miniapp_metadata *metadata =
+            miniapp_metadata(state->selected);
+
+        if(metadata != NULL) {
+            symbol = miniapp_symbol(state->selected);
+            color = metadata->accent_rgb;
+            detail = metadata->summary;
+        }
+        if(miniapp_last_error < 0) {
+            snprintf(detail_text, sizeof(detail_text),
+                     "Package error %d", miniapp_last_error);
+            detail = detail_text;
+        }
+    }
+    else if(state->route == WORKOUT_ROUTE_MENU) {
+        symbol = state->selected == 0 ? LV_SYMBOL_PLAY :
+                 state->selected == 1 ? LV_SYMBOL_REFRESH :
+                 LV_SYMBOL_LIST;
+        color = 0xA8F12D;
+        detail = state->selected == 0
+            ? "Choose a time-only workout"
+            : state->selected == 1
+                ? "Saved workout history"
+                : "Elapsed-time totals";
+    }
+    else if(state->route == WORKOUT_ROUTE_TYPES) {
+        symbol = LV_SYMBOL_PLAY;
+        color = 0xA8F12D;
+        detail = "Manual elapsed-time tracking";
+    }
+    else if(state->route == WORKOUT_ROUTE_HISTORY) {
+        const struct crazypod_workout *workout =
+            crazypod_workout_get(state->selected);
+        symbol = LV_SYMBOL_REFRESH;
+        color = 0xA8F12D;
+        if(workout != NULL) {
+            snprintf(detail_text, sizeof(detail_text),
+                     "%04d-%02d-%02d · %lu min",
+                     (int)(workout->date / 10000),
+                     (int)(workout->date / 100 % 100),
+                     (int)(workout->date % 100),
+                     (unsigned long)(workout->duration_seconds / 60u));
+            detail = detail_text;
+        }
+        else
+            detail = "No saved workouts";
+    }
+    else if(state->route == WORKOUT_ROUTE_FINISH_CONFIRM ||
+            state->route == WORKOUT_ROUTE_DELETE_CONFIRM) {
+        symbol = LV_SYMBOL_TRASH;
+        color = 0xFF453A;
+        detail = state->route == WORKOUT_ROUTE_FINISH_CONFIRM
+            ? "Hold center to save elapsed time"
+            : "Hold center to delete permanently";
+    }
+    else if(state->route == CLOCK_ROUTE_MENU) {
+        static const char *const symbols[] = {
+            LV_SYMBOL_HOME, LV_SYMBOL_POWER, LV_SYMBOL_REFRESH
+        };
+        symbol = symbols[state->selected];
+        color = state->selected == 0 ? 0xF26D5B :
+                state->selected == 1 ? 0x7B61FF : 0xFFB340;
+        detail = state->selected == 0 ? "Device local time" :
+                 state->selected == 1
+                    ? (get_sleep_timer_active()
+                        ? "Timer is running" : "Power off after playback")
+                    : "Precise elapsed time";
+    }
+    else if(state->route == CLOCK_ROUTE_SLEEP_TIMER) {
+        symbol = LV_SYMBOL_POWER;
+        color = 0x7B61FF;
+        if(get_sleep_timer_active()) {
+            int remaining = get_sleep_timer();
+            snprintf(detail_text, sizeof(detail_text),
+                     "%d:%02d remaining",
+                     remaining / 60, remaining % 60);
+            detail = detail_text;
+        }
+        else
+            detail = "Select a shutdown delay";
+    }
+    else if(state->route == CALENDAR_ROUTE_MENU) {
+        static const char *const symbols[] = {
+            LV_SYMBOL_HOME, LV_SYMBOL_REFRESH,
+            LV_SYMBOL_LIST, LV_SYMBOL_EDIT
+        };
+        static const char *const details[] = {
+            "Events on the current date",
+            "Future calendar events",
+            "Browse the month grid",
+            "Create a local event"
+        };
+        symbol = symbols[state->selected];
+        color = 0xFF453A;
+        detail = details[state->selected];
+    }
+    else if(state->route == CALENDAR_ROUTE_TODAY ||
+            state->route == CALENDAR_ROUTE_UPCOMING ||
+            state->route == CALENDAR_ROUTE_DAY_EVENTS) {
+        int event_count = calendar_route_event_count(state);
+        const struct crazypod_calendar_event *event =
+            state->selected < event_count
+                ? crazypod_calendar_event_get(
+                      calendar_route_event_index(
+                          state, state->selected))
+                : NULL;
+        color = 0xFF453A;
+        if(event != NULL) {
+            snprintf(detail_text, sizeof(detail_text),
+                     "%d · %s", event->date,
+                     event->time[0] != '\0' ? event->time : "All day");
+            detail = detail_text;
+        }
+        else
+            detail = "Create an event on this iPod";
+
+        {
+            struct tm *now = get_time();
+            static const char *const weekday[] = {
+                "S", "M", "T", "W", "T", "F", "S"
+            };
+            int first_day =
+                (now->tm_wday - ((now->tm_mday - 1) % 7) + 7) % 7;
+            int count = days_in_month(now->tm_year + 1900, now->tm_mon);
+            int cell_width = 13;
+            int day;
+            char month[20];
+
+            swatch = make_box(parent, 190, 58, 100, 92, 10,
+                              0xF4F0E8, LV_OPA_COVER);
+            make_box(swatch, 0, 0, 100, 20, 10,
+                     color, LV_OPA_COVER);
+            snprintf(month, sizeof(month), "%d / %d",
+                     now->tm_mon + 1, now->tm_year + 1900);
+            label = make_label(swatch, month, &lv_font_montserrat_8,
+                               COLOR_WHITE, LV_OPA_COVER);
+            lv_obj_set_width(label, 100);
+            lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_pos(label, 0, 6);
+            for(day = 0; day < 7; ++day) {
+                label = make_label(swatch, weekday[day],
+                                   &lv_font_montserrat_8,
+                                   0x565656, 190);
+                lv_obj_set_width(label, cell_width);
+                lv_obj_set_style_text_align(
+                    label, LV_TEXT_ALIGN_CENTER, 0);
+                lv_obj_set_pos(label, 4 + day * cell_width, 24);
+            }
+            for(day = 1; day <= count; ++day) {
+                int slot = first_day + day - 1;
+                int x = 4 + (slot % 7) * cell_width;
+                int y = 35 + (slot / 7) * 10;
+                char day_text[4];
+                if(day == now->tm_mday)
+                    make_box(swatch, x + 1, y - 1, 11, 10,
+                             LV_RADIUS_CIRCLE, color, LV_OPA_COVER);
+                snprintf(day_text, sizeof(day_text), "%d", day);
+                label = make_label(
+                    swatch, day_text, &lv_font_montserrat_8,
+                    day == now->tm_mday ? COLOR_WHITE : 0x252525,
+                    LV_OPA_COVER);
+                lv_obj_set_width(label, cell_width);
+                lv_obj_set_style_text_align(
+                    label, LV_TEXT_ALIGN_CENTER, 0);
+                lv_obj_set_pos(label, x, y);
+            }
+        }
+    }
+    else if(state->route == CALENDAR_ROUTE_EDITOR) {
+        symbol = state->selected == 3
+            ? LV_SYMBOL_SAVE : LV_SYMBOL_EDIT;
+        color = 0xFF453A;
+        detail = state->selected == 0 ? "Edit the event title" :
+                 state->selected == 1
+                    ? "Center next day · Left previous"
+                    : state->selected == 2
+                        ? "Center later · Left earlier"
+                        : calendar_editor_error == 1
+                            ? "Enter a title before saving"
+                            : calendar_editor_error == 2
+                                ? "Could not write calendar.bin"
+                                : "Write event to local storage";
+    }
+    else if(state->route == CALENDAR_ROUTE_ACTIONS ||
+            state->route == CALENDAR_ROUTE_DELETE_CONFIRM) {
+        symbol = state->route == CALENDAR_ROUTE_DELETE_CONFIRM ||
+                 state->selected == 1
+            ? LV_SYMBOL_TRASH : LV_SYMBOL_EDIT;
+        color = 0xFF453A;
+        detail = state->route == CALENDAR_ROUTE_DELETE_CONFIRM
+            ? "Hold center to delete permanently"
+            : state->selected == 0
+                ? "Change this local event"
+                : "Open delete confirmation";
+    }
+    else if(state->route == CONTACTS_ROUTE_LIST) {
+        const struct crazypod_contact *contact =
+            crazypod_contact_get(state->selected);
+        symbol = LV_SYMBOL_HOME;
+        color = 0x4F9BFF;
+        detail = contact != NULL && contact->phone[0] != '\0'
+            ? contact->phone : "Imported contact";
+    }
+
+    if(state->route != CALENDAR_ROUTE_TODAY &&
+       state->route != CALENDAR_ROUTE_UPCOMING &&
+       state->route != CALENDAR_ROUTE_DAY_EVENTS) {
+        swatch = make_box(parent, 204, 76, 72, 72, 16,
+                          color, LV_OPA_COVER);
+        label = make_label(swatch, symbol, &lv_font_montserrat_24,
+                           COLOR_WHITE, 230);
+        lv_obj_center(label);
+    }
+    text_panel = make_preview_text_panel(158, 50);
+    label = make_label(text_panel, title != NULL ? title : "",
+                       CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(label, 126);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 7, 5);
+    label = make_label(text_panel, detail, CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, 135);
+    lv_obj_set_width(label, 126);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 7, 29);
 }
 
 static void render_menu_preview(const struct route_state *state,
@@ -5543,26 +9245,81 @@ static void render_menu_preview(const struct route_state *state,
 {
     bool should_animate =
         animated && menu_preview_motion_ready &&
-        is_music_preview_route(state->route);
+        is_skeuomorphic_preview_route(state->route);
 
+    if(state->route == MUSIC_ROUTE_MENU)
+        menu_preview_motion_profile = MENU_PREVIEW_PROFILE_MUSIC;
+    else if(state->route == PHOTOS_ROUTE_MENU)
+        menu_preview_motion_profile = MENU_PREVIEW_PROFILE_PHOTOS;
+    else if(state->route >= NOTES_ROUTE_MENU &&
+            state->route <= NOTES_ROUTE_EMPTY_TRASH_CONFIRM)
+        menu_preview_motion_profile = MENU_PREVIEW_PROFILE_NOTES;
+    else if(state->route >= BOOKS_ROUTE_MENU &&
+            state->route <= BOOKS_ROUTE_INFO)
+        menu_preview_motion_profile = MENU_PREVIEW_PROFILE_BOOKS;
+    else
+        menu_preview_motion_profile = MENU_PREVIEW_PROFILE_DEFAULT;
+
+    menu_preview_build_defer_media = should_animate;
+    menu_preview_media_deferred = false;
     reset_menu_preview_root();
     if(state->route == MUSIC_ROUTE_SEARCH)
         render_editor_preview(search_query, "Any track",
                               "Searches title, artist and album.");
+    else if(state->route == CALENDAR_ROUTE_TITLE_EDITOR) {
+        static char calendar_cursor_text[
+            sizeof(calendar_editor_summary) + 2];
+        render_editor_preview(
+            note_text_with_cursor(
+                calendar_editor_summary,
+                calendar_editor_cursor,
+                calendar_cursor_text,
+                sizeof(calendar_cursor_text)),
+            "Event title",
+            "Center inserts · Left/Right moves cursor.");
+    }
     else if(state->route == MUSIC_ROUTE_MENU)
         render_root_preview(state->selected);
     else if(state->route == PHOTOS_ROUTE_MENU)
         render_photos_preview(state);
+    else if(state->route == PHOTOS_ROUTE_VIDEOS)
+        render_videos_preview(state);
+    else if(state->route == EXTRAS_ROUTE_MENU)
+        render_extras_preview(state);
+    else if(state->route >= NOTES_ROUTE_MENU &&
+            state->route <= NOTES_ROUTE_EMPTY_TRASH_CONFIRM)
+        render_notes_preview(state);
+    else if(state->route >= BOOKS_ROUTE_MENU &&
+            state->route <= BOOKS_ROUTE_INFO)
+        render_books_preview(state);
+    else if(state->route == UTILITIES_ROUTE_MENU ||
+            state->route == CLOCK_ROUTE_MENU ||
+            state->route == CLOCK_ROUTE_SLEEP_TIMER ||
+            state->route == WORKOUT_ROUTE_MENU ||
+            state->route == WORKOUT_ROUTE_TYPES ||
+            state->route == WORKOUT_ROUTE_HISTORY ||
+            state->route == WORKOUT_ROUTE_FINISH_CONFIRM ||
+            state->route == WORKOUT_ROUTE_DELETE_CONFIRM ||
+            state->route == CALENDAR_ROUTE_MENU ||
+            state->route == CALENDAR_ROUTE_TODAY ||
+            state->route == CALENDAR_ROUTE_UPCOMING ||
+            state->route == CALENDAR_ROUTE_DAY_EVENTS ||
+            state->route == CALENDAR_ROUTE_EDITOR ||
+            state->route == CALENDAR_ROUTE_ACTIONS ||
+            state->route == CALENDAR_ROUTE_DELETE_CONFIRM ||
+            state->route == CONTACTS_ROUTE_LIST)
+        render_utility_preview(state);
     else if(is_settings_route(state->route))
         render_settings_preview(state);
     else if(state->route >= DIY_ROUTE_MENU)
         render_diy_preview(state);
     else
         render_item_preview(state);
+    menu_preview_build_defer_media = false;
     menu_preview_pending = false;
     menu_preview_motion_ready = true;
     if(should_animate)
-        start_menu_preview_entrance();
+        start_menu_preview_scene_entrance();
 }
 
 static void render_photo_favorite_status(int photo_index)
@@ -5647,6 +9404,7 @@ static void render_photo_grid(const struct route_state *state)
     lv_obj_set_pos(label, 14, 40);
     if(count <= 0) {
         render_empty_state(
+            LV_SYMBOL_IMAGE,
             state->route == PHOTOS_ROUTE_FAVORITES
                 ? "No Favorites" : "No Pictures",
             state->route == PHOTOS_ROUTE_FAVORITES
@@ -6194,18 +9952,75 @@ static void render_menu_screen(const struct route_state *state)
 
     if(count <= 0) {
         if(state->route == DIY_ROUTE_WALLPAPER_FILES)
-            render_empty_state("No Pictures",
+            render_empty_state(LV_SYMBOL_IMAGE, "No Pictures",
                                "Add JPG or BMP files to /Pictures.");
         else if(state->route == PHOTOS_ROUTE_LIBRARY)
             render_empty_state(
+                LV_SYMBOL_IMAGE,
                 "No Pictures",
                 "Add JPG, JPEG or BMP files to /Pictures.");
+        else if(state->route == PHOTOS_ROUTE_VIDEOS)
+            render_empty_state(
+                LV_SYMBOL_PLAY,
+                "No Videos",
+                "Convert MPG or MPEG files into /Videos.");
         else if(state->route == PHOTOS_ROUTE_FAVORITES)
             render_empty_state(
+                LV_SYMBOL_IMAGE,
                 "No Favorites",
-                "Hold Select on a photo to save it here.");
+                               "Hold Select on a photo to save it here.");
+        else if(state->route == EXTRAS_ROUTE_MENU)
+            render_empty_state(
+                LV_SYMBOL_DIRECTORY,
+                "Nothing Hidden",
+                "Hide apps in Settings > Main Menu.");
+        else if(state->route == UTILITIES_ROUTE_MENU)
+            render_empty_state(
+                LV_SYMBOL_FILE,
+                "No Mini Apps",
+                "Copy a signed CPK to /MiniApps/Install.");
+        else if(state->route == NOTES_ROUTE_DELETED)
+            render_empty_state(
+                LV_SYMBOL_EDIT,
+                "Deleted Is Empty",
+                "Deleted notes can be restored from here.");
+        else if(state->route == BOOKS_ROUTE_LIBRARY)
+            render_empty_state(
+                LV_SYMBOL_FILE,
+                "No Books",
+                "Add EPUB, TXT or Markdown files to /Books.");
+        else if(state->route == BOOKS_ROUTE_RECENTS)
+            render_empty_state(
+                LV_SYMBOL_FILE,
+                "No Recent Books",
+                "Open a book to add it here.");
+        else if(state->route == BOOKS_ROUTE_FAVORITES)
+            render_empty_state(
+                LV_SYMBOL_FILE,
+                "No Favorites",
+                "Favorite a book from Book Actions.");
+        else if(state->route == BOOKS_ROUTE_BOOKMARKS)
+            render_empty_state(
+                LV_SYMBOL_FILE,
+                "No Bookmark",
+                "Press PLAY while reading to save this page.");
+        else if(state->route == PODCASTS_ROUTE_MENU)
+            render_empty_state(
+                LV_SYMBOL_AUDIO,
+                "No Podcasts",
+                "Add audio files under /Podcasts and rescan.");
+        else if(state->route == CONTACTS_ROUTE_LIST)
+            render_empty_state(
+                NULL,
+                "No Contacts",
+                "Add VCF files to /Contacts.");
+        else if(state->route == WORKOUT_ROUTE_HISTORY)
+            render_empty_state(
+                LV_SYMBOL_PLAY,
+                "No Workouts",
+                "Start a time-only workout first.");
         else
-            render_empty_state("Nothing Here",
+            render_empty_state(LV_SYMBOL_AUDIO, "Nothing Here",
                                "Add local music and rescan.");
         return;
     }
@@ -6256,21 +10071,29 @@ static void render_menu_screen(const struct route_state *state)
         if(state->route == MUSIC_ROUTE_MENU ||
            state->route == PHOTOS_ROUTE_MENU ||
            state->route == SETTINGS_ROUTE_MENU ||
+           state->route == SETTINGS_ROUTE_MAIN_MENU ||
+           state->route == EXTRAS_ROUTE_MENU ||
+           state->route == UTILITIES_ROUTE_MENU ||
            state->route == DIY_ROUTE_MENU) {
-            const char *icon_text =
+            struct crazypod_app *route_app_item =
+                route_app(state, index);
+            const char *icon_text = route_app_item != NULL
+                ? route_app_item->symbol :
                 state->route == MUSIC_ROUTE_MENU
                     ? music_menu_symbols[index]
                 : state->route == PHOTOS_ROUTE_MENU
                     ? photos_menu_symbols[index]
                 : state->route == SETTINGS_ROUTE_MENU
                     ? settings_menu_symbols[index]
+                : state->route == UTILITIES_ROUTE_MENU
+                    ? miniapp_symbol(index)
                     : diy_menu_symbols[index];
             lv_obj_t *circle = make_box(row_box, 6, 2, 21, 21,
                                         LV_RADIUS_CIRCLE, COLOR_WHITE,
                                         selected ? 45 : 18);
             lv_obj_t *icon;
 
-            if(state->route == PHOTOS_ROUTE_MENU && index == 1) {
+            if(state->route == PHOTOS_ROUTE_MENU && index == 2) {
                 icon = make_box(circle, 0, 0, 8, 6, 0,
                                 COLOR_WHITE, LV_OPA_TRANSP);
                 make_pixel_heart(icon, 0, 0, 1,
@@ -6391,16 +10214,20 @@ static void refresh_menu_rows(const struct route_state *state)
 
         if(menu_view.circles[row] != NULL) {
             const char *icon_text =
-                state->route == MUSIC_ROUTE_MENU
+                route_app(state, index) != NULL
+                    ? route_app(state, index)->symbol
+                : state->route == MUSIC_ROUTE_MENU
                     ? music_menu_symbols[index]
                 : state->route == PHOTOS_ROUTE_MENU
                     ? photos_menu_symbols[index]
                 : state->route == SETTINGS_ROUTE_MENU
                     ? settings_menu_symbols[index]
+                : state->route == UTILITIES_ROUTE_MENU
+                    ? miniapp_symbol(index)
                     : diy_menu_symbols[index];
             lv_obj_set_style_bg_opa(menu_view.circles[row],
                                     selected ? 45 : 18, 0);
-            if(state->route == PHOTOS_ROUTE_MENU && index == 1)
+            if(state->route == PHOTOS_ROUTE_MENU && index == 2)
                 lv_obj_set_style_opa(
                     menu_view.icons[row],
                     selected ? 255 : 170, 0);
@@ -6708,7 +10535,8 @@ static void render_album_flow(const struct route_state *state)
     lv_obj_set_style_bg_color(product_content, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(product_content, LV_OPA_COVER, 0);
     if(count <= 0) {
-        render_empty_state("No Albums", "Add local music and rescan.");
+        render_empty_state(LV_SYMBOL_AUDIO, "No Albums",
+                           "Add local music and rescan.");
         return;
     }
 
@@ -7177,7 +11005,7 @@ static void show_now_actions_popup(void)
     int i;
 
     if(now_overlay == NOW_OVERLAY_NONE)
-        prepare_now_overlay_glass();
+        prepare_now_overlay_glass(true);
     begin_now_overlay(NOW_OVERLAY_ACTIONS);
     if(now_action_selected < 0 ||
        now_action_selected >= NOW_ACTION_COUNT)
@@ -7338,7 +11166,7 @@ static void show_now_queue_popup(void)
     int row;
 
     if(now_overlay == NOW_OVERLAY_NONE)
-        prepare_now_overlay_glass();
+        prepare_now_overlay_glass(true);
     begin_now_overlay(NOW_OVERLAY_QUEUE);
     if(crazypod_queue_count() > 0 &&
        (now_queue_selected < 0 ||
@@ -7437,7 +11265,7 @@ static void show_now_volume_popup(void)
     lv_obj_t *track;
 
     if(now_overlay == NOW_OVERLAY_NONE)
-        prepare_now_overlay_glass();
+        prepare_now_overlay_glass(true);
     begin_now_overlay(NOW_OVERLAY_VOLUME);
     now_overlay_panel = make_now_glass_panel(35, 65, 250, 110);
     title = make_label(now_overlay_panel, "VOLUME",
@@ -7508,6 +11336,10 @@ static int choice_overlay_count_for(enum choice_overlay_kind kind, int id)
         return CRAZYPOD_APPEARANCE_COLOR_COUNT + 2;
     case CHOICE_OVERLAY_SETTING:
         return settings_choice_count(id);
+    case CHOICE_OVERLAY_BOOK_FONT_SIZE:
+        return 3;
+    case CHOICE_OVERLAY_BOOK_THEME:
+        return 4;
     default:
         return 0;
     }
@@ -7534,6 +11366,10 @@ static int choice_overlay_current_index(enum choice_overlay_kind kind, int id)
     }
     case CHOICE_OVERLAY_SETTING:
         return settings_choice_index(id);
+    case CHOICE_OVERLAY_BOOK_FONT_SIZE:
+        return crazypod_books_font_size();
+    case CHOICE_OVERLAY_BOOK_THEME:
+        return crazypod_books_theme();
     default:
         return 0;
     }
@@ -7552,6 +11388,10 @@ static const char *choice_overlay_title(void)
             (enum crazypod_appearance_field)choice_overlay.id);
     case CHOICE_OVERLAY_SETTING:
         return settings_item_title(choice_overlay.id);
+    case CHOICE_OVERLAY_BOOK_FONT_SIZE:
+        return "TEXT SIZE";
+    case CHOICE_OVERLAY_BOOK_THEME:
+        return "PAGE THEME";
     default:
         return "";
     }
@@ -7575,6 +11415,20 @@ static const char *choice_overlay_item_title(int index)
         return "Choose Picture";
     case CHOICE_OVERLAY_SETTING:
         return settings_choice_title(choice_overlay.id, index);
+    case CHOICE_OVERLAY_BOOK_FONT_SIZE: {
+        static const char *const sizes[] = {
+            "Small  ·  12 pt",
+            "Medium  ·  14 pt",
+            "Large  ·  16 pt"
+        };
+        return index >= 0 && index < 3 ? sizes[index] : "";
+    }
+    case CHOICE_OVERLAY_BOOK_THEME: {
+        static const char *const themes[] = {
+            "Parchment", "Light", "Mint", "Dark"
+        };
+        return index >= 0 && index < 4 ? themes[index] : "";
+    }
     default:
         return "";
     }
@@ -7607,6 +11461,11 @@ static bool choice_overlay_item_color(int index, uint32_t *color)
         else
             *color = background_default_color(
                 (enum crazypod_appearance_field)choice_overlay.id);
+        return true;
+    }
+    if(choice_overlay.kind == CHOICE_OVERLAY_BOOK_THEME &&
+       index >= 0 && index < 4) {
+        *color = book_page_colors[index];
         return true;
     }
     return false;
@@ -7749,7 +11608,7 @@ static void show_choice_overlay(enum choice_overlay_kind kind, int id,
         dismiss_now_overlay(false);
     if(selected < 0)
         selected = choice_overlay_current_index(kind, id);
-    prepare_now_overlay_glass();
+    prepare_now_overlay_glass(true);
     begin_choice_overlay(kind, id, selected);
     choice_overlay.panel = make_glass_panel(
         choice_overlay.root, CRAZYPOD_NOW_POPUP_X, CRAZYPOD_NOW_POPUP_Y,
@@ -7891,6 +11750,14 @@ static void activate_choice_overlay(void)
         settings_apply_choice(id, selected);
         dismiss_choice_overlay(true);
     }
+    else if(kind == CHOICE_OVERLAY_BOOK_FONT_SIZE) {
+        dismiss_choice_overlay(false);
+        apply_book_font_size(selected);
+    }
+    else if(kind == CHOICE_OVERLAY_BOOK_THEME) {
+        crazypod_books_set_theme(selected);
+        dismiss_choice_overlay(true);
+    }
 }
 
 static void animate_content_entrance(void)
@@ -7900,15 +11767,1542 @@ static void animate_content_entrance(void)
     lv_obj_invalidate(product_content);
 }
 
+static void render_note_composer(const struct route_state *state)
+{
+    static char title_display[CRAZYPOD_NOTE_TITLE_SIZE + 2];
+    static char body_display[CRAZYPOD_NOTE_BODY_SIZE + 2];
+    lv_obj_t *paper;
+    lv_obj_t *label;
+    lv_obj_t *key;
+    const char *selection = route_item_title(state, state->selected);
+    int line;
+
+    paper = make_box(product_content, 10, 38, 300, 190, 12,
+                     0xFAEFCB, LV_OPA_COVER);
+    lv_obj_set_style_bg_grad_color(
+        paper, lv_color_hex(0xE8D5A4), 0);
+    lv_obj_set_style_bg_grad_dir(paper, LV_GRAD_DIR_HOR, 0);
+    lv_obj_set_style_border_width(paper, 1, 0);
+    lv_obj_set_style_border_color(paper, lv_color_hex(0xB79F70), 0);
+    lv_obj_set_style_border_opa(paper, 100, 0);
+    make_box(paper, 36, 12, 1, 166, 0, 0xB82E26, 140);
+    for(line = 0; line < 6; ++line)
+        make_box(paper, 48, 82 + line * 17, 232, 1, 0,
+                 0x7F9EB7, 55);
+    for(line = 0; line < 3; ++line) {
+        lv_obj_t *hole = make_box(
+            paper, 15, 25 + line * 55, 8, 8,
+            LV_RADIUS_CIRCLE, 0x5A4A34, 45);
+        lv_obj_set_style_border_width(hole, 1, 0);
+        lv_obj_set_style_border_color(
+            hole, lv_color_hex(COLOR_WHITE), 0);
+        lv_obj_set_style_border_opa(hole, 110, 0);
+    }
+
+    label = make_label(
+        paper,
+        note_editor.source_id == 0 ? "NEW NOTE" : "EDIT NOTE",
+        &lv_font_montserrat_8, 0x7F2D23, LV_OPA_COVER);
+    lv_obj_set_pos(label, 48, 13);
+    label = make_label(
+        paper, note_editor_dirty() ? "Unsaved" : "Saved",
+        &lv_font_montserrat_8, 0x6E5B42, 220);
+    lv_obj_set_width(label, 88);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(label, 192, 13);
+
+    label = make_label(paper, "TITLE", &lv_font_montserrat_8,
+                       note_editor_body_active ? 0x8C7958 : 0x94291F,
+                       230);
+    lv_obj_set_pos(label, 48, 31);
+    label = make_label(
+        paper,
+        note_editor_body_active
+            ? (note_editor.title[0] != '\0'
+                ? note_editor.title : "Untitled")
+            : note_text_with_cursor(
+                note_editor.title, note_editor_title_cursor,
+                title_display, sizeof(title_display)),
+        CRAZYPOD_METADATA_FONT, 0x30291F,
+        note_editor.title[0] != '\0' ? 255 : 125);
+    lv_obj_set_pos(label, 48, 45);
+    lv_obj_set_width(label, 232);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    make_box(paper, 48, 66, 232, 1, 0,
+             note_editor_body_active ? 0x8C7958 : 0xBC4034,
+             note_editor_body_active ? 55 : 145);
+
+    label = make_label(paper, "BODY", &lv_font_montserrat_8,
+                       note_editor_body_active ? 0x94291F : 0x8C7958,
+                       230);
+    lv_obj_set_pos(label, 48, 72);
+    label = make_label(
+        paper,
+        !note_editor_body_active
+            ? (note_editor.body[0] != '\0'
+                ? note_editor.body : "Empty body")
+            : note_text_with_cursor(
+                note_editor.body, note_editor_body_cursor,
+                body_display, sizeof(body_display)),
+        CRAZYPOD_METADATA_FONT, 0x2A261F,
+        note_editor.body[0] != '\0' ? 235 : 115);
+    lv_obj_set_pos(label, 48, 86);
+    lv_obj_set_width(label, 232);
+    lv_obj_set_height(label, 75);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_CLIP);
+
+    key = make_box(paper, 48, 158, 232, 24, 7,
+                   0x74422F, 225);
+    lv_obj_set_style_border_width(key, 1, 0);
+    lv_obj_set_style_border_color(key, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(key, 75, 0);
+    label = make_label(
+        key, selection != NULL ? selection : "",
+        CRAZYPOD_METADATA_FONT, COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(label, 60);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 4, 4);
+    label = make_label(
+        key,
+        "Wheel choose  ·  Center type  ·  PLAY field",
+        &lv_font_montserrat_8, COLOR_WHITE, 155);
+    lv_obj_set_width(label, 164);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(label, 64, 7);
+}
+
+static void render_note_reader(const struct route_state *state)
+{
+    const struct crazypod_note *note =
+        crazypod_note_find((uint32_t)state->group);
+    lv_obj_t *paper;
+    lv_obj_t *label;
+    char window[CRAZYPOD_NOTE_BODY_SIZE];
+    char progress[64];
+    int lines = note_body_line_count(note_reader_body);
+    int maximum = lines > 9 ? lines - 9 : 0;
+    int first = state->selected;
+
+    if(first > maximum)
+        first = maximum;
+    label = make_label(product_content,
+                       note != NULL ? note->title : "Missing Note",
+                       CRAZYPOD_METADATA_FONT, COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(label, 14, 42);
+    lv_obj_set_width(label, 250);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    if(note != NULL && note->pinned) {
+        label = make_label(product_content, LV_SYMBOL_OK,
+                           &lv_font_montserrat_10, COLOR_AMBER, 230);
+        lv_obj_set_pos(label, 288, 44);
+    }
+
+    paper = make_box(product_content, 10, 64, 300, 145, 6,
+                     0xF5EEDC, LV_OPA_COVER);
+    lv_obj_set_style_border_width(paper, 1, 0);
+    lv_obj_set_style_border_color(paper, lv_color_hex(0xB7A98E), 0);
+    lv_obj_set_style_border_opa(paper, 180, 0);
+    format_note_body_window(note_reader_body, first,
+                            window, sizeof(window));
+    label = make_label(paper,
+                       window[0] != '\0' ? window : "This note is empty.",
+                       CRAZYPOD_METADATA_FONT, 0x302A22,
+                       window[0] != '\0' ? 255 : 125);
+    lv_obj_set_pos(label, 9, 7);
+    lv_obj_set_width(label, 282);
+    lv_obj_set_height(label, 126);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_CLIP);
+
+    snprintf(progress, sizeof(progress), "%d / %d  ·  Center: Actions",
+             first + 1, lines);
+    label = make_label(product_content, progress, &lv_font_montserrat_8,
+                       COLOR_WHITE, 125);
+    lv_obj_set_width(label, 292);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 14, 216);
+}
+
+static bool load_book_page(int index, uint32_t offset)
+{
+    book_page_text[0] = '\0';
+    book_next_offset = offset;
+    if(!crazypod_book_read_page(index, offset, book_page_text,
+                                sizeof(book_page_text),
+                                &book_next_offset))
+        return false;
+    selected_book_index = index;
+    book_page_offset = offset;
+    return true;
+}
+
+static void turn_book_page(int direction)
+{
+    const struct crazypod_book *book =
+        crazypod_book_get(selected_book_index);
+    uint32_t target;
+
+    if(book == NULL)
+        return;
+    if(direction > 0) {
+        if(book_next_offset <= book_page_offset ||
+           (book->content_size > 0 &&
+            book_next_offset >= book->content_size))
+            return;
+        if(book_page_history_count <
+           (int)(sizeof(book_page_history) /
+                 sizeof(book_page_history[0])))
+            book_page_history[book_page_history_count++] =
+                book_page_offset;
+        target = book_next_offset;
+    }
+    else {
+        if(book_page_history_count <= 0)
+            target = 0;
+        else
+            target = book_page_history[--book_page_history_count];
+        if(target == book_page_offset)
+            return;
+    }
+    if(load_book_page(selected_book_index, target)) {
+        crazypod_book_set_progress(selected_book_index, target);
+        render_current_route(false);
+    }
+}
+
+static void render_book_reader(const struct route_state *state)
+{
+    const struct crazypod_book *book =
+        crazypod_book_get(state->group);
+    int theme = crazypod_books_theme();
+    int font_size = crazypod_books_font_size();
+    const lv_font_t *reader_font = font_size == 2
+        ? &lv_font_source_han_sans_sc_16_cjk
+        : CRAZYPOD_METADATA_FONT;
+    lv_obj_t *page;
+    lv_obj_t *toolbar;
+    lv_obj_t *label;
+    char progress[24];
+    uint32_t total = book != NULL && book->content_size > 0
+        ? book->content_size : book != NULL ? book->size : 0;
+    unsigned percent = total > 0
+        ? book_page_offset * 100u / total : 0;
+
+    page = make_box(product_content, 0, 0, 320, 240, 0,
+                    book_page_colors[theme], LV_OPA_COVER);
+    label = make_label(
+        page,
+        book_page_text[0] != '\0'
+            ? book_page_text : "This book could not be decoded.",
+        reader_font, book_ink_colors[theme],
+        LV_OPA_COVER);
+    lv_obj_set_pos(label, 14, 42);
+    lv_obj_set_width(label, 292);
+    lv_obj_set_height(label, 158);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+    {
+        static const int scales[] = { 224, 256, 256 };
+
+        lv_obj_set_style_transform_scale_x(
+            label, scales[font_size], 0);
+        lv_obj_set_style_transform_scale_y(
+            label, scales[font_size], 0);
+        lv_obj_set_style_transform_pivot_x(label, 0, 0);
+        lv_obj_set_style_transform_pivot_y(label, 0, 0);
+        if(font_size == 0) {
+            lv_obj_set_width(label, 332);
+            lv_obj_set_height(label, 174);
+        }
+        else if(font_size == 2) {
+            lv_obj_set_width(label, 258);
+            lv_obj_set_height(label, 136);
+        }
+    }
+
+    toolbar = make_box(
+        page, 0, 206, 320, 34, 0,
+        theme == 3 ? 0xFFFFFF : 0x000000,
+        theme == 3 ? 24 : 15);
+    label = make_label(toolbar, LV_SYMBOL_LEFT,
+                       &lv_font_montserrat_16,
+                       book_ink_colors[theme], 155);
+    lv_obj_set_pos(label, 47, 6);
+    label = make_label(
+        toolbar,
+        book != NULL && book->bookmark == book_page_offset &&
+                book_page_offset > 0
+            ? LV_SYMBOL_OK : LV_SYMBOL_SAVE,
+        &lv_font_montserrat_12,
+        book_ink_colors[theme], 155);
+    lv_obj_set_pos(label, 151, 7);
+    label = make_label(toolbar, LV_SYMBOL_RIGHT,
+                       &lv_font_montserrat_16,
+                       book_ink_colors[theme], 155);
+    lv_obj_set_pos(label, 255, 6);
+    snprintf(progress, sizeof(progress), "%u%%", percent);
+    label = make_label(toolbar, progress, &lv_font_montserrat_8,
+                       book_ink_colors[theme], 115);
+    lv_obj_set_width(label, 42);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 139, 23);
+}
+
+static void render_books_stats(const struct route_state *state)
+{
+    lv_obj_t *label;
+    lv_obj_t *panel;
+    char text[160];
+
+    label = make_label(product_content, "READING STATS",
+                       &lv_font_montserrat_16,
+                       COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(label, 14, 43);
+    panel = make_box(product_content, 14, 74, 292, 126, 10,
+                     COLOR_PANEL, 220);
+    snprintf(text, sizeof(text),
+             "%d books\n%d recently opened\n%d favorites\n\n"
+             "Progress is stored on this iPod.",
+             crazypod_books_count(),
+             crazypod_books_recent_count(),
+             crazypod_books_favorite_count());
+    label = make_label(panel, text, CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, 230);
+    lv_obj_set_pos(label, 14, 13);
+    lv_obj_set_width(label, 264);
+    (void)state;
+}
+
+static void render_book_info(const struct route_state *state)
+{
+    const struct crazypod_book *book;
+    lv_obj_t *label;
+    lv_obj_t *panel;
+    char text[256];
+    const char *format;
+
+    crazypod_book_probe(state->group);
+    book = crazypod_book_get(state->group);
+    format = book == NULL ? "" :
+        book->format == CRAZYPOD_BOOK_TXT ? "TXT" :
+        book->format == CRAZYPOD_BOOK_MARKDOWN ? "Markdown" : "EPUB";
+
+    label = make_label(product_content, "BOOK INFO",
+                       &lv_font_montserrat_16,
+                       COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(label, 14, 43);
+    panel = make_box(product_content, 14, 74, 292, 132, 10,
+                     COLOR_PANEL, 220);
+    snprintf(text, sizeof(text),
+             "%.60s\n%s%.60s%s\n%.8s · %lu KB\n\n%.80s",
+             book != NULL ? book->title : "Missing Book",
+             book != NULL && book->author[0] != '\0' ? "by " : "",
+             book != NULL ? book->author : "",
+             book != NULL && book->author[0] != '\0' ? "" : "Unknown author",
+             format,
+             (unsigned long)(book != NULL ? book->size / 1024u : 0),
+             book != NULL ? book->path : "");
+    label = make_label(panel, text, CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, 225);
+    lv_obj_set_pos(label, 12, 10);
+    lv_obj_set_width(label, 268);
+    lv_obj_set_height(label, 112);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+}
+
+static lv_obj_t *make_clock_hand(lv_obj_t *dial, int center,
+                                 int length, int width,
+                                 int angle_tenths, uint32_t color)
+{
+    lv_obj_t *hand = make_box(
+        dial, center - width / 2, center - length,
+        width, length, width, color, LV_OPA_COVER);
+
+    lv_obj_set_style_transform_pivot_x(hand, width / 2, 0);
+    lv_obj_set_style_transform_pivot_y(hand, length, 0);
+    lv_obj_set_style_transform_rotation(hand, angle_tenths, 0);
+    return hand;
+}
+
+static lv_obj_t *make_analog_clock(lv_obj_t *parent, int x, int y,
+                                   int size, int hour, int minute,
+                                   int second_tenths,
+                                   uint32_t dial_color,
+                                   uint32_t ink_color)
+{
+    lv_obj_t *dial = make_box(
+        parent, x, y, size, size, LV_RADIUS_CIRCLE,
+        dial_color, LV_OPA_COVER);
+    int center = size / 2;
+    int tick;
+
+    lv_obj_set_style_border_width(dial, 2, 0);
+    lv_obj_set_style_border_color(dial, lv_color_hex(ink_color), 0);
+    lv_obj_set_style_border_opa(dial, 220, 0);
+    for(tick = 0; tick < 12; ++tick) {
+        int width = tick % 3 == 0 ? 2 : 1;
+        int height = tick % 3 == 0 ? 10 : 6;
+        lv_obj_t *mark = make_box(
+            dial, center - width / 2, 7,
+            width, height, width, tick % 3 == 0
+                ? ink_color : 0x949494,
+            tick % 3 == 0 ? 235 : 180);
+        lv_obj_set_style_transform_pivot_x(mark, width / 2, 0);
+        lv_obj_set_style_transform_pivot_y(mark, center - 7, 0);
+        lv_obj_set_style_transform_rotation(mark, tick * 300, 0);
+    }
+    make_clock_hand(dial, center, size * 25 / 100, 4,
+                    ((hour % 12) * 30 + minute / 2) * 10,
+                    ink_color);
+    make_clock_hand(dial, center, size * 36 / 100, 3,
+                    minute * 60 + second_tenths / 10,
+                    ink_color);
+    make_clock_hand(dial, center, size * 42 / 100, 1,
+                    second_tenths * 6, ink_color);
+    make_box(dial, center - 4, center - 4, 8, 8,
+             LV_RADIUS_CIRCLE, ink_color, LV_OPA_COVER);
+    return dial;
+}
+
+static void render_clock_view(void)
+{
+    static const char *const weekdays[] = {
+        "Sunday", "Monday", "Tuesday", "Wednesday",
+        "Thursday", "Friday", "Saturday"
+    };
+    static const char *const months[] = {
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    };
+    struct tm *now = get_time();
+    lv_obj_t *panel;
+    lv_obj_t *label;
+    char text[64];
+
+    make_box(product_content, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32, 0,
+             0xF9F9F7, LV_OPA_COVER);
+    panel = make_box(product_content, 10, 40, 300, 188, 12,
+                     0xFFFFFF, LV_OPA_COVER);
+    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_opa(panel, 34, 0);
+    make_analog_clock(panel, 14, 23, 140,
+                      now->tm_hour, now->tm_min,
+                      now->tm_sec * 10 +
+                          (current_tick % HZ) * 10 / HZ,
+                      0xFFFFFF, 0x0E0E0E);
+
+    label = make_label(panel, "LOCAL TIME",
+                       &lv_font_montserrat_8,
+                       0x5C5C5C, LV_OPA_COVER);
+    lv_obj_set_style_text_letter_space(label, 2, 0);
+    lv_obj_set_pos(label, 170, 34);
+    snprintf(text, sizeof(text), "%02d:%02d:%02d",
+             now->tm_hour, now->tm_min, now->tm_sec);
+    label = make_label(panel, text, &lv_font_montserrat_24,
+                       0x0E0E0E, LV_OPA_COVER);
+    lv_obj_set_pos(label, 170, 53);
+    make_box(panel, 170, 86, 112, 1, 0,
+             0x0E0E0E, 210);
+    snprintf(text, sizeof(text), "%s\n%s %d",
+             weekdays[now->tm_wday], months[now->tm_mon], now->tm_mday);
+    label = make_label(panel, text, &lv_font_montserrat_10,
+                       0x5C5C5C, LV_OPA_COVER);
+    lv_obj_set_pos(label, 170, 97);
+    label = make_label(panel, "DEVICE TIME",
+                       &lv_font_montserrat_8, 0x949494, 230);
+    lv_obj_set_style_text_letter_space(label, 1, 0);
+    lv_obj_set_pos(label, 170, 132);
+}
+
+static long stopwatch_elapsed_ticks(void)
+{
+    return stopwatch_accumulated_ticks +
+           (stopwatch_running
+                ? current_tick - stopwatch_started_at : 0);
+}
+
+static void render_stopwatch_view(void)
+{
+    static const char *const style_names[] = {
+        "CLASSIC SILVER", "OBSIDIAN GOLD", "CHAMPAGNE GOLD"
+    };
+    static const uint32_t canvas_colors[] = {
+        0xF9F9F7, 0xF2F2F2, 0xFFFFFF
+    };
+    static const uint32_t dial_colors[] = {
+        0xFFFFFF, 0xFFFFFF, 0xEDEDED
+    };
+    static const uint32_t ink_colors[] = {
+        0x0E0E0E, 0x2C2416, 0x3B2A10
+    };
+    long ticks = stopwatch_elapsed_ticks();
+    unsigned total_hundredths =
+        (unsigned)(ticks * 100 / HZ);
+    unsigned minutes = total_hundredths / 6000;
+    unsigned seconds = total_hundredths / 100 % 60;
+    unsigned hundredths = total_hundredths % 100;
+    lv_obj_t *panel;
+    lv_obj_t *label;
+    char text[32];
+    int first_lap;
+    int lap;
+    int style = stopwatch_style_index % 3;
+
+    make_box(product_content, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32, 0,
+             canvas_colors[style], LV_OPA_COVER);
+    panel = make_box(product_content, 10, 40, 300, 188, 12,
+                     0xFFFFFF, LV_OPA_COVER);
+    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_opa(panel, 34, 0);
+    make_analog_clock(
+        panel, 8, 23, 140,
+        (int)(minutes / 60),
+        (int)minutes % 60,
+        (int)seconds * 10 + (int)hundredths / 10,
+        dial_colors[style], ink_colors[style]);
+    label = make_label(panel, style_names[style],
+                       &lv_font_montserrat_8,
+                       ink_colors[style], 135);
+    lv_obj_set_width(label, 140);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 8, 168);
+
+    label = make_label(panel, "CHRONOGRAPH",
+                       &lv_font_montserrat_8,
+                       ink_colors[style], 110);
+    lv_obj_set_style_text_letter_space(label, 2, 0);
+    lv_obj_set_pos(label, 166, 22);
+    snprintf(text, sizeof(text), "%02u:%02u.%02u",
+             minutes, seconds, hundredths);
+    label = make_label(panel, text, &lv_font_montserrat_24,
+                       ink_colors[style], LV_OPA_COVER);
+    lv_obj_set_pos(label, 166, 39);
+    label = make_label(panel,
+                       stopwatch_running ? "RUNNING" : "PAUSED",
+                       &lv_font_montserrat_8,
+                       ink_colors[style], 225);
+    lv_obj_set_pos(label, 166, 69);
+    if(stopwatch_lap_count > 0) {
+        snprintf(text, sizeof(text), "%d LAPS",
+                 stopwatch_lap_count);
+        label = make_label(panel, text,
+                           &lv_font_montserrat_8,
+                           ink_colors[style], 140);
+        lv_obj_set_pos(label, 224, 69);
+    }
+    make_box(panel, 166, 84, 122, 1, 0,
+             ink_colors[style], 52);
+    first_lap = stopwatch_lap_count > 4
+        ? stopwatch_lap_count - 4 : 0;
+    if(stopwatch_lap_count > 0) {
+        label = make_label(panel, "LAP       TOTAL",
+                           &lv_font_montserrat_8,
+                           ink_colors[style], 105);
+        lv_obj_set_pos(label, 168, 90);
+    }
+    for(lap = first_lap; lap < stopwatch_lap_count; ++lap) {
+        unsigned lap_hundredths =
+            (unsigned)(stopwatch_laps[lap] * 100 / HZ);
+        snprintf(text, sizeof(text), "%02d     %02u:%02u.%02u",
+                 lap + 1, lap_hundredths / 6000,
+                 lap_hundredths / 100 % 60,
+                 lap_hundredths % 100);
+        label = make_label(panel, text, &lv_font_montserrat_8,
+                           ink_colors[style], 225);
+        lv_obj_set_pos(label, 168,
+                       104 + (lap - first_lap) * 15);
+    }
+    if(stopwatch_lap_count == 0) {
+        label = make_label(panel,
+                           "CENTER  START / PAUSE\nRIGHT   RECORD LAP\nLEFT    RESET",
+                           &lv_font_montserrat_8,
+                           ink_colors[style], 150);
+        lv_obj_set_pos(label, 166, 101);
+    }
+    label = make_label(panel,
+                       TIME_BEFORE(current_tick,
+                                   stopwatch_reset_armed_until)
+                           ? "Press LEFT again to reset"
+                           : "Wheel changes style before first lap",
+                       &lv_font_montserrat_8, 0x949494, 210);
+    lv_obj_set_width(label, 136);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_pos(label, 166, 168);
+}
+
+static int days_in_month(int year, int month)
+{
+    static const int days[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+    };
+    if(month == 1 &&
+       ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0))
+        return 29;
+    return days[month];
+}
+
+static int weekday_for_date(int year, int month, int day)
+{
+    static const int offsets[] = {
+        0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4
+    };
+
+    if(month < 2)
+        --year;
+    return (year + year / 4 - year / 100 + year / 400 +
+            offsets[month] + day) % 7;
+}
+
+static void calendar_move_focus(int direction)
+{
+    if(direction > 0) {
+        ++calendar_focus_day;
+        if(calendar_focus_day >
+           days_in_month(calendar_focus_year,
+                         calendar_focus_month)) {
+            calendar_focus_day = 1;
+            ++calendar_focus_month;
+            if(calendar_focus_month > 11) {
+                calendar_focus_month = 0;
+                ++calendar_focus_year;
+            }
+        }
+    }
+    else if(direction < 0) {
+        --calendar_focus_day;
+        if(calendar_focus_day < 1) {
+            --calendar_focus_month;
+            if(calendar_focus_month < 0) {
+                calendar_focus_month = 11;
+                --calendar_focus_year;
+            }
+            calendar_focus_day =
+                days_in_month(calendar_focus_year,
+                              calendar_focus_month);
+        }
+    }
+}
+
+static void render_calendar_grid(void)
+{
+    static const char *const months[] = {
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    };
+    static const char *const weekdays[] = {
+        "S", "M", "T", "W", "T", "F", "S"
+    };
+    static const char *const compact_weekdays[] = {
+        "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"
+    };
+    lv_obj_t *panel;
+    lv_obj_t *label;
+    char text[48];
+    int first = weekday_for_date(
+        calendar_focus_year, calendar_focus_month, 1);
+    int count = days_in_month(
+        calendar_focus_year, calendar_focus_month);
+    int previous_month = calendar_focus_month - 1;
+    int previous_year = calendar_focus_year;
+    int previous_count;
+    int today = calendar_today_date();
+    int slot;
+
+    if(previous_month < 0) {
+        previous_month = 11;
+        --previous_year;
+    }
+    previous_count = days_in_month(previous_year, previous_month);
+    make_box(product_content, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32, 0,
+             0xF9F9F7, LV_OPA_COVER);
+    panel = make_box(product_content, 10, 38, 300, 194, 12,
+                     0xFFFFFF, LV_OPA_COVER);
+    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_border_opa(panel, 34, 0);
+    label = make_label(panel, "CALENDAR",
+                       &lv_font_montserrat_8,
+                       0x949494, LV_OPA_COVER);
+    lv_obj_set_style_text_letter_space(label, 2, 0);
+    lv_obj_set_pos(label, 14, 9);
+    snprintf(text, sizeof(text), "%s %d",
+             months[calendar_focus_month], calendar_focus_year);
+    label = make_label(panel, text,
+                       &lv_font_montserrat_16,
+                       0x0E0E0E, LV_OPA_COVER);
+    lv_obj_set_pos(label, 14, 23);
+    snprintf(text, sizeof(text), "%s %d",
+             compact_weekdays[
+                 weekday_for_date(calendar_focus_year,
+                                  calendar_focus_month,
+                                  calendar_focus_day)],
+             calendar_focus_day);
+    label = make_label(panel, text, &lv_font_montserrat_10,
+                       0x5C5C5C, LV_OPA_COVER);
+    lv_obj_set_width(label, 72);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(label, 210, 24);
+    make_box(panel, 12, 50, 276, 1, 0,
+             0x0E0E0E, 205);
+
+    for(slot = 0; slot < 7; ++slot) {
+        label = make_label(panel, weekdays[slot],
+                           &lv_font_montserrat_8,
+                           0x949494, 230);
+        lv_obj_set_width(label, 40);
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(label, 10 + slot * 40, 58);
+    }
+    for(slot = 0; slot < 42; ++slot) {
+        int column = slot % 7;
+        int row = slot / 7;
+        int x = 10 + column * 40;
+        int y = 75 + row * 18;
+        int relative_day = slot - first + 1;
+        int day;
+        int year = calendar_focus_year;
+        int month = calendar_focus_month;
+        bool in_month = true;
+        int date;
+        bool selected;
+        bool is_today;
+        bool has_event = false;
+        int event_index;
+        char day_text[4];
+
+        if(relative_day < 1) {
+            day = previous_count + relative_day;
+            year = previous_year;
+            month = previous_month;
+            in_month = false;
+        }
+        else if(relative_day > count) {
+            day = relative_day - count;
+            if(++month > 11) {
+                month = 0;
+                ++year;
+            }
+            in_month = false;
+        }
+        else
+            day = relative_day;
+        date = year * 10000 + (month + 1) * 100 + day;
+        selected = in_month && day == calendar_focus_day;
+        is_today = date == today;
+        for(event_index = 0;
+            event_index < crazypod_calendar_event_count();
+            ++event_index) {
+            const struct crazypod_calendar_event *event =
+                crazypod_calendar_event_get(event_index);
+            if(event != NULL && event->date == date) {
+                has_event = true;
+                break;
+            }
+        }
+        if(selected)
+            make_box(panel, x + 2, y - 1, 36, 17,
+                     7, 0x0E0E0E, LV_OPA_COVER);
+        else if(is_today) {
+            lv_obj_t *today_box = make_box(
+                panel, x + 2, y - 1, 36, 17,
+                7, 0xFFFFFF, LV_OPA_TRANSP);
+            lv_obj_set_style_border_width(today_box, 1, 0);
+            lv_obj_set_style_border_color(
+                today_box, lv_color_hex(0x0E0E0E), 0);
+            lv_obj_set_style_border_opa(today_box, 210, 0);
+        }
+        snprintf(day_text, sizeof(day_text), "%d", day);
+        label = make_label(
+            panel, day_text, &lv_font_montserrat_10,
+            selected ? COLOR_WHITE :
+                in_month ? 0x0E0E0E : 0xB8B8B8,
+            in_month ? LV_OPA_COVER : 155);
+        lv_obj_set_width(label, 40);
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(label, x, y);
+        if(has_event)
+            make_box(panel, x + 19, y + 13, 3, 3,
+                     LV_RADIUS_CIRCLE,
+                     selected ? COLOR_WHITE : 0x0E0E0E,
+                     in_month ? 205 : 70);
+    }
+}
+
+static void render_calendar_day_overlay(
+    const struct route_state *state)
+{
+    lv_obj_t *overlay;
+    lv_obj_t *label;
+    char text[64];
+    int count = calendar_route_event_count(state);
+    int start = state->selected > 3
+        ? state->selected - 3 : 0;
+    int row;
+
+    render_calendar_grid();
+    overlay = make_box(product_content, 25, 49, 270, 172, 12,
+                       0xFFFFFF, LV_OPA_COVER);
+    lv_obj_set_style_border_width(overlay, 1, 0);
+    lv_obj_set_style_border_color(overlay,
+                                  lv_color_hex(0x0E0E0E), 0);
+    lv_obj_set_style_border_opa(overlay, 210, 0);
+    label = make_label(overlay, "SCHEDULE",
+                       &lv_font_montserrat_8,
+                       0x949494, LV_OPA_COVER);
+    lv_obj_set_style_text_letter_space(label, 2, 0);
+    lv_obj_set_pos(label, 14, 9);
+    snprintf(text, sizeof(text), "%04d-%02d-%02d",
+             calendar_focus_year, calendar_focus_month + 1,
+             calendar_focus_day);
+    label = make_label(overlay, text,
+                       &lv_font_montserrat_16,
+                       0x0E0E0E, LV_OPA_COVER);
+    lv_obj_set_pos(label, 14, 23);
+    snprintf(text, sizeof(text), "%d item%s",
+             count, count == 1 ? "" : "s");
+    label = make_label(overlay, text, &lv_font_montserrat_8,
+                       0x5C5C5C, 220);
+    lv_obj_set_width(label, 72);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(label, 184, 29);
+    make_box(overlay, 12, 49, 246, 1, 0,
+             0x0E0E0E, 205);
+
+    for(row = 0; row < 4; ++row) {
+        int position = start + row;
+        const struct crazypod_calendar_event *event;
+        int y = 57 + row * 27;
+        bool selected;
+
+        if(position > count)
+            break;
+        selected = position == state->selected;
+        if(selected)
+            make_box(overlay, 10, y - 2, 250, 25, 7,
+                     0xF3F3F0, LV_OPA_COVER);
+        if(position == count) {
+            label = make_label(overlay, LV_SYMBOL_EDIT,
+                               &lv_font_montserrat_10,
+                               0x0E0E0E, 220);
+            lv_obj_set_pos(label, 17, y + 4);
+            label = make_label(overlay, "Add Event",
+                               &lv_font_montserrat_10,
+                               0x0E0E0E, LV_OPA_COVER);
+            lv_obj_set_pos(label, 43, y + 3);
+            continue;
+        }
+        event = crazypod_calendar_event_get(
+            calendar_route_event_index(state, position));
+        if(event == NULL)
+            continue;
+        label = make_label(
+            overlay,
+            event->time[0] != '\0' ? event->time : "All day",
+            &lv_font_montserrat_8, 0x5C5C5C, 230);
+        lv_obj_set_width(label, 44);
+        lv_obj_set_pos(label, 17, y + 4);
+        make_box(overlay, 64, y + 2, 2, 17, 1,
+                 0x0E0E0E, 210);
+        label = make_label(overlay, event->summary,
+                           &lv_font_montserrat_10,
+                           0x0E0E0E, LV_OPA_COVER);
+        lv_obj_set_width(label, 180);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_pos(label, 75, y + 3);
+    }
+}
+
+static void render_calendar_detail(const struct route_state *state)
+{
+    const struct crazypod_calendar_event *event =
+        crazypod_calendar_event_get(state->group);
+    lv_obj_t *panel;
+    lv_obj_t *label;
+    char text[180];
+
+    panel = make_box(product_content, 18, 54, 284, 145, 12,
+                     COLOR_PANEL, 230);
+    snprintf(text, sizeof(text), "%s\n\n%04d-%02d-%02d\n%s\n\n%s",
+             event != NULL ? event->summary : "No Event",
+             event != NULL ? event->date / 10000 : 0,
+             event != NULL ? event->date / 100 % 100 : 0,
+             event != NULL ? event->date % 100 : 0,
+             event != NULL && event->time[0] != '\0'
+                ? event->time : "All day",
+             event != NULL && event->editable
+                ? "Center: Event Actions"
+                : "Imported from .ics");
+    label = make_label(panel, text, CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, 235);
+    lv_obj_set_pos(label, 14, 14);
+    lv_obj_set_width(label, 256);
+}
+
+static long workout_elapsed_ticks(void)
+{
+    long elapsed = workout_accumulated_ticks;
+
+    if(workout_running)
+        elapsed += current_tick - workout_started_at;
+    return elapsed > 0 ? elapsed : 0;
+}
+
+static void format_workout_duration(char *text, size_t size,
+                                    uint32_t seconds)
+{
+    snprintf(text, size, "%02lu:%02lu:%02lu",
+             (unsigned long)(seconds / 3600u),
+             (unsigned long)(seconds / 60u % 60u),
+             (unsigned long)(seconds % 60u));
+}
+
+static void render_workout_ready(void)
+{
+    lv_obj_t *panel;
+    lv_obj_t *label;
+
+    make_box(product_content, 0, 32, 320, 208, 0,
+             0x050505, LV_OPA_COVER);
+    panel = make_box(product_content, 18, 48, 284, 166, 18,
+                     0x111512, LV_OPA_COVER);
+    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(0xA8F12D), 0);
+    lv_obj_set_style_border_opa(panel, 100, 0);
+    label = make_label(
+        panel, crazypod_workout_activity_title(workout_activity),
+        &lv_font_montserrat_16, COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(label, 248);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 18, 20);
+    label = make_label(panel, "READY", &lv_font_montserrat_24,
+                       0xA8F12D, LV_OPA_COVER);
+    lv_obj_set_width(label, 248);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 18, 57);
+    label = make_label(
+        panel, "TIME ONLY\nNo motion, distance, or calorie estimates",
+        &lv_font_montserrat_10, COLOR_WHITE, 145);
+    lv_obj_set_width(label, 248);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 18, 96);
+    label = make_label(panel, "CENTER  START",
+                       &lv_font_montserrat_10,
+                       0xA8F12D, 230);
+    lv_obj_set_width(label, 248);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 18, 140);
+}
+
+static void render_workout_active(void)
+{
+    lv_obj_t *ring;
+    lv_obj_t *label;
+    char elapsed[24];
+    uint32_t seconds = (uint32_t)(workout_elapsed_ticks() / HZ);
+
+    make_box(product_content, 0, 32, 320, 208, 0,
+             0x050505, LV_OPA_COVER);
+    ring = make_box(product_content, 26, 49, 126, 126,
+                    LV_RADIUS_CIRCLE, 0x0A0A0A, LV_OPA_COVER);
+    lv_obj_set_style_border_width(ring, 5, 0);
+    lv_obj_set_style_border_color(
+        ring, lv_color_hex(workout_running ? 0xA8F12D : 0xFFB340), 0);
+    lv_obj_set_style_border_opa(ring, 235, 0);
+    label = make_label(ring, workout_running ? LV_SYMBOL_PLAY : "II",
+                       &lv_font_montserrat_24,
+                       workout_running ? 0xA8F12D : 0xFFB340,
+                       LV_OPA_COVER);
+    lv_obj_center(label);
+    label = make_label(
+        product_content,
+        crazypod_workout_activity_title(workout_activity),
+        &lv_font_montserrat_10, COLOR_WHITE, 165);
+    lv_obj_set_pos(label, 174, 56);
+    format_workout_duration(elapsed, sizeof(elapsed), seconds);
+    label = make_label(product_content, elapsed,
+                       &lv_font_montserrat_24,
+                       COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(label, 174, 76);
+    make_box(product_content, 174, 108, 126, 1, 0,
+             COLOR_WHITE, 90);
+    label = make_label(product_content,
+                       workout_running ? "RUNNING" : "PAUSED",
+                       &lv_font_montserrat_10,
+                       workout_running ? 0xA8F12D : 0xFFB340, 235);
+    lv_obj_set_pos(label, 174, 119);
+    label = make_label(
+        product_content,
+        "CENTER  PAUSE / RESUME\nPLAY  FINISH\nTIME-ONLY LOG",
+        &lv_font_montserrat_8, COLOR_WHITE, 125);
+    lv_obj_set_pos(label, 174, 145);
+}
+
+static void render_workout_summary(void)
+{
+    lv_obj_t *panel;
+    lv_obj_t *label;
+    uint32_t total_seconds = 0;
+    char text[160];
+    int i;
+
+    for(i = 0; i < crazypod_workouts_count(); ++i) {
+        const struct crazypod_workout *workout =
+            crazypod_workout_get(i);
+        if(workout != NULL)
+            total_seconds += workout->duration_seconds;
+    }
+    panel = make_box(product_content, 18, 52, 284, 150, 14,
+                     0x111512, 238);
+    snprintf(text, sizeof(text),
+             "WORKOUT SUMMARY\n\n%d saved workouts\n%lu total minutes\n\n"
+             "Metrics: elapsed time only\nNo sensor data is fabricated.",
+             crazypod_workouts_count(),
+             (unsigned long)(total_seconds / 60u));
+    label = make_label(panel, text, CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, 230);
+    lv_obj_set_pos(label, 16, 14);
+    lv_obj_set_width(label, 252);
+}
+
+static void render_workout_detail(const struct route_state *state)
+{
+    const struct crazypod_workout *workout =
+        crazypod_workout_get(state->group);
+    lv_obj_t *panel;
+    lv_obj_t *label;
+    char duration[24];
+    char text[192];
+
+    format_workout_duration(
+        duration, sizeof(duration),
+        workout != NULL ? workout->duration_seconds : 0);
+    panel = make_box(product_content, 18, 52, 284, 150, 14,
+                     0x111512, 238);
+    snprintf(text, sizeof(text), "%s\n\n%04d-%02d-%02d\n%s\n\n"
+             "Time-only workout\nCenter: Delete",
+             workout != NULL
+                 ? crazypod_workout_activity_title(workout->activity)
+                 : "Missing Workout",
+             workout != NULL ? (int)(workout->date / 10000) : 0,
+             workout != NULL ? (int)(workout->date / 100 % 100) : 0,
+             workout != NULL ? (int)(workout->date % 100) : 0,
+             duration);
+    label = make_label(panel, text, CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, 230);
+    lv_obj_set_pos(label, 16, 14);
+    lv_obj_set_width(label, 252);
+}
+
+static void render_contact_detail(const struct route_state *state)
+{
+    const struct crazypod_contact *contact =
+        crazypod_contact_get(state->group);
+    lv_obj_t *card;
+    lv_obj_t *avatar;
+    lv_obj_t *label;
+    lv_obj_t *row;
+    char initials[8];
+    int initial_bytes = 0;
+
+    initials[0] = '?';
+    initials[1] = '\0';
+    if(contact != NULL && contact->name[0] != '\0') {
+        initial_bytes = utf8_character_size(contact->name);
+        if(initial_bytes > 0 &&
+           initial_bytes < (int)sizeof(initials)) {
+            memcpy(initials, contact->name,
+                   (size_t)initial_bytes);
+            initials[initial_bytes] = '\0';
+        }
+    }
+
+    make_box(product_content, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32, 0,
+             0x000000, 105);
+    card = make_box(product_content, 70, 42, 180, 184, 18,
+                    0x242A31, 238);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(card, 42, 0);
+    lv_obj_set_style_shadow_width(card, 18, 0);
+    lv_obj_set_style_shadow_offset_y(card, 10, 0);
+    lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_shadow_opa(card, 95, 0);
+
+    avatar = make_box(card, 63, 14, 54, 54,
+                      LV_RADIUS_CIRCLE, 0x59B89E, LV_OPA_COVER);
+    lv_obj_set_style_bg_grad_color(
+        avatar, lv_color_hex(0x2E4857), 0);
+    lv_obj_set_style_bg_grad_dir(avatar, LV_GRAD_DIR_VER, 0);
+    label = make_label(avatar, initials,
+                       CRAZYPOD_METADATA_FONT,
+                       COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_center(label);
+    label = make_label(
+        card,
+        contact != NULL ? contact->name : "Missing Contact",
+        CRAZYPOD_METADATA_FONT, COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(label, 156);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 12, 76);
+
+    row = make_box(card, 12, 103, 156, 30, 8,
+                   COLOR_WHITE, 28);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_border_color(row, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(row, 32, 0);
+    label = make_label(row, LV_SYMBOL_CALL,
+                       &lv_font_montserrat_10,
+                       COLOR_WHITE, 175);
+    lv_obj_set_pos(label, 10, 9);
+    label = make_label(
+        row,
+        contact != NULL && contact->phone[0] != '\0'
+            ? contact->phone : "No phone number",
+        &lv_font_montserrat_10, COLOR_WHITE,
+        contact != NULL && contact->phone[0] != '\0'
+            ? 225 : 105);
+    lv_obj_set_width(label, 118);
+    lv_obj_set_height(label, 16);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 31, 8);
+
+    row = make_box(card, 12, 140, 156, 30, 8,
+                   COLOR_WHITE, 16);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_border_color(row, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(row, 22, 0);
+    label = make_label(row, LV_SYMBOL_ENVELOPE,
+                       &lv_font_montserrat_10,
+                       COLOR_WHITE, 135);
+    lv_obj_set_pos(label, 10, 9);
+    label = make_label(
+        row,
+        contact != NULL && contact->email[0] != '\0'
+            ? contact->email : "No email address",
+        &lv_font_montserrat_10, COLOR_WHITE,
+        contact != NULL && contact->email[0] != '\0'
+            ? 190 : 90);
+    lv_obj_set_width(label, 118);
+    lv_obj_set_height(label, 16);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 31, 8);
+}
+
+static uint32_t miniapp_accent_foreground(uint32_t accent)
+{
+    uint32_t red = (accent >> 16) & 0xffu;
+    uint32_t green = (accent >> 8) & 0xffu;
+    uint32_t blue = accent & 0xffu;
+    uint32_t luminance =
+        2126u * red * red +
+        7152u * green * green +
+        722u * blue * blue;
+
+    /*
+     * A quadratic sRGB approximation keeps this integer-only. The threshold
+     * selects the higher-contrast pure black or white foreground for every
+     * supported appearance accent, including Rose, Emerald, and Blue.
+     */
+    return luminance >= 130050000u ? 0x000000 : 0xFFFFFF;
+}
+
+static uint32_t miniapp_color(enum cp_color_token token)
+{
+    uint32_t accent = highlight_primary();
+
+    switch(token) {
+    case CP_COLOR_BACKGROUND:
+        return COLOR_DETAIL;
+    case CP_COLOR_SURFACE:
+        return COLOR_PANEL;
+    case CP_COLOR_SURFACE_RAISED:
+        return 0x292932;
+    case CP_COLOR_WHITE:
+        return COLOR_WHITE;
+    case CP_COLOR_MUTED:
+        return COLOR_MUTED;
+    case CP_COLOR_ACCENT:
+        return accent;
+    case CP_COLOR_ACCENT_FOREGROUND:
+        return miniapp_accent_foreground(accent);
+    case CP_COLOR_ROSE:
+        return 0xFF4568;
+    case CP_COLOR_GREEN:
+        return COLOR_GREEN;
+    case CP_COLOR_CYAN:
+        return COLOR_CYAN;
+    case CP_COLOR_AMBER:
+        return COLOR_AMBER;
+    case CP_COLOR_ERROR:
+        return 0xFF453A;
+    case CP_COLOR_COUNT:
+    default:
+        return COLOR_WHITE;
+    }
+}
+
+static const lv_font_t *miniapp_font(enum cp_font_token token)
+{
+    switch(token) {
+    case CP_FONT_CAPTION:
+        return &lv_font_montserrat_8;
+    case CP_FONT_LABEL:
+        return &crazypod_miniapp_symbol_font;
+    case CP_FONT_BODY:
+        return &lv_font_montserrat_12;
+    case CP_FONT_CJK:
+        return &lv_font_source_han_sans_sc_14_cjk;
+    case CP_FONT_TITLE:
+        return &lv_font_source_han_sans_sc_16_cjk;
+    case CP_FONT_NUMBER:
+        return &lv_font_montserrat_24;
+    case CP_FONT_DISPLAY:
+        return &lv_font_montserrat_48;
+    case CP_FONT_COUNT:
+    default:
+        return &lv_font_montserrat_10;
+    }
+}
+
+static void render_miniapp_rectangle(
+    const struct cp_draw_command *command)
+{
+    bool focused = (command->flags & CP_DRAW_FOCUSED) != 0;
+    int border_width = focused && command->border_width < 2
+        ? 2 : command->border_width;
+    int border_opacity = focused ? 255 : command->border_opacity;
+    uint32_t border_color = focused
+        ? 0xFFFFFF
+        : miniapp_color((enum cp_color_token)command->border);
+    int radius = (command->flags & CP_DRAW_CIRCLE) != 0
+        ? LV_RADIUS_CIRCLE : command->radius;
+    lv_obj_t *box = make_box(
+        product_content, command->x, command->y,
+        command->width, command->height, radius,
+        miniapp_color((enum cp_color_token)command->background),
+        command->opacity);
+
+    if(border_width > 0 && border_opacity > 0) {
+        lv_obj_set_style_border_width(box, border_width, 0);
+        lv_obj_set_style_border_color(
+            box, lv_color_hex(border_color), 0);
+        lv_obj_set_style_border_opa(box, border_opacity, 0);
+    }
+    lv_obj_set_style_clip_corner(box, true, 0);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void render_miniapp_text(const struct cp_draw_command *command)
+{
+    const lv_font_t *font =
+        miniapp_font((enum cp_font_token)command->font);
+    int text_y = command->y;
+    int text_height = command->height;
+    lv_obj_t *label;
+
+    if(text_height > font->line_height) {
+        text_y += (text_height - font->line_height) / 2;
+        text_height = font->line_height;
+    }
+    label = make_label(
+        product_content, command->text, font,
+        miniapp_color((enum cp_color_token)command->foreground),
+        command->opacity);
+    lv_obj_set_pos(label, command->x, text_y);
+    lv_obj_set_size(label, command->width, text_height);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_text_align(
+        label,
+        command->align == CP_ALIGN_RIGHT
+            ? LV_TEXT_ALIGN_RIGHT
+            : command->align == CP_ALIGN_CENTER
+                ? LV_TEXT_ALIGN_CENTER
+                : LV_TEXT_ALIGN_LEFT,
+        0);
+    lv_obj_remove_flag(label, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void render_miniapp_ring(const struct cp_draw_command *command)
+{
+    int maximum = command->maximum > 0 ? command->maximum : 1;
+    int value = command->value;
+    lv_obj_t *ring;
+
+    if(value < 0)
+        value = 0;
+    if(value > maximum)
+        value = maximum;
+    ring = lv_arc_create(product_content);
+    lv_obj_remove_style_all(ring);
+    lv_obj_set_pos(ring, command->x, command->y);
+    lv_obj_set_size(ring, command->width, command->height);
+    lv_arc_set_range(ring, 0, maximum);
+    lv_arc_set_bg_angles(ring, 0, 360);
+    lv_arc_set_rotation(ring, 270);
+    lv_arc_set_value(ring, value);
+    lv_obj_set_style_arc_color(
+        ring,
+        lv_color_hex(miniapp_color(
+            (enum cp_color_token)command->track_color)),
+        LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(ring, command->opacity, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(
+        ring, command->track_width, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(
+        ring,
+        lv_color_hex(miniapp_color(
+            (enum cp_color_token)command->progress_color)),
+        LV_PART_INDICATOR);
+    lv_obj_set_style_arc_opa(
+        ring, command->opacity, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(
+        ring, command->progress_width, LV_PART_INDICATOR);
+    lv_obj_remove_style(ring, NULL, LV_PART_KNOB);
+    lv_obj_remove_flag(ring, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void render_miniapp_divider(
+    const struct cp_draw_command *command)
+{
+    lv_obj_t *divider = make_box(
+        product_content, command->x, command->y,
+        command->width, command->height, command->radius,
+        miniapp_color((enum cp_color_token)command->background),
+        command->opacity);
+
+    lv_obj_remove_flag(divider, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void render_miniapp_progress(
+    const struct cp_draw_command *command)
+{
+    int maximum = command->maximum > 0 ? command->maximum : 1;
+    int value = command->value;
+    int fill_width;
+    lv_obj_t *track;
+    lv_obj_t *fill;
+
+    if(value < 0)
+        value = 0;
+    if(value > maximum)
+        value = maximum;
+    fill_width =
+        (int)((int64_t)value * command->width / maximum);
+    track = make_box(
+        product_content, command->x, command->y,
+        command->width, command->height, command->radius,
+        miniapp_color((enum cp_color_token)command->track_color),
+        command->opacity);
+    if(fill_width > 0) {
+        fill = make_box(
+            track, 0, 0, fill_width, command->height,
+            command->radius,
+            miniapp_color(
+                (enum cp_color_token)command->progress_color),
+            command->opacity);
+        lv_obj_remove_flag(fill, LV_OBJ_FLAG_CLICKABLE);
+    }
+    lv_obj_remove_flag(track, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void render_miniapp_bitmap(
+    const struct cp_draw_command *command)
+{
+    struct cp_resource_info info;
+    lv_obj_t *image;
+    int scale = LV_SCALE_NONE;
+    int app_index = crazypod_miniapps_current();
+
+    memset(&info, 0, sizeof(info));
+    info.struct_size = sizeof(info);
+    if(crazypod_miniapps_resource_stat(command->text, &info) !=
+           CRAZYPOD_MINIAPP_OK ||
+       info.type != CP_RESOURCE_BITMAP_RGB565 ||
+       info.width == 0 || info.height == 0 ||
+       info.width > 160 || info.height > 160 ||
+       info.size > sizeof(miniapp_bitmap_pixels))
+        return;
+    if(app_index != miniapp_bitmap_app_index ||
+       info.crc32 != miniapp_bitmap_crc ||
+       info.width != miniapp_bitmap_width ||
+       info.height != miniapp_bitmap_height ||
+       strcmp(command->text, miniapp_bitmap_id) != 0) {
+        if(crazypod_miniapps_resource_read(
+               command->text, 0, miniapp_bitmap_pixels, info.size) !=
+               (int)info.size ||
+           !crazypod_image_configure_rgb565(
+               &miniapp_bitmap_descriptor, miniapp_bitmap_pixels,
+               info.width, info.height))
+            return;
+        snprintf(miniapp_bitmap_id, sizeof(miniapp_bitmap_id),
+                 "%s", command->text);
+        miniapp_bitmap_id[sizeof(miniapp_bitmap_id) - 1] = '\0';
+        miniapp_bitmap_app_index = app_index;
+        miniapp_bitmap_crc = info.crc32;
+        miniapp_bitmap_width = info.width;
+        miniapp_bitmap_height = info.height;
+    }
+    image = lv_image_create(product_content);
+    lv_image_set_src(image, &miniapp_bitmap_descriptor);
+    lv_obj_set_pos(image, command->x, command->y);
+    if(command->width > 0 && command->height > 0) {
+        int scale_x = command->width * LV_SCALE_NONE / info.width;
+        int scale_y = command->height * LV_SCALE_NONE / info.height;
+        scale = scale_x < scale_y ? scale_x : scale_y;
+        if(scale < 1)
+            scale = 1;
+        lv_image_set_scale(image, scale);
+    }
+    lv_obj_set_style_opa(image, command->opacity, 0);
+    lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void render_miniapp_toast(void)
+{
+    char text[CP_MINIAPP_TOAST_TEXT_SIZE];
+    lv_obj_t *panel;
+    lv_obj_t *label;
+
+    if(!crazypod_miniapps_toast(text, sizeof(text)))
+        return;
+    panel = make_box(
+        product_content, 30, 198, 260, 30, 12,
+        0x292932, 245);
+    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_color(
+        panel, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(panel, 45, 0);
+    label = make_label(
+        panel, text, &lv_font_source_han_sans_sc_14_cjk,
+        COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(label, 10, 7);
+    lv_obj_set_size(label, 240, 16);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_remove_flag(panel, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void render_miniapp_view(void)
+{
+    int index;
+
+    if(!crazypod_miniapps_render(&miniapp_scene)) {
+        lv_obj_set_style_bg_color(
+            product_content, lv_color_hex(COLOR_DETAIL), 0);
+        make_box(product_content, 10, 40, 300, 188, 12,
+                 COLOR_PANEL, LV_OPA_COVER);
+        {
+            lv_obj_t *label = make_label(
+                product_content, "APP RENDER ERROR",
+                &lv_font_montserrat_12, 0xFF453A, LV_OPA_COVER);
+            lv_obj_set_pos(label, 30, 126);
+            lv_obj_set_width(label, 260);
+            lv_obj_set_style_text_align(
+                label, LV_TEXT_ALIGN_CENTER, 0);
+        }
+        return;
+    }
+    lv_obj_set_style_bg_color(
+        product_content,
+        lv_color_hex(miniapp_color(
+            (enum cp_color_token)miniapp_scene.background)),
+        0);
+    make_box(
+        product_content, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0,
+        miniapp_color((enum cp_color_token)miniapp_scene.background),
+        LV_OPA_COVER);
+    for(index = 0; index < miniapp_scene.command_count; ++index) {
+        const struct cp_draw_command *command =
+            &miniapp_scene.commands[index];
+
+        if(command->type == CP_DRAW_RECT)
+            render_miniapp_rectangle(command);
+        else if(command->type == CP_DRAW_TEXT)
+            render_miniapp_text(command);
+        else if(command->type == CP_DRAW_RING)
+            render_miniapp_ring(command);
+        else if(command->type == CP_DRAW_DIVIDER)
+            render_miniapp_divider(command);
+        else if(command->type == CP_DRAW_PROGRESS)
+            render_miniapp_progress(command);
+        else if(command->type == CP_DRAW_BITMAP)
+            render_miniapp_bitmap(command);
+    }
+    render_miniapp_toast();
+}
+
+static bool route_owns_fullscreen_surface(enum crazypod_route route)
+{
+    switch(route) {
+    case CLOCK_ROUTE_VIEW:
+    case STOPWATCH_ROUTE_VIEW:
+    case WORKOUT_ROUTE_READY:
+    case WORKOUT_ROUTE_ACTIVE:
+    case WORKOUT_ROUTE_SUMMARY:
+    case WORKOUT_ROUTE_DETAIL:
+    case CALENDAR_ROUTE_MONTH:
+    case CALENDAR_ROUTE_DAY_EVENTS:
+    case CALENDAR_ROUTE_DETAIL:
+    case CONTACTS_ROUTE_DETAIL:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static uint32_t fullscreen_route_background(enum crazypod_route route)
+{
+    if(route == STOPWATCH_ROUTE_VIEW) {
+        static const uint32_t backgrounds[] = {
+            0xF9F9F7, 0xF2F2F2, 0xFFFFFF
+        };
+        return backgrounds[stopwatch_style_index % 3];
+    }
+    if(route == CLOCK_ROUTE_VIEW ||
+       route == CALENDAR_ROUTE_MONTH ||
+       route == CALENDAR_ROUTE_DAY_EVENTS)
+        return 0xF9F9F7;
+    if(route == WORKOUT_ROUTE_READY ||
+       route == WORKOUT_ROUTE_ACTIVE ||
+       route == WORKOUT_ROUTE_SUMMARY ||
+       route == WORKOUT_ROUTE_DETAIL)
+        return 0x050505;
+    return COLOR_DETAIL;
+}
+
+static bool fullscreen_route_uses_dark_status_bar(
+    enum crazypod_route route)
+{
+    return route == CLOCK_ROUTE_VIEW ||
+           route == STOPWATCH_ROUTE_VIEW ||
+           route == CALENDAR_ROUTE_MONTH ||
+           route == CALENDAR_ROUTE_DAY_EVENTS;
+}
+
 static void render_current_route(bool transition)
 {
     struct route_state *state = current_route();
     const lv_image_dsc_t *menu_wallpaper;
+    bool book_reader = state->route == BOOKS_ROUTE_READER;
+    bool fullscreen_surface =
+        route_owns_fullscreen_surface(state->route);
     bool solid_black =
         state->route == DIY_ROUTE_WALLPAPER_CROP ||
-        state->route == MUSIC_ROUTE_ALBUM_FLOW;
-    uint32_t route_background = solid_black
-        ? 0x000000 : crazypod_appearance_menu_color();
+        state->route == MUSIC_ROUTE_ALBUM_FLOW ||
+        state->route == MINIAPP_ROUTE_VIEW;
+    int book_theme = crazypod_books_theme();
+    uint32_t route_background = book_reader
+        ? book_page_colors[book_theme]
+        : solid_black ? 0x000000
+        : fullscreen_surface
+            ? fullscreen_route_background(state->route)
+            : crazypod_appearance_menu_color();
+    uint32_t status_foreground = book_reader
+        ? book_ink_colors[book_theme]
+        : fullscreen_surface &&
+          fullscreen_route_uses_dark_status_bar(state->route)
+            ? 0x0E0E0E : COLOR_WHITE;
     int i;
 
     if(state->route == PHOTOS_ROUTE_DETAIL)
@@ -7921,8 +13315,13 @@ static void render_current_route(bool transition)
     memset(&menu_view, 0, sizeof(menu_view));
     menu_preview_root = NULL;
     menu_preview_content = NULL;
+    memset(&menu_preview_scene, 0, sizeof(menu_preview_scene));
     menu_preview_pending = false;
     menu_preview_motion_ready = false;
+    menu_preview_build_defer_media = false;
+    menu_preview_media_deferred = false;
+    menu_preview_media_refresh_pending = false;
+    menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
     route_render_pending = false;
     now_progress_marker = NULL;
     now_elapsed = NULL;
@@ -7936,6 +13335,9 @@ static void render_current_route(bool transition)
     wallpaper_crop_progress_label = NULL;
     music_loading_title = NULL;
     music_loading_detail = NULL;
+    book_loading_progress_fill = NULL;
+    book_loading_progress_label = NULL;
+    book_loading_percent_label = NULL;
     album_flow_title = NULL;
     album_flow_artist = NULL;
     album_flow_position = NULL;
@@ -7958,7 +13360,7 @@ static void render_current_route(bool transition)
     lv_obj_set_style_bg_opa(product_content, LV_OPA_COVER, 0);
     make_box(product_content, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0,
              route_background, LV_OPA_COVER);
-    menu_wallpaper = solid_black
+    menu_wallpaper = solid_black || book_reader || fullscreen_surface
         ? NULL : crazypod_custom_menu_wallpaper();
     if(menu_wallpaper != NULL) {
         lv_obj_t *image = lv_image_create(product_content);
@@ -7967,7 +13369,9 @@ static void render_current_route(bool transition)
         lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
     }
 
-    if(state->route == MUSIC_ROUTE_NOW_PLAYING)
+    if(state->route == MINIAPP_ROUTE_VIEW)
+        render_miniapp_view();
+    else if(state->route == MUSIC_ROUTE_NOW_PLAYING)
         render_now_playing();
     else if(state->route == SETTINGS_ROUTE_EQ_STUDIO)
         render_eq_studio();
@@ -7981,6 +13385,36 @@ static void render_current_route(bool transition)
         render_photo_grid(state);
     else if(state->route == PHOTOS_ROUTE_DETAIL)
         render_photo_detail(state);
+    else if(state->route == NOTES_ROUTE_COMPOSER)
+        render_note_composer(state);
+    else if(state->route == NOTES_ROUTE_READER)
+        render_note_reader(state);
+    else if(state->route == BOOKS_ROUTE_READER)
+        render_book_reader(state);
+    else if(state->route == BOOKS_ROUTE_STATS)
+        render_books_stats(state);
+    else if(state->route == BOOKS_ROUTE_INFO)
+        render_book_info(state);
+    else if(state->route == CLOCK_ROUTE_VIEW)
+        render_clock_view();
+    else if(state->route == STOPWATCH_ROUTE_VIEW)
+        render_stopwatch_view();
+    else if(state->route == WORKOUT_ROUTE_READY)
+        render_workout_ready();
+    else if(state->route == WORKOUT_ROUTE_ACTIVE)
+        render_workout_active();
+    else if(state->route == WORKOUT_ROUTE_SUMMARY)
+        render_workout_summary();
+    else if(state->route == WORKOUT_ROUTE_DETAIL)
+        render_workout_detail(state);
+    else if(state->route == CALENDAR_ROUTE_MONTH)
+        render_calendar_grid();
+    else if(state->route == CALENDAR_ROUTE_DAY_EVENTS)
+        render_calendar_day_overlay(state);
+    else if(state->route == CALENDAR_ROUTE_DETAIL)
+        render_calendar_detail(state);
+    else if(state->route == CONTACTS_ROUTE_DETAIL)
+        render_contact_detail(state);
     else if(state->route == DIY_ROUTE_WALLPAPER_CROP)
         render_wallpaper_crop();
     else
@@ -7989,6 +13423,9 @@ static void render_current_route(bool transition)
     lv_obj_invalidate(product_content);
     if(transition)
         animate_content_entrance();
+    set_status_bar_palette(
+        &status_bars[1],
+        status_foreground, route_background);
     lv_obj_move_foreground(status_bars[1].time);
     lv_obj_move_foreground(status_bars[1].playing);
     refresh_screen_corner_masks();
@@ -8000,6 +13437,24 @@ static void render_loading(void)
     char detail[64];
 
     lv_obj_clean(product_content);
+    /*
+     * The loading screen owns the whole product surface. Artwork generation
+     * changes while the cover cache is being primed, so no stale menu preview
+     * or deferred menu render may survive and draw over it.
+     */
+    memset(&menu_view, 0, sizeof(menu_view));
+    menu_preview_root = NULL;
+    menu_preview_content = NULL;
+    memset(&menu_preview_scene, 0, sizeof(menu_preview_scene));
+    menu_preview_pending = false;
+    menu_preview_motion_ready = false;
+    menu_preview_build_defer_media = false;
+    menu_preview_media_deferred = false;
+    menu_preview_media_refresh_pending = false;
+    menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
+    route_render_pending = false;
+    set_status_bar_palette(
+        &status_bars[1], COLOR_WHITE, COLOR_DETAIL);
     lv_obj_set_style_bg_color(product_content, lv_color_hex(COLOR_DETAIL), 0);
     lv_obj_set_style_bg_opa(product_content, LV_OPA_COVER, 0);
     symbol = make_label(product_content, LV_SYMBOL_REFRESH,
@@ -8173,49 +13628,518 @@ static void open_settings(void)
     render_current_route(true);
 }
 
-static void render_placeholder(const struct crazypod_app *app)
-{
-    lv_obj_t *tile;
-    lv_obj_t *symbol;
-    lv_obj_t *title;
-    lv_obj_t *detail;
-
-    lv_obj_clean(product_content);
-    lv_obj_set_style_bg_color(product_content, lv_color_hex(COLOR_DETAIL), 0);
-    lv_obj_set_style_bg_opa(product_content, LV_OPA_COVER, 0);
-    tile = make_box(product_content, 132, 82, 56, 56, 16,
-                    app->color, LV_OPA_COVER);
-    symbol = make_label(tile, app->symbol, &lv_font_montserrat_24,
-                        COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_center(symbol);
-    title = make_label(product_content, app->name,
-                       &lv_font_montserrat_16,
-                       COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(title, 240);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 40, 151);
-    detail = make_label(product_content, "Coming soon",
-                        &lv_font_montserrat_10,
-                        COLOR_WHITE, 128);
-    lv_obj_set_width(detail, 160);
-    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(detail, 80, 176);
-}
-
-static void open_placeholder(const struct crazypod_app *app)
+static void open_extras(void)
 {
     product_active = true;
-    route_depth = 0;
     lv_obj_remove_flag(product_screen, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(product_screen);
-    render_placeholder(app);
-    animate_content_entrance();
+    set_cpu_boost(true);
+
+    route_depth = 1;
+    route_stack[0].route = EXTRAS_ROUTE_MENU;
+    route_stack[0].selected = 0;
+    route_stack[0].group = -1;
+    render_current_route(true);
+}
+
+static void open_notes(void)
+{
+    product_active = true;
+    lv_obj_remove_flag(product_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(product_screen);
+    set_cpu_boost(true);
+
+    note_draft_available = crazypod_note_draft_load(&note_editor);
+    route_depth = 1;
+    route_stack[0].route = NOTES_ROUTE_MENU;
+    route_stack[0].selected = 0;
+    route_stack[0].group = -1;
+    render_current_route(true);
+}
+
+static void open_books(void)
+{
+    product_active = true;
+    lv_obj_remove_flag(product_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(product_screen);
+    set_cpu_boost(true);
+
+    if(!books_metadata_ready) {
+        render_book_loading_screen(
+            NULL, "Loading Library",
+            "Reading final book titles and covers");
+        book_prepare_progress_callback(
+            6, "Scanning Books folder", NULL);
+        crazypod_books_scan();
+        load_book_metadata_with_progress(16, 96);
+        books_metadata_ready = true;
+        book_prepare_progress_callback(
+            100, "Library ready", NULL);
+    }
+    route_depth = 1;
+    route_stack[0].route = BOOKS_ROUTE_MENU;
+    route_stack[0].selected = 0;
+    route_stack[0].group = -1;
+    render_current_route(true);
+}
+
+static void begin_note_composer(uint32_t id, bool resume_draft)
+{
+    const struct crazypod_note *note;
+
+    memset(&note_editor, 0, sizeof(note_editor));
+    if(resume_draft) {
+        if(!crazypod_note_draft_load(&note_editor))
+            memset(&note_editor, 0, sizeof(note_editor));
+    }
+    else if(id != 0) {
+        note = crazypod_note_find(id);
+        if(note != NULL) {
+            note_editor.source_id = id;
+            snprintf(note_editor.title, sizeof(note_editor.title),
+                     "%s", note->title);
+            crazypod_note_read_body(id, note_editor.body,
+                                    sizeof(note_editor.body));
+        }
+    }
+    note_editor_baseline = note_editor;
+    note_editor_title_cursor = strlen(note_editor.title);
+    note_editor_body_cursor = strlen(note_editor.body);
+    note_editor_body_active = false;
+    push_route_selected(NOTES_ROUTE_COMPOSER, -1, 0);
+}
+
+static bool note_editor_dirty(void)
+{
+    return note_editor.source_id != note_editor_baseline.source_id ||
+           strcmp(note_editor.title, note_editor_baseline.title) != 0 ||
+           strcmp(note_editor.body, note_editor_baseline.body) != 0;
+}
+
+static void open_note_reader(uint32_t id)
+{
+    note_reader_body[0] = '\0';
+    crazypod_note_read_body(id, note_reader_body,
+                            sizeof(note_reader_body));
+    push_route_selected(NOTES_ROUTE_READER, (int)id, 0);
+}
+
+static void render_book_loading_screen(
+    const struct crazypod_book *book, const char *title,
+    const char *detail)
+{
+    int theme = crazypod_books_theme();
+    uint32_t page_color = book_page_colors[theme];
+    uint32_t ink_color = book_ink_colors[theme];
+    lv_obj_t *label;
+    lv_obj_t *track;
+
+    lv_obj_clean(product_content);
+    lv_obj_set_style_bg_color(
+        product_content, lv_color_hex(page_color), 0);
+    lv_obj_set_style_bg_opa(product_content, LV_OPA_COVER, 0);
+    make_box(product_content, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0,
+             page_color, LV_OPA_COVER);
+    set_status_bar_palette(&status_bars[1], ink_color, page_color);
+
+    label = make_label(
+        product_content,
+        title != NULL ? title : "Preparing Book",
+        &lv_font_montserrat_16, ink_color, LV_OPA_COVER);
+    lv_obj_set_width(label, 280);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 20, 57);
+
+    label = make_label(
+        product_content,
+        book != NULL && book->title[0] != '\0'
+            ? book->title : "Reading local book data",
+        CRAZYPOD_METADATA_FONT, ink_color, 180);
+    lv_obj_set_width(label, 260);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 30, 88);
+
+    track = make_box(
+        product_content, 40, 126, 240, 7,
+        LV_RADIUS_CIRCLE, ink_color, 32);
+    book_loading_progress_fill = make_box(
+        track, 0, 0, 2, 7,
+        LV_RADIUS_CIRCLE, ink_color, 220);
+
+    book_loading_progress_label = make_label(
+        product_content, "Starting",
+        &lv_font_montserrat_10, ink_color, 190);
+    lv_obj_set_width(book_loading_progress_label, 220);
+    lv_label_set_long_mode(
+        book_loading_progress_label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(book_loading_progress_label, 40, 145);
+
+    book_loading_percent_label = make_label(
+        product_content, "0%",
+        &lv_font_montserrat_10, ink_color, 190);
+    lv_obj_set_width(book_loading_percent_label, 42);
+    lv_obj_set_style_text_align(
+        book_loading_percent_label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(book_loading_percent_label, 238, 145);
+
+    label = make_label(
+        product_content,
+        detail != NULL ? detail : "",
+        &lv_font_montserrat_8, ink_color, 105);
+    lv_obj_set_width(label, 280);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 20, 181);
+
+    lv_obj_move_foreground(status_bars[1].time);
+    lv_obj_move_foreground(status_bars[1].playing);
+    lv_refr_now(NULL);
+    crazypod_present_now();
+}
+
+static void book_prepare_progress_callback(
+    int percent, const char *stage, void *context)
+{
+    char value[16];
+    int width;
+
+    (void)context;
+    if(book_loading_progress_fill == NULL ||
+       book_loading_progress_label == NULL ||
+       book_loading_percent_label == NULL)
+        return;
+    if(percent < 0)
+        percent = 0;
+    if(percent > 100)
+        percent = 100;
+    width = percent * 240 / 100;
+    if(width < 2)
+        width = 2;
+    lv_obj_set_width(book_loading_progress_fill, width);
+    lv_label_set_text(
+        book_loading_progress_label,
+        stage != NULL ? stage : "Preparing");
+    snprintf(value, sizeof(value), "%d%%", percent);
+    lv_label_set_text(book_loading_percent_label, value);
+    lv_refr_now(NULL);
+    crazypod_present_now();
+}
+
+static void load_book_metadata_with_progress(
+    int start_percent, int end_percent)
+{
+    int count = crazypod_books_count();
+    int span = end_percent - start_percent;
+    int i;
+
+    if(span < 0)
+        span = 0;
+    if(count <= 0) {
+        book_prepare_progress_callback(
+            end_percent, "Library is empty", NULL);
+        return;
+    }
+    for(i = 0; i < count; ++i) {
+        book_prepare_progress_callback(
+            start_percent + span * i / count,
+            "Reading book titles and covers", NULL);
+        crazypod_book_probe(i);
+    }
+    book_prepare_progress_callback(
+        end_percent, "Finalizing library", NULL);
+}
+
+static void apply_book_font_size(int value)
+{
+    const struct crazypod_book *book =
+        crazypod_book_get(selected_book_index);
+    bool needs_reflow =
+        book != NULL && book_page_text[0] != '\0';
+
+    if(value == crazypod_books_font_size()) {
+        render_current_route(false);
+        return;
+    }
+    if(needs_reflow) {
+        render_book_loading_screen(
+            book, "Reflowing Text",
+            "Keeping your current reading position");
+        book_prepare_progress_callback(
+            20, "Applying text size", NULL);
+    }
+    crazypod_books_set_font_size(value);
+    if(needs_reflow) {
+        bool loaded;
+
+        book_prepare_progress_callback(
+            62, "Rebuilding current page", NULL);
+        book_page_history_count = 0;
+        loaded = load_book_page(
+            selected_book_index, book_page_offset);
+        book_prepare_progress_callback(
+            100, loaded ? "Text ready" : "Could not reload page", NULL);
+    }
+    render_current_route(false);
+}
+
+static void rescan_books_with_progress(void)
+{
+    render_book_loading_screen(
+        NULL, "Scanning Books",
+        "Refreshing imported books and cover data");
+    books_metadata_ready = false;
+    book_prepare_progress_callback(
+        12, "Resetting cover cache", NULL);
+    crazypod_book_cover_reset();
+    book_prepare_progress_callback(
+        20, "Reading Books folders", NULL);
+    crazypod_books_scan();
+    load_book_metadata_with_progress(30, 94);
+    books_metadata_ready = true;
+    selected_book_index = -1;
+    book_page_text[0] = '\0';
+    book_page_history_count = 0;
+    book_prepare_progress_callback(
+        100, "Library ready", NULL);
+    render_current_route(false);
+}
+
+static void begin_book_reader(int index, uint32_t offset)
+{
+    const struct crazypod_book *book;
+    bool show_progress;
+    bool ready;
+    bool loaded = false;
+
+    book = crazypod_book_get(index);
+    if(book == NULL)
+        return;
+    show_progress =
+        book->format == CRAZYPOD_BOOK_EPUB &&
+        book->content_size == 0;
+    if(show_progress)
+        render_book_loading_screen(
+            book, "Preparing Book",
+            "First open creates a local reading cache");
+    ready = show_progress
+        ? crazypod_book_prepare_with_progress(
+              index, book_prepare_progress_callback, NULL)
+        : crazypod_book_prepare(index);
+    book = crazypod_book_get(index);
+    if(book == NULL)
+        return;
+    if(book->content_size > 0 && offset >= book->content_size)
+        offset = 0;
+    selected_book_index = index;
+    book_page_history_count = 0;
+    if(show_progress)
+        book_prepare_progress_callback(
+            94,
+            ready ? "Loading first page"
+                  : "Preparing error details",
+            NULL);
+    if(ready)
+        loaded = load_book_page(index, offset);
+    if(!loaded) {
+        snprintf(
+            book_page_text, sizeof(book_page_text),
+            book->format == CRAZYPOD_BOOK_EPUB
+                ? "This EPUB is damaged, encrypted, or unsupported."
+                : "Unable to open this book.");
+    }
+    else {
+        if(show_progress)
+            book_prepare_progress_callback(
+                98, "Saving reading position", NULL);
+        crazypod_book_set_progress(index, offset);
+    }
+    if(show_progress)
+        book_prepare_progress_callback(
+            100,
+            loaded ? "Opening reader"
+                   : "Showing book error",
+            NULL);
+    push_route_selected(BOOKS_ROUTE_READER, index, 0);
+}
+
+static void save_note_editor_draft(void)
+{
+    if(note_editor.title[0] == '\0' &&
+       note_editor.body[0] == '\0') {
+        crazypod_note_draft_clear();
+        note_draft_available = false;
+        note_draft_save_pending = false;
+        return;
+    }
+    note_draft_available = crazypod_note_draft_save(&note_editor);
+    note_draft_save_pending = false;
+}
+
+static void schedule_note_editor_draft(void)
+{
+    note_draft_save_pending = true;
+    note_draft_save_due = current_tick + HZ * 2;
+}
+
+static void service_note_editor_draft(void)
+{
+    if(note_draft_save_pending &&
+       !TIME_BEFORE(current_tick, note_draft_save_due))
+        save_note_editor_draft();
+}
+
+static void commit_note_editor(void)
+{
+    uint32_t id = crazypod_note_save(
+        note_editor.source_id, note_editor.title, note_editor.body);
+
+    if(id == 0) {
+        save_note_editor_draft();
+        render_current_route(false);
+        return;
+    }
+    crazypod_note_draft_clear();
+    note_draft_available = false;
+    note_draft_save_pending = false;
+    memset(&note_editor, 0, sizeof(note_editor));
+    route_depth = 1;
+    route_stack[0].route = NOTES_ROUTE_MENU;
+    route_stack[0].selected = 0;
+    route_stack[0].group = -1;
+    open_note_reader(id);
+}
+
+static void open_root_route(enum crazypod_route route)
+{
+    product_active = true;
+    lv_obj_remove_flag(product_screen, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(product_screen);
+    set_cpu_boost(true);
+    route_depth = 1;
+    route_stack[0].route = route;
+    route_stack[0].selected = 0;
+    route_stack[0].group = -1;
+    render_current_route(true);
+}
+
+static void open_podcasts(void)
+{
+    open_root_route(PODCASTS_ROUTE_MENU);
+    if(!music_library_loaded)
+        begin_music_scan();
+}
+
+static void open_utilities(void)
+{
+    open_root_route(UTILITIES_ROUTE_MENU);
+}
+
+static void open_calendar(void)
+{
+    struct tm *now;
+
+    crazypod_organizer_scan();
+    now = get_time();
+    calendar_focus_year = now->tm_year + 1900;
+    calendar_focus_month = now->tm_mon;
+    calendar_focus_day = now->tm_mday;
+    open_root_route(CALENDAR_ROUTE_MENU);
+}
+
+static void open_contacts(void)
+{
+    crazypod_organizer_scan();
+    open_root_route(CONTACTS_ROUTE_LIST);
+}
+
+static void open_app(enum crazypod_app_id id)
+{
+    switch(id) {
+    case CRAZYPOD_APP_MUSIC:
+        open_music();
+        break;
+    case CRAZYPOD_APP_SHUFFLE:
+        open_music();
+        if(crazypod_music_track_count() > 0) {
+            crazypod_queue_set_shuffle(true);
+            crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0);
+            crazypod_state_forget_resume();
+            crazypod_state_mark_dirty();
+            request_now_playing_route();
+        }
+        break;
+    case CRAZYPOD_APP_LOCK:
+        show_lock_screen(true);
+        break;
+    case CRAZYPOD_APP_PHOTOS:
+        open_photos();
+        break;
+    case CRAZYPOD_APP_CUSTOMIZE:
+        open_diy();
+        break;
+    case CRAZYPOD_APP_WORKOUTS:
+        open_root_route(WORKOUT_ROUTE_MENU);
+        break;
+    case CRAZYPOD_APP_EXTRAS:
+        open_extras();
+        break;
+    case CRAZYPOD_APP_NOTES:
+        open_notes();
+        break;
+    case CRAZYPOD_APP_BOOKS:
+        open_books();
+        break;
+    case CRAZYPOD_APP_PODCASTS:
+        open_podcasts();
+        break;
+    case CRAZYPOD_APP_MINI_APPS:
+        open_utilities();
+        break;
+    case CRAZYPOD_APP_CLOCK:
+        open_root_route(CLOCK_ROUTE_MENU);
+        break;
+    case CRAZYPOD_APP_CONTACTS:
+        open_contacts();
+        break;
+    case CRAZYPOD_APP_CALENDAR:
+        open_calendar();
+        break;
+    case CRAZYPOD_APP_STOPWATCH:
+        open_root_route(STOPWATCH_ROUTE_VIEW);
+        break;
+    case CRAZYPOD_APP_SETTINGS:
+        open_settings();
+        break;
+    default:
+        break;
+    }
+}
+
+static void persist_main_menu_change(enum crazypod_app_id preferred)
+{
+    int next = crazypod_apps_visible_index(preferred);
+
+    if(next < 0)
+        next = selected_app;
+    if(next >= crazypod_apps_visible_count())
+        next = crazypod_apps_visible_count() - 1;
+    if(next < 0)
+        next = 0;
+    selected_app = next;
+    crazypod_state_mark_dirty();
+    crazypod_state_save(true);
+    layout_desktop_carousel(false);
 }
 
 static void close_product(void)
 {
     if(!product_active)
         return;
+    if(crazypod_miniapps_is_open()) {
+        crazypod_miniapp_input_reset(&miniapp_input_queue);
+        crazypod_miniapps_close();
+    }
     dismiss_choice_overlay(false);
     dismiss_now_overlay(false);
     now_playing_open_pending = false;
@@ -8240,6 +14164,8 @@ static void push_route_selected(enum crazypod_route route, int group,
     route_stack[route_depth].selected = selected;
     route_stack[route_depth].group = group;
     ++route_depth;
+    if(is_music_preview_route(route))
+        prefetch_music_preview_artwork(current_route());
     render_current_route(true);
 }
 
@@ -8339,6 +14265,12 @@ static void process_pending_now_playing_open(void)
 
 static void pop_route(void)
 {
+    if(route_depth > 0 &&
+       current_route()->route == MINIAPP_ROUTE_VIEW &&
+       crazypod_miniapps_is_open()) {
+        crazypod_miniapp_input_reset(&miniapp_input_queue);
+        crazypod_miniapps_close();
+    }
     if(route_depth > 1) {
         --route_depth;
         render_current_route(true);
@@ -8447,8 +14379,161 @@ static void editor_backspace(char *buffer)
 {
     size_t length = strlen(buffer);
 
-    if(length > 0)
-        buffer[length - 1] = '\0';
+    if(length == 0)
+        return;
+    --length;
+    while(length > 0 &&
+          ((unsigned char)buffer[length] & 0xc0) == 0x80)
+        --length;
+    buffer[length] = '\0';
+}
+
+static void editor_insert_at(char *buffer, size_t size,
+                             size_t *cursor, const char *text)
+{
+    size_t length = strlen(buffer);
+    size_t insert_length = text != NULL ? strlen(text) : 0;
+
+    if(cursor == NULL || insert_length == 0 || length >= size - 1)
+        return;
+    if(*cursor > length)
+        *cursor = length;
+    if(insert_length > size - length - 1)
+        insert_length = size - length - 1;
+    memmove(buffer + *cursor + insert_length,
+            buffer + *cursor, length - *cursor + 1);
+    memcpy(buffer + *cursor, text, insert_length);
+    *cursor += insert_length;
+}
+
+static void editor_backspace_at(char *buffer, size_t *cursor)
+{
+    size_t start;
+    size_t length;
+
+    if(cursor == NULL || *cursor == 0)
+        return;
+    length = strlen(buffer);
+    if(*cursor > length)
+        *cursor = length;
+    start = *cursor - 1;
+    while(start > 0 &&
+          ((unsigned char)buffer[start] & 0xc0) == 0x80)
+        --start;
+    memmove(buffer + start, buffer + *cursor,
+            length - *cursor + 1);
+    *cursor = start;
+}
+
+static void editor_move_cursor(const char *buffer, size_t *cursor,
+                               int direction)
+{
+    size_t length;
+
+    if(buffer == NULL || cursor == NULL || direction == 0)
+        return;
+    length = strlen(buffer);
+    if(*cursor > length)
+        *cursor = length;
+    if(direction < 0) {
+        if(*cursor == 0)
+            return;
+        --*cursor;
+        while(*cursor > 0 &&
+              ((unsigned char)buffer[*cursor] & 0xc0) == 0x80)
+            --*cursor;
+    }
+    else {
+        if(*cursor >= length)
+            return;
+        ++*cursor;
+        while(*cursor < length &&
+              ((unsigned char)buffer[*cursor] & 0xc0) == 0x80)
+            ++*cursor;
+    }
+}
+
+static void begin_calendar_editor(uint32_t id, int date)
+{
+    const struct crazypod_calendar_event *event =
+        crazypod_calendar_event_find(id);
+
+    calendar_editor_id = event != NULL ? event->id : 0;
+    calendar_editor_date = event != NULL
+        ? event->date : (date > 0 ? date : calendar_today_date());
+    calendar_editor_minutes = event != NULL
+        ? calendar_parse_minutes(event->time) : -1;
+    snprintf(calendar_editor_summary,
+             sizeof(calendar_editor_summary), "%s",
+             event != NULL ? event->summary : "");
+    calendar_editor_cursor = strlen(calendar_editor_summary);
+    calendar_editor_error = 0;
+    push_route(CALENDAR_ROUTE_EDITOR, -1);
+}
+
+static void show_calendar_day(int date)
+{
+    int calendar_root = -1;
+    int i;
+
+    calendar_focus_year = date / 10000;
+    calendar_focus_month = date / 100 % 100 - 1;
+    calendar_focus_day = date % 100;
+    for(i = route_depth - 1; i >= 0; --i) {
+        if(route_stack[i].route == CALENDAR_ROUTE_MENU) {
+            calendar_root = i;
+            break;
+        }
+    }
+    if(calendar_root < 0) {
+        calendar_root = 0;
+        route_stack[0].route = CALENDAR_ROUTE_MENU;
+        route_stack[0].selected = 0;
+        route_stack[0].group = -1;
+    }
+    route_depth = calendar_root + 2;
+    route_stack[calendar_root + 1].route =
+        CALENDAR_ROUTE_DAY_EVENTS;
+    route_stack[calendar_root + 1].selected = 0;
+    route_stack[calendar_root + 1].group = -1;
+}
+
+static bool commit_calendar_editor(void)
+{
+    char time[16];
+    uint32_t id;
+
+    if(calendar_editor_summary[0] == '\0') {
+        calendar_editor_error = 1;
+        render_current_route(false);
+        return false;
+    }
+    calendar_format_time(time, sizeof(time),
+                         calendar_editor_minutes);
+    if(calendar_editor_id != 0) {
+        if(!crazypod_calendar_event_update(
+               calendar_editor_id, calendar_editor_date,
+               time, calendar_editor_summary)) {
+            calendar_editor_error = 2;
+            render_current_route(false);
+            return false;
+        }
+        id = calendar_editor_id;
+    }
+    else {
+        id = crazypod_calendar_event_add(
+            calendar_editor_date, time,
+            calendar_editor_summary);
+        if(id == 0) {
+            calendar_editor_error = 2;
+            render_current_route(false);
+            return false;
+        }
+    }
+    calendar_editor_id = id;
+    show_calendar_day(calendar_editor_date);
+    render_current_route(true);
+    return true;
 }
 
 static void activate_selected(void)
@@ -8513,10 +14598,20 @@ static void activate_selected(void)
         show_now_actions_popup();
         break;
     case PHOTOS_ROUTE_MENU:
-        push_route(
-            state->selected == 0
-                ? PHOTOS_ROUTE_LIBRARY : PHOTOS_ROUTE_FAVORITES,
-            -1);
+        if(state->selected == 0)
+            push_route(PHOTOS_ROUTE_LIBRARY, -1);
+        else if(state->selected == 1)
+            push_route(PHOTOS_ROUTE_VIDEOS, -1);
+        else
+            push_route(PHOTOS_ROUTE_FAVORITES, -1);
+        break;
+    case PHOTOS_ROUTE_VIDEOS:
+        if(state->selected >= 0 &&
+           state->selected < crazypod_video_count()) {
+            (void)crazypod_video_play(state->selected);
+            video_generation_seen = crazypod_video_generation();
+            render_current_route(false);
+        }
         break;
     case PHOTOS_ROUTE_LIBRARY:
     case PHOTOS_ROUTE_FAVORITES: {
@@ -8539,6 +14634,445 @@ static void activate_selected(void)
         photo_pan_y = 0;
         render_current_route(false);
         break;
+    case EXTRAS_ROUTE_MENU: {
+        struct crazypod_app *app = hidden_app(state->selected);
+        if(app != NULL)
+            open_app(app->id);
+        break;
+    }
+    case NOTES_ROUTE_MENU:
+        if(state->selected == 0)
+            begin_note_composer(0, false);
+        else if(note_draft_available && state->selected == 1)
+            begin_note_composer(0, true);
+        else if(state->selected == notes_home_search_index()) {
+            note_search_query[0] = '\0';
+            push_route(NOTES_ROUTE_SEARCH, -1);
+        }
+        else if(state->selected == notes_home_deleted_index())
+            push_route(NOTES_ROUTE_DELETED, -1);
+        else {
+            const struct crazypod_note *note =
+                notes_home_note(state->selected);
+            if(note != NULL)
+                open_note_reader(note->id);
+        }
+        break;
+    case NOTES_ROUTE_COMPOSER: {
+        char *target = note_editor_body_active
+            ? note_editor.body : note_editor.title;
+        size_t target_size = note_editor_body_active
+            ? sizeof(note_editor.body) : sizeof(note_editor.title);
+        size_t *cursor = note_editor_body_active
+            ? &note_editor_body_cursor : &note_editor_title_cursor;
+
+        if(state->selected < CRAZYPOD_EDITOR_CHAR_COUNT)
+            editor_insert_at(target, target_size, cursor,
+                             editor_characters[state->selected]);
+        else if(state->selected == CRAZYPOD_EDITOR_CHAR_COUNT)
+            editor_insert_at(target, target_size, cursor, " ");
+        else if(state->selected == CRAZYPOD_EDITOR_CHAR_COUNT + 1)
+            editor_backspace_at(target, cursor);
+        else {
+            commit_note_editor();
+            break;
+        }
+        schedule_note_editor_draft();
+        render_current_route(false);
+        break;
+    }
+    case NOTES_ROUTE_EXIT_ACTIONS:
+        if(state->selected == 0) {
+            commit_note_editor();
+        }
+        else if(state->selected == 1) {
+            save_note_editor_draft();
+            pop_route();
+            if(current_route()->route == NOTES_ROUTE_COMPOSER)
+                pop_route();
+        }
+        else
+            push_route(NOTES_ROUTE_DISCARD_CONFIRM, -1);
+        break;
+    case NOTES_ROUTE_DISCARD_CONFIRM:
+        break;
+    case NOTES_ROUTE_SEARCH:
+        if(state->selected < CRAZYPOD_EDITOR_CHAR_COUNT)
+            editor_append(note_search_query, sizeof(note_search_query),
+                          editor_characters[state->selected]);
+        else if(state->selected == CRAZYPOD_EDITOR_CHAR_COUNT)
+            editor_append(note_search_query, sizeof(note_search_query), " ");
+        else if(state->selected == CRAZYPOD_EDITOR_CHAR_COUNT + 1)
+            editor_backspace(note_search_query);
+        else if(note_search_query[0] != '\0')
+            push_route(NOTES_ROUTE_SEARCH_RESULTS, -1);
+        if(current_route()->route == NOTES_ROUTE_SEARCH)
+            render_current_route(false);
+        break;
+    case NOTES_ROUTE_SEARCH_RESULTS: {
+        const struct crazypod_note *note =
+            crazypod_notes_search_get(
+                note_search_query, state->selected);
+        if(note != NULL)
+            open_note_reader(note->id);
+        break;
+    }
+    case NOTES_ROUTE_READER:
+        push_route(NOTES_ROUTE_ACTIONS, state->group);
+        break;
+    case NOTES_ROUTE_ACTIONS: {
+        uint32_t id = (uint32_t)state->group;
+        const struct crazypod_note *note = crazypod_note_find(id);
+        if(note == NULL) {
+            pop_route();
+            break;
+        }
+        if(state->selected == 0) {
+            crazypod_note_set_pinned(id, !note->pinned);
+            render_current_route(false);
+        }
+        else if(state->selected == 1)
+            begin_note_composer(id, false);
+        else if(state->selected == 2) {
+            uint32_t duplicate = crazypod_note_duplicate(id);
+            if(duplicate != 0) {
+                route_depth = 1;
+                route_stack[0].route = NOTES_ROUTE_MENU;
+                route_stack[0].selected = 0;
+                route_stack[0].group = -1;
+                open_note_reader(duplicate);
+            }
+        }
+        else
+            push_route(NOTES_ROUTE_DELETE_CONFIRM, (int)id);
+        break;
+    }
+    case NOTES_ROUTE_DELETED:
+        if(state->selected == crazypod_notes_count(true))
+            push_route(NOTES_ROUTE_EMPTY_TRASH_CONFIRM, -1);
+        else {
+            const struct crazypod_note *note =
+                crazypod_note_get(true, state->selected);
+            if(note != NULL)
+                push_route(NOTES_ROUTE_DELETED_ACTIONS, (int)note->id);
+        }
+        break;
+    case NOTES_ROUTE_DELETED_ACTIONS:
+        if(state->selected == 0) {
+            crazypod_note_restore((uint32_t)state->group);
+            pop_route();
+        }
+        else
+            push_route(NOTES_ROUTE_PERMANENT_CONFIRM, state->group);
+        break;
+    case NOTES_ROUTE_DELETE_CONFIRM:
+    case NOTES_ROUTE_PERMANENT_CONFIRM:
+    case NOTES_ROUTE_EMPTY_TRASH_CONFIRM:
+        break;
+    case BOOKS_ROUTE_MENU: {
+        int logical = state->selected;
+        if(books_has_continue() && state->selected == 0) {
+            int index = crazypod_books_recent_index();
+            const struct crazypod_book *book =
+                crazypod_book_get(index);
+            if(book != NULL)
+                begin_book_reader(index, book->progress);
+            break;
+        }
+        logical -= books_has_continue() ? 1 : 0;
+        if(logical == 0)
+            push_route(BOOKS_ROUTE_RECENTS, -1);
+        else if(logical == 1)
+            push_route(BOOKS_ROUTE_LIBRARY, -1);
+        else if(logical == 2)
+            push_route(BOOKS_ROUTE_FAVORITES, -1);
+        else if(logical == 3)
+            push_route(BOOKS_ROUTE_STATS, -1);
+        else if(logical == 4)
+            push_route(BOOKS_ROUTE_READING_SETTINGS, -1);
+        break;
+    }
+    case BOOKS_ROUTE_RECENTS:
+    case BOOKS_ROUTE_LIBRARY:
+    case BOOKS_ROUTE_FAVORITES: {
+        int index = books_route_book_index(state, state->selected);
+        if(index >= 0)
+            push_route(BOOKS_ROUTE_ACTIONS, index);
+        break;
+    }
+    case BOOKS_ROUTE_READER:
+        push_route(BOOKS_ROUTE_ACTIONS, state->group);
+        break;
+    case BOOKS_ROUTE_ACTIONS: {
+        const struct crazypod_book *book =
+            crazypod_book_get(state->group);
+        if(book == NULL) {
+            pop_route();
+            break;
+        }
+        if(state->selected == 0)
+            begin_book_reader(state->group, book->progress);
+        else if(state->selected == 1)
+            push_route(BOOKS_ROUTE_BOOKMARKS, state->group);
+        else if(state->selected == 2)
+            push_route(BOOKS_ROUTE_CHAPTERS, state->group);
+        else if(state->selected == 3) {
+            crazypod_book_toggle_favorite(state->group);
+            render_current_route(false);
+        }
+        else if(state->selected == 4)
+            push_route(BOOKS_ROUTE_INFO, state->group);
+        else
+            push_route(BOOKS_ROUTE_DELETE_CONFIRM, state->group);
+        break;
+    }
+    case BOOKS_ROUTE_CHAPTERS: {
+        uint32_t offset;
+        if(crazypod_book_chapter_get(
+               state->group, state->selected, NULL, 0, &offset))
+            begin_book_reader(state->group, offset);
+        break;
+    }
+    case BOOKS_ROUTE_BOOKMARKS: {
+        const struct crazypod_book *book =
+            crazypod_book_get(state->group);
+        if(book != NULL && book->bookmark > 0)
+            begin_book_reader(state->group, book->bookmark);
+        break;
+    }
+    case BOOKS_ROUTE_READING_SETTINGS:
+        if(state->selected == 0)
+            show_choice_overlay(
+                CHOICE_OVERLAY_BOOK_FONT_SIZE, 0,
+                crazypod_books_font_size());
+        else if(state->selected == 1)
+            show_choice_overlay(
+                CHOICE_OVERLAY_BOOK_THEME, 0,
+                crazypod_books_theme());
+        else if(state->selected == 2) {
+            rescan_books_with_progress();
+        }
+        break;
+    case BOOKS_ROUTE_STATS:
+    case BOOKS_ROUTE_INFO:
+    case BOOKS_ROUTE_DELETE_CONFIRM:
+        break;
+    case PODCASTS_ROUTE_MENU: {
+        int track_index = podcast_track_index(state->selected);
+        if(track_index >= 0 &&
+           crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, track_index)) {
+            crazypod_state_forget_resume();
+            crazypod_state_mark_dirty();
+            request_now_playing_route();
+        }
+        break;
+    }
+    case UTILITIES_ROUTE_MENU:
+        miniapp_last_error =
+            crazypod_miniapps_open(state->selected);
+        if(miniapp_last_error == CRAZYPOD_MINIAPP_OK) {
+            int selected = state->selected;
+
+            miniapp_last_service_tick = 0;
+            crazypod_miniapp_input_reset(&miniapp_input_queue);
+            push_route(MINIAPP_ROUTE_VIEW, selected);
+        }
+        else
+            render_current_route(false);
+        break;
+    case MINIAPP_ROUTE_VIEW:
+        break;
+    case CLOCK_ROUTE_MENU:
+        if(state->selected == 0)
+            push_route(CLOCK_ROUTE_VIEW, -1);
+        else if(state->selected == 1)
+            push_route(CLOCK_ROUTE_SLEEP_TIMER, -1);
+        else
+            push_route(STOPWATCH_ROUTE_VIEW, -1);
+        break;
+    case CLOCK_ROUTE_SLEEP_TIMER:
+        if(get_sleep_timer_active()) {
+            if(state->selected == 1 &&
+               (audio_status() & AUDIO_STATUS_PLAY))
+                audio_pause();
+            set_sleeptimer_duration(0);
+        }
+        else {
+            static const int durations[] = { 15, 30, 45, 60 };
+            if(state->selected >= 0 && state->selected < 4) {
+                global_settings.sleeptimer_duration =
+                    durations[state->selected];
+                set_sleeptimer_duration(durations[state->selected]);
+                crazypod_state_mark_dirty();
+            }
+        }
+        state->selected = 0;
+        render_current_route(false);
+        break;
+    case CLOCK_ROUTE_VIEW:
+        break;
+    case STOPWATCH_ROUTE_VIEW:
+        stopwatch_reset_armed_until = 0;
+        if(stopwatch_running) {
+            stopwatch_accumulated_ticks +=
+                current_tick - stopwatch_started_at;
+            stopwatch_running = false;
+        }
+        else {
+            stopwatch_started_at = current_tick;
+            stopwatch_running = true;
+        }
+        stopwatch_last_render_tick = current_tick;
+        render_current_route(false);
+        break;
+    case WORKOUT_ROUTE_MENU:
+        if(state->selected == 0)
+            push_route(WORKOUT_ROUTE_TYPES, -1);
+        else if(state->selected == 1)
+            push_route(WORKOUT_ROUTE_HISTORY, -1);
+        else
+            push_route(WORKOUT_ROUTE_SUMMARY, -1);
+        break;
+    case WORKOUT_ROUTE_TYPES:
+        workout_activity = state->selected;
+        workout_running = false;
+        workout_accumulated_ticks = 0;
+        push_route(WORKOUT_ROUTE_READY, -1);
+        break;
+    case WORKOUT_ROUTE_READY:
+        workout_accumulated_ticks = 0;
+        workout_started_at = current_tick;
+        workout_last_render_tick = current_tick;
+        workout_running = true;
+        push_route(WORKOUT_ROUTE_ACTIVE, -1);
+        break;
+    case WORKOUT_ROUTE_ACTIVE:
+        if(workout_running) {
+            workout_accumulated_ticks +=
+                current_tick - workout_started_at;
+            workout_running = false;
+        }
+        else {
+            workout_started_at = current_tick;
+            workout_running = true;
+        }
+        render_current_route(false);
+        break;
+    case WORKOUT_ROUTE_HISTORY:
+        if(crazypod_workout_get(state->selected) != NULL)
+            push_route(WORKOUT_ROUTE_DETAIL, state->selected);
+        break;
+    case WORKOUT_ROUTE_DETAIL: {
+        const struct crazypod_workout *workout =
+            crazypod_workout_get(state->group);
+        if(workout != NULL)
+            push_route(WORKOUT_ROUTE_DELETE_CONFIRM,
+                       (int)workout->id);
+        break;
+    }
+    case WORKOUT_ROUTE_FINISH_CONFIRM:
+    case WORKOUT_ROUTE_SUMMARY:
+    case WORKOUT_ROUTE_DELETE_CONFIRM:
+        break;
+    case CALENDAR_ROUTE_MENU:
+        if(state->selected == 0) {
+            int today = calendar_today_date();
+            calendar_focus_year = today / 10000;
+            calendar_focus_month = today / 100 % 100 - 1;
+            calendar_focus_day = today % 100;
+            push_route(CALENDAR_ROUTE_TODAY, -1);
+        }
+        else if(state->selected == 1)
+            push_route(CALENDAR_ROUTE_UPCOMING, -1);
+        else if(state->selected == 2)
+            push_route(CALENDAR_ROUTE_MONTH, -1);
+        else
+            begin_calendar_editor(0, calendar_today_date());
+        break;
+    case CALENDAR_ROUTE_TODAY:
+    case CALENDAR_ROUTE_UPCOMING:
+    case CALENDAR_ROUTE_DAY_EVENTS: {
+        int event_count = calendar_route_event_count(state);
+        int event_index;
+        if(state->selected == event_count) {
+            int date = state->route == CALENDAR_ROUTE_DAY_EVENTS
+                ? calendar_focus_date() : calendar_today_date();
+            begin_calendar_editor(0, date);
+            break;
+        }
+        event_index = calendar_route_event_index(
+            state, state->selected);
+        if(event_index >= 0)
+            push_route(CALENDAR_ROUTE_DETAIL, event_index);
+        break;
+    }
+    case CALENDAR_ROUTE_MONTH:
+        push_route(CALENDAR_ROUTE_DAY_EVENTS, -1);
+        break;
+    case CALENDAR_ROUTE_EDITOR:
+        if(state->selected == 0)
+            push_route(CALENDAR_ROUTE_TITLE_EDITOR, -1);
+        else if(state->selected == 1) {
+            calendar_editor_error = 0;
+            calendar_editor_date =
+                calendar_shifted_date(calendar_editor_date, 1);
+            render_current_route(false);
+        }
+        else if(state->selected == 2) {
+            calendar_editor_error = 0;
+            calendar_editor_minutes =
+                calendar_editor_minutes < 0
+                    ? 9 * 60
+                    : (calendar_editor_minutes + 30) % (24 * 60);
+            render_current_route(false);
+        }
+        else
+            commit_calendar_editor();
+        break;
+    case CALENDAR_ROUTE_TITLE_EDITOR:
+        calendar_editor_error = 0;
+        if(state->selected < CRAZYPOD_EDITOR_CHAR_COUNT)
+            editor_insert_at(
+                calendar_editor_summary,
+                sizeof(calendar_editor_summary),
+                &calendar_editor_cursor,
+                editor_characters[state->selected]);
+        else if(state->selected == CRAZYPOD_EDITOR_CHAR_COUNT)
+            editor_insert_at(
+                calendar_editor_summary,
+                sizeof(calendar_editor_summary),
+                &calendar_editor_cursor, " ");
+        else if(state->selected == CRAZYPOD_EDITOR_CHAR_COUNT + 1)
+            editor_backspace_at(
+                calendar_editor_summary,
+                &calendar_editor_cursor);
+        else {
+            pop_route();
+            break;
+        }
+        render_current_route(false);
+        break;
+    case CALENDAR_ROUTE_DETAIL: {
+        const struct crazypod_calendar_event *event =
+            crazypod_calendar_event_get(state->group);
+        if(event != NULL && event->editable)
+            push_route(CALENDAR_ROUTE_ACTIONS, (int)event->id);
+        break;
+    }
+    case CALENDAR_ROUTE_ACTIONS:
+        if(state->selected == 0)
+            begin_calendar_editor((uint32_t)state->group, 0);
+        else
+            push_route(CALENDAR_ROUTE_DELETE_CONFIRM, state->group);
+        break;
+    case CALENDAR_ROUTE_DELETE_CONFIRM:
+        break;
+    case CONTACTS_ROUTE_LIST:
+        if(crazypod_contact_get(state->selected) != NULL)
+            push_route(CONTACTS_ROUTE_DETAIL, state->selected);
+        break;
+    case CONTACTS_ROUTE_DETAIL:
+        break;
     case SETTINGS_ROUTE_MENU:
         switch(state->selected) {
         case 0: push_route(SETTINGS_ROUTE_SOUND, -1); break;
@@ -8546,8 +15080,45 @@ static void activate_selected(void)
         case 2: push_route(SETTINGS_ROUTE_PLAYBACK, -1); break;
         case 3: push_route(SETTINGS_ROUTE_POWER, -1); break;
         case 4: push_route(SETTINGS_ROUTE_CONTROLS, -1); break;
+        case 5: push_route(SETTINGS_ROUTE_MAIN_MENU, -1); break;
         }
         break;
+    case SETTINGS_ROUTE_MAIN_MENU: {
+        struct crazypod_app *app = ordered_app(state->selected);
+        if(app != NULL)
+            push_route(SETTINGS_ROUTE_MAIN_MENU_ACTIONS, app->id);
+        break;
+    }
+    case SETTINGS_ROUTE_MAIN_MENU_ACTIONS: {
+        enum crazypod_app_id id =
+            (enum crazypod_app_id)state->group;
+        enum crazypod_app_id preferred =
+            crazypod_apps_visible_id(selected_app);
+        int action = state->selected +
+            (crazypod_apps_is_fixed(id) ? 1 : 0);
+        bool changed = false;
+
+        if(action == 0) {
+            changed = crazypod_apps_set_enabled(
+                id, !crazypod_apps_is_enabled(id));
+        }
+        else if(action == 1) {
+            changed = crazypod_apps_move(id, -1);
+        }
+        else if(action == 2) {
+            changed = crazypod_apps_move(id, 1);
+        }
+        if(changed) {
+            struct route_state *parent = route_depth > 1
+                ? &route_stack[route_depth - 2] : NULL;
+            if(parent != NULL &&
+               parent->route == SETTINGS_ROUTE_MAIN_MENU)
+                parent->selected = crazypod_apps_order_index(id);
+            persist_main_menu_change(preferred);
+        }
+        render_current_route(false);
+        break;
+    }
     case SETTINGS_ROUTE_SOUND:
     case SETTINGS_ROUTE_DISPLAY:
     case SETTINGS_ROUTE_PLAYBACK:
@@ -8853,13 +15424,15 @@ static void move_selection(int direction)
     if(next == state->selected)
         return;
     state->selected = next;
+    if(is_music_preview_route(state->route))
+        prefetch_music_preview_artwork(state);
+    if(is_skeuomorphic_preview_route(state->route))
+        menu_preview_navigation_direction = direction < 0 ? -1 : 1;
     if(state->route == MUSIC_ROUTE_SEARCH) {
         refresh_menu_rows(state);
         return;
     }
     if(menu_view.valid && menu_view.route == state->route) {
-        if(is_music_preview_route(state->route))
-            settle_menu_preview_motion();
         refresh_menu_rows(state);
         menu_preview_due = current_tick +
             (is_music_preview_route(state->route)
@@ -9003,8 +15576,6 @@ static void update_playback_ui(lv_timer_t *timer)
             return;
         }
         if(!crazypod_artwork_library_priming()) {
-            if(!crazypod_coverflow_warm(initial_album_index()))
-                return;
             music_artwork_preparing = false;
             music_library_loaded =
                 crazypod_music_track_count() > 0;
@@ -9098,6 +15669,22 @@ static void update_playback_ui(lv_timer_t *timer)
     }
 }
 
+static unsigned menu_preview_artwork_signature(void)
+{
+    unsigned signature = 2166136261u;
+    int slot;
+
+    for(slot = 0; slot < 7; ++slot) {
+        signature ^= crazypod_artwork_slot_generation(slot);
+        signature *= 16777619u;
+    }
+    signature ^=
+        crazypod_artwork_slot_generation(
+            CRAZYPOD_PREVIEW_ARTWORK_SLOT);
+    signature *= 16777619u;
+    return signature;
+}
+
 static void process_artwork_updates(void)
 {
     unsigned generation = crazypod_artwork_slot_generation(
@@ -9107,8 +15694,9 @@ static void process_artwork_updates(void)
         capsule_artwork_generation_seen = generation;
         update_desktop_capsule_artwork(current_track());
     }
-    if(!product_active || route_depth <= 0 || route_render_pending ||
-       menu_preview_pending ||
+    if(!product_active || route_depth <= 0 || music_scan_screen ||
+       route_render_pending ||
+       menu_preview_pending || menu_preview_media_refresh_pending ||
        crazypod_coverflow_active() ||
        current_route()->route >= DIY_ROUTE_MENU)
         return;
@@ -9130,6 +15718,17 @@ static void process_artwork_updates(void)
         now_artwork_generation_seen = generation;
         now_prefetch_artwork_generation_seen =
             prefetch_generation;
+    }
+    else if(current_route()->route == MUSIC_ROUTE_MENU) {
+        unsigned signature =
+            menu_preview_artwork_signature();
+        if(signature == menu_preview_artwork_generation_seen)
+            return;
+        if(menu_preview_motion_active())
+            return;
+        menu_preview_artwork_generation_seen = signature;
+        render_menu_preview(current_route(), false);
+        return;
     }
     else {
         generation = crazypod_artwork_slot_generation(
@@ -9157,7 +15756,8 @@ static void process_photo_updates(void)
     unsigned generation;
 
     if(!product_active || route_depth <= 0 ||
-       route_render_pending || menu_preview_pending)
+       route_render_pending || menu_preview_pending ||
+       menu_preview_media_refresh_pending)
         return;
     route = current_route()->route;
     if(route == PHOTOS_ROUTE_DETAIL ||
@@ -9172,12 +15772,41 @@ static void process_photo_updates(void)
     generation = crazypod_photo_generation();
     if(generation == photo_generation_seen)
         return;
+    if(route == PHOTOS_ROUTE_MENU) {
+        if(menu_preview_motion_active())
+            return;
+        photo_generation_seen = generation;
+        render_menu_preview(current_route(), false);
+        return;
+    }
     photo_generation_seen = generation;
-    if(route == PHOTOS_ROUTE_MENU ||
-       route == PHOTOS_ROUTE_LIBRARY ||
+    if(route == PHOTOS_ROUTE_LIBRARY ||
        route == PHOTOS_ROUTE_FAVORITES ||
        route == DIY_ROUTE_WALLPAPER_FILES)
         render_current_route(false);
+}
+
+static void process_video_updates(void)
+{
+    enum crazypod_route route;
+    unsigned generation;
+
+    if(!product_active || route_depth <= 0 ||
+       route_render_pending || menu_preview_pending ||
+       menu_preview_media_refresh_pending)
+        return;
+    route = current_route()->route;
+    generation = crazypod_video_generation();
+    if(generation == video_generation_seen)
+        return;
+    if((route == PHOTOS_ROUTE_MENU ||
+        route == PHOTOS_ROUTE_VIDEOS) &&
+       menu_preview_motion_active())
+        return;
+    video_generation_seen = generation;
+    if(route == PHOTOS_ROUTE_MENU ||
+       route == PHOTOS_ROUTE_VIDEOS)
+        render_menu_preview(current_route(), false);
 }
 
 static void update_persistent_state(lv_timer_t *timer)
@@ -9200,6 +15829,208 @@ static int wheel_step(intptr_t data, int maximum)
     if(step > maximum)
         step = maximum;
     return step;
+}
+
+static void clear_power_prompt_objects(void)
+{
+    memset(&power_prompt_view, 0, sizeof(power_prompt_view));
+}
+
+static void refresh_power_prompt(void)
+{
+    int index;
+
+    if(!power_prompt_visible())
+        return;
+
+    for(index = 0; index < 2; ++index) {
+        bool selected = index == power_prompt_view.selected;
+
+        lv_obj_set_style_bg_color(
+            power_prompt_view.rows[index],
+            lv_color_hex(selected ? COLOR_WHITE : COLOR_PANEL), 0);
+        lv_obj_set_style_bg_opa(
+            power_prompt_view.rows[index],
+            selected ? 34 : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(
+            power_prompt_view.rows[index], selected ? 1 : 0, 0);
+        lv_obj_set_style_border_color(
+            power_prompt_view.rows[index], lv_color_hex(COLOR_WHITE), 0);
+        lv_obj_set_style_border_opa(
+            power_prompt_view.rows[index], selected ? 72 : 0, 0);
+        lv_label_set_text(
+            power_prompt_view.markers[index],
+            selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET);
+        lv_obj_set_style_text_opa(
+            power_prompt_view.markers[index], selected ? 210 : 90, 0);
+        lv_obj_set_style_text_opa(
+            power_prompt_view.hints[index], selected ? 190 : 120, 0);
+    }
+}
+
+static void dismiss_power_prompt(void)
+{
+    if(power_prompt_visible()) {
+        lv_anim_delete(power_prompt_view.panel, NULL);
+        lv_obj_delete(power_prompt_view.root);
+    }
+    clear_power_prompt_objects();
+    desktop_native_backdrop_ready = false;
+    desktop_native_dirty = true;
+}
+
+static void show_power_prompt(void)
+{
+    static const char *const titles[] = { "Shut Down", "Restart" };
+    static const char *const hints[] = {
+        "Turn CrazyPod off",
+        "Restart CrazyPod"
+    };
+    static const char *const symbols[] = {
+        LV_SYMBOL_POWER,
+        LV_SYMBOL_REFRESH
+    };
+    lv_obj_t *title;
+    lv_obj_t *detail;
+    int index;
+
+    if(desktop_screen == NULL || power_prompt_visible())
+        return;
+
+    if(choice_overlay.kind != CHOICE_OVERLAY_NONE)
+        dismiss_choice_overlay(false);
+    if(now_overlay != NOW_OVERLAY_NONE)
+        dismiss_now_overlay(false);
+
+    menu_preview_pending = false;
+    menu_preview_media_refresh_pending = false;
+    if(menu_preview_motion_active())
+        settle_menu_preview_motion();
+
+    backlight_on();
+    prepare_now_overlay_glass(false);
+    power_prompt_view.selected = 0;
+    power_prompt_view.root = make_box(
+        desktop_screen, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0,
+        0x000000, 86);
+    lv_obj_remove_flag(
+        power_prompt_view.root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_move_foreground(power_prompt_view.root);
+    desktop_native_backdrop_ready = false;
+    power_prompt_view.panel = make_glass_panel(
+        power_prompt_view.root, 35, 55, 250, 132);
+
+    title = make_label(power_prompt_view.panel, "POWER",
+                       &lv_font_montserrat_10, COLOR_WHITE, 110);
+    lv_obj_set_width(title, 250);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(title, 0, 14);
+
+    detail = make_label(power_prompt_view.panel, "Choose Action",
+                        &lv_font_montserrat_12, COLOR_WHITE, 235);
+    lv_obj_set_width(detail, 250);
+    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(detail, 0, 29);
+
+    for(index = 0; index < 2; ++index) {
+        lv_obj_t *symbol;
+        lv_obj_t *label;
+        int y = 53 + index * 35;
+
+        power_prompt_view.rows[index] = make_box(
+            power_prompt_view.panel, 16, y, 218, 30, 9,
+            COLOR_WHITE, LV_OPA_TRANSP);
+        symbol = make_label(
+            power_prompt_view.rows[index], symbols[index],
+            &lv_font_montserrat_12, COLOR_WHITE, 220);
+        lv_obj_set_pos(symbol, 13, 7);
+        label = make_label(
+            power_prompt_view.rows[index], titles[index],
+            &lv_font_montserrat_10, COLOR_WHITE, 235);
+        lv_obj_set_pos(label, 39, 4);
+        lv_obj_set_size(label, 86, 14);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+        power_prompt_view.hints[index] = make_label(
+            power_prompt_view.rows[index], hints[index],
+            &lv_font_montserrat_8, COLOR_WHITE, 130);
+        lv_obj_set_pos(power_prompt_view.hints[index], 39, 17);
+        lv_obj_set_size(power_prompt_view.hints[index], 142, 11);
+        lv_label_set_long_mode(
+            power_prompt_view.hints[index],
+            LV_LABEL_LONG_MODE_DOTS);
+        power_prompt_view.markers[index] = make_label(
+            power_prompt_view.rows[index], LV_SYMBOL_BULLET,
+            &lv_font_montserrat_8, COLOR_WHITE, 90);
+        lv_obj_set_width(power_prompt_view.markers[index], 24);
+        lv_obj_set_style_text_align(
+            power_prompt_view.markers[index],
+            LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(power_prompt_view.markers[index], 184, 11);
+    }
+
+    refresh_power_prompt();
+    animate_now_popup(power_prompt_view.panel, 55);
+}
+
+static void execute_power_action(enum shutdown_type type)
+{
+    if(crazypod_miniapps_is_open()) {
+        crazypod_miniapp_input_reset(&miniapp_input_queue);
+        crazypod_miniapps_close();
+    }
+    crazypod_state_save(true);
+    shutdown_hw(type);
+}
+
+static void finish_power_prompt(void)
+{
+    enum shutdown_type type;
+
+    if(!power_prompt_visible())
+        return;
+    type = power_prompt_view.selected == 0
+        ? SHUTDOWN_POWER_OFF : SHUTDOWN_REBOOT;
+    dismiss_power_prompt();
+    execute_power_action(type);
+}
+
+static void move_power_prompt(int direction)
+{
+    int next;
+
+    if(!power_prompt_visible())
+        return;
+    next = power_prompt_view.selected + (direction > 0 ? 1 : -1);
+    if(next < 0)
+        next = 0;
+    if(next > 1)
+        next = 1;
+    if(next == power_prompt_view.selected)
+        return;
+    power_prompt_view.selected = next;
+    refresh_power_prompt();
+}
+
+static bool handle_power_prompt_button(long base, bool repeated,
+                                       intptr_t data)
+{
+    (void)data;
+
+    if(!power_prompt_visible())
+        return false;
+    if(base == BUTTON_SCROLL_FWD)
+        move_power_prompt(1);
+    else if(base == BUTTON_SCROLL_BACK)
+        move_power_prompt(-1);
+    else if(base == BUTTON_RIGHT)
+        move_power_prompt(1);
+    else if(base == BUTTON_LEFT)
+        move_power_prompt(-1);
+    else if(base == BUTTON_SELECT && !repeated)
+        finish_power_prompt();
+    else if(base == BUTTON_MENU && !repeated)
+        dismiss_power_prompt();
+    return true;
 }
 
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
@@ -9284,12 +16115,22 @@ static void show_usb_prompt(unsigned request)
     }
 
     dismiss_usb_prompt();
+    dismiss_power_prompt();
     if(choice_overlay.kind != CHOICE_OVERLAY_NONE)
         dismiss_choice_overlay(false);
     if(now_overlay != NOW_OVERLAY_NONE)
         dismiss_now_overlay(false);
 
-    prepare_now_overlay_glass();
+    /*
+     * The USB prompt owns the UI until the USB thread receives a response.
+     * Do not leave a hidden menu-preview transition running behind it.
+     */
+    menu_preview_pending = false;
+    menu_preview_media_refresh_pending = false;
+    if(menu_preview_motion_active())
+        settle_menu_preview_motion();
+
+    prepare_now_overlay_glass(true);
     usb_prompt_view.request = request;
     usb_prompt_view.selected = 0;
     usb_prompt_view.root = make_box(desktop_screen, 0, 0,
@@ -9386,12 +16227,14 @@ static void move_usb_prompt(int direction)
 static bool handle_usb_prompt_button(long base, bool repeated,
                                      intptr_t data)
 {
+    (void)data;
+
     if(usb_prompt_view.root == NULL)
         return false;
     if(base == BUTTON_SCROLL_FWD)
-        move_usb_prompt(wheel_step(data, 12));
+        move_usb_prompt(1);
     else if(base == BUTTON_SCROLL_BACK)
-        move_usb_prompt(-wheel_step(data, 12));
+        move_usb_prompt(-1);
     else if(base == BUTTON_RIGHT)
         move_usb_prompt(1);
     else if(base == BUTTON_LEFT)
@@ -9913,7 +16756,7 @@ static void play_wheel_feedback(long button)
     if(button == BUTTON_NONE || (button & (SYS_EVENT | BUTTON_REL)) != 0)
         return;
 
-    base = button & ~(BUTTON_REL | BUTTON_REPEAT);
+    base = main_button_base(button);
     if(base != BUTTON_SCROLL_FWD && base != BUTTON_SCROLL_BACK)
         return;
     if((button & BUTTON_REPEAT) != 0 &&
@@ -9926,6 +16769,125 @@ static void play_wheel_feedback(long button)
 #endif
     if(global_settings.keyclick)
         system_sound_play(SOUND_KEYCLICK);
+}
+
+static bool handle_miniapp_button(long button, intptr_t data)
+{
+    struct cp_input_event event;
+    long base;
+    bool repeated;
+    bool handled;
+    bool ui_refresh;
+
+    if(!product_active || route_depth <= 0 ||
+       current_route()->route != MINIAPP_ROUTE_VIEW)
+        return false;
+    if(button & BUTTON_REL)
+        return true;
+
+    repeated = (button & BUTTON_REPEAT) != 0;
+    base = main_button_base(button);
+    memset(&event, 0, sizeof(event));
+    event.struct_size = sizeof(event);
+    event.steps = 1;
+    event.repeated = repeated ? 1 : 0;
+
+    if(base == BUTTON_SCROLL_FWD) {
+        event.type = CP_INPUT_WHEEL_CLOCKWISE;
+        event.steps = (uint8_t)wheel_step(data, 4);
+    }
+    else if(base == BUTTON_SCROLL_BACK) {
+        event.type = CP_INPUT_WHEEL_COUNTERCLOCKWISE;
+        event.steps = (uint8_t)wheel_step(data, 4);
+    }
+    else if(base == BUTTON_LEFT)
+        event.type = CP_INPUT_LEFT;
+    else if(base == BUTTON_RIGHT)
+        event.type = CP_INPUT_RIGHT;
+    else if(base == BUTTON_SELECT)
+        event.type = CP_INPUT_SELECT;
+    else if(base == BUTTON_PLAY)
+        event.type = CP_INPUT_PLAY;
+    else if(base == BUTTON_MENU)
+        event.type = CP_INPUT_MENU;
+    else
+        return true;
+
+    backlight_on();
+    if((base == BUTTON_MENU || base == BUTTON_PLAY ||
+        base == BUTTON_SELECT) && repeated)
+        return true;
+    if(event.type == CP_INPUT_WHEEL_CLOCKWISE ||
+       event.type == CP_INPUT_WHEEL_COUNTERCLOCKWISE) {
+        (void)crazypod_miniapp_input_push_wheel(
+            &miniapp_input_queue, &event);
+        keep_cpu_boosted(HZ / 10);
+        return true;
+    }
+
+    /*
+     * A button action must apply to the focus that is already visible.
+     * Discard wheel intent that has not reached a presented frame yet.
+     */
+    crazypod_miniapp_input_reset(&miniapp_input_queue);
+    handled = crazypod_miniapps_event(&event);
+    if(crazypod_miniapps_take_close_request()) {
+        pop_route();
+        return true;
+    }
+    if(base == BUTTON_MENU && !handled) {
+        pop_route();
+        return true;
+    }
+    ui_refresh = crazypod_miniapps_take_ui_refresh();
+    if(handled || ui_refresh) {
+        if(ui_refresh)
+            crazypod_miniapp_input_reset(&miniapp_input_queue);
+        miniapp_render_pending = true;
+        keep_cpu_boosted(HZ / 10);
+    }
+    return true;
+}
+
+static bool handle_power_play_hold(long button)
+{
+    long base;
+    bool repeated;
+
+    if((button & SYS_EVENT) != 0)
+        return false;
+
+    base = main_button_base(button);
+    if(base != BUTTON_PLAY)
+        return false;
+
+    if((button & BUTTON_REL) != 0) {
+        power_play_holding = false;
+        return false;
+    }
+
+    repeated = (button & BUTTON_REPEAT) != 0;
+    if(!repeated) {
+        power_play_holding = true;
+        power_play_hold_start = current_tick;
+        return false;
+    }
+
+    /* Repeats belong to the hold gesture, never to the short-press action. */
+    if(!power_play_holding) {
+        power_play_holding = true;
+        power_play_hold_start = current_tick;
+        return true;
+    }
+    if(TIME_BEFORE(current_tick,
+                   power_play_hold_start + CRAZYPOD_POWER_HOLD_TICKS))
+        return true;
+
+    power_play_holding = false;
+    wallpaper_crop_play_holding = false;
+    wallpaper_crop_play_armed = false;
+    show_power_prompt();
+    return true;
 }
 
 static void handle_button(long button, intptr_t data)
@@ -9948,12 +16910,15 @@ static void handle_button(long button, intptr_t data)
         else
 #endif
         if(button == SYS_USB_CONNECTED) {
+            if(crazypod_miniapps_is_open())
+                close_product();
             usb_storage_active = true;
             music_scan_pending = true;
             music_scan_not_before = current_tick + HZ / 2;
             music_library_loaded = false;
             crazypod_artwork_suspend();
             crazypod_photos_suspend();
+            crazypod_videos_suspend();
             crazypod_music_cancel_scan();
             crazypod_state_save(true);
             usb_acknowledge(SYS_USB_CONNECTED_ACK, data);
@@ -9962,42 +16927,63 @@ static void handle_button(long button, intptr_t data)
             usb_storage_active = false;
             crazypod_artwork_resume();
             crazypod_photos_resume();
+            crazypod_videos_refresh();
+            miniapp_last_error = crazypod_miniapps_rescan();
             music_scan_pending = true;
             music_scan_not_before = current_tick + HZ / 2;
             music_library_loaded = false;
         }
         else if(button == SYS_POWEROFF) {
-            crazypod_state_save(true);
-            shutdown_hw(SHUTDOWN_POWER_OFF);
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+            if(usb_prompt_view.root != NULL)
+                finish_usb_prompt(USB_MODE_CHARGE);
+#endif
+            dismiss_power_prompt();
+            execute_power_action(SHUTDOWN_POWER_OFF);
         }
         else if(button == SYS_REBOOT) {
-            crazypod_state_save(true);
-            shutdown_hw(SHUTDOWN_REBOOT);
+            dismiss_power_prompt();
+            execute_power_action(SHUTDOWN_REBOOT);
         }
         return;
     }
 
-    if(handle_lock_button(button))
-        return;
-
-    play_wheel_feedback(button);
-
-#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
-    if(usb_prompt_view.root != NULL) {
+    if(power_prompt_visible()) {
+        play_wheel_feedback(button);
         if(button & BUTTON_REL)
             return;
         repeated = (button & BUTTON_REPEAT) != 0;
-        base = button & ~BUTTON_REPEAT;
+        base = main_button_base(button);
+        backlight_on();
+        handle_power_prompt_button(base, repeated, data);
+        return;
+    }
+
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+    if(usb_prompt_view.root != NULL) {
+        play_wheel_feedback(button);
+        if(button & BUTTON_REL)
+            return;
+        repeated = (button & BUTTON_REPEAT) != 0;
+        base = main_button_base(button);
         backlight_on();
         handle_usb_prompt_button(base, repeated, data);
         return;
     }
 #endif
 
+    if(handle_power_play_hold(button))
+        return;
+
+    if(handle_lock_button(button, data))
+        return;
+
+    play_wheel_feedback(button);
+
     if(product_active && route_depth > 0 &&
        current_route()->route == DIY_ROUTE_WALLPAPER_CROP) {
         long crop_base =
-            button & ~(BUTTON_REL | BUTTON_REPEAT);
+            main_button_base(button);
         bool crop_release = (button & BUTTON_REL) != 0;
         bool crop_repeat = (button & BUTTON_REPEAT) != 0;
 
@@ -10082,7 +17068,7 @@ static void handle_button(long button, intptr_t data)
         current_route()->route == PHOTOS_ROUTE_FAVORITES ||
         current_route()->route == PHOTOS_ROUTE_DETAIL)) {
         struct route_state *photo_state = current_route();
-        long photo_base = button & ~(BUTTON_REL | BUTTON_REPEAT);
+        long photo_base = main_button_base(button);
         bool photo_detail =
             photo_state->route == PHOTOS_ROUTE_DETAIL;
         bool photo_release = (button & BUTTON_REL) != 0;
@@ -10174,10 +17160,13 @@ static void handle_button(long button, intptr_t data)
         }
     }
 
+    if(handle_miniapp_button(button, data))
+        return;
+
     if(button & BUTTON_REL)
         return;
     repeated = (button & BUTTON_REPEAT) != 0;
-    base = button & ~BUTTON_REPEAT;
+    base = main_button_base(button);
     backlight_on();
 
     if(product_active && route_depth > 0 && music_scan_screen) {
@@ -10186,14 +17175,127 @@ static void handle_button(long button, intptr_t data)
         return;
     }
 
+    if(product_active && route_depth > 0 &&
+       base == BUTTON_SELECT && repeated) {
+        struct route_state *state = current_route();
+
+        if(state->route == NOTES_ROUTE_DELETE_CONFIRM) {
+            crazypod_note_move_to_trash((uint32_t)state->group);
+            route_depth = 1;
+            route_stack[0].route = NOTES_ROUTE_MENU;
+            route_stack[0].selected = 0;
+            route_stack[0].group = -1;
+            render_current_route(true);
+            return;
+        }
+        if(state->route == NOTES_ROUTE_PERMANENT_CONFIRM) {
+            crazypod_note_delete_forever((uint32_t)state->group);
+            route_depth = 2;
+            route_stack[1].route = NOTES_ROUTE_DELETED;
+            route_stack[1].selected = 0;
+            route_stack[1].group = -1;
+            render_current_route(true);
+            return;
+        }
+        if(state->route == NOTES_ROUTE_EMPTY_TRASH_CONFIRM) {
+            crazypod_notes_empty_trash();
+            route_depth = 2;
+            route_stack[1].route = NOTES_ROUTE_DELETED;
+            route_stack[1].selected = 0;
+            route_stack[1].group = -1;
+            render_current_route(true);
+            return;
+        }
+        if(state->route == NOTES_ROUTE_DISCARD_CONFIRM) {
+            crazypod_note_draft_clear();
+            note_draft_available = false;
+            note_draft_save_pending = false;
+            memset(&note_editor, 0, sizeof(note_editor));
+            route_depth -= 3;
+            if(route_depth < 1)
+                route_depth = 1;
+            render_current_route(true);
+            return;
+        }
+        if(state->route == BOOKS_ROUTE_DELETE_CONFIRM) {
+            if(crazypod_book_delete(state->group)) {
+                books_metadata_ready = false;
+                selected_book_index = -1;
+                book_page_text[0] = '\0';
+                open_books();
+            }
+            else
+                render_current_route(false);
+            return;
+        }
+        if(state->route == CALENDAR_ROUTE_DELETE_CONFIRM) {
+            const struct crazypod_calendar_event *event =
+                crazypod_calendar_event_find(
+                    (uint32_t)state->group);
+            int date = event != NULL
+                ? event->date : calendar_today_date();
+            if(crazypod_calendar_event_delete(
+                   (uint32_t)state->group)) {
+                show_calendar_day(date);
+                render_current_route(true);
+            }
+            else
+                render_current_route(false);
+            return;
+        }
+        if(state->route == WORKOUT_ROUTE_FINISH_CONFIRM) {
+            struct tm *now = get_time();
+            uint32_t seconds;
+            int date;
+
+            if(workout_running) {
+                workout_accumulated_ticks +=
+                    current_tick - workout_started_at;
+                workout_running = false;
+            }
+            seconds = (uint32_t)(
+                workout_accumulated_ticks / HZ);
+            if(seconds == 0)
+                seconds = 1;
+            date = (now->tm_year + 1900) * 10000 +
+                   (now->tm_mon + 1) * 100 + now->tm_mday;
+            if(crazypod_workout_add(
+                   workout_activity, date, seconds) != 0) {
+                workout_accumulated_ticks = 0;
+                route_depth = 1;
+                route_stack[0].route = WORKOUT_ROUTE_MENU;
+                route_stack[0].selected = 1;
+                route_stack[0].group = -1;
+                render_current_route(true);
+            }
+            else
+                render_current_route(false);
+            return;
+        }
+        if(state->route == WORKOUT_ROUTE_DELETE_CONFIRM) {
+            if(crazypod_workout_delete(
+                   (uint32_t)state->group)) {
+                route_depth = 2;
+                route_stack[0].route = WORKOUT_ROUTE_MENU;
+                route_stack[0].selected = 1;
+                route_stack[0].group = -1;
+                route_stack[1].route = WORKOUT_ROUTE_HISTORY;
+                route_stack[1].selected = 0;
+                route_stack[1].group = -1;
+                render_current_route(true);
+            }
+            else
+                render_current_route(false);
+            return;
+        }
+    }
+
     if(!product_active) {
         if(base == BUTTON_SCROLL_FWD) {
-            int count = wheel_step(data, 4);
-            move_desktop_selection(count);
+            move_desktop_selection(1);
         }
         else if(base == BUTTON_SCROLL_BACK) {
-            int count = wheel_step(data, 4);
-            move_desktop_selection(-count);
+            move_desktop_selection(-1);
         }
         else if(base == BUTTON_RIGHT && !repeated) {
             if(crazypod_queue_count() > 0)
@@ -10202,28 +17304,9 @@ static void handle_button(long button, intptr_t data)
         else if(base == BUTTON_LEFT && !repeated)
             previous_or_restart_track();
         else if(base == BUTTON_SELECT) {
-            if(selected_app == 0)
-                open_music();
-            else if(selected_app == 3) {
-                open_music();
-                if(crazypod_music_track_count() > 0) {
-                    crazypod_queue_set_shuffle(true);
-                    crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0);
-                    crazypod_state_forget_resume();
-                    crazypod_state_mark_dirty();
-                    request_now_playing_route();
-                }
-            }
-            else if(selected_app == 7)
-                open_diy();
-            else if(selected_app == 6)
-                open_photos();
-            else if(selected_app == 4)
-                show_lock_screen(true);
-            else if(selected_app == 13)
-                open_settings();
-            else
-                open_placeholder(&apps[selected_app]);
+            struct crazypod_app *app = visible_app(selected_app);
+            if(app != NULL)
+                open_app(app->id);
         }
         else if(base == BUTTON_PLAY && !repeated)
             toggle_playback();
@@ -10263,6 +17346,239 @@ static void handle_button(long button, intptr_t data)
         return;
     }
 
+    if(current_route()->route == BOOKS_ROUTE_READER) {
+        if(base == BUTTON_SCROLL_FWD) {
+            int count = wheel_step(data, 12);
+            while(count-- > 0)
+                turn_book_page(1);
+        }
+        else if(base == BUTTON_SCROLL_BACK) {
+            int count = wheel_step(data, 12);
+            while(count-- > 0)
+                turn_book_page(-1);
+        }
+        else if(base == BUTTON_RIGHT)
+            turn_book_page(1);
+        else if(base == BUTTON_LEFT)
+            turn_book_page(-1);
+        else if(base == BUTTON_SELECT && !repeated)
+            activate_selected();
+        else if(base == BUTTON_PLAY && !repeated) {
+            crazypod_book_toggle_bookmark(
+                selected_book_index, book_page_offset);
+            render_current_route(false);
+        }
+        else if(base == BUTTON_MENU && !repeated)
+            pop_route();
+        return;
+    }
+
+    if(current_route()->route == WORKOUT_ROUTE_ACTIVE) {
+        if(base == BUTTON_SELECT && !repeated)
+            activate_selected();
+        else if((base == BUTTON_PLAY || base == BUTTON_MENU) &&
+                !repeated) {
+            if(workout_running) {
+                workout_accumulated_ticks +=
+                    current_tick - workout_started_at;
+                workout_running = false;
+            }
+            push_route(WORKOUT_ROUTE_FINISH_CONFIRM, -1);
+        }
+        return;
+    }
+
+    if(current_route()->route == STOPWATCH_ROUTE_VIEW) {
+        if((base == BUTTON_SCROLL_FWD ||
+            base == BUTTON_SCROLL_BACK) &&
+           stopwatch_lap_count == 0) {
+            int direction = base == BUTTON_SCROLL_FWD
+                ? wheel_step(data, 12)
+                : -wheel_step(data, 12);
+            stopwatch_style_index =
+                (stopwatch_style_index + direction) % 3;
+            if(stopwatch_style_index < 0)
+                stopwatch_style_index += 3;
+            render_current_route(false);
+        }
+        else if(base == BUTTON_SELECT && !repeated)
+            activate_selected();
+        else if(base == BUTTON_RIGHT && !repeated &&
+                stopwatch_running &&
+                stopwatch_lap_count <
+                    (int)(sizeof(stopwatch_laps) /
+                          sizeof(stopwatch_laps[0]))) {
+            stopwatch_laps[stopwatch_lap_count++] =
+                stopwatch_elapsed_ticks();
+            render_current_route(false);
+        }
+        else if((base == BUTTON_LEFT || base == BUTTON_PLAY) &&
+                !repeated && !stopwatch_running &&
+                (stopwatch_accumulated_ticks > 0 ||
+                 stopwatch_lap_count > 0)) {
+            if(TIME_BEFORE(current_tick,
+                           stopwatch_reset_armed_until)) {
+                memset(stopwatch_laps, 0, sizeof(stopwatch_laps));
+                stopwatch_lap_count = 0;
+                stopwatch_running = false;
+                stopwatch_started_at = 0;
+                stopwatch_accumulated_ticks = 0;
+                stopwatch_reset_armed_until = 0;
+            }
+            else
+                stopwatch_reset_armed_until =
+                    current_tick + HZ * 3 / 2;
+            stopwatch_last_render_tick = current_tick;
+            render_current_route(false);
+        }
+        else if(base == BUTTON_PLAY && !repeated &&
+                stopwatch_running) {
+            if(stopwatch_lap_count <
+               (int)(sizeof(stopwatch_laps) /
+                     sizeof(stopwatch_laps[0])))
+                stopwatch_laps[stopwatch_lap_count++] =
+                    stopwatch_elapsed_ticks();
+            render_current_route(false);
+        }
+        else if(base == BUTTON_MENU && !repeated) {
+            stopwatch_reset_armed_until = 0;
+            pop_route();
+        }
+        return;
+    }
+
+    if(current_route()->route == CALENDAR_ROUTE_MONTH) {
+        if(base == BUTTON_SCROLL_FWD) {
+            int count = wheel_step(data, 12);
+            while(count-- > 0)
+                calendar_move_focus(1);
+            render_current_route(false);
+        }
+        else if(base == BUTTON_SCROLL_BACK) {
+            int count = wheel_step(data, 12);
+            while(count-- > 0)
+                calendar_move_focus(-1);
+            render_current_route(false);
+        }
+        else if(base == BUTTON_RIGHT && !repeated) {
+            calendar_move_focus(1);
+            render_current_route(false);
+        }
+        else if(base == BUTTON_LEFT && !repeated) {
+            calendar_move_focus(-1);
+            render_current_route(false);
+        }
+        else if(base == BUTTON_SELECT && !repeated)
+            activate_selected();
+        else if(base == BUTTON_PLAY && !repeated) {
+            struct tm *now = get_time();
+            calendar_focus_year = now->tm_year + 1900;
+            calendar_focus_month = now->tm_mon;
+            calendar_focus_day = now->tm_mday;
+            render_current_route(false);
+        }
+        else if(base == BUTTON_MENU && !repeated)
+            pop_route();
+        return;
+    }
+
+    if(current_route()->route == CALENDAR_ROUTE_EDITOR) {
+        struct route_state *state = current_route();
+        int direction = 0;
+
+        if(base == BUTTON_SCROLL_FWD)
+            move_selection(wheel_step(data, 12));
+        else if(base == BUTTON_SCROLL_BACK)
+            move_selection(-wheel_step(data, 12));
+        else if(base == BUTTON_RIGHT && !repeated)
+            direction = 1;
+        else if(base == BUTTON_LEFT && !repeated)
+            direction = -1;
+        else if(base == BUTTON_SELECT && !repeated)
+            activate_selected();
+        else if(base == BUTTON_MENU && !repeated)
+            pop_route();
+
+        if(direction != 0 && state->selected == 1) {
+            calendar_editor_error = 0;
+            calendar_editor_date = calendar_shifted_date(
+                calendar_editor_date, direction);
+            render_current_route(false);
+        }
+        else if(direction != 0 && state->selected == 2) {
+            calendar_editor_error = 0;
+            if(direction > 0)
+                calendar_editor_minutes =
+                    calendar_editor_minutes < 0
+                        ? 9 * 60
+                        : (calendar_editor_minutes + 30) %
+                            (24 * 60);
+            else if(calendar_editor_minutes <= 0)
+                calendar_editor_minutes = -1;
+            else
+                calendar_editor_minutes -= 30;
+            render_current_route(false);
+        }
+        return;
+    }
+
+    if(current_route()->route == CALENDAR_ROUTE_TITLE_EDITOR) {
+        if(base == BUTTON_SCROLL_FWD)
+            move_selection(wheel_step(data, 12));
+        else if(base == BUTTON_SCROLL_BACK)
+            move_selection(-wheel_step(data, 12));
+        else if(base == BUTTON_RIGHT && !repeated) {
+            editor_move_cursor(
+                calendar_editor_summary,
+                &calendar_editor_cursor, 1);
+            render_current_route(false);
+        }
+        else if(base == BUTTON_LEFT && !repeated) {
+            editor_move_cursor(
+                calendar_editor_summary,
+                &calendar_editor_cursor, -1);
+            render_current_route(false);
+        }
+        else if(base == BUTTON_SELECT && !repeated)
+            activate_selected();
+        else if(base == BUTTON_MENU && !repeated)
+            pop_route();
+        return;
+    }
+
+    if(current_route()->route == NOTES_ROUTE_COMPOSER) {
+        char *target = note_editor_body_active
+            ? note_editor.body : note_editor.title;
+        size_t *cursor = note_editor_body_active
+            ? &note_editor_body_cursor : &note_editor_title_cursor;
+
+        if(base == BUTTON_SCROLL_FWD)
+            move_selection(wheel_step(data, 12));
+        else if(base == BUTTON_SCROLL_BACK)
+            move_selection(-wheel_step(data, 12));
+        else if(base == BUTTON_RIGHT && !repeated) {
+            editor_move_cursor(target, cursor, 1);
+            render_current_route(false);
+        }
+        else if(base == BUTTON_LEFT && !repeated) {
+            editor_move_cursor(target, cursor, -1);
+            render_current_route(false);
+        }
+        else if(base == BUTTON_SELECT && !repeated)
+            activate_selected();
+        else if(base == BUTTON_PLAY && !repeated) {
+            note_editor_body_active = !note_editor_body_active;
+            render_current_route(false);
+        }
+        else if(base == BUTTON_MENU && !repeated) {
+            if(note_editor_dirty())
+                push_route(NOTES_ROUTE_EXIT_ACTIONS, -1);
+            else
+                pop_route();
+        }
+        return;
+    }
+
     if(current_route()->route == MUSIC_ROUTE_SEARCH) {
         if(base == BUTTON_SCROLL_FWD)
             move_selection(wheel_step(data, 12));
@@ -10288,6 +17604,31 @@ static void handle_button(long button, intptr_t data)
                 crazypod_music_search_count(search_query) > 0) {
             push_route(MUSIC_ROUTE_SEARCH_RESULTS, -1);
         }
+        return;
+    }
+
+    if(current_route()->route == NOTES_ROUTE_SEARCH) {
+        if(base == BUTTON_SCROLL_FWD)
+            move_selection(wheel_step(data, 12));
+        else if(base == BUTTON_SCROLL_BACK)
+            move_selection(-wheel_step(data, 12));
+        else if(base == BUTTON_RIGHT)
+            move_selection(1);
+        else if(base == BUTTON_LEFT)
+            move_selection(-1);
+        else if(base == BUTTON_SELECT && !repeated)
+            activate_selected();
+        else if(base == BUTTON_MENU && !repeated) {
+            if(note_search_query[0] != '\0') {
+                editor_backspace(note_search_query);
+                render_current_route(false);
+            }
+            else
+                pop_route();
+        }
+        else if(base == BUTTON_PLAY && !repeated &&
+                note_search_query[0] != '\0')
+            push_route(NOTES_ROUTE_SEARCH_RESULTS, -1);
         return;
     }
 
@@ -10317,15 +17658,31 @@ static void handle_button(long button, intptr_t data)
     }
 
     if(base == BUTTON_SCROLL_FWD)
-        move_selection(wheel_step(
-            data,
-            current_route()->route == MUSIC_ROUTE_NOW_PLAYING ? 1 :
-            current_route()->route == MUSIC_ROUTE_ALBUM_FLOW ? 8 : 12));
+        move_selection(is_skeuomorphic_preview_route(
+                           current_route()->route)
+                       ? 1
+                       : wheel_step(
+                             data,
+                             current_route()->route ==
+                                     MUSIC_ROUTE_NOW_PLAYING
+                                 ? 1
+                                 : current_route()->route ==
+                                           MUSIC_ROUTE_ALBUM_FLOW
+                                       ? 15
+                                       : 12));
     else if(base == BUTTON_SCROLL_BACK)
-        move_selection(-wheel_step(
-            data,
-            current_route()->route == MUSIC_ROUTE_NOW_PLAYING ? 1 :
-            current_route()->route == MUSIC_ROUTE_ALBUM_FLOW ? 8 : 12));
+        move_selection(is_skeuomorphic_preview_route(
+                           current_route()->route)
+                       ? -1
+                       : -wheel_step(
+                             data,
+                             current_route()->route ==
+                                     MUSIC_ROUTE_NOW_PLAYING
+                                 ? 1
+                                 : current_route()->route ==
+                                           MUSIC_ROUTE_ALBUM_FLOW
+                                       ? 15
+                                       : 12));
     else if(base == BUTTON_RIGHT) {
         if(current_route()->route == MUSIC_ROUTE_NOW_PLAYING)
             audio_next();
@@ -10349,8 +17706,135 @@ static void handle_button(long button, intptr_t data)
         else if(!repeated)
             pop_route();
     }
-    else if(base == BUTTON_PLAY)
-        toggle_playback();
+    else if(base == BUTTON_PLAY) {
+        if(current_route()->route == NOTES_ROUTE_COMPOSER &&
+           !repeated) {
+            note_editor_body_active = !note_editor_body_active;
+            render_current_route(false);
+        }
+        else
+            toggle_playback();
+    }
+}
+
+static void service_stopwatch(void)
+{
+    if(!product_active || route_depth <= 0 ||
+       current_route()->route != STOPWATCH_ROUTE_VIEW)
+        return;
+    if(stopwatch_reset_armed_until != 0 &&
+       !TIME_BEFORE(current_tick, stopwatch_reset_armed_until)) {
+        stopwatch_reset_armed_until = 0;
+        render_current_route(false);
+    }
+    if(!stopwatch_running ||
+       TIME_BEFORE(current_tick, stopwatch_last_render_tick + HZ / 10))
+        return;
+    stopwatch_last_render_tick = current_tick;
+    render_current_route(false);
+}
+
+static void service_workout(void)
+{
+    if(!product_active || route_depth <= 0 ||
+       current_route()->route != WORKOUT_ROUTE_ACTIVE ||
+       !workout_running ||
+       TIME_BEFORE(current_tick,
+                   workout_last_render_tick + HZ / 10))
+        return;
+    workout_last_render_tick = current_tick;
+    render_current_route(false);
+}
+
+static void service_clock_routes(void)
+{
+    enum crazypod_route route;
+    long interval;
+
+    if(!product_active || route_depth <= 0)
+        return;
+    route = current_route()->route;
+    if(route != CLOCK_ROUTE_VIEW &&
+       route != CLOCK_ROUTE_SLEEP_TIMER)
+        return;
+    interval = route == CLOCK_ROUTE_VIEW
+        ? (HZ / 4 > 0 ? HZ / 4 : 1) : HZ;
+    if(TIME_BEFORE(current_tick,
+                   clock_last_render_tick + interval))
+        return;
+    clock_last_render_tick = current_tick;
+    render_current_route(false);
+}
+
+static void service_miniapps(void)
+{
+    struct cp_input_event input_event;
+    bool service_due =
+        miniapp_last_service_tick == 0 ||
+        !TIME_BEFORE(
+            current_tick, miniapp_last_service_tick + HZ);
+
+    if(screen_locked || !product_active || route_depth <= 0 ||
+       current_route()->route != MINIAPP_ROUTE_VIEW ||
+       !crazypod_miniapps_is_open()) {
+        crazypod_miniapp_input_reset(&miniapp_input_queue);
+    }
+    else if(crazypod_miniapp_input_next(
+                &miniapp_input_queue,
+                crazypod_frameclock_due(&lvgl_clock, current_tick),
+                &input_event)) {
+        if(crazypod_miniapps_event(&input_event))
+            miniapp_render_pending = true;
+    }
+
+    if(service_due) {
+        struct crazypod_miniapp_alarm alarm;
+
+        miniapp_last_service_tick = current_tick;
+        if(crazypod_miniapps_alarm_service(&alarm)) {
+            snprintf(miniapp_alert_id, sizeof(miniapp_alert_id),
+                     "%s", alarm.id);
+            miniapp_alert_deadline = alarm.deadline_epoch;
+            miniapp_alert_token = alarm.token;
+            miniapp_alert_remaining = 3;
+            miniapp_alert_next_tick = current_tick;
+            miniapp_alert_delivery_pending = true;
+        }
+        if(crazypod_miniapps_tick())
+            miniapp_render_pending = true;
+    }
+
+    if(crazypod_miniapps_take_close_request()) {
+        crazypod_miniapp_input_reset(&miniapp_input_queue);
+        pop_route();
+        return;
+    }
+    if(crazypod_miniapps_take_ui_refresh()) {
+        crazypod_miniapp_input_reset(&miniapp_input_queue);
+        miniapp_render_pending = true;
+    }
+
+    if(miniapp_alert_remaining > 0 &&
+       !TIME_BEFORE(current_tick, miniapp_alert_next_tick)) {
+#if defined(HAVE_HARDWARE_CLICK) && !defined(SIMULATOR)
+        piezo_button_beep(false, false);
+#endif
+        beep_play(1568, 90, 6000);
+        if(miniapp_alert_delivery_pending &&
+           crazypod_miniapps_alarm_delivery_acknowledge(
+               miniapp_alert_id, miniapp_alert_deadline,
+               miniapp_alert_token) == CRAZYPOD_MINIAPP_OK)
+            miniapp_alert_delivery_pending = false;
+        --miniapp_alert_remaining;
+        miniapp_alert_next_tick = current_tick + HZ / 3;
+    }
+
+    if(miniapp_render_pending && !screen_locked &&
+       product_active && route_depth > 0 &&
+       current_route()->route == MINIAPP_ROUTE_VIEW) {
+        miniapp_render_pending = false;
+        render_current_route(false);
+    }
 }
 
 static uint32_t rockbox_tick_ms(void)
@@ -10385,7 +17869,7 @@ static void display_flush(lv_display_t *display, const lv_area_t *area,
     }
     if(!screen_locked &&
        !product_active &&
-       !usb_prompt_visible() &&
+       !modal_prompt_visible() &&
        area->y1 < CRAZYPOD_DESKTOP_NATIVE_BOTTOM &&
        area->y2 >= CRAZYPOD_DESKTOP_NATIVE_TOP) {
         if(desktop_native_backdrop_ready) {
@@ -10471,10 +17955,33 @@ static void process_deferred_route_render(void)
        !TIME_BEFORE(current_tick, menu_preview_due)) {
         if(product_active && route_depth > 0 &&
            menu_view.valid &&
-           menu_view.route == current_route()->route)
-            render_menu_preview(current_route(), true);
+           menu_view.route == current_route()->route) {
+            menu_preview_pending = false;
+            if(menu_preview_motion_ready &&
+               is_skeuomorphic_preview_route(
+                   current_route()->route) &&
+               menu_preview_content != NULL)
+                start_menu_preview_scene_exit();
+            else
+                render_menu_preview(current_route(), false);
+        }
         else
             menu_preview_pending = false;
+    }
+    if(menu_preview_media_refresh_pending &&
+       !TIME_BEFORE(current_tick, menu_preview_media_due)) {
+        if(product_active && route_depth > 0 &&
+           menu_view.valid &&
+           menu_view.route == current_route()->route &&
+           !menu_preview_pending &&
+           !menu_preview_motion_active()) {
+            menu_preview_media_refresh_pending = false;
+            render_menu_preview(current_route(), false);
+        }
+        else if(!product_active || route_depth <= 0 ||
+                !menu_view.valid ||
+                menu_view.route != current_route()->route)
+            menu_preview_media_refresh_pending = false;
     }
 }
 
@@ -10510,11 +18017,236 @@ static void sync_album_flow_metadata(void)
     album_flow_displayed_album = album_index;
 }
 
+#ifdef SIMULATOR
+static bool simulator_prepare_snapshot(void)
+{
+    const char *screen = getenv("CRAZYPOD_SIM_SCREEN");
+    int preview_index;
+
+    if(getenv("CRAZYPOD_SIM_DUMP") == NULL)
+        return false;
+    if(screen == NULL || strcmp(screen, "home") == 0)
+        return true;
+    if(strcmp(screen, "power") == 0)
+        show_power_prompt();
+    else if(sscanf(screen, "music-%d", &preview_index) == 1) {
+        open_music();
+        if(route_depth > 0 &&
+           current_route()->route == MUSIC_ROUTE_MENU) {
+            int count = route_item_count(current_route());
+            if(preview_index < 0)
+                preview_index = 0;
+            if(preview_index >= count)
+                preview_index = count - 1;
+            current_route()->selected = preview_index;
+            render_current_route(false);
+        }
+    }
+    else if(sscanf(screen, "play-video-%d", &preview_index) == 1) {
+        int count;
+
+        open_photos();
+        push_route(PHOTOS_ROUTE_VIDEOS, -1);
+        count = route_item_count(current_route());
+        if(preview_index < 0)
+            preview_index = 0;
+        if(preview_index >= count)
+            preview_index = count > 0 ? count - 1 : 0;
+        current_route()->selected = preview_index;
+        render_current_route(false);
+        lv_refr_now(NULL);
+        crazypod_present_now();
+        if(count > 0) {
+            enum crazypod_video_result video_result =
+                crazypod_video_play(preview_index);
+
+            fprintf(stderr, "CrazyPod video smoke: %d (%s)\n",
+                    video_result,
+                    crazypod_video_result_message(video_result));
+        }
+        render_current_route(false);
+        return false;
+    }
+    else if(sscanf(screen, "videos-%d", &preview_index) == 1) {
+        int count;
+
+        open_photos();
+        push_route(PHOTOS_ROUTE_VIDEOS, -1);
+        count = route_item_count(current_route());
+        if(preview_index < 0)
+            preview_index = 0;
+        if(preview_index >= count)
+            preview_index = count > 0 ? count - 1 : 0;
+        current_route()->selected = preview_index;
+        render_current_route(false);
+    }
+    else if(sscanf(screen, "media-%d", &preview_index) == 1 ||
+            sscanf(screen, "photos-%d", &preview_index) == 1) {
+        open_photos();
+        if(preview_index < 0)
+            preview_index = 0;
+        if(preview_index > 2)
+            preview_index = 2;
+        current_route()->selected = preview_index;
+        render_current_route(false);
+    }
+    else if(sscanf(screen, "books-%d", &preview_index) == 1) {
+        open_books();
+        {
+            int count = route_item_count(current_route());
+            if(preview_index < 0)
+                preview_index = 0;
+            if(preview_index >= count)
+                preview_index = count - 1;
+            current_route()->selected = preview_index;
+            render_current_route(false);
+        }
+    }
+    else if(strcmp(screen, "notes-new") == 0) {
+        open_notes();
+        current_route()->selected = 0;
+        render_current_route(false);
+    }
+    else if(strcmp(screen, "notes-draft") == 0) {
+        open_notes();
+        current_route()->selected = note_draft_available ? 1 : 0;
+        render_current_route(false);
+    }
+    else if(strcmp(screen, "notes-item") == 0) {
+        open_notes();
+        current_route()->selected = crazypod_notes_count(false) > 0
+            ? notes_home_note_start() : 0;
+        render_current_route(false);
+    }
+    else if(strcmp(screen, "notes-search") == 0) {
+        open_notes();
+        current_route()->selected = notes_home_search_index();
+        render_current_route(false);
+    }
+    else if(strcmp(screen, "notes-deleted") == 0) {
+        open_notes();
+        current_route()->selected = notes_home_deleted_index();
+        render_current_route(false);
+    }
+    else if(strcmp(screen, "more") == 0)
+        open_extras();
+    else if(strcmp(screen, "more-second") == 0) {
+        open_extras();
+        if(crazypod_apps_hidden_count() > 1) {
+            current_route()->selected = 1;
+            render_current_route(false);
+        }
+    }
+    else if(strcmp(screen, "settings-main-menu") == 0)
+        open_root_route(SETTINGS_ROUTE_MAIN_MENU);
+    else if(strcmp(screen, "settings-reduce-motion") == 0) {
+        open_root_route(SETTINGS_ROUTE_DISPLAY);
+        current_route()->selected =
+            route_item_count(current_route()) - 1;
+        render_current_route(false);
+    }
+    else if(strcmp(screen, "notes") == 0)
+        open_notes();
+    else if(strcmp(screen, "note-compose") == 0) {
+        open_notes();
+        begin_note_composer(0, false);
+    }
+    else if(strcmp(screen, "books") == 0)
+        open_books();
+    else if(strcmp(screen, "books-reading") == 0) {
+        open_books();
+        current_route()->selected =
+            (books_has_continue() ? 1 : 0) + 4;
+        render_current_route(false);
+    }
+    else if(strcmp(screen, "book-reader") == 0) {
+        open_books();
+        if(crazypod_books_count() > 0)
+            begin_book_reader(0, 0);
+    }
+    else if(strcmp(screen, "book-reader-next") == 0) {
+        open_books();
+        if(crazypod_books_count() > 0) {
+            begin_book_reader(0, 0);
+            turn_book_page(1);
+        }
+    }
+    else if(strcmp(screen, "clock") == 0)
+        open_root_route(CLOCK_ROUTE_VIEW);
+    else if(strcmp(screen, "stopwatch") == 0)
+        open_root_route(STOPWATCH_ROUTE_VIEW);
+    else if(strcmp(screen, "workouts") == 0)
+        open_root_route(WORKOUT_ROUTE_MENU);
+    else if(strcmp(screen, "workout-ready") == 0) {
+        workout_activity = 0;
+        open_root_route(WORKOUT_ROUTE_READY);
+    }
+    else if(strcmp(screen, "workout-active") == 0) {
+        workout_activity = 0;
+        workout_accumulated_ticks = 62 * HZ;
+        workout_started_at = current_tick;
+        workout_running = true;
+        open_root_route(WORKOUT_ROUTE_ACTIVE);
+    }
+    else if(strcmp(screen, "workout-detail") == 0) {
+        open_root_route(WORKOUT_ROUTE_HISTORY);
+        if(crazypod_workouts_count() > 0)
+            push_route(WORKOUT_ROUTE_DETAIL, 0);
+    }
+    else if(strcmp(screen, "calendar") == 0) {
+        open_calendar();
+        push_route(CALENDAR_ROUTE_MONTH, -1);
+    }
+    else if(strcmp(screen, "calendar-day") == 0) {
+        open_calendar();
+        show_calendar_day(calendar_focus_date());
+        render_current_route(true);
+    }
+    else if(strcmp(screen, "contacts") == 0)
+        open_contacts();
+    else if(strcmp(screen, "contact-detail") == 0) {
+        open_contacts();
+        if(crazypod_contacts_count() > 0)
+            push_route(CONTACTS_ROUTE_DETAIL, 0);
+    }
+    else if(strcmp(screen, "calculator") == 0 ||
+            strcmp(screen, "pomodoro") == 0) {
+        int app_index;
+
+        open_utilities();
+        app_index = crazypod_miniapps_find(screen);
+        if(app_index < 0)
+            return false;
+        current_route()->selected = app_index;
+        activate_selected();
+        if(current_route()->route != MINIAPP_ROUTE_VIEW)
+            return false;
+    }
+    else
+        return false;
+    return true;
+}
+#endif
+
 void crazypod_ui_run(void)
 {
     lv_display_t *display;
+    lv_obj_t *boot_screen;
+#ifdef SIMULATOR
+    bool simulator_snapshot_pending;
+    long simulator_snapshot_due = 0;
+    int simulator_snapshot_stage = 0;
+#endif
 
     lcd_set_viewport(NULL);
+#ifdef HAVE_SW_POWEROFF
+    /*
+     * SYS_POWEROFF is a committed shutdown broadcast. CrazyPod owns the
+     * Play-button hold gesture so opening its confirmation UI cannot wake and
+     * reinitialize the iPod LCD through the Rockbox backlight thread.
+     */
+    button_set_sw_poweroff_state(false);
+#endif
     lv_init();
     lv_tick_set_cb(rockbox_tick_ms);
     crazypod_present_init(current_tick);
@@ -10527,7 +18259,9 @@ void crazypod_ui_run(void)
     crazypod_artwork_init();
     crazypod_icons_init();
     crazypod_photos_init();
+    crazypod_videos_init();
     crazypod_wallpaper_init();
+    miniapp_last_error = crazypod_miniapps_init();
 
     display = lv_display_create(LCD_WIDTH, LCD_HEIGHT);
     lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
@@ -10536,6 +18270,7 @@ void crazypod_ui_run(void)
     lv_display_set_flush_cb(display, display_flush);
     lv_display_set_antialiasing(display, true);
 
+    boot_screen = create_boot_screen();
     create_desktop();
     create_product_screen();
     create_lock_screen();
@@ -10544,8 +18279,12 @@ void crazypod_ui_run(void)
     lv_timer_create(update_playback_ui, 250, NULL);
     lv_timer_create(update_persistent_state, 1000, NULL);
 
-    lv_screen_load(desktop_screen);
+    lv_screen_load(boot_screen);
+    lv_refr_now(display);
+    crazypod_present_tick();
     refresh_desktop_capsule_material();
+    lv_screen_load_anim(desktop_screen, LV_SCREEN_LOAD_ANIM_FADE_IN,
+                        CRAZYPOD_BOOT_FADE_DURATION_MS, 0, true);
     lv_refr_now(display);
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
     usb_prompt_ui_ready = true;
@@ -10554,6 +18293,8 @@ void crazypod_ui_run(void)
     boost_until = current_tick + HZ / 2;
     preview_artwork_generation_seen =
         crazypod_artwork_slot_generation(CRAZYPOD_PREVIEW_ARTWORK_SLOT);
+    menu_preview_artwork_generation_seen =
+        menu_preview_artwork_signature();
     now_artwork_generation_seen =
         crazypod_artwork_slot_generation(
             CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT);
@@ -10565,6 +18306,14 @@ void crazypod_ui_run(void)
     photo_generation_seen = crazypod_photo_generation();
     photo_view_generation_seen =
         crazypod_photo_view_generation();
+    video_generation_seen = crazypod_video_generation();
+
+#ifdef SIMULATOR
+    simulator_snapshot_pending =
+        getenv("CRAZYPOD_SIM_DUMP") != NULL;
+    if(simulator_snapshot_pending)
+        simulator_snapshot_due = current_tick + HZ / 2;
+#endif
 
     music_scan_generation_seen = crazypod_music_scan_generation();
     music_library_loaded = false;
@@ -10597,10 +18346,16 @@ void crazypod_ui_run(void)
             process_wallpaper_crop_render();
         }
         service_music_scan();
+        service_note_editor_draft();
+        service_stopwatch();
+        service_workout();
+        service_clock_routes();
+        service_miniapps();
         process_deferred_route_render();
         process_pending_now_playing_open();
         process_artwork_updates();
         process_photo_updates();
+        process_video_updates();
         if(!screen_locked) {
             tick_desktop_carousel();
             tick_desktop_capsule_spectrum();
@@ -10616,7 +18371,25 @@ void crazypod_ui_run(void)
             sync_album_flow_metadata();
         }
         crazypod_present_tick();
-        if(crazypod_artwork_busy() || crazypod_photos_busy())
+#ifdef SIMULATOR
+        if(simulator_snapshot_pending &&
+           !TIME_BEFORE(current_tick, simulator_snapshot_due)) {
+            if(simulator_snapshot_stage == 0) {
+                simulator_snapshot_pending =
+                    simulator_prepare_snapshot();
+                simulator_snapshot_stage = 1;
+                simulator_snapshot_due = current_tick + HZ / 2;
+            }
+            else {
+                lv_refr_now(display);
+                crazypod_present_tick();
+                screen_dump();
+                simulator_snapshot_pending = false;
+            }
+        }
+#endif
+        if(crazypod_artwork_busy() || crazypod_photos_busy() ||
+           crazypod_videos_busy())
             keep_cpu_boosted(HZ / 10);
         if(!lv_anim_count_running() &&
            !desktop_motion_active &&
@@ -10624,6 +18397,7 @@ void crazypod_ui_run(void)
            !crazypod_coverflow_active() &&
            !crazypod_artwork_busy() &&
            !crazypod_photos_busy() &&
+           !crazypod_videos_busy() &&
            !TIME_BEFORE(current_tick, boost_until))
             set_cpu_boost(false);
     }

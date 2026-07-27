@@ -13,7 +13,9 @@
 .cache
 
 __pycache__
-.DS_STORE
+.DS_Store
+/device-backups/
+/build-checkwps/
 
 # Intermediate language files
 /apps/lang/*.update
@@ -329,7 +331,6 @@ __pycache__
 /Imported Reference Themes/
 /Sample Music Folder with Library Structure/
 /Sourced Icons/
-/screenshots/
 /Pasted markdown (3).md
 
 # Apple2026 fonts (SF Pro / SF Compact) are included for educational and
@@ -358,7 +359,6 @@ __pycache__
 /CommunityFeedback.md
 /Apple2026QuickSettingsPlan.md
 /ARCHITECTURE.md
-/CONTRIBUTING.md
 /Pasted markdown (3).md
 /Opus*.md
 /Update*Design.md

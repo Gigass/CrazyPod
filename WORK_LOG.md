@@ -1,5 +1,163 @@
 # WORK_LOG.md
 
+## 2026-07-27 (Project documentation synchronization)
+
+Goal: align public project documentation with the current source tree, the
+current Codex task window, generated artifacts, and recorded device tests.
+
+Changed:
+
+- documented the implemented Media video route, CP936 book decoding, optional
+  bootloader, Play-hold power menu, 19-step lock screen, and Mini App SDK
+  revision 2
+- separated current artifact validation from earlier physical firmware copies
+- recorded Mini App revision 3 as a proposal rather than an implemented API
+- corrected Cover Flow's release projection from 120 ms to 200 ms
+- corrected the current hardware archive count from 322 to 324 ZIP entries
+- updated simulator route names and the Mini App tutorial's ABI-prefix check
+
+Verified:
+
+- all public Markdown links resolve to files in the repository
+- the simulator and iPod 6G incremental builds pass
+- `CrazyPod-6G.zip` passes `unzip -tq`
+- documented artifact sizes and SHA-256 values match the generated files
+
+Limits:
+
+- the current Codex index exposes 27 CrazyPod tasks and has no cursor for
+  tasks that have fallen outside the 50-task window
+- the current SDK revision 2 artifact has not been installed on the device
+- no commit, push, or release was performed by this documentation pass
+
+## 2026-07-27 (Mini App SDK revision 2)
+
+Goal: expand the native Mini App SDK without invalidating existing ABI 1
+packages.
+
+Changed:
+
+- changed Loader host-table validation from exact size equality to a bounded
+  stable-prefix check; the original ABI 1 host table remains 44 bytes on ARM
+- added capability-gated system information, duration/date/time formatting,
+  four persistent alarm slots, host-rendered Toast, and asynchronous app-close
+  requests
+- added semantic Divider and Progress drawing commands without changing the
+  fixed ABI 1 draw-command layout
+- upgraded Calculator and Pomodoro to 1.1.0; Calculator exercises Divider,
+  while Pomodoro exercises host duration formatting, Progress, and Toast
+- changed package filenames to derive from manifest versions and removed stale
+  reference-package versions during normal builds
+- updated the Mini App reference and Chinese tutorial
+
+Verified:
+
+- SDK prefix, Calculator, Pomodoro, input-pacing, and crypto host tests pass
+  with strict warnings and under ASan/UBSan
+- ARM layout check confirms the ABI 1 prefix is 44 bytes and the revision 2
+  host table is 84 bytes
+- simulator and iPod 6G incremental builds pass
+- both 1.1.0 CPK files contain exactly four stored entries and have no
+  unresolved native symbols
+- the generated hardware ZIP passes `unzip -tq`
+
+Not yet verified:
+
+- physical iPod interaction and multi-alarm delivery under simultaneous
+  deadlines
+- text input, confirmation dialogs, package resources, and mediated file
+  selection remain future SDK work
+
+## 2026-07-27 (Silent Apple boot surface and CrazyPod handoff)
+
+Goal: replace the normal iPod 6G boot console with one continuous black boot
+surface, a centered white Apple mark, and a short transition into the CrazyPod
+desktop.
+
+Changed:
+
+- normal bootloader progress output no longer updates the LCD; USB, low-power,
+  fatal, and recovery paths still expose diagnostics
+- fatal and USB paths clear the hidden normal-boot framebuffer content before
+  presenting text
+- added a compact 33x40 antialiased boot mark shared by the bootloader and
+  CrazyPod, avoiding the approximately 60 KiB cost of compiling the surrounding
+  black pixels into the constrained bootloader move area
+- CrazyPod redraws the same mark immediately after LCD initialization and
+  keeps it visible through platform and LVGL initialization
+- the desktop enters with a 220 ms LVGL fade from the matching boot screen
+- restored the standard LCD/font path for iPod 6G bootloader builds while
+  keeping the CrazyPod framebuffer and panic UI firmware-only
+- added a reproducible `build-bootloader.sh`; it builds but never flashes the
+  device
+
+Verified:
+
+- clean iPod 6G bootloader build passes and produces
+  `build-bootloader-ipod6g/bootloader-ipod6g.ipod`
+- incremental hardware build passes and produces `rockbox.ipod` and the
+  validated `CrazyPod-6G.zip`
+- simulator main binary links and runs through the startup handoff; a
+  deterministic post-start screenshot renders the desktop normally
+- full simulator packaging still stops at the pre-existing KSS codec link
+  failure; the simulator main program is unaffected
+
+Deployment note:
+
+- installing `CrazyPod-6G.zip` updates only the firmware-side handoff
+- removing the power-on boot console requires separately installing the built
+  bootloader with the established iPod 6G recovery procedure
+
+## 2026-07-27 (Mini Apps reference build and iPod 6G runtime fix)
+
+Goal: replace duplicated placeholder Mini App content with two complete
+reference packages and validate the shared click-wheel runtime on hardware.
+
+Changed:
+
+- added signed Calculator and Pomodoro ABI 1 packages
+- made Calculator a standard four-function calculator with clear/all-clear,
+  contextual percent, repeat equals, decimal, sign, backspace, and error
+  recovery
+- made Pomodoro configurable and persistent, with focus/short-break/long-break
+  phases, rounds, pause/resume, skip, reset, background deadlines, and alarms
+- defined one-adjacent-control wheel navigation for discrete focus while
+  retaining acceleration for Pomodoro numeric editing
+- added an eight-event host input queue after physical retesting showed that
+  multiple correct focus changes could still occur before one screen refresh;
+  the queue now consumes one discrete event per presentable frame, bounds
+  after-scroll, and switches direction without replaying stale input
+- aligned iPod 6G main, IRQ, and FIQ stack boundaries to 8 bytes and added a
+  build-time symbol gate, fixing invalid ARM EABI `double` formatting that
+  appeared as `2.371515` on Calculator startup
+- documented the `.cpk` format, install lifecycle, native-code security
+  boundary, and development signing-key limitation
+
+Verified:
+
+- Calculator, Pomodoro, and crypto host tests pass normally and under
+  ASan/UBSan
+- host input-pacing tests pass normally and under ASan/UBSan, including burst
+  input, frame gating, bounded backlog, and direction reversal
+- simulator and iPod 6G incremental builds pass
+- instruction-level execution of the real ARM Calculator payload renders `0`
+  initially and after AC
+- the hardware ZIP contains 300 files and passes archive validation
+- all 300 files from the prior zero/step build matched after device
+  installation
+- the prior post-write FAT32 filesystem check exited 0 and the device was
+  safely ejected
+- the current frame-paced build contains 300 files and passes archive and stack
+  alignment checks; it has not yet been installed
+
+Still required:
+
+- install the current frame-paced build and confirm Calculator startup, AC,
+  fast-wheel visible focus order, reversal, and Select behavior on the physical
+  click wheel
+- complete foreground/background Pomodoro and alarm coexistence testing on
+  physical hardware
+
 ## 2026-04-13 (README release sync: Apple2026 Beta Update 2 feature surface)
 
 Goal: bring `README.md` back in line with the live branch state before the next

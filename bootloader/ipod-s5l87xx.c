@@ -46,7 +46,7 @@
 #include "version.h"
 #include "powermgmt.h"
 #include "usb.h"
-#include "bitmaps/rockboxlogo.h"
+#include "crazypod_boot_logo.h"
 #ifdef HAVE_SERIAL
 #include "serial.h"
 #endif
@@ -66,9 +66,6 @@
 #define ERR_OF      1
 #define ERR_STORAGE 2
 #define ERR_LBA28   3
-
-#define BOOTLOGO_XPOS ((LCD_WIDTH - BMPWIDTH_rockboxlogo) / 2)
-#define BOOTLOGO_YPOS ((LCD_HEIGHT - BMPHEIGHT_rockboxlogo) / 2)
 
 /* Safety measure - maximum allowed firmware image size.
    The largest known current (October 2009) firmware is about 6.2MB so
@@ -92,6 +89,9 @@ static void usb_mode(void)
 {
     int button;
 
+    lcd_set_background(LCD_BLACK);
+    lcd_set_foreground(LCD_WHITE);
+    reset_screen();
     verbose = true;
 
     printf("Entering USB mode...");
@@ -154,12 +154,18 @@ static void show_boot_logo_only(void)
     lcd_set_background(LCD_BLACK);
     lcd_set_foreground(LCD_WHITE);
     lcd_clear_display();
-    lcd_bmp(&bm_rockboxlogo, BOOTLOGO_XPOS, BOOTLOGO_YPOS);
+    crazypod_boot_logo_draw(
+        FBADDR(0, 0), LCD_WIDTH, LCD_HEIGHT,
+        lcd_current_viewport->buffer->stride);
     lcd_update();
+    line = 0;
 }
 
 void fatal_error(int err)
 {
+    lcd_set_background(LCD_BLACK);
+    lcd_set_foreground(LCD_WHITE);
+    reset_screen();
     verbose = true;
 
     /* System font is 6 pixels wide */
@@ -858,12 +864,17 @@ void main(void)
     lcd_update();
     sleep(HZ/40);  /* wait for lcd update */
 
-    verbose = true;
+    /*
+     * Normal boot is deliberately silent. printf() may still prepare
+     * diagnostics in the framebuffer, but without lcd_update() the centered
+     * boot mark remains the only visible surface. Recovery and fatal paths
+     * opt back into verbose output after clearing the screen.
+     */
+    verbose = false;
 
     backlight_init(); /* Turns on the backlight */
 
     show_boot_logo_only();
-    line = 0;
 
 #ifdef S5L87XX_DEVELOPMENT_BOOTLOADER
     line++;
@@ -889,6 +900,7 @@ void main(void)
 #if (CONFIG_STORAGE & STORAGE_ATA)
         /* Wait until there is enought power to spin-up HDD */
         battery_trap();
+        show_boot_logo_only();
 #endif
 
         rc = storage_init();

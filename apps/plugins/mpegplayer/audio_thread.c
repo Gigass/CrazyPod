@@ -78,7 +78,7 @@ struct audio_frame_desc
  /* This starts out wr == rd but will never be emptied to zero during
     streaming again in order to support initializing the first packet's
     timestamp without a special case */
-struct
+static struct
 {
     /* Compressed audio data */
     uint8_t *start;  /* Start of encoded audio buffer */

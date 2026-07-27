@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define CRAZYPOD_ICON_COUNT 14
+#define CRAZYPOD_ICON_COUNT 16
 
 struct crazypod_icon {
     const uint8_t *pixels;

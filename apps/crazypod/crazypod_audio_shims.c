@@ -74,7 +74,7 @@ void system_sound_play(enum system_sound sound)
     };
     const struct beep_params *params;
 
-    if(sound < SOUND_KEYCLICK || sound > SOUND_LIST_EDGE_BEEP_NOWRAP)
+    if(sound > SOUND_LIST_EDGE_BEEP_NOWRAP)
         return;
 
     params = &beep_params[sound];

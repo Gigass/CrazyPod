@@ -26,11 +26,13 @@
 #define FLOW_POSITION_ONE (1L << 16)
 #define FLOW_RELEASE_STIFFNESS 400
 #define FLOW_RELEASE_DAMPING 40
-#define FLOW_RELEASE_MOMENTUM_DIVISOR 3
+#define FLOW_RELEASE_PROJECTION_TICKS \
+    (((HZ * 20) / 100) > 0 ? ((HZ * 20) / 100) : 1)
 #define FLOW_RELEASE_GRACE_TICKS \
     (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
 #define FLOW_INPUT_BASE_SPEED 2
 #define FLOW_INPUT_RESPONSE 24
+#define FLOW_INPUT_IMPULSE_Q16 (FLOW_POSITION_ONE / 2)
 #define FLOW_SNAP_POSITION (FLOW_POSITION_ONE / 512)
 #define FLOW_SNAP_VELOCITY (FLOW_POSITION_ONE / 20)
 #define FLOW_PREFETCH_TICKS ((HZ / 10) > 0 ? (HZ / 10) : 1)
@@ -295,16 +297,79 @@ static fb_data placeholder_sample(int album_index, int x, int y,
     return color;
 }
 
-static int smoothstep_q8(int value_q8)
+static int32_t multiply_q16(int32_t left_q16, int32_t right_q16)
 {
-    int squared_q8;
+    return (int32_t)(((int64_t)left_q16 * right_q16) >> 16);
+}
 
-    if(value_q8 <= 0)
+/*
+ * These quintic Hermite curves match position, velocity and acceleration at
+ * both ends. The center slope keeps the focused cover responsive, while the
+ * side slope joins FLOW_SIDE_SPACING without a velocity discontinuity.
+ */
+static int32_t flow_translation_q16(int32_t phase_q16)
+{
+    int32_t phase_squared_q16;
+    int32_t cubic_terms_q16;
+
+    if(phase_q16 <= 0)
         return 0;
-    if(value_q8 >= 256)
-        return 256;
-    squared_q8 = value_q8 * value_q8 >> 8;
-    return squared_q8 * (768 - 2 * value_q8) >> 8;
+    if(phase_q16 >= FLOW_POSITION_ONE)
+        return FLOW_SIDE_OFFSET * FLOW_POSITION_ONE;
+    phase_squared_q16 = multiply_q16(phase_q16, phase_q16);
+    cubic_terms_q16 =
+        172 * FLOW_POSITION_ONE +
+        multiply_q16(
+            phase_q16,
+            -301 * FLOW_POSITION_ONE +
+            multiply_q16(
+                phase_q16, 129 * FLOW_POSITION_ONE));
+    return multiply_q16(
+        phase_q16,
+        108 * FLOW_POSITION_ONE +
+        multiply_q16(phase_squared_q16, cubic_terms_q16));
+}
+
+static int32_t flow_rotation_q16(int32_t phase_q16)
+{
+    int32_t phase_squared_q16;
+    int32_t cubic_terms_q16;
+
+    if(phase_q16 <= 0)
+        return 0;
+    if(phase_q16 >= FLOW_POSITION_ONE)
+        return FLOW_SIDE_ANGLE * FLOW_POSITION_ONE;
+    phase_squared_q16 = multiply_q16(phase_q16, phase_q16);
+    cubic_terms_q16 =
+        240 * FLOW_POSITION_ONE +
+        multiply_q16(
+            phase_q16,
+            -420 * FLOW_POSITION_ONE +
+            multiply_q16(
+                phase_q16, 180 * FLOW_POSITION_ONE));
+    return multiply_q16(
+        phase_q16,
+        60 * FLOW_POSITION_ONE +
+        multiply_q16(phase_squared_q16, cubic_terms_q16));
+}
+
+static int32_t flow_trig_q15(int32_t angle_q16, bool cosine)
+{
+    int whole_angle = angle_q16 / FLOW_POSITION_ONE;
+    int32_t remainder_q16 =
+        angle_q16 - whole_angle * FLOW_POSITION_ONE;
+    int next_angle = whole_angle +
+        (remainder_q16 < 0 ? -1 : 1);
+    int32_t amount_q16 =
+        remainder_q16 < 0 ? -remainder_q16 : remainder_q16;
+    int32_t start_q15 = cosine
+        ? lv_trigo_cos(whole_angle) : lv_trigo_sin(whole_angle);
+    int32_t end_q15 = cosine
+        ? lv_trigo_cos(next_angle) : lv_trigo_sin(next_angle);
+
+    return start_q15 +
+        (int32_t)(((int64_t)(end_q15 - start_q15) *
+                   amount_q16) >> 16);
 }
 
 static inline fb_data sample_rgb565_bilinear(
@@ -377,15 +442,15 @@ static fb_data shade565(fb_data color, int shade)
         RGB_UNPACK_BLUE(color) * shade >> 8);
 }
 
-static int32_t projected_x_q16(int center_x, int u,
+static int32_t projected_x_q16(int32_t center_x_q16, int u,
                                int sin_q15, int cos_q15)
 {
     int denominator =
         FLOW_CAMERA_DISTANCE * 32768 - u * sin_q15;
 
     if(denominator <= 0)
-        return center_x << 16;
-    return (center_x << 16) + (int32_t)(
+        return center_x_q16;
+    return center_x_q16 + (int32_t)(
         ((int64_t)u * cos_q15 * FLOW_CAMERA_DISTANCE *
          FLOW_POSITION_ONE) / denominator);
 }
@@ -410,8 +475,8 @@ static int column_coverage_alpha_q16(int x, int32_t left_q16,
 
 static void draw_projected_image(const lv_image_dsc_t *image,
                                  int album_index,
-                                 int center_x, int center_y,
-                                 int size, int yaw, int alpha,
+                                 int32_t center_x_q16, int center_y,
+                                 int size, int32_t yaw_q16, int alpha,
                                  int side, bool bilinear)
 {
     const fb_data *source;
@@ -420,12 +485,12 @@ static void draw_projected_image(const lv_image_dsc_t *image,
     int source_height;
     int source_stride;
     int half_size = size / 2;
-    int sin_q15 = lv_trigo_sin(yaw);
-    int cos_q15 = lv_trigo_cos(yaw);
+    int sin_q15 = flow_trig_q15(yaw_q16, false);
+    int cos_q15 = flow_trig_q15(yaw_q16, true);
     int32_t x0_q16 = projected_x_q16(
-        center_x, -half_size, sin_q15, cos_q15);
+        center_x_q16, -half_size, sin_q15, cos_q15);
     int32_t x1_q16 = projected_x_q16(
-        center_x, half_size, sin_q15, cos_q15);
+        center_x_q16, half_size, sin_q15, cos_q15);
     int32_t left_q16 = x0_q16 < x1_q16 ? x0_q16 : x1_q16;
     int32_t right_q16 = x0_q16 > x1_q16 ? x0_q16 : x1_q16;
     int left = left_q16 >> 16;
@@ -461,7 +526,7 @@ static void draw_projected_image(const lv_image_dsc_t *image,
             column_coverage_alpha_q16(px, left_q16, right_q16);
         int32_t screen_x_q16 =
             (px << 16) + FLOW_POSITION_ONE / 2 -
-            (center_x << 16);
+            center_x_q16;
         int64_t inverse_denominator =
             (int64_t)FLOW_CAMERA_DISTANCE * cos_q15 +
             (((int64_t)screen_x_q16 * sin_q15) >> 16);
@@ -605,9 +670,9 @@ static void draw_album(int album_index)
     int32_t absolute_q16 =
         relative_q16 < 0 ? -relative_q16 : relative_q16;
     int direction = relative_q16 < 0 ? -1 : 1;
-    int center_x;
+    int32_t center_x_q16;
     int size;
-    int yaw;
+    int32_t yaw_q16;
     int alpha;
     bool bilinear;
     const lv_image_dsc_t *image;
@@ -615,13 +680,16 @@ static void draw_album(int album_index)
     if(absolute_q16 > FLOW_VISIBLE_DISTANCE_Q16)
         return;
     if(absolute_q16 <= FLOW_POSITION_ONE) {
-        int phase_q8 = (int)(absolute_q16 >> 8);
-        int pose_q8 = smoothstep_q8(phase_q8);
+        int32_t translation_q16 =
+            flow_translation_q16(absolute_q16);
+        int32_t rotation_q16 =
+            flow_rotation_q16(absolute_q16);
 
-        center_x = 160 + direction *
-            (FLOW_SIDE_OFFSET * pose_q8 / 256);
+        center_x_q16 =
+            160 * FLOW_POSITION_ONE +
+            direction * translation_q16;
         size = FLOW_COVER_SIZE;
-        yaw = direction * (FLOW_SIDE_ANGLE * pose_q8 / 256);
+        yaw_q16 = direction * rotation_q16;
         alpha = 255;
         bilinear = true;
     }
@@ -633,19 +701,22 @@ static void draw_album(int album_index)
 
         if(outer_fade > 80)
             outer_fade = 80;
-        center_x = 160 + direction *
-            (FLOW_SIDE_OFFSET +
-             (int)((int64_t)outer_q16 * FLOW_SIDE_SPACING /
-                   FLOW_POSITION_ONE));
+        center_x_q16 =
+            160 * FLOW_POSITION_ONE +
+            direction *
+            (FLOW_SIDE_OFFSET * FLOW_POSITION_ONE +
+             outer_q16 * FLOW_SIDE_SPACING);
         size = FLOW_COVER_SIZE;
-        yaw = direction * FLOW_SIDE_ANGLE;
+        yaw_q16 =
+            direction * FLOW_SIDE_ANGLE * FLOW_POSITION_ONE;
         alpha = 255 - outer_fade;
         bilinear = true;
     }
 
     image = cached_image(album_index);
-    draw_projected_image(image, album_index, center_x, FLOW_CENTER_Y,
-                         size, yaw, alpha, direction, bilinear);
+    draw_projected_image(
+        image, album_index, center_x_q16, FLOW_CENTER_Y,
+        size, yaw_q16, alpha, direction, bilinear);
 }
 
 static void render_flow(void)
@@ -773,18 +844,21 @@ int crazypod_coverflow_step(int direction)
     int speed;
     int direction_sign;
     int center;
+    int64_t boosted_velocity_q16;
     bool new_gesture;
+    bool direction_changed;
 
     if(count <= 0 || direction == 0)
         return selected_album;
     direction_sign = direction < 0 ? -1 : 1;
     magnitude = direction < 0 ? -direction : direction;
     center = crazypod_coverflow_center_album();
+    direction_changed = direction_sign != flow_direction;
     new_gesture =
         !input_active ||
         !TIME_BEFORE(current_tick,
                      last_input + FLOW_RELEASE_GRACE_TICKS) ||
-        direction_sign != flow_direction;
+        direction_changed;
 
     if(new_gesture) {
         gesture_min_album = center + direction_sign;
@@ -793,9 +867,20 @@ int crazypod_coverflow_step(int direction)
         if(gesture_min_album >= count)
             gesture_min_album = count - 1;
         selected_album = gesture_min_album;
-        if(direction_sign != flow_direction)
-            velocity_q16 /= 4;
     }
+
+    if(direction_changed)
+        velocity_q16 = 0;
+    boosted_velocity_q16 =
+        (int64_t)velocity_q16 +
+        (int64_t)direction_sign * magnitude *
+            FLOW_INPUT_IMPULSE_Q16;
+    if(boosted_velocity_q16 > INT32_MAX)
+        velocity_q16 = INT32_MAX;
+    else if(boosted_velocity_q16 < INT32_MIN)
+        velocity_q16 = INT32_MIN;
+    else
+        velocity_q16 = (int32_t)boosted_velocity_q16;
 
     last_input = current_tick;
     input_active = true;
@@ -832,18 +917,22 @@ static void advance_position(long now)
         !TIME_BEFORE(now, last_input + FLOW_RELEASE_GRACE_TICKS);
 
     if(released && input_active) {
+        int32_t projected_position_q16;
         int target_album;
 
         input_active = false;
         input_velocity_q16 = 0;
+        projected_position_q16 =
+            position_q16 +
+            (int32_t)(((int64_t)velocity_q16 *
+                       FLOW_RELEASE_PROJECTION_TICKS) / HZ);
+        target_album =
+            (projected_position_q16 + FLOW_POSITION_ONE / 2) >> 16;
         if(flow_direction > 0) {
-            target_album =
-                (position_q16 + FLOW_POSITION_ONE - 1) >> 16;
             if(target_album < gesture_min_album)
                 target_album = gesture_min_album;
         }
         else {
-            target_album = position_q16 >> 16;
             if(target_album > gesture_min_album)
                 target_album = gesture_min_album;
         }
@@ -853,7 +942,6 @@ static void advance_position(long now)
             target_album = count - 1;
         target_position_q16 = target_album * FLOW_POSITION_ONE;
         selected_album = target_album;
-        velocity_q16 /= FLOW_RELEASE_MOMENTUM_DIVISOR;
     }
 
     if(elapsed < 1)

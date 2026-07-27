@@ -22,7 +22,9 @@
  ****************************************************************************/
 #include "plugin.h"
 #include "mpegplayer.h"
+#ifndef CRAZYPOD_VIDEO_CORE
 #include "lib/grey.h"
+#endif
 #include "mpeg_settings.h"
 
 #ifndef HAVE_LCD_COLOR

@@ -597,6 +597,8 @@ void crazypod_music_scan(void)
     scan_directory("/Music", 0);
     if(!scan_abort_requested)
         scan_directory("/iPod_Control/Music", 0);
+    if(!scan_abort_requested)
+        scan_directory("/Podcasts", 0);
     if(!scan_abort_requested) {
         qsort(tracks, track_count, sizeof(tracks[0]), compare_tracks);
         build_groups();

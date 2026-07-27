@@ -12,6 +12,7 @@ SRC += $(call preprocess, $(APPSDIR)/SOURCES)
 
 ifeq ($(MODELNAME),ipod6g)
   include $(ROOTDIR)/lib/lvgl/lvgl-rockbox.make
+  include $(ROOTDIR)/miniapps/miniapps.make
 endif
 
 # apps/features.txt is a file that (is preprocessed and) lists named features

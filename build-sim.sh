@@ -17,7 +17,7 @@ detect_jobs() {
 
 require_tools() {
     missing=0
-    for tool in make gcc perl sdl2-config pkg-config; do
+    for tool in make gcc perl python3 sdl2-config pkg-config; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             echo "Error: missing required simulator tool '$tool' on PATH." >&2
             missing=1
@@ -99,6 +99,19 @@ make -j"$(detect_jobs)"
 
 codec_dir="lib/rbcodec/codecs"
 sim_codec_dir="simdisk/.rockbox/codecs"
+codepage_tool="$(cd .. && pwd)/tools/codepages"
+codepage_build_dir="$(pwd)/generated-codepages"
+sim_codepage_dir="simdisk/.rockbox/codepages"
+if [ ! -x "$codepage_tool" ]; then
+    echo "Error: missing Rockbox codepage generator '$codepage_tool'." >&2
+    exit 1
+fi
+mkdir -p "$codepage_build_dir" "$sim_codepage_dir"
+(
+    cd "$codepage_build_dir"
+    "$codepage_tool"
+)
+cp "$codepage_build_dir/936.cp" "$sim_codepage_dir/936.cp"
 mkdir -p "$sim_codec_dir"
 find "$sim_codec_dir" -type f -name '*.codec' -delete
 for codec in "$codec_dir"/*.codec; do
@@ -122,6 +135,20 @@ mkdir -p "$icon_dir"
 cp -R ../assets/crazypod-icons/. "$icon_dir/"
 cp ../assets/crazypod/default-home.bmp \
    simdisk/.rockbox/crazypod/default-home.bmp
+mkdir -p miniapps/packages
+find miniapps/packages -type f \
+    \( -name 'calculator-*.cpk' -o -name 'pomodoro-*.cpk' \) -delete
+python3 ../tools/build-miniapp-packages.py \
+    --build-dir . \
+    --target simulator \
+    --binary app.dylib \
+    --output miniapps/packages
+miniapp_package_dir="simdisk/.rockbox/crazypod/miniapps/packages"
+mkdir -p "$miniapp_package_dir"
+find "$miniapp_package_dir" -type f -name '*.cpk' -delete
+cp miniapps/packages/calculator-1.2.0.cpk \
+   miniapps/packages/pomodoro-1.2.0.cpk \
+   "$miniapp_package_dir/"
 
 app_bundle="CrazyPod Simulator.app"
 mkdir -p "$app_bundle/Contents/MacOS"

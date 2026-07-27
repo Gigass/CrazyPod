@@ -89,9 +89,10 @@ SECTIONS
         _iend = .;
     } > IRAM
 
-    .stack (NOLOAD) :
+    .stack ALIGN(8) (NOLOAD) :
     {
        *(.stack)
+       . = ALIGN(8);
        stackbegin = .;
        _stackbegin = .;
        . += 0x2000;
@@ -104,6 +105,9 @@ SECTIONS
        . += 0x400;
        _fiqstackend = .;
     } > IRAM
+    ASSERT(((_stackbegin | _stackend | _irqstackbegin |
+             _irqstackend | _fiqstackbegin | _fiqstackend) & 7) == 0,
+           "s5l8702 stacks must be 8-byte aligned")
 
     .bss (NOLOAD) :
     {

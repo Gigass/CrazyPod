@@ -36,8 +36,8 @@ static const char *const theme_paths[CRAZYPOD_ICON_THEME_COUNT] = {
 
 static const char *const app_paths[CRAZYPOD_ICON_COUNT] = {
     "music", "podcasts", "mini_apps", "shuffle",
-    "screen_lock", "camera", "photos", "diy",
-    "fitness", "voice_memos", "books", "notes",
+    "screen_lock", "photos", "diy", "fitness", "books", "notes",
+    "clock", "contacts", "calendar", "stopwatch",
     "extras", "settings"
 };
 

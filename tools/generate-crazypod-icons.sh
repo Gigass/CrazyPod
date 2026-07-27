@@ -7,7 +7,7 @@ SOURCE_ROOT="${MAXPOD_ASSETS_ROOT:-../../MaxPodApp/ios/MaxPodApp/Assets.xcassets
 OUTPUT_ROOT="assets/crazypod-icons"
 WALLPAPER_OUTPUT="assets/crazypod/default-home.bmp"
 THEMES="basic cel_frame anime_pop mecha_spec toy y2k flat skeuo lucid_pop noize_bloom soft_skeuo acrylic ink sticker sticker2 voxel"
-APPS="music podcasts mini_apps shuffle screen_lock camera photos diy fitness voice_memos books notes extras settings"
+APPS="music podcasts mini_apps shuffle screen_lock photos diy fitness books notes clock contacts calendar stopwatch extras settings"
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
     echo "Error: ffmpeg is required to regenerate CrazyPod icon assets." >&2

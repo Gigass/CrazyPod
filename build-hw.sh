@@ -17,7 +17,8 @@ detect_jobs() {
 
 require_tools() {
     missing=0
-    for tool in make perl zip "${CROSS_COMPILE}gcc" "${CROSS_COMPILE}objcopy"; do
+    for tool in make perl python3 zip "${CROSS_COMPILE}gcc" \
+        "${CROSS_COMPILE}objcopy" "${CROSS_COMPILE}nm"; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             echo "Error: missing required tool '$tool' on PATH." >&2
             missing=1
@@ -33,6 +34,22 @@ prepare_generated_headers() {
     make -j1 "$builddir_unix/rbversion.h"
     make -j1 "$builddir_unix/apps/core_asmdefs.h"
     make -j1 "$builddir_unix/ram.link"
+}
+
+verify_stack_alignment() {
+    for symbol in stackbegin _stackbegin stackend _stackend \
+        _irqstackbegin _irqstackend _fiqstackbegin _fiqstackend; do
+        address=$("${CROSS_COMPILE}nm" -n rockbox.elf |
+            awk -v target="$symbol" '$3 == target { print $1; exit }')
+        if [ -z "$address" ]; then
+            echo "Error: missing stack symbol '$symbol' in rockbox.elf." >&2
+            exit 1
+        fi
+        if [ $((0x$address % 8)) -ne 0 ]; then
+            echo "Error: stack symbol '$symbol' is not 8-byte aligned: 0x$address." >&2
+            exit 1
+        fi
+    done
 }
 
 INCREMENTAL=0
@@ -109,6 +126,15 @@ if [ ! -f rockbox.ipod ]; then
     echo "Error: hardware build did not produce rockbox.ipod." >&2
     exit 1
 fi
+verify_stack_alignment
+mkdir -p ../dist/miniapps
+find ../dist/miniapps -type f \
+    \( -name 'calculator-*.cpk' -o -name 'pomodoro-*.cpk' \) -delete
+python3 ../tools/build-miniapp-packages.py \
+    --build-dir . \
+    --target ipod6g \
+    --binary app.arm \
+    --output ../dist/miniapps
 
 PACKAGE_DIR="$(mktemp -d)"
 trap 'rm -rf "$PACKAGE_DIR"' EXIT HUP INT TERM
@@ -121,13 +147,31 @@ if [ ! -f ../assets/crazypod/default-home.bmp ]; then
     exit 1
 fi
 mkdir -p "$PACKAGE_DIR/.rockbox/codecs"
+mkdir -p "$PACKAGE_DIR/.rockbox/codepages"
 mkdir -p "$PACKAGE_DIR/.rockbox/crazypod/icons"
+mkdir -p "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages"
+CODEPAGE_TOOL="$(cd .. && pwd)/tools/codepages"
+CODEPAGE_BUILD_DIR="$PACKAGE_DIR/generated-codepages"
+if [ ! -x "$CODEPAGE_TOOL" ]; then
+    echo "Error: missing Rockbox codepage generator '$CODEPAGE_TOOL'." >&2
+    exit 1
+fi
+mkdir -p "$CODEPAGE_BUILD_DIR"
+(
+    cd "$CODEPAGE_BUILD_DIR"
+    "$CODEPAGE_TOOL"
+)
+cp "$CODEPAGE_BUILD_DIR/936.cp" \
+   "$PACKAGE_DIR/.rockbox/codepages/936.cp"
 cp rockbox.ipod "$PACKAGE_DIR/.rockbox/rockbox.ipod"
 [ ! -f rockbox-info.txt ] || cp rockbox-info.txt "$PACKAGE_DIR/.rockbox/rockbox-info.txt"
 cp -R ../assets/crazypod-icons/. \
     "$PACKAGE_DIR/.rockbox/crazypod/icons/"
 cp ../assets/crazypod/default-home.bmp \
     "$PACKAGE_DIR/.rockbox/crazypod/default-home.bmp"
+cp ../dist/miniapps/calculator-1.2.0.cpk \
+   ../dist/miniapps/pomodoro-1.2.0.cpk \
+   "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
 for codec in lib/rbcodec/codecs/*.codec; do
     [ -f "$codec" ] || continue
     case "$codec" in

@@ -2,6 +2,7 @@
 
 #ifdef IPOD_6G
 
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -17,6 +18,7 @@
 #include "usb.h"
 
 #include "crazypod_audio_shims.h"
+#include "crazypod_apps.h"
 #include "crazypod_playlist.h"
 #include "crazypod_state.h"
 
@@ -26,7 +28,7 @@
 #define QUEUE_PATH STATE_DIRECTORY "/queue.m3u8"
 #define QUEUE_TEMP_PATH STATE_DIRECTORY "/queue.tmp"
 #define STATE_MAGIC 0x43505354u
-#define STATE_VERSION 5u
+#define STATE_VERSION 8u
 #define STATE_SAVE_INTERVAL (30 * HZ)
 #define CRAZYPOD_EQ_GAIN_MIN (-240)
 #define CRAZYPOD_EQ_GAIN_MAX 240
@@ -143,7 +145,7 @@ struct crazypod_state_disk_v4 {
     uint32_t checksum;
 };
 
-struct crazypod_state_disk {
+struct crazypod_state_disk_v5 {
     uint32_t magic;
     uint32_t version;
     uint32_t size;
@@ -175,11 +177,118 @@ struct crazypod_state_disk {
     uint32_t checksum;
 };
 
+struct crazypod_state_disk_v6 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t usb_charging;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t menu_count;
+    uint32_t menu_enabled_mask;
+    uint8_t menu_order[12];
+    uint32_t checksum;
+};
+
+struct crazypod_state_disk_v7 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t usb_charging;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t menu_count;
+    uint32_t menu_enabled_mask;
+    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    uint32_t checksum;
+};
+
+struct crazypod_state_disk {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t usb_charging;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t menu_count;
+    uint32_t menu_enabled_mask;
+    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    int32_t reduce_motion;
+    uint32_t checksum;
+};
+
 static unsigned long resume_elapsed;
 static unsigned long last_saved_elapsed;
 static long last_save_tick;
 static unsigned saved_queue_generation;
 static bool state_dirty;
+static bool reduce_motion;
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 {
@@ -224,6 +333,27 @@ static uint32_t state_v3_checksum(const struct crazypod_state_disk_v3 *state)
 static uint32_t state_v4_checksum(const struct crazypod_state_disk_v4 *state)
 {
     struct crazypod_state_disk_v4 copy = *state;
+    copy.checksum = 0;
+    return hash_bytes(2166136261u, &copy, sizeof(copy));
+}
+
+static uint32_t state_v5_checksum(const struct crazypod_state_disk_v5 *state)
+{
+    struct crazypod_state_disk_v5 copy = *state;
+    copy.checksum = 0;
+    return hash_bytes(2166136261u, &copy, sizeof(copy));
+}
+
+static uint32_t state_v6_checksum(const struct crazypod_state_disk_v6 *state)
+{
+    struct crazypod_state_disk_v6 copy = *state;
+    copy.checksum = 0;
+    return hash_bytes(2166136261u, &copy, sizeof(copy));
+}
+
+static uint32_t state_v7_checksum(const struct crazypod_state_disk_v7 *state)
+{
+    struct crazypod_state_disk_v7 copy = *state;
     copy.checksum = 0;
     return hash_bytes(2166136261u, &copy, sizeof(copy));
 }
@@ -307,6 +437,56 @@ static bool load_header(struct crazypod_state_disk *state)
        header[2] == sizeof(*state)) {
         valid = read_exact(fd, state, sizeof(*state)) &&
                 state->checksum == state_checksum(state);
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 7u &&
+            header[2] == sizeof(struct crazypod_state_disk_v7)) {
+        struct crazypod_state_disk_v7 state_v7;
+
+        valid = read_exact(fd, &state_v7, sizeof(state_v7)) &&
+                state_v7.checksum == state_v7_checksum(&state_v7);
+        if(valid) {
+            memcpy(state, &state_v7,
+                   offsetof(struct crazypod_state_disk_v7, checksum));
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+            state->reduce_motion = 0;
+        }
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 6u &&
+            header[2] == sizeof(struct crazypod_state_disk_v6)) {
+        struct crazypod_state_disk_v6 state_v6;
+
+        valid = read_exact(fd, &state_v6, sizeof(state_v6)) &&
+                state_v6.checksum == state_v6_checksum(&state_v6);
+        if(valid) {
+            size_t menu_count = state_v6.menu_count < 12u
+                ? state_v6.menu_count : 12u;
+            memcpy(state, &state_v6,
+                   offsetof(struct crazypod_state_disk_v6, menu_order));
+            memcpy(state->menu_order, state_v6.menu_order, menu_count);
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+            state->menu_count = (uint32_t)menu_count;
+        }
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 5u &&
+            header[2] == sizeof(struct crazypod_state_disk_v5)) {
+        struct crazypod_state_disk_v5 state_v5;
+
+        valid = read_exact(fd, &state_v5, sizeof(state_v5)) &&
+                state_v5.checksum == state_v5_checksum(&state_v5);
+        if(valid) {
+            memcpy(state, &state_v5,
+                   offsetof(struct crazypod_state_disk_v5, checksum));
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+        }
     }
     else if(header[0] == STATE_MAGIC &&
             header[1] == 4u &&
@@ -589,11 +769,18 @@ void crazypod_state_load(void)
     last_save_tick = current_tick;
     saved_queue_generation = crazypod_queue_generation();
     state_dirty = false;
+    reduce_motion = false;
 
+    crazypod_apps_reset();
     if(!load_header(&state))
         return;
 
+    reduce_motion = state.reduce_motion != 0;
     clamp_and_apply_settings(&state);
+    if(state.menu_count > 0 &&
+       state.menu_count <= CRAZYPOD_APP_COUNT)
+        crazypod_apps_restore(state.menu_order, state.menu_count,
+                              state.menu_enabled_mask);
     crazypod_queue_restore_begin();
     fd = open(QUEUE_PATH, O_RDONLY);
     if(fd >= 0) {
@@ -624,6 +811,19 @@ void crazypod_state_load(void)
 
 void crazypod_state_mark_dirty(void)
 {
+    state_dirty = true;
+}
+
+bool crazypod_state_reduce_motion(void)
+{
+    return reduce_motion;
+}
+
+void crazypod_state_set_reduce_motion(bool enabled)
+{
+    if(reduce_motion == enabled)
+        return;
+    reduce_motion = enabled;
     state_dirty = true;
 }
 
@@ -747,6 +947,10 @@ void crazypod_state_save(bool force)
         state.eq_bands[i].q = global_settings.eq_band_settings[i].q;
         state.eq_bands[i].gain = global_settings.eq_band_settings[i].gain;
     }
+    state.menu_count = CRAZYPOD_APP_COUNT;
+    crazypod_apps_export(state.menu_order, sizeof(state.menu_order),
+                         &state.menu_enabled_mask);
+    state.reduce_motion = reduce_motion ? 1 : 0;
     state.checksum = state_checksum(&state);
 
     fd = open(STATE_TEMP_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);
