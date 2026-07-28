@@ -1,0 +1,11 @@
+#ifndef TEST_MINIAPP_CONFIG_H
+#define TEST_MINIAPP_CONFIG_H
+
+#define IPOD_6G 1
+#define BINFMT_ROCK 0
+#define BINFMT_DLOPEN 1
+#define CONFIG_BINFMT BINFMT_DLOPEN
+#define PLUGIN_BUFFER_SIZE (3u * 1024u * 1024u)
+#define MAX_PATH 512
+
+#endif

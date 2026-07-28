@@ -1,0 +1,95 @@
+#ifndef CRAZYPOD_NOW_PLAYING_FEATURE_H
+#define CRAZYPOD_NOW_PLAYING_FEATURE_H
+
+#include "lvgl.h"
+
+#include "../../../crazypod_music.h"
+#include "../../navigation/crazypod_ui_routes.h"
+
+enum crazypod_now_playing_overlay {
+    CRAZYPOD_NOW_OVERLAY_NONE = 0,
+    CRAZYPOD_NOW_OVERLAY_ACTIONS,
+    CRAZYPOD_NOW_OVERLAY_QUEUE,
+    CRAZYPOD_NOW_OVERLAY_VOLUME,
+};
+
+struct crazypod_now_playing_overlay_host {
+    lv_obj_t *parent;
+    void (*prepare_glass)(bool refresh, void *context);
+    lv_obj_t *(*create_panel)(
+        lv_obj_t *parent, int x, int y,
+        int width, int height, void *context);
+    void (*prefetch_queue_artwork)(
+        int queue_index, void *context);
+    void (*render)(void *context);
+    void *context;
+};
+
+struct crazypod_now_playing_navigation_host {
+    bool (*product_active)(void);
+    int (*route_depth)(void);
+    enum crazypod_route (*current_route)(void);
+    void (*push_now_playing)(void);
+    void (*boost)(int ticks);
+};
+
+typedef lv_obj_t *(*crazypod_now_playing_artwork_renderer)(
+    lv_obj_t *parent, const struct crazypod_track *track,
+    int x, int y, int display_size,
+    const lv_image_dsc_t *descriptor, bool scale_descriptor);
+
+struct crazypod_now_playing_render_context {
+    lv_obj_t *parent;
+    const lv_font_t *metadata_font;
+    crazypod_now_playing_artwork_renderer render_artwork;
+    void (*boost)(int ticks);
+};
+
+int crazypod_now_playing_feature_item_count(
+    const struct route_state *state);
+const char *crazypod_now_playing_feature_title(
+    const struct route_state *state);
+bool crazypod_now_playing_feature_item_title(
+    const struct route_state *state, int index,
+    const char **title);
+
+void crazypod_now_playing_overlay_configure(
+    const struct crazypod_now_playing_overlay_host *host);
+void crazypod_now_playing_overlay_reset(void);
+bool crazypod_now_playing_overlay_visible(void);
+enum crazypod_now_playing_overlay
+crazypod_now_playing_overlay_kind(void);
+bool crazypod_now_playing_lyrics_mode(void);
+void crazypod_now_playing_overlay_show_actions(void);
+void crazypod_now_playing_overlay_show_queue(void);
+void crazypod_now_playing_overlay_show_volume(void);
+void crazypod_now_playing_overlay_restore(
+    enum crazypod_now_playing_overlay overlay);
+void crazypod_now_playing_overlay_dismiss(bool refresh);
+void crazypod_now_playing_overlay_activate(void);
+void crazypod_now_playing_overlay_move(int direction);
+void crazypod_now_playing_overlay_cycle_playback_mode(void);
+void crazypod_now_playing_overlay_refresh_queue(void);
+void crazypod_now_playing_overlay_refresh_after_playback(void);
+void crazypod_now_playing_overlay_refresh_if_queue_changed(void);
+void crazypod_now_playing_navigation_configure(
+    const struct crazypod_now_playing_navigation_host *host);
+void crazypod_now_playing_navigation_initialize(void);
+void crazypod_now_playing_navigation_reset(void);
+void crazypod_now_playing_request_open(void);
+void crazypod_now_playing_process_open(void);
+void crazypod_now_playing_prefetch_queue_artwork(
+    int queue_index);
+int crazypod_now_playing_artwork_slot(
+    const struct crazypod_track *track);
+bool crazypod_now_playing_artwork_changed(void);
+void crazypod_now_playing_feature_render(
+    const struct crazypod_now_playing_render_context *context);
+void crazypod_now_playing_feature_tick_wave(
+    long now, bool active);
+void crazypod_now_playing_feature_reset_screen(void);
+const char *crazypod_now_playing_feature_rendered_track_path(void);
+void crazypod_now_playing_feature_update_playback(
+    uint32_t elapsed_ms, uint32_t length_ms);
+
+#endif

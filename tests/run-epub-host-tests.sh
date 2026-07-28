@@ -21,6 +21,12 @@ cc -std=c11 -Wall -Wextra -Werror \
     -Iapps/crazypod \
     -Ifirmware/include \
     tests/epub_parser_host_test.c \
+    apps/crazypod/epub/crazypod_epub_html.c \
+    apps/crazypod/epub/crazypod_epub_navigation.c \
+    apps/crazypod/epub/crazypod_epub_parser.c \
+    apps/crazypod/epub/cache/crazypod_epub_cache.c \
+    apps/crazypod/epub/cache/crazypod_epub_cover_store.c \
+    apps/crazypod/epub/extraction/crazypod_epub_extraction.c \
     $zip_sources \
     -o "$test_root/epub_parser_test"
 cc -std=c11 -Wall -Wextra -Werror \

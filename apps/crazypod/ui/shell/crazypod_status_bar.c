@@ -1,0 +1,136 @@
+#include "config.h"
+
+#ifdef IPOD_6G
+
+#include <stdbool.h>
+#include <stdio.h>
+
+#include "audio.h"
+#include "powermgmt.h"
+#include "timefuncs.h"
+
+#include "../presentation/crazypod_ui_widgets.h"
+#include "crazypod_status_bar.h"
+
+#define STATUS_WHITE 0xFFFFFF
+#define STATUS_DARK 0x08080D
+
+struct status_bar {
+    lv_obj_t *time;
+    lv_obj_t *battery;
+    lv_obj_t *battery_fill;
+    lv_obj_t *battery_cap;
+    lv_obj_t *charge;
+    lv_obj_t *playing;
+};
+
+static struct status_bar status_bars[CRAZYPOD_STATUS_BAR_COUNT];
+
+static struct status_bar *status_bar_at(int index)
+{
+    if(index < 0 || index >= CRAZYPOD_STATUS_BAR_COUNT)
+        return NULL;
+    return &status_bars[index];
+}
+
+void crazypod_status_bar_create(int index, lv_obj_t *screen)
+{
+    struct status_bar *bar = status_bar_at(index);
+
+    if(bar == NULL || screen == NULL)
+        return;
+    bar->time = crazypod_ui_widget_label(
+        screen, "00:00", &lv_font_montserrat_12,
+        STATUS_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(bar->time, 34, 10);
+
+    bar->playing = crazypod_ui_widget_label(
+        screen, LV_SYMBOL_PLAY, &lv_font_montserrat_10,
+        STATUS_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(bar->playing, 241, 11);
+    lv_obj_add_flag(bar->playing, LV_OBJ_FLAG_HIDDEN);
+
+    bar->battery = crazypod_ui_widget_box(
+        screen, 258, 11, 27, 12, 3, STATUS_WHITE, 64);
+    bar->battery_fill = crazypod_ui_widget_box(
+        bar->battery, 1, 1, 24, 10, 2,
+        STATUS_WHITE, LV_OPA_COVER);
+    bar->charge = crazypod_ui_widget_label(
+        bar->battery, LV_SYMBOL_CHARGE, &lv_font_montserrat_8,
+        STATUS_DARK, LV_OPA_COVER);
+    lv_obj_center(bar->charge);
+    bar->battery_cap = crazypod_ui_widget_box(
+        screen, 287, 15, 2, 5, 1, STATUS_WHITE, 128);
+}
+
+void crazypod_status_bars_update(void)
+{
+    char time_text[8];
+    struct tm *now = get_time();
+    int level = battery_level();
+    bool charging = false;
+    bool playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
+                   (audio_status() & AUDIO_STATUS_PAUSE) == 0;
+    int i;
+
+    if(level < 0)
+        level = 0;
+    if(level > 100)
+        level = 100;
+#if CONFIG_CHARGING >= CHARGING_MONITOR
+    charging = charge_state > DISCHARGING;
+#endif
+    snprintf(time_text, sizeof(time_text), "%02d:%02d",
+             now->tm_hour, now->tm_min);
+
+    for(i = 0; i < CRAZYPOD_STATUS_BAR_COUNT; ++i) {
+        struct status_bar *bar = &status_bars[i];
+
+        if(bar->time == NULL)
+            continue;
+        lv_label_set_text(bar->time, time_text);
+        lv_obj_set_width(
+            bar->battery_fill, level > 0 ? 3 + (21 * level / 100) : 0);
+        if(charging)
+            lv_obj_remove_flag(bar->charge, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(bar->charge, LV_OBJ_FLAG_HIDDEN);
+        if(playing)
+            lv_obj_remove_flag(bar->playing, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(bar->playing, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void crazypod_status_bar_set_palette(
+    int index, uint32_t foreground, uint32_t background)
+{
+    struct status_bar *bar = status_bar_at(index);
+
+    if(bar == NULL || bar->time == NULL)
+        return;
+    lv_obj_set_style_text_color(
+        bar->time, lv_color_hex(foreground), 0);
+    lv_obj_set_style_text_color(
+        bar->playing, lv_color_hex(foreground), 0);
+    lv_obj_set_style_bg_color(
+        bar->battery, lv_color_hex(foreground), 0);
+    lv_obj_set_style_bg_color(
+        bar->battery_fill, lv_color_hex(foreground), 0);
+    lv_obj_set_style_bg_color(
+        bar->battery_cap, lv_color_hex(foreground), 0);
+    lv_obj_set_style_text_color(
+        bar->charge, lv_color_hex(background), 0);
+}
+
+void crazypod_status_bar_foreground(int index)
+{
+    struct status_bar *bar = status_bar_at(index);
+
+    if(bar == NULL || bar->time == NULL)
+        return;
+    lv_obj_move_foreground(bar->time);
+    lv_obj_move_foreground(bar->playing);
+}
+
+#endif

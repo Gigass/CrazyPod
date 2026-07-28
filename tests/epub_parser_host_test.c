@@ -58,7 +58,8 @@ static bool test_remove_tree(const char *root)
         return false;
     }
     close(fd);
-    return remove_tree(directory) && !file_exists(directory);
+    return crazypod_epub_extraction_remove_tree(directory) &&
+        !file_exists(directory);
 }
 
 int main(int argc, char **argv)

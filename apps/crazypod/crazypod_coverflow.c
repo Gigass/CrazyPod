@@ -91,22 +91,30 @@ static fb_data *framebuffer(void)
     return (fb_data *)lcd_framebuffer_default.data;
 }
 
-static fb_data blend565(fb_data foreground, fb_data background, int alpha)
+static inline unsigned alpha_weight6(int alpha)
 {
-    unsigned foreground_weight;
+    if(alpha <= 0)
+        return 0;
+    if(alpha >= 255)
+        return 64;
+    return ((unsigned)alpha + 2) >> 2;
+}
+
+static inline __attribute__((always_inline)) fb_data blend565_weight(
+    fb_data foreground, fb_data background, unsigned foreground_weight)
+{
     unsigned inverse;
     unsigned result;
 
-    if(alpha <= 0)
+    if(foreground_weight == 0)
         return background;
-    if(alpha >= 255)
+    if(foreground_weight >= 64)
         return foreground;
     /*
      * Use 6-bit weights. With a maximum weight sum of 64, the blue product
      * cannot carry into the red lane of the packed 0xf81f pair. The old
      * 8-bit multiply allowed exactly that and produced saturated blue noise.
      */
-    foreground_weight = ((unsigned)alpha + 2) >> 2;
     inverse = 64 - foreground_weight;
     result =
         (((foreground & 0xf81f) * foreground_weight +
@@ -115,6 +123,13 @@ static fb_data blend565(fb_data foreground, fb_data background, int alpha)
         (((foreground & 0x07e0) * foreground_weight +
           (background & 0x07e0) * inverse) >> 6) & 0x07e0;
     return (fb_data)result;
+}
+
+static inline fb_data blend565(fb_data foreground, fb_data background,
+                               int alpha)
+{
+    return blend565_weight(
+        foreground, background, alpha_weight6(alpha));
 }
 
 static void clear_flow_area(void)
@@ -404,16 +419,15 @@ static int32_t flow_trig_q15(int32_t angle_q16, bool cosine)
                    amount_q16) >> 16);
 }
 
-static fb_data shade565(fb_data color, int shade)
+static inline __attribute__((always_inline)) fb_data shade565_weight(
+    fb_data color, unsigned weight)
 {
-    unsigned weight;
     unsigned result;
 
-    if(shade >= 256)
+    if(weight >= 64)
         return color;
-    if(shade <= 0)
+    if(weight == 0)
         return LCD_BLACK;
-    weight = ((unsigned)shade + 2) >> 2;
     result =
         (((color & 0xf81f) * weight) >> 6) & 0xf81f;
     result |=
@@ -550,7 +564,9 @@ static void draw_projected_image(const lv_image_dsc_t *image,
         int source_step_q16;
         int source_position;
         int shade;
+        unsigned shade_weight;
         int draw_alpha;
+        unsigned draw_weight;
         int reflection_y;
         int y;
 
@@ -587,10 +603,12 @@ static void draw_projected_image(const lv_image_dsc_t *image,
         shade = 184 + ((source_position * 60 + 128) >> 8);
         shade =
             256 - (((256 - shade) * yaw_amount_q8 + 128) >> 8);
+        shade_weight = alpha_weight6(shade);
         draw_alpha = alpha;
         if(edge_alpha < 255)
             draw_alpha =
                 (draw_alpha * edge_alpha + 128) >> 8;
+        draw_weight = alpha_weight6(draw_alpha);
 
         {
             int source_y_q16 =
@@ -610,12 +628,12 @@ static void draw_projected_image(const lv_image_dsc_t *image,
                 else
                     color = source[
                         sy * source_width + source_x];
-                if(shade != 256)
-                    color = shade565(color, shade);
+                if(shade_weight < 64)
+                    color = shade565_weight(color, shade_weight);
                 destination = pixels + py * LCD_WIDTH + px;
-                *destination = draw_alpha == 255
-                    ? color : blend565(
-                        color, *destination, draw_alpha);
+                *destination = draw_weight >= 64
+                    ? color : blend565_weight(
+                        color, *destination, draw_weight);
                 source_y_q16 -= source_step_q16;
                 --py;
             }
@@ -638,12 +656,12 @@ static void draw_projected_image(const lv_image_dsc_t *image,
                 else
                     color = source[
                         sy * source_width + source_x];
-                if(shade != 256)
-                    color = shade565(color, shade);
+                if(shade_weight < 64)
+                    color = shade565_weight(color, shade_weight);
                 destination = pixels + py * LCD_WIDTH + px;
-                *destination = draw_alpha == 255
-                    ? color : blend565(
-                        color, *destination, draw_alpha);
+                *destination = draw_weight >= 64
+                    ? color : blend565_weight(
+                        color, *destination, draw_weight);
                 source_y_q16 += source_step_q16;
                 ++py;
             }
@@ -671,8 +689,8 @@ static void draw_projected_image(const lv_image_dsc_t *image,
             else
                 color = source[
                     sy * source_width + source_x];
-            if(shade != 256)
-                color = shade565(color, shade);
+            if(shade_weight < 64)
+                color = shade565_weight(color, shade_weight);
             destination = pixels + py * LCD_WIDTH + px;
             *destination = blend565(
                 color, *destination, reflection_alpha);

@@ -1,0 +1,87 @@
+#!/bin/sh
+set -eu
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+root = Path("apps/crazypod")
+ui = root / "ui"
+main = root / "crazypod_ui.c"
+errors = []
+
+for name in (
+    "controllers", "screens", "preview", "routes",
+    "material", "menu", "media",
+):
+    path = ui / name
+    if path.exists():
+        errors.append(f"forbidden horizontal directory: {path}")
+
+for path in (
+    ui / "features" / "home",
+    ui / "features" / "wallpaper",
+):
+    if path.exists():
+        errors.append(f"forbidden feature directory: {path}")
+
+line_count = len(main.read_text().splitlines())
+if not 400 <= line_count <= 800:
+    errors.append(
+        f"{main} has {line_count} lines; expected 400..800")
+
+main_text = main.read_text()
+if re.search(r"^\s*case\b", main_text, re.MULTILINE):
+    errors.append(f"{main} contains feature route/input switch cases")
+if re.search(
+    r"^\s*static\s+lv_obj_t\s*\*\s*[A-Za-z_]\w*\s*(?:=|;)",
+    main_text, re.MULTILINE,
+):
+    errors.append(f"{main} owns static LVGL object state")
+
+features = ui / "features"
+feature_names = sorted(
+    path.name for path in features.iterdir() if path.is_dir())
+for path in features.rglob("*"):
+    if path.suffix not in (".c", ".h"):
+        continue
+    owner = path.relative_to(features).parts[0]
+    for number, line in enumerate(
+        path.read_text(errors="ignore").splitlines(), 1
+    ):
+        if "#include" not in line:
+            continue
+        for other in feature_names:
+            if other == owner or f"../{other}/" not in line:
+                continue
+            facade = f'crazypod_{other}_feature.h"'
+            if not line.rstrip().endswith(facade):
+                errors.append(
+                    f"{path}:{number}: cross-feature private include")
+
+for path in ui.rglob("*"):
+    if path.suffix not in (".c", ".h"):
+        continue
+    for number, line in enumerate(
+        path.read_text(errors="ignore").splitlines(), 1
+    ):
+        if re.match(r"\s*extern\s+(?!const\b).+;", line):
+            errors.append(
+                f"{path}:{number}: mutable extern crosses a directory")
+
+for path in root.glob("*.c"):
+    if path == main:
+        continue
+    for number, line in enumerate(
+        path.read_text(errors="ignore").splitlines(), 1
+    ):
+        if "#include" in line and '"ui/' in line:
+            errors.append(
+                f"{path}:{number}: domain module depends on UI")
+
+if errors:
+    print("\n".join(errors), file=sys.stderr)
+    raise SystemExit(1)
+print(f"CrazyPod UI architecture gate passed ({line_count} root lines)")
+PY
