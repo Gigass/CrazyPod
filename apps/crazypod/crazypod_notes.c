@@ -9,6 +9,7 @@
 #include "dir.h"
 #include "file.h"
 
+#include "crazypod_checksum.h"
 #include "crazypod_notes.h"
 
 #define NOTES_DIRECTORY "/.crazypod/notes"
@@ -51,31 +52,21 @@ struct note_draft_disk {
 };
 
 static struct notes_index_disk index_state;
-
-static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
-{
-    const unsigned char *bytes = data;
-    size_t i;
-
-    for(i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
+static struct note_draft_disk draft_work;
+static char body_work[CRAZYPOD_NOTE_BODY_SIZE];
 
 static uint32_t index_checksum(const struct notes_index_disk *index)
 {
-    struct notes_index_disk copy = *index;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        index, sizeof(*index),
+        offsetof(struct notes_index_disk, checksum));
 }
 
 static uint32_t draft_checksum(const struct note_draft_disk *draft)
 {
-    struct note_draft_disk copy = *draft;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        draft, sizeof(*draft),
+        offsetof(struct note_draft_disk, checksum));
 }
 
 static bool read_exact(int fd, void *buffer, size_t size)
@@ -194,26 +185,29 @@ static int note_slot(uint32_t id)
 
 void crazypod_notes_init(void)
 {
-    struct notes_index_disk loaded;
+    bool valid;
     int fd;
 
     notes_reset();
     fd = open(NOTES_INDEX_PATH, O_RDONLY);
     if(fd < 0)
         return;
-    if(read_exact(fd, &loaded, sizeof(loaded)) &&
-       loaded.magic == NOTES_MAGIC &&
-       loaded.version == NOTES_VERSION &&
-       loaded.size == sizeof(loaded) &&
-       loaded.count <= NOTES_MAX &&
-       loaded.checksum == index_checksum(&loaded)) {
-        index_state = loaded;
+    valid =
+        read_exact(fd, &index_state, sizeof(index_state)) &&
+        index_state.magic == NOTES_MAGIC &&
+        index_state.version == NOTES_VERSION &&
+        index_state.size == sizeof(index_state) &&
+        index_state.count <= NOTES_MAX &&
+        index_state.checksum == index_checksum(&index_state);
+    close(fd);
+    if(valid) {
         if(index_state.next_id == 0)
             index_state.next_id = 1;
         if(index_state.next_sequence == 0)
             index_state.next_sequence = 1;
     }
-    close(fd);
+    else
+        notes_reset();
 }
 
 static bool note_before(const struct note_disk *left,
@@ -323,13 +317,13 @@ static bool contains_text(const char *text, const char *query)
 static bool note_matches(const struct crazypod_note *note,
                          const char *query)
 {
-    char body[CRAZYPOD_NOTE_BODY_SIZE];
     if(note == NULL || note->deleted)
         return false;
     if(contains_text(note->title, query))
         return true;
-    return crazypod_note_read_body(note->id, body, sizeof(body)) &&
-           contains_text(body, query);
+    return crazypod_note_read_body(
+               note->id, body_work, sizeof(body_work)) &&
+           contains_text(body_work, query);
 }
 
 int crazypod_notes_search_count(const char *query)
@@ -436,15 +430,14 @@ uint32_t crazypod_note_save(uint32_t id, const char *title,
 uint32_t crazypod_note_duplicate(uint32_t id)
 {
     const struct crazypod_note *source = crazypod_note_find(id);
-    char body[CRAZYPOD_NOTE_BODY_SIZE];
     char title[CRAZYPOD_NOTE_TITLE_SIZE];
     uint32_t duplicate;
 
     if(source == NULL ||
-       !crazypod_note_read_body(id, body, sizeof(body)))
+       !crazypod_note_read_body(id, body_work, sizeof(body_work)))
         return 0;
     snprintf(title, sizeof(title), "%.89s Copy", source->title);
-    duplicate = crazypod_note_save(0, title, body);
+    duplicate = crazypod_note_save(0, title, body_work);
     if(duplicate != 0 && source->pinned)
         crazypod_note_set_pinned(duplicate, true);
     return duplicate;
@@ -529,7 +522,6 @@ bool crazypod_notes_empty_trash(void)
 
 bool crazypod_note_draft_load(struct crazypod_note_draft *draft)
 {
-    struct note_draft_disk disk;
     int fd;
     bool valid;
 
@@ -538,23 +530,22 @@ bool crazypod_note_draft_load(struct crazypod_note_draft *draft)
     fd = open(NOTES_DRAFT_PATH, O_RDONLY);
     if(fd < 0)
         return false;
-    valid = read_exact(fd, &disk, sizeof(disk)) &&
-            disk.magic == NOTES_DRAFT_MAGIC &&
-            disk.version == NOTES_VERSION &&
-            disk.size == sizeof(disk) &&
-            disk.checksum == draft_checksum(&disk);
+    valid = read_exact(fd, &draft_work, sizeof(draft_work)) &&
+            draft_work.magic == NOTES_DRAFT_MAGIC &&
+            draft_work.version == NOTES_VERSION &&
+            draft_work.size == sizeof(draft_work) &&
+            draft_work.checksum == draft_checksum(&draft_work);
     close(fd);
     if(!valid)
         return false;
-    draft->source_id = disk.source_id;
-    copy_text(draft->title, sizeof(draft->title), disk.title);
-    copy_text(draft->body, sizeof(draft->body), disk.body);
+    draft->source_id = draft_work.source_id;
+    copy_text(draft->title, sizeof(draft->title), draft_work.title);
+    copy_text(draft->body, sizeof(draft->body), draft_work.body);
     return true;
 }
 
 bool crazypod_note_draft_save(const struct crazypod_note_draft *draft)
 {
-    struct note_draft_disk disk;
     int fd;
     bool success;
 
@@ -562,18 +553,20 @@ bool crazypod_note_draft_save(const struct crazypod_note_draft *draft)
         return false;
     mkdir("/.crazypod");
     mkdir(NOTES_DIRECTORY);
-    memset(&disk, 0, sizeof(disk));
-    disk.magic = NOTES_DRAFT_MAGIC;
-    disk.version = NOTES_VERSION;
-    disk.size = sizeof(disk);
-    disk.source_id = draft->source_id;
-    copy_text(disk.title, sizeof(disk.title), draft->title);
-    copy_text(disk.body, sizeof(disk.body), draft->body);
-    disk.checksum = draft_checksum(&disk);
+    memset(&draft_work, 0, sizeof(draft_work));
+    draft_work.magic = NOTES_DRAFT_MAGIC;
+    draft_work.version = NOTES_VERSION;
+    draft_work.size = sizeof(draft_work);
+    draft_work.source_id = draft->source_id;
+    copy_text(
+        draft_work.title, sizeof(draft_work.title), draft->title);
+    copy_text(
+        draft_work.body, sizeof(draft_work.body), draft->body);
+    draft_work.checksum = draft_checksum(&draft_work);
     fd = open(NOTES_DRAFT_TEMP, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)
         return false;
-    success = write_exact(fd, &disk, sizeof(disk));
+    success = write_exact(fd, &draft_work, sizeof(draft_work));
     if(fsync(fd) < 0)
         success = false;
     close(fd);

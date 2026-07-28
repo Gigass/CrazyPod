@@ -10,6 +10,7 @@
 #include "file.h"
 
 #include "crazypod_appearance.h"
+#include "crazypod_checksum.h"
 #include "crazypod_soundwave.h"
 
 #define APPEARANCE_DIRECTORY "/.crazypod"
@@ -89,38 +90,25 @@ static const uint32_t colors[CRAZYPOD_APPEARANCE_COLOR_COUNT] = {
     0xFFA838, 0x299E66, 0x2B66E6, 0xFFFFFF
 };
 
-static uint32_t hash_bytes(const void *data, size_t size)
-{
-    const unsigned char *bytes = data;
-    uint32_t hash = 2166136261u;
-    size_t i;
-
-    for(i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t disk_checksum(const struct appearance_disk *disk)
 {
-    struct appearance_disk copy = *disk;
-    copy.checksum = 0;
-    return hash_bytes(&copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        disk, sizeof(*disk),
+        offsetof(struct appearance_disk, checksum));
 }
 
 static uint32_t disk_v1_checksum(const struct appearance_disk_v1 *disk)
 {
-    struct appearance_disk_v1 copy = *disk;
-    copy.checksum = 0;
-    return hash_bytes(&copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        disk, sizeof(*disk),
+        offsetof(struct appearance_disk_v1, checksum));
 }
 
 static uint32_t disk_v2_checksum(const struct appearance_disk_v2 *disk)
 {
-    struct appearance_disk_v2 copy = *disk;
-    copy.checksum = 0;
-    return hash_bytes(&copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        disk, sizeof(*disk),
+        offsetof(struct appearance_disk_v2, checksum));
 }
 
 static bool valid_wallpaper_path(const char *path)

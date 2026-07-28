@@ -9,6 +9,7 @@
 #include "dir.h"
 #include "file.h"
 
+#include "crazypod_checksum.h"
 #include "crazypod_workouts.h"
 
 #define WORKOUTS_DIRECTORY "/.crazypod"
@@ -38,23 +39,11 @@ static const char *const activity_titles[] = {
     "Cross Training", "Cooldown"
 };
 
-static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
-{
-    const unsigned char *bytes = data;
-    size_t i;
-
-    for(i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t workouts_checksum(const struct workouts_disk *state)
 {
-    struct workouts_disk copy = *state;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct workouts_disk, checksum));
 }
 
 static bool read_exact(int fd, void *buffer, size_t size)

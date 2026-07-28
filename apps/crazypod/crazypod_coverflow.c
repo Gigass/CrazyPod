@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "button.h"
 #include "kernel.h"
 #include "lcd.h"
 #include "string-extra.h"
@@ -19,6 +20,7 @@
 #define FLOW_CACHE_SLOTS 25
 #define FLOW_PREFETCH_AHEAD 12
 #define FLOW_PREFETCH_BEHIND 12
+#define FLOW_PREFETCH_VISIBLE 4
 #define FLOW_COVER_SIZE CRAZYPOD_COVERFLOW_ARTWORK_SIZE
 #define FLOW_TOP 40
 #define FLOW_BOTTOM 194
@@ -27,7 +29,9 @@
 #define FLOW_RELEASE_STIFFNESS 400
 #define FLOW_RELEASE_DAMPING 40
 #define FLOW_RELEASE_PROJECTION_TICKS \
-    (((HZ * 20) / 100) > 0 ? ((HZ * 20) / 100) : 1)
+    (((HZ * 32) / 100) > 0 ? ((HZ * 32) / 100) : 1)
+#define FLOW_RELEASE_MAX_SPEED_Q16 \
+    (14 * FLOW_POSITION_ONE)
 #define FLOW_RELEASE_GRACE_TICKS \
     (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
 #define FLOW_INPUT_BASE_SPEED 2
@@ -41,6 +45,11 @@
 #define FLOW_SIDE_OFFSET 108
 #define FLOW_SIDE_SPACING 65
 #define FLOW_VISIBLE_DISTANCE_Q16 (FLOW_POSITION_ONE * 7 / 2)
+#define FLOW_WHEEL_POSITIONS 96
+#define FLOW_WHEEL_CLICKS_PER_ALBUM 12
+#define FLOW_WHEEL_FEEDBACK_CLICKS 4
+#define FLOW_WHEEL_RELEASE_TICKS \
+    (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
 
 struct flow_cache_entry {
     int album_index;
@@ -51,6 +60,7 @@ static struct flow_cache_entry cache[FLOW_CACHE_SLOTS];
 static bool flow_active;
 static bool flow_dirty;
 static bool prefetch_pending;
+static bool prefetch_deep_pending;
 static int selected_album;
 static int32_t position_q16;
 static int32_t target_position_q16;
@@ -66,6 +76,13 @@ static struct crazypod_frameclock render_clock;
 static unsigned artwork_generation_seen;
 static bool cache_initialized;
 static bool input_active;
+static bool wheel_input_suspended;
+static bool wheel_tracking;
+static int wheel_position;
+static long wheel_last_seen;
+static long wheel_last_motion;
+static int wheel_feedback_accumulator;
+static int wheel_feedback_direction;
 
 extern struct frame_buffer_t lcd_framebuffer_default;
 
@@ -76,27 +93,28 @@ static fb_data *framebuffer(void)
 
 static fb_data blend565(fb_data foreground, fb_data background, int alpha)
 {
-    int fr = RGB_UNPACK_RED(foreground);
-    int fg = RGB_UNPACK_GREEN(foreground);
-    int fb = RGB_UNPACK_BLUE(foreground);
-    int br = RGB_UNPACK_RED(background);
-    int bg = RGB_UNPACK_GREEN(background);
-    int bb = RGB_UNPACK_BLUE(background);
+    unsigned foreground_weight;
+    unsigned inverse;
+    unsigned result;
 
-    return LCD_RGBPACK(
-        (fr * alpha + br * (256 - alpha)) >> 8,
-        (fg * alpha + bg * (256 - alpha)) >> 8,
-        (fb * alpha + bb * (256 - alpha)) >> 8);
-}
-
-static uint32_t album_color(int index)
-{
-    static const uint32_t colors[] = {
-        0x6D4AFF, 0x1976D2, 0xD13E68, 0xD87822,
-        0x168E7A, 0x514BC3, 0x9B367F, 0x24677D
-    };
-    return colors[(unsigned)index %
-                  (sizeof(colors) / sizeof(colors[0]))];
+    if(alpha <= 0)
+        return background;
+    if(alpha >= 255)
+        return foreground;
+    /*
+     * Use 6-bit weights. With a maximum weight sum of 64, the blue product
+     * cannot carry into the red lane of the packed 0xf81f pair. The old
+     * 8-bit multiply allowed exactly that and produced saturated blue noise.
+     */
+    foreground_weight = ((unsigned)alpha + 2) >> 2;
+    inverse = 64 - foreground_weight;
+    result =
+        (((foreground & 0xf81f) * foreground_weight +
+          (background & 0xf81f) * inverse) >> 6) & 0xf81f;
+    result |=
+        (((foreground & 0x07e0) * foreground_weight +
+          (background & 0x07e0) * inverse) >> 6) & 0x07e0;
+    return (fb_data)result;
 }
 
 static void clear_flow_area(void)
@@ -183,7 +201,7 @@ static void append_prefetch_candidate(int *order, int *count,
     order[(*count)++] = candidate;
 }
 
-static bool prefetch_covers(void)
+static bool prefetch_covers(bool include_distant)
 {
     int count = crazypod_music_album_count();
     int direction = flow_direction == 0 ? 1 : flow_direction;
@@ -193,19 +211,34 @@ static bool prefetch_covers(void)
     int order_count = 0;
     int distance;
     int candidate_number;
+    int maximum_distance = include_distant
+        ? FLOW_PREFETCH_AHEAD : FLOW_PREFETCH_VISIBLE;
     bool complete = true;
 
     prefetched_visual_album = visual_album;
-    append_prefetch_candidate(order, &order_count, visual_album);
-    for(distance = 1; distance <= FLOW_PREFETCH_AHEAD; ++distance) {
-        int ahead = visual_album + direction * distance;
 
-        append_prefetch_candidate(order, &order_count, ahead);
-    }
-    for(distance = 1; distance <= FLOW_PREFETCH_BEHIND; ++distance) {
+    append_prefetch_candidate(order, &order_count, visual_album);
+    /*
+     * Both visible sides must win over invisible directional look-ahead.
+     * Direction only decides which side of an equal-distance pair goes first.
+     */
+    for(distance = 1; distance <= maximum_distance; ++distance) {
+        int ahead = visual_album + direction * distance;
         int behind = visual_album - direction * distance;
 
+        append_prefetch_candidate(order, &order_count, ahead);
         append_prefetch_candidate(order, &order_count, behind);
+    }
+    if(include_distant) {
+        for(distance = maximum_distance + 1;
+            distance <= FLOW_PREFETCH_BEHIND;
+            ++distance) {
+            int ahead = visual_album + direction * distance;
+            int behind = visual_album - direction * distance;
+
+            append_prefetch_candidate(order, &order_count, ahead);
+            append_prefetch_candidate(order, &order_count, behind);
+        }
     }
     for(candidate_number = 0;
         candidate_number < order_count;
@@ -229,9 +262,11 @@ static bool prefetch_covers(void)
         slot = (int)(entry - cache);
         track = crazypod_music_album_track(album_index, 0);
         image = track != NULL
-            ? crazypod_artwork_load_cached_priority(
-                slot, track, FLOW_COVER_SIZE, candidate_number)
+            ? crazypod_artwork_load_coverflow_priority(
+                slot, track, candidate_number)
             : NULL;
+        if(image == NULL)
+            entry->image = NULL;
         if(track != NULL && image == NULL &&
            crazypod_artwork_state(slot, track, FLOW_COVER_SIZE) ==
                CRAZYPOD_ARTWORK_PENDING)
@@ -258,10 +293,7 @@ static void reset_cache(void)
 static fb_data placeholder_sample(int album_index, int x, int y,
                                   int width, int height)
 {
-    uint32_t rgb = album_color(album_index);
-    int red = (rgb >> 16) & 0xff;
-    int green = (rgb >> 8) & 0xff;
-    int blue = rgb & 0xff;
+    int base = 28 + ((unsigned)album_index & 3) * 4;
     int gradient;
     int dx;
     int dy;
@@ -281,10 +313,10 @@ static fb_data placeholder_sample(int album_index, int x, int y,
     dx = x - width / 2;
     dy = y - height / 2;
     radius_squared = dx * dx + dy * dy;
-    gradient = 188 + y * 52 / (height > 1 ? height - 1 : 1);
-    color = LCD_RGBPACK(red * gradient >> 8,
-                        green * gradient >> 8,
-                        blue * gradient >> 8);
+    gradient = 188 + (y * 52 >> 7);
+    color = LCD_RGBPACK(base * gradient >> 8,
+                        base * gradient >> 8,
+                        (base + 2) * gradient >> 8);
     if(x < 3 || x >= width - 3 || y < 3 || y >= height - 3)
         return blend565(LCD_RGBPACK(245, 245, 248), color, 104);
     if(radius_squared <= outer_radius * outer_radius) {
@@ -372,74 +404,42 @@ static int32_t flow_trig_q15(int32_t angle_q16, bool cosine)
                    amount_q16) >> 16);
 }
 
-static inline fb_data sample_rgb565_bilinear(
-    const fb_data *source, int source_width, int source_height,
-    int source_stride, int source_x_q16, int source_y_q16)
-{
-    int max_x_q16 = (source_width - 1) << 16;
-    int max_y_q16 = (source_height - 1) << 16;
-    int sx;
-    int sy;
-    int sx1;
-    int sy1;
-    int fx;
-    int fy;
-    fb_data c00;
-    fb_data c10;
-    fb_data c01;
-    fb_data c11;
-    int red0;
-    int red1;
-    int green0;
-    int green1;
-    int blue0;
-    int blue1;
-
-    if(source_x_q16 < 0)
-        source_x_q16 = 0;
-    if(source_y_q16 < 0)
-        source_y_q16 = 0;
-    if(source_x_q16 > max_x_q16)
-        source_x_q16 = max_x_q16;
-    if(source_y_q16 > max_y_q16)
-        source_y_q16 = max_y_q16;
-
-    sx = source_x_q16 >> 16;
-    sy = source_y_q16 >> 16;
-    sx1 = sx + 1 < source_width ? sx + 1 : sx;
-    sy1 = sy + 1 < source_height ? sy + 1 : sy;
-    fx = (source_x_q16 >> 8) & 255;
-    fy = (source_y_q16 >> 8) & 255;
-    c00 = source[sy * source_stride + sx];
-    c10 = source[sy * source_stride + sx1];
-    c01 = source[sy1 * source_stride + sx];
-    c11 = source[sy1 * source_stride + sx1];
-
-    red0 = RGB_UNPACK_RED(c00) +
-        ((RGB_UNPACK_RED(c10) - RGB_UNPACK_RED(c00)) * fx >> 8);
-    red1 = RGB_UNPACK_RED(c01) +
-        ((RGB_UNPACK_RED(c11) - RGB_UNPACK_RED(c01)) * fx >> 8);
-    green0 = RGB_UNPACK_GREEN(c00) +
-        ((RGB_UNPACK_GREEN(c10) - RGB_UNPACK_GREEN(c00)) * fx >> 8);
-    green1 = RGB_UNPACK_GREEN(c01) +
-        ((RGB_UNPACK_GREEN(c11) - RGB_UNPACK_GREEN(c01)) * fx >> 8);
-    blue0 = RGB_UNPACK_BLUE(c00) +
-        ((RGB_UNPACK_BLUE(c10) - RGB_UNPACK_BLUE(c00)) * fx >> 8);
-    blue1 = RGB_UNPACK_BLUE(c01) +
-        ((RGB_UNPACK_BLUE(c11) - RGB_UNPACK_BLUE(c01)) * fx >> 8);
-
-    return LCD_RGBPACK(
-        red0 + ((red1 - red0) * fy >> 8),
-        green0 + ((green1 - green0) * fy >> 8),
-        blue0 + ((blue1 - blue0) * fy >> 8));
-}
-
 static fb_data shade565(fb_data color, int shade)
 {
-    return LCD_RGBPACK(
-        RGB_UNPACK_RED(color) * shade >> 8,
-        RGB_UNPACK_GREEN(color) * shade >> 8,
-        RGB_UNPACK_BLUE(color) * shade >> 8);
+    unsigned weight;
+    unsigned result;
+
+    if(shade >= 256)
+        return color;
+    if(shade <= 0)
+        return LCD_BLACK;
+    weight = ((unsigned)shade + 2) >> 2;
+    result =
+        (((color & 0xf81f) * weight) >> 6) & 0xf81f;
+    result |=
+        (((color & 0x07e0) * weight) >> 6) & 0x07e0;
+    return (fb_data)result;
+}
+
+static int32_t divide_q15(int32_t numerator, int32_t denominator)
+{
+    uint32_t magnitude;
+    int shift = 0;
+
+    if(denominator == 0)
+        return 0;
+    magnitude = numerator < 0
+        ? (uint32_t)(-(int64_t)numerator)
+        : (uint32_t)numerator;
+    while(shift < 15 && magnitude <= (uint32_t)INT32_MAX / 2) {
+        magnitude <<= 1;
+        ++shift;
+    }
+    numerator = (int32_t)((int64_t)numerator * (1L << shift));
+    denominator >>= 15 - shift;
+    if(denominator == 0)
+        denominator = 1;
+    return numerator / denominator;
 }
 
 static int32_t projected_x_q16(int32_t center_x_q16, int u,
@@ -477,16 +477,20 @@ static void draw_projected_image(const lv_image_dsc_t *image,
                                  int album_index,
                                  int32_t center_x_q16, int center_y,
                                  int size, int32_t yaw_q16, int alpha,
-                                 int side, bool bilinear)
+                                 int side)
 {
     const fb_data *source;
     fb_data *pixels = framebuffer();
     int source_width;
     int source_height;
-    int source_stride;
     int half_size = size / 2;
     int sin_q15 = flow_trig_q15(yaw_q16, false);
     int cos_q15 = flow_trig_q15(yaw_q16, true);
+    int32_t absolute_yaw_q16 =
+        yaw_q16 < 0 ? -yaw_q16 : yaw_q16;
+    int yaw_amount_q8 =
+        absolute_yaw_q16 /
+        (FLOW_SIDE_ANGLE * FLOW_POSITION_ONE / 256);
     int32_t x0_q16 = projected_x_q16(
         center_x_q16, -half_size, sin_q15, cos_q15);
     int32_t x1_q16 = projected_x_q16(
@@ -496,170 +500,186 @@ static void draw_projected_image(const lv_image_dsc_t *image,
     int left = left_q16 >> 16;
     int right = (right_q16 + FLOW_POSITION_ONE - 1) >> 16;
     int abs_sin_q15 = sin_q15 < 0 ? -sin_q15 : sin_q15;
-    int32_t near_depth_q16 =
-        (int32_t)half_size * abs_sin_q15 * 2;
-    int32_t height_normalizer_q16 =
-        (FLOW_CAMERA_DISTANCE << 16) - near_depth_q16;
+    int near_depth_q8 =
+        ((int32_t)half_size * abs_sin_q15 * 2) >> 8;
+    int height_normalizer_q8 =
+        (FLOW_CAMERA_DISTANCE << 8) - near_depth_q8;
     bool placeholder =
         image == NULL || image->header.cf != LV_COLOR_FORMAT_RGB565;
+    int vertical_scale_q23;
+    int32_t screen_x_q8;
+    int32_t inverse_numerator;
+    int32_t inverse_denominator;
     int px;
 
+    if(yaw_amount_q8 > 256)
+        yaw_amount_q8 = 256;
     if(placeholder) {
         source = NULL;
         source_width = FLOW_COVER_SIZE;
         source_height = FLOW_COVER_SIZE;
-        source_stride = 0;
     }
     else {
         source = (const fb_data *)image->data;
         source_width = image->header.w;
         source_height = image->header.h;
-        source_stride = image->header.stride / sizeof(fb_data);
     }
+    vertical_scale_q23 =
+        (source_height << 23) /
+        (size * height_normalizer_q8);
 
     if(left < 0)
         left = 0;
     if(right > LCD_WIDTH)
         right = LCD_WIDTH;
+    screen_x_q8 =
+        (left << 8) + 128 - (center_x_q16 >> 8);
+    inverse_numerator =
+        screen_x_q8 * FLOW_CAMERA_DISTANCE;
+    inverse_denominator =
+        FLOW_CAMERA_DISTANCE * cos_q15 +
+        (screen_x_q8 * sin_q15 >> 8);
     for(px = left; px < right; ++px) {
         int edge_alpha =
             column_coverage_alpha_q16(px, left_q16, right_q16);
-        int32_t screen_x_q16 =
-            (px << 16) + FLOW_POSITION_ONE / 2 -
-            center_x_q16;
-        int64_t inverse_denominator =
-            (int64_t)FLOW_CAMERA_DISTANCE * cos_q15 +
-            (((int64_t)screen_x_q16 * sin_q15) >> 16);
-        int32_t u_q16;
-        int32_t depth_q16;
-        int32_t depth_denominator_q16;
-        int source_x_q16;
-        int column_height;
-        int top;
-        int source_y_q16;
-        int source_y_step;
+        int32_t u_q8;
+        int32_t depth_q8;
+        int32_t depth_denominator_q8;
+        int normalized_q8;
+        int source_x;
+        int source_step_q16;
         int source_position;
         int shade;
         int draw_alpha;
+        int reflection_y;
         int y;
 
         if(edge_alpha <= 0 || inverse_denominator <= 0)
-            continue;
-        u_q16 = (int32_t)(
-            ((int64_t)screen_x_q16 * FLOW_CAMERA_DISTANCE *
-             32768) / inverse_denominator);
-        if(u_q16 < -(half_size << 16) ||
-           u_q16 > (half_size << 16))
-            continue;
-        source_x_q16 = (int)(
-            ((int64_t)(u_q16 + (half_size << 16)) *
-             source_width) / size);
-        if(source_x_q16 < 0)
-            source_x_q16 = 0;
-        if(source_x_q16 >= (source_width << 16))
-            source_x_q16 = (source_width << 16) - 1;
+            goto next_column;
+        u_q8 = divide_q15(
+            inverse_numerator, inverse_denominator);
+        if(u_q8 < -(half_size << 8) ||
+           u_q8 > (half_size << 8))
+            goto next_column;
+        normalized_q8 =
+            (u_q8 + (half_size << 8)) / size;
+        if(normalized_q8 < 0)
+            normalized_q8 = 0;
+        if(normalized_q8 > 255)
+            normalized_q8 = 255;
+        source_x = normalized_q8 * source_width >> 8;
+        if(source_x >= source_width)
+            source_x = source_width - 1;
 
-        depth_q16 =
-            (int32_t)(((int64_t)u_q16 * sin_q15) >> 15);
-        depth_denominator_q16 =
-            (FLOW_CAMERA_DISTANCE << 16) - depth_q16;
-        if(depth_denominator_q16 <= 0)
-            continue;
-        column_height = (int)(
-            (int64_t)size * height_normalizer_q16 /
-            depth_denominator_q16);
-        if(column_height < 1)
-            column_height = 1;
-        top = center_y - column_height / 2;
-        source_y_step = (source_height << 16) / column_height;
-        source_y_q16 = source_y_step / 2 - 32768;
-        source_position =
-            (int)(((int64_t)source_x_q16 * 255) /
-                  (source_width << 16));
+        depth_q8 =
+            u_q8 * sin_q15 >> 15;
+        depth_denominator_q8 =
+            (FLOW_CAMERA_DISTANCE << 8) - depth_q8;
+        if(depth_denominator_q8 <= 0)
+            goto next_column;
+        source_step_q16 =
+            depth_denominator_q8 * vertical_scale_q23 >> 7;
+        if(source_step_q16 < 1)
+            source_step_q16 = 1;
+        source_position = normalized_q8;
         if(side < 0)
             source_position = 255 - source_position;
-        shade = side == 0 ? 256 : 184 + source_position * 60 / 255;
+        shade = 184 + ((source_position * 60 + 128) >> 8);
+        shade =
+            256 - (((256 - shade) * yaw_amount_q8 + 128) >> 8);
         draw_alpha = alpha;
         if(edge_alpha < 255)
-            draw_alpha = (draw_alpha * edge_alpha + 127) / 255;
+            draw_alpha =
+                (draw_alpha * edge_alpha + 128) >> 8;
 
-        for(y = 0; y < column_height; ++y) {
-            int py = top + y;
-            fb_data *destination;
-            fb_data color;
+        {
+            int source_y_q16 =
+                (source_height << 15) - 32768;
+            int py = center_y - 1;
 
-            if(py < FLOW_TOP || py >= FLOW_BOTTOM) {
-                source_y_q16 += source_y_step;
-                continue;
-            }
-            if(placeholder) {
-                color = placeholder_sample(
-                    album_index, source_x_q16 >> 16,
-                    source_y_q16 >> 16,
-                    source_width, source_height);
-            }
-            else if(bilinear) {
-                color = sample_rgb565_bilinear(
-                    source, source_width, source_height,
-                    source_stride, source_x_q16, source_y_q16);
-            }
-            else {
-                int sx = source_x_q16 >> 16;
+            while(source_y_q16 >= 0 && py >= FLOW_TOP) {
+                fb_data *destination;
+                fb_data color;
                 int sy = source_y_q16 >> 16;
 
-                if(sy < 0)
-                    sy = 0;
-                if(sy >= source_height)
-                    sy = source_height - 1;
-                color = source[sy * source_stride + sx];
+                if(placeholder) {
+                    color = placeholder_sample(
+                        album_index, source_x, sy,
+                        source_width, source_height);
+                }
+                else
+                    color = source[
+                        sy * source_width + source_x];
+                if(shade != 256)
+                    color = shade565(color, shade);
+                destination = pixels + py * LCD_WIDTH + px;
+                *destination = draw_alpha == 255
+                    ? color : blend565(
+                        color, *destination, draw_alpha);
+                source_y_q16 -= source_step_q16;
+                --py;
             }
-            source_y_q16 += source_y_step;
-            if(shade != 256)
-                color = shade565(color, shade);
-            destination = pixels + py * LCD_WIDTH + px;
-            *destination = draw_alpha == 255
-                ? color : blend565(color, *destination, draw_alpha);
+        }
+        {
+            int source_y_q16 = source_height << 15;
+            int py = center_y;
+
+            while(source_y_q16 < (source_height << 16) &&
+                  py < FLOW_BOTTOM) {
+                fb_data *destination;
+                fb_data color;
+                int sy = source_y_q16 >> 16;
+
+                if(placeholder) {
+                    color = placeholder_sample(
+                        album_index, source_x, sy,
+                        source_width, source_height);
+                }
+                else
+                    color = source[
+                        sy * source_width + source_x];
+                if(shade != 256)
+                    color = shade565(color, shade);
+                destination = pixels + py * LCD_WIDTH + px;
+                *destination = draw_alpha == 255
+                    ? color : blend565(
+                        color, *destination, draw_alpha);
+                source_y_q16 += source_step_q16;
+                ++py;
+            }
+            reflection_y = py + 2;
         }
 
-        source_y_q16 = (source_height - 1) << 16;
-        source_y_step = (source_height << 16) / 18;
         for(y = 0; y < 9; ++y) {
-            int py = top + column_height + 2 + y;
+            int py = reflection_y + y;
             int reflection_alpha = draw_alpha * (27 - y * 3) >> 8;
             fb_data *destination;
             fb_data color;
+            int sy =
+                source_height - 1 -
+                (y + 1) * source_height / 18;
 
-            source_y_q16 -= source_y_step;
             if(py < FLOW_TOP || py >= FLOW_BOTTOM ||
                reflection_alpha <= 0)
                 continue;
             if(placeholder) {
                 color = placeholder_sample(
-                    album_index, source_x_q16 >> 16,
-                    source_y_q16 >> 16,
+                    album_index, source_x,
+                    sy,
                     source_width, source_height);
             }
-            else if(bilinear) {
-                color = sample_rgb565_bilinear(
-                    source, source_width, source_height,
-                    source_stride, source_x_q16, source_y_q16);
-            }
-            else {
-                int sx = source_x_q16 >> 16;
-                int sy = source_y_q16 >> 16;
-
-                if(sy < 0)
-                    sy = 0;
-                if(sy >= source_height)
-                    sy = source_height - 1;
-                color = source[sy * source_stride + sx];
-            }
+            else
+                color = source[
+                    sy * source_width + source_x];
             if(shade != 256)
                 color = shade565(color, shade);
             destination = pixels + py * LCD_WIDTH + px;
             *destination = blend565(
                 color, *destination, reflection_alpha);
         }
+next_column:
+        inverse_numerator += FLOW_CAMERA_DISTANCE << 8;
+        inverse_denominator += sin_q15;
     }
 }
 
@@ -674,7 +694,6 @@ static void draw_album(int album_index)
     int size;
     int32_t yaw_q16;
     int alpha;
-    bool bilinear;
     const lv_image_dsc_t *image;
 
     if(absolute_q16 > FLOW_VISIBLE_DISTANCE_Q16)
@@ -691,7 +710,6 @@ static void draw_album(int album_index)
         size = FLOW_COVER_SIZE;
         yaw_q16 = direction * rotation_q16;
         alpha = 255;
-        bilinear = true;
     }
     else {
         int32_t outer_q16 =
@@ -710,13 +728,12 @@ static void draw_album(int album_index)
         yaw_q16 =
             direction * FLOW_SIDE_ANGLE * FLOW_POSITION_ONE;
         alpha = 255 - outer_fade;
-        bilinear = true;
     }
 
     image = cached_image(album_index);
     draw_projected_image(
         image, album_index, center_x_q16, FLOW_CENTER_Y,
-        size, yaw_q16, alpha, direction, bilinear);
+        size, yaw_q16, alpha, direction);
 }
 
 static void render_flow(void)
@@ -791,9 +808,20 @@ void crazypod_coverflow_enter(int selected)
     crazypod_frameclock_reset(&render_clock, current_tick);
     artwork_generation_seen = crazypod_artwork_generation();
     input_active = false;
+    wheel_input_suspended = false;
+    wheel_tracking = false;
+    wheel_position = -1;
+    wheel_last_seen = 0;
+    wheel_last_motion = 0;
+    wheel_feedback_accumulator = 0;
+    wheel_feedback_direction = 0;
     flow_active = true;
     flow_dirty = true;
-    prefetch_pending = !prefetch_covers();
+    prefetch_pending = !prefetch_covers(false);
+    prefetch_deep_pending = true;
+#ifdef HAVE_WHEEL_POSITION
+    wheel_send_events(false);
+#endif
 }
 
 bool crazypod_coverflow_warm(int selected)
@@ -818,7 +846,8 @@ bool crazypod_coverflow_warm(int selected)
     gesture_min_album = selected;
     input_active = false;
     prefetched_visual_album = -1;
-    complete = prefetch_covers();
+    complete = prefetch_covers(false);
+    prefetch_deep_pending = true;
     last_prefetch = current_tick;
     return complete;
 }
@@ -829,12 +858,55 @@ void crazypod_coverflow_leave(void)
     velocity_q16 = 0;
     input_velocity_q16 = 0;
     input_active = false;
+    wheel_input_suspended = false;
+    wheel_tracking = false;
+    wheel_feedback_accumulator = 0;
+    wheel_feedback_direction = 0;
     prefetch_pending = false;
+    prefetch_deep_pending = false;
+#ifdef HAVE_WHEEL_POSITION
+    wheel_send_events(true);
+#endif
 }
 
 bool crazypod_coverflow_active(void)
 {
     return flow_active;
+}
+
+void crazypod_coverflow_set_input_suspended(bool suspended)
+{
+    int album_index;
+
+    if(!flow_active || wheel_input_suspended == suspended)
+        return;
+    wheel_input_suspended = suspended;
+    wheel_tracking = false;
+    wheel_position = -1;
+    wheel_last_seen = 0;
+    wheel_last_motion = 0;
+    wheel_feedback_accumulator = 0;
+    wheel_feedback_direction = 0;
+    velocity_q16 = 0;
+    input_velocity_q16 = 0;
+    input_active = false;
+    last_input = current_tick;
+    last_physics = current_tick;
+    if(suspended) {
+        album_index = crazypod_coverflow_center_album();
+        selected_album = album_index;
+        position_q16 = album_index * FLOW_POSITION_ONE;
+        target_position_q16 = position_q16;
+        flow_dirty = true;
+    }
+#ifdef HAVE_WHEEL_POSITION
+    /*
+     * CoverFlow normally consumes absolute wheel position directly. The lock
+     * screen consumes Rockbox queue events, so hand wheel ownership back while
+     * locked and reclaim it only after the unlock transition completes.
+     */
+    wheel_send_events(suspended);
+#endif
 }
 
 int crazypod_coverflow_step(int direction)
@@ -907,6 +979,114 @@ int crazypod_coverflow_center_album(void)
     return album_index;
 }
 
+int crazypod_coverflow_take_wheel_feedback(void)
+{
+    int direction = wheel_feedback_direction;
+
+    wheel_feedback_direction = 0;
+    return direction;
+}
+
+static void sample_wheel_position(long now)
+{
+#ifdef HAVE_WHEEL_POSITION
+    int current = wheel_status();
+    int count = crazypod_music_album_count();
+    int32_t maximum_position_q16 =
+        (count > 0 ? count - 1 : 0) * FLOW_POSITION_ONE;
+
+    if(current >= 0) {
+        current %= FLOW_WHEEL_POSITIONS;
+        if(!wheel_tracking) {
+            wheel_tracking = true;
+            wheel_position = current;
+            wheel_last_motion = now;
+            velocity_q16 = 0;
+        }
+        else {
+            int delta = current - wheel_position;
+
+            if(delta < -FLOW_WHEEL_POSITIONS / 2)
+                delta += FLOW_WHEEL_POSITIONS;
+            else if(delta > FLOW_WHEEL_POSITIONS / 2)
+                delta -= FLOW_WHEEL_POSITIONS;
+            if(delta != 0) {
+                long elapsed = now - wheel_last_motion;
+                int64_t next_position;
+                int64_t instant_velocity_q16;
+
+                if(elapsed < 1)
+                    elapsed = 1;
+                if(wheel_feedback_accumulator != 0 &&
+                   (wheel_feedback_accumulator < 0) !=
+                       (delta < 0))
+                    wheel_feedback_accumulator = 0;
+                wheel_feedback_accumulator += delta;
+                if(wheel_feedback_accumulator >=
+                   FLOW_WHEEL_FEEDBACK_CLICKS ||
+                   wheel_feedback_accumulator <=
+                   -FLOW_WHEEL_FEEDBACK_CLICKS) {
+                    wheel_feedback_direction =
+                        wheel_feedback_accumulator < 0 ? -1 : 1;
+                    wheel_feedback_accumulator %=
+                        FLOW_WHEEL_FEEDBACK_CLICKS;
+                }
+                next_position =
+                    (int64_t)position_q16 +
+                    (int64_t)delta * FLOW_POSITION_ONE /
+                        FLOW_WHEEL_CLICKS_PER_ALBUM;
+                if(next_position < 0)
+                    position_q16 = 0;
+                else if(next_position > maximum_position_q16)
+                    position_q16 = maximum_position_q16;
+                else
+                    position_q16 = (int32_t)next_position;
+                instant_velocity_q16 =
+                    (int64_t)delta * FLOW_POSITION_ONE * HZ /
+                    (FLOW_WHEEL_CLICKS_PER_ALBUM * elapsed);
+                if(instant_velocity_q16 >
+                   FLOW_RELEASE_MAX_SPEED_Q16)
+                    instant_velocity_q16 =
+                        FLOW_RELEASE_MAX_SPEED_Q16;
+                else if(instant_velocity_q16 <
+                        -FLOW_RELEASE_MAX_SPEED_Q16)
+                    instant_velocity_q16 =
+                        -FLOW_RELEASE_MAX_SPEED_Q16;
+                if(velocity_q16 != 0 &&
+                   (velocity_q16 < 0) ==
+                       (instant_velocity_q16 < 0))
+                    velocity_q16 = (int32_t)(
+                        ((int64_t)velocity_q16 * 3 +
+                         instant_velocity_q16 * 5) >> 3);
+                else
+                    velocity_q16 =
+                        (int32_t)instant_velocity_q16;
+                flow_direction = delta < 0 ? -1 : 1;
+                gesture_min_album =
+                    crazypod_coverflow_center_album();
+                wheel_position = current;
+                wheel_last_motion = now;
+                flow_dirty = true;
+                prefetch_pending = true;
+                prefetch_deep_pending = true;
+                last_prefetch = 0;
+            }
+        }
+        wheel_last_seen = now;
+        last_input = now;
+        input_active = true;
+        input_velocity_q16 = 0;
+        target_position_q16 = position_q16;
+        return;
+    }
+    if(wheel_tracking &&
+       !TIME_BEFORE(now, wheel_last_seen + FLOW_WHEEL_RELEASE_TICKS))
+        wheel_tracking = false;
+#else
+    (void)now;
+#endif
+}
+
 static void advance_position(long now)
 {
     long elapsed = now - last_physics;
@@ -915,6 +1095,12 @@ static void advance_position(long now)
         (count > 0 ? count - 1 : 0) * FLOW_POSITION_ONE;
     bool released =
         !TIME_BEFORE(now, last_input + FLOW_RELEASE_GRACE_TICKS);
+
+    if(wheel_tracking) {
+        last_physics = now;
+        selected_album = crazypod_coverflow_center_album();
+        return;
+    }
 
     if(released && input_active) {
         int32_t projected_position_q16;
@@ -1018,10 +1204,12 @@ void crazypod_coverflow_tick(void)
 
     if(!flow_active)
         return;
+    sample_wheel_position(current_tick);
     animating =
-        input_active ||
-        position_q16 != target_position_q16 ||
-        velocity_q16 != 0;
+        !wheel_tracking &&
+        (input_active ||
+         position_q16 != target_position_q16 ||
+         velocity_q16 != 0);
     frame_due = crazypod_frameclock_due(&render_clock, current_tick);
     if(frame_due && animating)
         advance_position(current_tick);
@@ -1041,7 +1229,13 @@ void crazypod_coverflow_tick(void)
     if(prefetch_pending &&
        (last_prefetch == 0 ||
         current_tick - last_prefetch >= FLOW_PREFETCH_TICKS)) {
-        prefetch_pending = !prefetch_covers();
+        prefetch_pending = !prefetch_covers(false);
+        last_prefetch = current_tick;
+    }
+    if(!prefetch_pending && prefetch_deep_pending &&
+       !animating &&
+       current_tick - last_input >= FLOW_PREFETCH_TICKS) {
+        prefetch_deep_pending = !prefetch_covers(true);
         last_prefetch = current_tick;
     }
     if(frame_due && (flow_dirty || animating)) {

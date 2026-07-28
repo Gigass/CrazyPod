@@ -45,6 +45,8 @@ const lv_image_dsc_t *crazypod_artwork_load_priority(
 const lv_image_dsc_t *crazypod_artwork_load_cached_priority(
     int slot, const struct crazypod_track *track, int target_size,
     int priority);
+const lv_image_dsc_t *crazypod_artwork_load_coverflow_priority(
+    int slot, const struct crazypod_track *track, int priority);
 enum crazypod_artwork_state crazypod_artwork_state(
     int slot, const struct crazypod_track *track, int target_size);
 unsigned crazypod_artwork_generation(void);

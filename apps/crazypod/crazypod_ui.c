@@ -102,6 +102,8 @@
 #define CRAZYPOD_MENU_ARTWORK_CACHE_SIZE 72
 #define CRAZYPOD_MENU_NOW_ARTWORK_SIZE 68
 #define CRAZYPOD_MENU_FLOW_ARTWORK_SIZE 58
+#define CRAZYPOD_MENU_FLOW_ARTWORK_SLOT_BASE \
+    (CRAZYPOD_COVERFLOW_ARTWORK_SLOTS - 3)
 #define CRAZYPOD_MENU_ALBUM_ARTWORK_SIZE 67
 #define CRAZYPOD_MENU_ARTWORK_PRIORITY 20
 #define CRAZYPOD_NOW_LYRICS_COVER_SIZE 108
@@ -1702,6 +1704,7 @@ static void show_lock_screen(bool turn_display_off)
     if(lock_screen == NULL)
         return;
     screen_locked = true;
+    crazypod_coverflow_set_input_suspended(true);
     lock_release_guard = false;
     lock_wait_for_wake_release = turn_display_off;
     reset_lock_wheel();
@@ -1729,6 +1732,7 @@ static void finish_unlock(void)
     lock_release_guard_until =
         current_tick + CRAZYPOD_UNLOCK_INPUT_GUARD_TICKS;
     lock_wait_for_wake_release = false;
+    crazypod_coverflow_set_input_suspended(false);
     lv_obj_add_flag(lock_screen, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_background(lock_screen);
     if(product_active)
@@ -6579,7 +6583,8 @@ static void prefetch_music_preview_artwork(
                 track = crazypod_music_album_track(i, 0);
                 if(track != NULL)
                     (void)crazypod_artwork_load_priority(
-                        i, track, CRAZYPOD_MENU_FLOW_ARTWORK_SIZE,
+                        CRAZYPOD_MENU_FLOW_ARTWORK_SLOT_BASE + i,
+                        track, CRAZYPOD_MENU_FLOW_ARTWORK_SIZE,
                         CRAZYPOD_MENU_ARTWORK_PRIORITY);
             }
         }
@@ -6795,7 +6800,8 @@ static void render_root_preview(int selected)
             part = make_procedural_record_sleeve(
                 parent, track, positions[i],
                 i == 1 ? 55 : 69,
-                CRAZYPOD_MENU_FLOW_ARTWORK_SIZE, i, i, false);
+                CRAZYPOD_MENU_FLOW_ARTWORK_SIZE, i,
+                CRAZYPOD_MENU_FLOW_ARTWORK_SLOT_BASE + i, false);
             lv_obj_set_style_transform_rotation(
                 part, rotations[i], 0);
             menu_preview_register_motion(
@@ -11873,11 +11879,11 @@ static void render_note_composer(const struct route_state *state)
 
 static void render_note_reader(const struct route_state *state)
 {
+    static char window[CRAZYPOD_NOTE_BODY_SIZE];
     const struct crazypod_note *note =
         crazypod_note_find((uint32_t)state->group);
     lv_obj_t *paper;
     lv_obj_t *label;
-    char window[CRAZYPOD_NOTE_BODY_SIZE];
     char progress[64];
     int lines = note_body_line_count(note_reader_body);
     int maximum = lines > 9 ? lines - 9 : 0;
@@ -15672,9 +15678,18 @@ static void update_playback_ui(lv_timer_t *timer)
 static unsigned menu_preview_artwork_signature(void)
 {
     unsigned signature = 2166136261u;
+    bool album_flow_preview =
+        product_active && route_depth > 0 &&
+        current_route()->route == MUSIC_ROUTE_MENU &&
+        current_route()->selected == 1;
+    int first_slot = album_flow_preview
+        ? CRAZYPOD_MENU_FLOW_ARTWORK_SLOT_BASE : 0;
+    int slot_count = album_flow_preview ? 3 : 7;
     int slot;
 
-    for(slot = 0; slot < 7; ++slot) {
+    for(slot = first_slot;
+        slot < first_slot + slot_count;
+        ++slot) {
         signature ^= crazypod_artwork_slot_generation(slot);
         signature *= 16777619u;
     }
@@ -17657,6 +17672,12 @@ static void handle_button(long button, intptr_t data)
         return;
     }
 
+#ifdef HAVE_WHEEL_POSITION
+    if(current_route()->route == MUSIC_ROUTE_ALBUM_FLOW &&
+       (base == BUTTON_SCROLL_FWD ||
+        base == BUTTON_SCROLL_BACK))
+        return;
+#endif
     if(base == BUTTON_SCROLL_FWD)
         move_selection(is_skeuomorphic_preview_route(
                            current_route()->route)
@@ -18017,6 +18038,25 @@ static void sync_album_flow_metadata(void)
     album_flow_displayed_album = album_index;
 }
 
+static void service_album_flow_warm(void)
+{
+    static long last_warm;
+    struct route_state *state;
+
+    if(!product_active || screen_locked || route_depth <= 0 ||
+       crazypod_coverflow_active() ||
+       menu_preview_pending || menu_preview_motion_active())
+        return;
+    state = current_route();
+    if(state->route != MUSIC_ROUTE_MENU || state->selected != 1)
+        return;
+    if(last_warm != 0 &&
+       TIME_BEFORE(current_tick, last_warm + HZ / 10))
+        return;
+    last_warm = current_tick;
+    (void)crazypod_coverflow_warm(initial_album_index());
+}
+
 #ifdef SIMULATOR
 static bool simulator_prepare_snapshot(void)
 {
@@ -18352,6 +18392,7 @@ void crazypod_ui_run(void)
         service_clock_routes();
         service_miniapps();
         process_deferred_route_render();
+        service_album_flow_warm();
         process_pending_now_playing_open();
         process_artwork_updates();
         process_photo_updates();
@@ -18366,8 +18407,17 @@ void crazypod_ui_run(void)
             crazypod_frameclock_schedule_next(&lvgl_clock, current_tick);
         }
         if(!screen_locked) {
+            int coverflow_feedback;
+
             render_desktop_carousel_native();
             crazypod_coverflow_tick();
+            coverflow_feedback =
+                crazypod_coverflow_take_wheel_feedback();
+            if(coverflow_feedback != 0)
+                play_wheel_feedback(
+                    coverflow_feedback < 0
+                        ? BUTTON_SCROLL_BACK
+                        : BUTTON_SCROLL_FWD);
             sync_album_flow_metadata();
         }
         crazypod_present_tick();

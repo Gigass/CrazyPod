@@ -32,12 +32,12 @@
 #define CRAZYPOD_CACHE_DIRECTORY CRAZYPOD_DIRECTORY "/cache"
 #define CRAZYPOD_COVER_CACHE_DIRECTORY CRAZYPOD_CACHE_DIRECTORY "/CV6"
 #define CRAZYPOD_COVER_CACHE_SHARDS 16
-#define CRAZYPOD_COVER_PACK_DIRECTORY CRAZYPOD_CACHE_DIRECTORY "/CF7"
+#define CRAZYPOD_COVER_PACK_DIRECTORY CRAZYPOD_CACHE_DIRECTORY "/CF9"
 #define CRAZYPOD_COVER_PACK_INDEX CRAZYPOD_COVER_PACK_DIRECTORY "/covers.idx"
 #define CRAZYPOD_COVER_PACK_INDEX_TMP CRAZYPOD_COVER_PACK_DIRECTORY "/covers.tmp"
 #define CRAZYPOD_COVER_PACK_DATA CRAZYPOD_COVER_PACK_DIRECTORY "/covers.dat"
-#define CRAZYPOD_COVER_PACK_MAGIC 0x43465037u
-#define CRAZYPOD_COVER_PACK_VERSION 1
+#define CRAZYPOD_COVER_PACK_MAGIC 0x43465039u
+#define CRAZYPOD_COVER_PACK_VERSION 3
 #define CRAZYPOD_COVER_PACK_IMAGE 1
 #define CRAZYPOD_COVER_PACK_EMPTY 2
 #define CRAZYPOD_COVER_PACK_HASH_SIZE 4096
@@ -139,6 +139,13 @@ static fb_data capsule_pixels[CRAZYPOD_ARTWORK_BANKS]
     [CRAZYPOD_CAPSULE_ARTWORK_SIZE * CRAZYPOD_CAPSULE_ARTWORK_SIZE]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static unsigned char decode_buffer[CRAZYPOD_DECODE_BUFFER_SIZE]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+/*
+ * The on-disk pack and every published descriptor stay row-major. Smaller
+ * requests use this scratch area because their destination slot cannot hold a
+ * full-size pack entry.
+ */
+static fb_data cover_pack_scratch[CRAZYPOD_ARTWORK_PIXELS]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static struct mutex artwork_mutex;
 static struct event_queue artwork_queue;
@@ -419,9 +426,9 @@ static enum artwork_cache_result cover_pack_load(
         if(cover_pack_data_fd < 0)
             return ARTWORK_CACHE_MISS;
     }
-    source_pixels = request->target_size ==
-        CRAZYPOD_COVERFLOW_ARTWORK_SIZE
-            ? pixels : (fb_data *)decode_buffer;
+    source_pixels =
+        request->target_size < CRAZYPOD_COVERFLOW_ARTWORK_SIZE
+        ? cover_pack_scratch : pixels;
     if(lseek(cover_pack_data_fd, entry->offset, SEEK_SET) < 0 ||
        !read_exact(cover_pack_data_fd, source_pixels, entry->data_size))
         return ARTWORK_CACHE_MISS;
@@ -521,8 +528,9 @@ static bool cover_pack_append(
     if(descriptor->header.cf != LV_COLOR_FORMAT_RGB565 ||
        descriptor->header.w == 0 || descriptor->header.h == 0 ||
        descriptor->data_size >
-           UINT32_MAX - cover_pack_build_data_size ||
-       lseek(cover_pack_data_fd, cover_pack_build_data_size,
+           UINT32_MAX - cover_pack_build_data_size)
+        return false;
+    if(lseek(cover_pack_data_fd, cover_pack_build_data_size,
              SEEK_SET) < 0 ||
        !write_exact(cover_pack_data_fd, descriptor->data,
                     descriptor->data_size))
@@ -1099,7 +1107,7 @@ void crazypod_artwork_init(void)
     queue_init(&artwork_queue, false);
     create_thread(artwork_thread, artwork_stack, sizeof(artwork_stack), 0,
                   "crazypod art"
-                  IF_PRIO(, PRIORITY_USER_INTERFACE)
+                  IF_PRIO(, PRIORITY_BUFFERING)
                   IF_COP(, CPU));
 }
 
@@ -1296,6 +1304,14 @@ const lv_image_dsc_t *crazypod_artwork_load_cached_priority(
 {
     return artwork_load_priority(slot_index, track, target_size,
                                  priority, true);
+}
+
+const lv_image_dsc_t *crazypod_artwork_load_coverflow_priority(
+    int slot_index, const struct crazypod_track *track, int priority)
+{
+    return artwork_load_priority(
+        slot_index, track, CRAZYPOD_COVERFLOW_ARTWORK_SIZE,
+        priority, true);
 }
 
 const lv_image_dsc_t *crazypod_artwork_load(

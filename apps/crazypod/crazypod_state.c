@@ -19,6 +19,7 @@
 
 #include "crazypod_audio_shims.h"
 #include "crazypod_apps.h"
+#include "crazypod_checksum.h"
 #include "crazypod_playlist.h"
 #include "crazypod_state.h"
 
@@ -304,58 +305,58 @@ static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 
 static uint32_t state_checksum(const struct crazypod_state_disk *state)
 {
-    struct crazypod_state_disk copy = *state;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk, checksum));
 }
 
 static uint32_t state_v1_checksum(const struct crazypod_state_disk_v1 *state)
 {
-    struct crazypod_state_disk_v1 copy = *state;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v1, checksum));
 }
 
 static uint32_t state_v2_checksum(const struct crazypod_state_disk_v2 *state)
 {
-    struct crazypod_state_disk_v2 copy = *state;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v2, checksum));
 }
 
 static uint32_t state_v3_checksum(const struct crazypod_state_disk_v3 *state)
 {
-    struct crazypod_state_disk_v3 copy = *state;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v3, checksum));
 }
 
 static uint32_t state_v4_checksum(const struct crazypod_state_disk_v4 *state)
 {
-    struct crazypod_state_disk_v4 copy = *state;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v4, checksum));
 }
 
 static uint32_t state_v5_checksum(const struct crazypod_state_disk_v5 *state)
 {
-    struct crazypod_state_disk_v5 copy = *state;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v5, checksum));
 }
 
 static uint32_t state_v6_checksum(const struct crazypod_state_disk_v6 *state)
 {
-    struct crazypod_state_disk_v6 copy = *state;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v6, checksum));
 }
 
 static uint32_t state_v7_checksum(const struct crazypod_state_disk_v7 *state)
 {
-    struct crazypod_state_disk_v7 copy = *state;
-    copy.checksum = 0;
-    return hash_bytes(2166136261u, &copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v7, checksum));
 }
 
 static bool read_exact(int fd, void *buffer, size_t size)

@@ -10,6 +10,7 @@
 #include "file.h"
 
 #include "crazypod_presets.h"
+#include "crazypod_checksum.h"
 #include "crazypod_soundwave.h"
 
 #define PRESET_DIRECTORY "/.crazypod"
@@ -125,59 +126,45 @@ struct portable_theme_v2 {
 static struct crazypod_preset presets[CRAZYPOD_PRESET_COUNT_MAX];
 static int preset_count;
 
-static uint32_t hash_bytes(const void *data, size_t size)
-{
-    const unsigned char *bytes = data;
-    uint32_t hash = 2166136261u;
-    size_t i;
-
-    for(i = 0; i < size; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619u;
-    }
-    return hash;
-}
-
 static uint32_t disk_checksum(const struct preset_disk *disk)
 {
-    struct preset_disk copy = *disk;
-    copy.checksum = 0;
-    return hash_bytes(&copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        disk, sizeof(*disk), offsetof(struct preset_disk, checksum));
 }
 
 static uint32_t theme_checksum(const struct portable_theme *theme)
 {
-    struct portable_theme copy = *theme;
-    copy.checksum = 0;
-    return hash_bytes(&copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        theme, sizeof(*theme),
+        offsetof(struct portable_theme, checksum));
 }
 
 static uint32_t disk_v1_checksum(const struct preset_disk_v1 *disk)
 {
-    struct preset_disk_v1 copy = *disk;
-    copy.checksum = 0;
-    return hash_bytes(&copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        disk, sizeof(*disk),
+        offsetof(struct preset_disk_v1, checksum));
 }
 
 static uint32_t theme_v1_checksum(const struct portable_theme_v1 *theme)
 {
-    struct portable_theme_v1 copy = *theme;
-    copy.checksum = 0;
-    return hash_bytes(&copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        theme, sizeof(*theme),
+        offsetof(struct portable_theme_v1, checksum));
 }
 
 static uint32_t disk_v2_checksum(const struct preset_disk_v2 *disk)
 {
-    struct preset_disk_v2 copy = *disk;
-    copy.checksum = 0;
-    return hash_bytes(&copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        disk, sizeof(*disk),
+        offsetof(struct preset_disk_v2, checksum));
 }
 
 static uint32_t theme_v2_checksum(const struct portable_theme_v2 *theme)
 {
-    struct portable_theme_v2 copy = *theme;
-    copy.checksum = 0;
-    return hash_bytes(&copy, sizeof(copy));
+    return crazypod_checksum_with_zeroed_u32(
+        theme, sizeof(*theme),
+        offsetof(struct portable_theme_v2, checksum));
 }
 
 static struct crazypod_appearance migrate_appearance_v1(
