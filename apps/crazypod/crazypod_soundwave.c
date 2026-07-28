@@ -11,9 +11,13 @@
 
 #define SOUND_WAVE_POINT_SLOTS 6
 #define SOUND_WAVE_MAX_POINTS 148
+#define SOUND_WAVE_BALL_RADIAL_RAYS 18
+#define SOUND_WAVE_BALL_PARTICLES 20
 
 static lv_point_precise_t
     sound_wave_points[SOUND_WAVE_POINT_SLOTS][SOUND_WAVE_MAX_POINTS];
+static int16_t sound_wave_taper[LCD_WIDTH];
+static int sound_wave_taper_width;
 
 static const char *const sound_wave_style_names[
     CRAZYPOD_SOUND_WAVE_STYLE_COUNT] = {
@@ -53,6 +57,23 @@ static int wave_cos(int degrees)
 static int wave_abs(int value)
 {
     return value < 0 ? -value : value;
+}
+
+static int wave_taper(int x, int width)
+{
+    int index;
+
+    if(width <= 1)
+        return 0;
+    if(width > LCD_WIDTH)
+        return wave_sin(x * 180 / (width - 1));
+    if(sound_wave_taper_width != width) {
+        for(index = 0; index < width; ++index)
+            sound_wave_taper[index] =
+                (int16_t)wave_sin(index * 180 / (width - 1));
+        sound_wave_taper_width = width;
+    }
+    return sound_wave_taper[x];
 }
 
 static int area_width(const lv_area_t *area)
@@ -138,6 +159,18 @@ static void draw_polyline(lv_layer_t *layer, int slot, int point_count,
     lv_draw_line(layer, &line);
 }
 
+static void append_wave_point(
+    int slot, int *point_count, int x, int y)
+{
+    if(slot < 0 || slot >= SOUND_WAVE_POINT_SLOTS ||
+       point_count == NULL ||
+       *point_count >= SOUND_WAVE_MAX_POINTS)
+        return;
+    sound_wave_points[slot][*point_count].x = x;
+    sound_wave_points[slot][*point_count].y = y;
+    ++(*point_count);
+}
+
 static int build_wave_points(const lv_area_t *area, int slot, int step,
                              int phase_degrees, int cycle_tenths,
                              int amplitude)
@@ -152,7 +185,7 @@ static int build_wave_points(const lv_area_t *area, int slot, int step,
     for(x = 0;
         x < width && point_count < SOUND_WAVE_MAX_POINTS - 1;
         x += step) {
-        int taper = wave_sin(x * 180 / (width - 1));
+        int taper = wave_taper(x, width);
         int angle = phase_degrees +
                     x * cycle_tenths * 36 / width;
         int vertical = wave_sin(angle) * amplitude >> LV_TRIGO_SHIFT;
@@ -182,7 +215,7 @@ static void draw_torrent(lv_layer_t *layer, const lv_area_t *area,
                              : primary_amp * 72 / 100;
     int highlight_amp = ball ? height * 12 / 100
                              : primary_amp * 44 / 100;
-    int point_step = ball ? 1 : 2;
+    int point_step = 2;
     int primary_cycles = ball ? 10 : 37;
     int secondary_cycles = ball ? 7 : 28;
     int highlight_cycles = ball ? 12 : 46;
@@ -266,6 +299,9 @@ static void draw_radial_spectrum(
     lv_layer_t *layer, const lv_area_t *area,
     int phase, bool playing, uint32_t primary, uint32_t secondary)
 {
+    static int16_t direction_x[SOUND_WAVE_BALL_RADIAL_RAYS];
+    static int16_t direction_y[SOUND_WAVE_BALL_RADIAL_RAYS];
+    static bool directions_ready;
     int width = area_width(area);
     int height = area_height(area);
     int diameter = width < height ? width : height;
@@ -273,29 +309,41 @@ static void draw_radial_spectrum(
     int center_y = area->y1 + height / 2;
     int inner_radius = diameter * 18 / 100;
     int maximum_length = diameter * 23 / 100;
-    int bar_count = diameter < 48 ? 36 : 44;
     int index;
 
-    for(index = 0; index < bar_count; ++index) {
-        int angle = index * 360 / bar_count;
+    if(!directions_ready) {
+        for(index = 0;
+            index < SOUND_WAVE_BALL_RADIAL_RAYS;
+            ++index) {
+            int angle =
+                index * 360 / SOUND_WAVE_BALL_RADIAL_RAYS;
+
+            direction_x[index] = (int16_t)wave_cos(angle);
+            direction_y[index] = (int16_t)wave_sin(angle);
+        }
+        directions_ready = true;
+    }
+    for(index = 0;
+        index < SOUND_WAVE_BALL_RADIAL_RAYS;
+        ++index) {
         int movement = wave_abs(wave_sin(index * 36 + phase * 13));
         int level = playing ? 7864 + movement * 76 / 100 : 5898;
         int length = clamp_int(
             maximum_length * level / 32767, 1, maximum_length);
         int start_x = center_x +
-            (wave_cos(angle) * inner_radius >> LV_TRIGO_SHIFT);
+            (direction_x[index] * inner_radius >> LV_TRIGO_SHIFT);
         int start_y = center_y +
-            (wave_sin(angle) * inner_radius >> LV_TRIGO_SHIFT);
+            (direction_y[index] * inner_radius >> LV_TRIGO_SHIFT);
         int end_radius = inner_radius + length;
         int end_x = center_x +
-            (wave_cos(angle) * end_radius >> LV_TRIGO_SHIFT);
+            (direction_x[index] * end_radius >> LV_TRIGO_SHIFT);
         int end_y = center_y +
-            (wave_sin(angle) * end_radius >> LV_TRIGO_SHIFT);
+            (direction_y[index] * end_radius >> LV_TRIGO_SHIFT);
 
         draw_line_segment(
             layer, start_x, start_y, end_x, end_y,
             2, index % 3 == 0 ? secondary : primary,
-            playing ? 184 : 92, true);
+            playing ? 184 : 92, false);
     }
     draw_dot(layer, center_x, center_y, 2,
              0xFFFFFF, playing ? 140 : 61);
@@ -367,6 +415,69 @@ static void draw_liquid_ribbon(
                   playing ? 122 : 55);
 }
 
+static void draw_liquid_ribbon_ball(
+    lv_layer_t *layer, const lv_area_t *area,
+    int phase, bool playing,
+    uint32_t primary, uint32_t secondary)
+{
+    int counts[4] = { 0, 0, 0, 0 };
+    int width = area_width(area);
+    int height = area_height(area);
+    int center_y = area->y1 + height / 2;
+    int amplitude = playing ? height * 19 / 100 : 1;
+    int thickness = playing ? height * 16 / 100 : 2;
+    int previous_x = area->x1;
+    int previous_y = center_y;
+    int previous_segment = -1;
+    int x;
+
+    if(playing) {
+        amplitude += height * wave_sin(phase * 7) /
+                     (20 * (1 << LV_TRIGO_SHIFT));
+        thickness += height * wave_cos(phase * 5) /
+                     (25 * (1 << LV_TRIGO_SHIFT));
+    }
+    amplitude = clamp_int(amplitude, 1, height / 3);
+    thickness = clamp_int(thickness, 2, height / 3);
+
+    for(x = 0; x < width; x += 2) {
+        int taper = wave_taper(x, width);
+        int offset = wave_sin(x * 7 + phase * 9);
+        int y = center_y +
+            ((offset * amplitude >> LV_TRIGO_SHIFT) *
+             taper >> LV_TRIGO_SHIFT);
+        int segment = clamp_int(x * 3 / width, 0, 2);
+        int absolute_x = area->x1 + x;
+
+        if(previous_segment >= 0 && segment != previous_segment)
+            append_wave_point(
+                segment, &counts[segment],
+                previous_x, previous_y);
+        append_wave_point(
+            segment, &counts[segment], absolute_x, y);
+        append_wave_point(3, &counts[3], absolute_x, y);
+        previous_segment = segment;
+        previous_x = absolute_x;
+        previous_y = y;
+    }
+    append_wave_point(
+        previous_segment, &counts[previous_segment],
+        area->x2, center_y);
+    append_wave_point(3, &counts[3], area->x2, center_y);
+
+    for(x = 0; x < 3; ++x) {
+        uint32_t color = x == 0 ? primary :
+            (x == 1 ? secondary : 0xFFFFFF);
+
+        draw_polyline(
+            layer, x, counts[x], thickness * 2 + 1,
+            color, playing ? 174 : 70);
+    }
+    draw_polyline(
+        layer, 3, counts[3], 1, 0xFFFFFF,
+        playing ? 122 : 55);
+}
+
 static void draw_vinyl_groove_bar(
     lv_layer_t *layer, const lv_area_t *area,
     int phase, bool playing, uint32_t primary, uint32_t secondary)
@@ -405,23 +516,24 @@ static void draw_vinyl_groove_ball(
     int center_x = area->x1 + width / 2;
     int center_y = area->y1 + height / 2;
     int base_radius = clamp_int(diameter * 14 / 100, 3, 8);
-    int rotation = playing ? phase * 5 : 0;
+    int rotation = playing ? phase * 3 : 0;
     int ring;
 
-    for(ring = 0; ring < 6; ++ring) {
+    for(ring = 0; ring < 3; ++ring) {
         lv_draw_arc_dsc_t arc;
-        int start = positive_mod(18 + ring * 13 + rotation, 360);
+        int start = positive_mod(
+            18 + ring * 29 + rotation * (ring + 1), 360);
 
         lv_draw_arc_dsc_init(&arc);
         arc.base.layer = layer;
         arc.center.x = center_x;
         arc.center.y = center_y;
         arc.radius = (uint16_t)(
-            base_radius + ring * diameter * 55 / 1000);
+            base_radius + ring * diameter * 13 / 100);
         arc.start_angle = start;
-        arc.end_angle = start + 280 - ring * 4;
-        arc.width = ring == 2 ? 2 : 1;
-        arc.rounded = 1;
+        arc.end_angle = start + 310 - ring * 22;
+        arc.width = ring == 1 ? 2 : 1;
+        arc.rounded = 0;
         arc.color = lv_color_hex(
             ring % 2 == 0 ? primary : secondary);
         arc.opa = playing ? 122 : 61;
@@ -469,6 +581,31 @@ static void draw_mini_led_meter(
     int start_x = area->x1 + (width - total_width) / 2;
     int center_y = area->y1 + height / 2;
     int column;
+
+    if(ball) {
+        int maximum_half_height =
+            clamp_int(height * 27 / 100, 4, height / 3);
+
+        for(column = 0; column < column_count; ++column) {
+            int movement = wave_abs(
+                wave_sin(column * 44 + phase * 13));
+            int half_height = playing
+                ? 3 + movement * (maximum_half_height - 3) / 32767
+                : 3;
+            int x = start_x +
+                column * (segment_width + gap_x);
+            uint32_t color = column == column_count / 2
+                ? 0xFFFFFF
+                : (column % 2 == 0 ? secondary : primary);
+
+            draw_rect(
+                layer, x, center_y - half_height,
+                segment_width, half_height * 2 + 1,
+                LV_RADIUS_CIRCLE, color,
+                playing ? 205 : 82);
+        }
+        return;
+    }
 
     for(column = 0; column < column_count; ++column) {
         int movement = wave_abs(
@@ -543,28 +680,66 @@ static void draw_particle_pulse_ball(
     lv_layer_t *layer, const lv_area_t *area,
     int phase, bool playing, uint32_t primary, uint32_t secondary)
 {
+    static int16_t base_x[SOUND_WAVE_BALL_PARTICLES];
+    static int16_t base_y[SOUND_WAVE_BALL_PARTICLES];
+    static bool directions_ready;
+    int lane_cos[4];
+    int lane_sin[4];
+    int lane_pulse[4];
     int width = area_width(area);
     int height = area_height(area);
     int diameter = width < height ? width : height;
     int center_x = area->x1 + width / 2;
     int center_y = area->y1 + height / 2;
     int maximum_radius = diameter * 39 / 100;
-    int particle_count = diameter < 48 ? 46 : 62;
     int index;
 
-    for(index = 0; index < particle_count; ++index) {
+    if(!directions_ready) {
+        for(index = 0;
+            index < SOUND_WAVE_BALL_PARTICLES;
+            ++index) {
+            int angle = index * 137;
+
+            base_x[index] = (int16_t)wave_cos(angle);
+            base_y[index] = (int16_t)wave_sin(angle);
+        }
+        directions_ready = true;
+    }
+    for(index = 0; index < 4; ++index) {
+        if(playing) {
+            int rotation = phase * (2 + index);
+
+            lane_cos[index] = wave_cos(rotation);
+            lane_sin[index] = wave_sin(rotation);
+            lane_pulse[index] =
+                16384 + wave_sin(phase * 8 + index * 67) / 2;
+        }
+        else {
+            lane_cos[index] = 32767;
+            lane_sin[index] = 0;
+            lane_pulse[index] = 16384;
+        }
+    }
+    for(index = 0;
+        index < SOUND_WAVE_BALL_PARTICLES;
+        ++index) {
         int lane = index % 4;
-        int angle = index * 137 +
-            (playing ? phase * (2 + lane) : 0);
-        int pulse = 16384 +
-            wave_sin(phase * 8 + index * 24) / 2;
+        int direction_x = (int)(
+            ((int64_t)base_x[index] * lane_cos[lane] -
+             (int64_t)base_y[index] * lane_sin[lane]) >>
+            LV_TRIGO_SHIFT);
+        int direction_y = (int)(
+            ((int64_t)base_x[index] * lane_sin[lane] +
+             (int64_t)base_y[index] * lane_cos[lane]) >>
+            LV_TRIGO_SHIFT);
+        int pulse = lane_pulse[lane];
         int radius = maximum_radius *
-            (18 + 78 * (index % 17) / 16) / 100;
+            (18 + 78 * (index % 11) / 10) / 100;
         int orbit = radius + (playing ? pulse * 2 / 32767 : 0);
         int x = center_x +
-            (wave_cos(angle) * orbit >> LV_TRIGO_SHIFT);
+            (direction_x * orbit >> LV_TRIGO_SHIFT);
         int y = center_y +
-            (wave_sin(angle) * orbit >> LV_TRIGO_SHIFT);
+            (direction_y * orbit >> LV_TRIGO_SHIFT);
         int dot_radius = playing && pulse > 23000 ? 2 : 1;
         uint32_t color = index % 5 == 0 ? 0xFFFFFF :
             (index % 2 == 0 ? secondary : primary);
@@ -638,8 +813,9 @@ void crazypod_sound_wave_draw_ball(
             primary_color, secondary_color);
         break;
     case CRAZYPOD_SOUND_WAVE_LIQUID_RIBBON:
-        draw_liquid_ribbon(layer, area, phase, playing, true,
-                           primary_color, secondary_color);
+        draw_liquid_ribbon_ball(
+            layer, area, phase, playing,
+            primary_color, secondary_color);
         break;
     case CRAZYPOD_SOUND_WAVE_VINYL_GROOVE:
         draw_vinyl_groove_ball(

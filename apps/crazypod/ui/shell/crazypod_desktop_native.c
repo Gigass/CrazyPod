@@ -17,9 +17,13 @@
 #define NATIVE_TOP 40
 #define NATIVE_BOTTOM 143
 #define NATIVE_HEIGHT (NATIVE_BOTTOM - NATIVE_TOP)
+#define NATIVE_MAX_ICON_SIZE LCD_WIDTH
 
 static fb_data backdrop[LCD_WIDTH * NATIVE_HEIGHT]
     CACHEALIGN_AT_LEAST_ATTR(16);
+static uint16_t sample_x_offset[NATIVE_MAX_ICON_SIZE];
+static uint16_t sample_x_next_offset[NATIVE_MAX_ICON_SIZE];
+static uint8_t sample_x_fraction[NATIVE_MAX_ICON_SIZE];
 static bool dirty;
 static bool backdrop_ready;
 
@@ -128,61 +132,36 @@ static void draw_desktop_placeholder(int app_index, int center_x,
     }
 }
 
-static inline void sample_icon_bilinear(
-    const uint8_t *source, int source_width, int source_height,
-    int source_stride, int source_x_q16, int source_y_q16,
-    uint8_t *filtered)
+static FORCE_INLINE int interpolate_channel(
+    int top_left, int top_right,
+    int bottom_left, int bottom_right,
+    int fraction_x, int fraction_y)
 {
-    const uint8_t *samples[4];
-    uint32_t weights[4];
-    int sx = source_x_q16 >> 16;
-    int sy = source_y_q16 >> 16;
-    int sx1;
-    int sy1;
-    int fx;
-    int fy;
-    int channel;
+    int top_q8 =
+        (top_left << 8) +
+        (top_right - top_left) * fraction_x;
+    int bottom_q8 =
+        (bottom_left << 8) +
+        (bottom_right - bottom_left) * fraction_x;
 
-    if(sx < 0)
-        sx = 0;
-    if(sy < 0)
-        sy = 0;
-    if(sx >= source_width)
-        sx = source_width - 1;
-    if(sy >= source_height)
-        sy = source_height - 1;
-    sx1 = sx + 1 < source_width ? sx + 1 : sx;
-    sy1 = sy + 1 < source_height ? sy + 1 : sy;
-    fx = (source_x_q16 >> 8) & 255;
-    fy = (source_y_q16 >> 8) & 255;
-    weights[0] = (uint32_t)(256 - fx) * (256 - fy);
-    weights[1] = (uint32_t)fx * (256 - fy);
-    weights[2] = (uint32_t)(256 - fx) * fy;
-    weights[3] = (uint32_t)fx * fy;
-    samples[0] = source + sy * source_stride + sx * 4;
-    samples[1] = source + sy * source_stride + sx1 * 4;
-    samples[2] = source + sy1 * source_stride + sx * 4;
-    samples[3] = source + sy1 * source_stride + sx1 * 4;
-    for(channel = 0; channel < 4; ++channel) {
-        uint32_t sum =
-            samples[0][channel] * weights[0] +
-            samples[1][channel] * weights[1] +
-            samples[2][channel] * weights[2] +
-            samples[3][channel] * weights[3];
-        filtered[channel] = sum >> 16;
-    }
+    return ((top_q8 << 8) +
+            (bottom_q8 - top_q8) * fraction_y) >> 16;
 }
 
 static inline fb_data blend_icon_premultiplied(
-    const uint8_t *color, fb_data background, int opacity)
+    int red, int green, int blue, int alpha,
+    fb_data background, int opacity)
 {
     int scale = opacity + 1;
-    int alpha = color[3] * scale >> 8;
-    int red = color[2] * scale >> 8;
-    int green = color[1] * scale >> 8;
-    int blue = color[0] * scale >> 8;
-    int inverse = 256 - alpha;
+    int inverse;
 
+    if(opacity == 255 && alpha == 255)
+        return LCD_RGBPACK(red, green, blue);
+    alpha = alpha * scale >> 8;
+    red = red * scale >> 8;
+    green = green * scale >> 8;
+    blue = blue * scale >> 8;
+    inverse = 256 - alpha;
     red += RGB_UNPACK_RED(background) * inverse >> 8;
     green += RGB_UNPACK_GREEN(background) * inverse >> 8;
     blue += RGB_UNPACK_BLUE(background) * inverse >> 8;
@@ -199,10 +178,16 @@ static void draw_desktop_icon(int app_index, int center_x, int center_y,
     int source_width;
     int source_height;
     int source_stride;
-    int left = center_x - size / 2;
-    int top = center_y - size / 2;
+    int left;
+    int top;
+    int first_x;
+    int last_x;
+    int first_y;
+    int last_y;
     int source_y_q16;
     int source_y_step;
+    int source_x_q16;
+    int source_x_step;
     int y;
 
     if(image == NULL || source == NULL) {
@@ -213,38 +198,95 @@ static void draw_desktop_icon(int app_index, int center_x, int center_y,
     source_width = image->width;
     source_height = image->height;
     source_stride = image->stride;
+    if(size > NATIVE_MAX_ICON_SIZE)
+        size = NATIVE_MAX_ICON_SIZE;
+    left = center_x - size / 2;
+    top = center_y - size / 2;
+    first_x = left < 0 ? -left : 0;
+    last_x =
+        left + size > LCD_WIDTH
+            ? LCD_WIDTH - left : size;
+    first_y = top < NATIVE_TOP
+        ? NATIVE_TOP - top : 0;
+    last_y = top + size > NATIVE_BOTTOM
+        ? NATIVE_BOTTOM - top : size;
+    if(first_x >= last_x || first_y >= last_y)
+        return;
+    source_x_step = (source_width << 16) / size;
+    source_x_q16 =
+        ((source_width << 15) / size) - 32768;
+    for(y = 0; y < size; ++y) {
+        int sx = source_x_q16 >> 16;
+
+        if(sx < 0)
+            sx = 0;
+        if(sx >= source_width)
+            sx = source_width - 1;
+        sample_x_offset[y] = sx * 4;
+        sample_x_next_offset[y] =
+            (sx + 1 < source_width ? sx + 1 : sx) * 4;
+        sample_x_fraction[y] =
+            (source_x_q16 >> 8) & 255;
+        source_x_q16 += source_x_step;
+    }
     source_y_step = (source_height << 16) / size;
     source_y_q16 =
-        ((source_height << 15) / size) - 32768;
-    for(y = 0; y < size; ++y) {
+        ((source_height << 15) / size) - 32768 +
+        first_y * source_y_step;
+    for(y = first_y; y < last_y; ++y) {
         int py = top + y;
-        int source_x_q16 =
-            ((source_width << 15) / size) - 32768;
-        int source_x_step = (source_width << 16) / size;
+        int sy = source_y_q16 >> 16;
+        int sy1;
+        int fraction_y;
+        const uint8_t *source_top;
+        const uint8_t *source_bottom;
+        fb_data *destination =
+            pixels + py * LCD_WIDTH + left + first_x;
         int x;
-        if(py < NATIVE_TOP ||
-           py >= NATIVE_BOTTOM) {
-            source_y_q16 += source_y_step;
-            continue;
-        }
-        for(x = 0; x < size; ++x) {
-            int px = left + x;
-            uint8_t filtered[4];
-            fb_data *destination;
-            if(px >= 0 && px < LCD_WIDTH) {
-                sample_icon_bilinear(
-                    source, source_width, source_height,
-                    source_stride, source_x_q16,
-                    source_y_q16, filtered);
-                if(filtered[3] > 0) {
-                    destination =
-                        pixels + py * LCD_WIDTH + px;
-                    *destination =
-                        blend_icon_premultiplied(
-                            filtered, *destination, opacity);
-                }
+
+        if(sy < 0)
+            sy = 0;
+        if(sy >= source_height)
+            sy = source_height - 1;
+        sy1 = sy + 1 < source_height ? sy + 1 : sy;
+        fraction_y = (source_y_q16 >> 8) & 255;
+        source_top = source + sy * source_stride;
+        source_bottom = source + sy1 * source_stride;
+        for(x = first_x; x < last_x; ++x) {
+            const uint8_t *top_left =
+                source_top + sample_x_offset[x];
+            const uint8_t *top_right =
+                source_top + sample_x_next_offset[x];
+            const uint8_t *bottom_left =
+                source_bottom + sample_x_offset[x];
+            const uint8_t *bottom_right =
+                source_bottom + sample_x_next_offset[x];
+            int fraction_x = sample_x_fraction[x];
+            int alpha = interpolate_channel(
+                top_left[3], top_right[3],
+                bottom_left[3], bottom_right[3],
+                fraction_x, fraction_y);
+
+            if(alpha > 0) {
+                int blue = interpolate_channel(
+                    top_left[0], top_right[0],
+                    bottom_left[0], bottom_right[0],
+                    fraction_x, fraction_y);
+                int green = interpolate_channel(
+                    top_left[1], top_right[1],
+                    bottom_left[1], bottom_right[1],
+                    fraction_x, fraction_y);
+                int red = interpolate_channel(
+                    top_left[2], top_right[2],
+                    bottom_left[2], bottom_right[2],
+                    fraction_x, fraction_y);
+
+                *destination =
+                    blend_icon_premultiplied(
+                        red, green, blue, alpha,
+                        *destination, opacity);
             }
-            source_x_q16 += source_x_step;
+            ++destination;
         }
         source_y_q16 += source_y_step;
     }
@@ -258,25 +300,19 @@ void crazypod_desktop_native_render(
     fb_data *framebuffer =
         (fb_data *)crazypod_platform_display_framebuffer();
     int distance_layer;
-    int row;
 
     if(blocked || !dirty)
         return;
     if(!backdrop_ready) {
-        for(row = 0; row < NATIVE_HEIGHT; ++row) {
-            memcpy(
-                backdrop + row * LCD_WIDTH,
-                framebuffer + (NATIVE_TOP + row) * LCD_WIDTH,
-                LCD_WIDTH * sizeof(fb_data));
-        }
+        memcpy(
+            backdrop,
+            framebuffer + NATIVE_TOP * LCD_WIDTH,
+            sizeof(backdrop));
         backdrop_ready = true;
     }
-    for(row = 0; row < NATIVE_HEIGHT; ++row) {
-        memcpy(
-            framebuffer + (NATIVE_TOP + row) * LCD_WIDTH,
-            backdrop + row * LCD_WIDTH,
-            LCD_WIDTH * sizeof(fb_data));
-    }
+    memcpy(
+        framebuffer + NATIVE_TOP * LCD_WIDTH,
+        backdrop, sizeof(backdrop));
     for(distance_layer = 2; distance_layer >= 0; --distance_layer) {
         int i;
 

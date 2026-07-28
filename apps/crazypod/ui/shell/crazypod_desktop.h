@@ -20,7 +20,10 @@ int crazypod_desktop_selected(void);
 void crazypod_desktop_set_selected(int selected, bool animated);
 void crazypod_desktop_move_selection(int direction);
 void crazypod_desktop_refresh_appearance(void);
+void crazypod_desktop_set_input_enabled(
+    long now, bool enabled, bool restore_wheel_events);
 void crazypod_desktop_tick(long now);
+int crazypod_desktop_take_wheel_feedback(void);
 void crazypod_desktop_render_carousel(
     int tile_size, bool blocked);
 

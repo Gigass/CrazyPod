@@ -688,8 +688,27 @@ void crazypod_ui_run(void)
         process_pending_now_playing_open();
         crazypod_playback_process_artwork();
         crazypod_playback_process_media();
+        {
+            bool desktop_interactive =
+                !crazypod_lock_screen_is_locked() &&
+                !crazypod_shell_product_active() &&
+                !modal_prompt_visible();
+            int desktop_feedback;
+
+            crazypod_desktop_set_input_enabled(
+                current_tick, desktop_interactive,
+                !crazypod_coverflow_active());
+            if(desktop_interactive)
+                crazypod_desktop_tick(current_tick);
+            desktop_feedback =
+                crazypod_desktop_take_wheel_feedback();
+            if(desktop_feedback != 0)
+                play_wheel_feedback(
+                    desktop_feedback < 0
+                        ? BUTTON_SCROLL_BACK
+                        : BUTTON_SCROLL_FWD);
+        }
         if(!crazypod_lock_screen_is_locked()) {
-            crazypod_desktop_tick(current_tick);
             crazypod_now_capsule_tick(current_tick, !crazypod_shell_product_active());
             crazypod_playback_tick_wave(current_tick);
         }

@@ -239,11 +239,39 @@ void crazypod_desktop_refresh_appearance(void)
     lv_obj_invalidate(screen);
 }
 
-void crazypod_desktop_tick(long now)
+void crazypod_desktop_set_input_enabled(
+    long now, bool enabled, bool restore_wheel_events)
 {
     desktop_now = now;
-    if(crazypod_desktop_motion_tick(now))
+    crazypod_desktop_motion_set_input_enabled(
+        now, enabled, restore_wheel_events,
+        crazypod_apps_visible_count());
+}
+
+void crazypod_desktop_tick(long now)
+{
+    int visible_count = crazypod_apps_visible_count();
+    int visual_selection;
+
+    desktop_now = now;
+    if(!crazypod_desktop_motion_tick(now, visible_count))
+        return;
+    visual_selection =
+        crazypod_desktop_motion_center(visible_count);
+    if(visual_selection != selected_app) {
+        selected_app = visual_selection;
+        update_selection_chrome();
+    }
+    if(desktop_host.boost != NULL &&
+       crazypod_desktop_motion_active())
+        desktop_host.boost(HZ / 10);
+    if(screen != NULL)
         crazypod_desktop_native_invalidate(false);
+}
+
+int crazypod_desktop_take_wheel_feedback(void)
+{
+    return crazypod_desktop_motion_take_wheel_feedback();
 }
 
 void crazypod_desktop_render_carousel(

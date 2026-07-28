@@ -99,6 +99,24 @@ static uint32_t secondary_color(void)
         crazypod_appearance_get()->secondary_color);
 }
 
+static void set_label_text_if_changed(lv_obj_t *label, const char *text)
+{
+    if(label != NULL && text != NULL &&
+       strcmp(lv_label_get_text(label), text) != 0)
+        lv_label_set_text(label, text);
+}
+
+static void set_hidden_if_changed(lv_obj_t *object, bool hidden)
+{
+    if(object == NULL ||
+       lv_obj_has_flag(object, LV_OBJ_FLAG_HIDDEN) == hidden)
+        return;
+    if(hidden)
+        lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_remove_flag(object, LV_OBJ_FLAG_HIDDEN);
+}
+
 void crazypod_now_capsule_refresh_material(void)
 {
     const lv_image_dsc_t *glass = NULL;
@@ -312,13 +330,14 @@ void crazypod_now_capsule_update_artwork(
             capsule.artwork, lv_color_hex(0x2E5CFA), 0);
     }
     if(descriptor != NULL) {
-        lv_image_set_src(capsule.artwork_image, descriptor);
-        lv_obj_remove_flag(capsule.artwork_image, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(capsule.artwork_symbol, LV_OBJ_FLAG_HIDDEN);
+        if(lv_image_get_src(capsule.artwork_image) != descriptor)
+            lv_image_set_src(capsule.artwork_image, descriptor);
+        set_hidden_if_changed(capsule.artwork_image, false);
+        set_hidden_if_changed(capsule.artwork_symbol, true);
     }
     else {
-        lv_obj_add_flag(capsule.artwork_image, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(capsule.artwork_symbol, LV_OBJ_FLAG_HIDDEN);
+        set_hidden_if_changed(capsule.artwork_image, true);
+        set_hidden_if_changed(capsule.artwork_symbol, false);
     }
 }
 
@@ -327,11 +346,13 @@ void crazypod_now_capsule_update(
     uint32_t elapsed_ms, uint32_t length_ms)
 {
     int width = 6;
+    const char *track_text =
+        track != NULL ? track->title : "No Track";
+    const char *artist_text =
+        track != NULL ? track->artist : "Local Music";
 
-    lv_label_set_text(
-        capsule.track, track != NULL ? track->title : "No Track");
-    lv_label_set_text(
-        capsule.artist, track != NULL ? track->artist : "Local Music");
+    set_label_text_if_changed(capsule.track, track_text);
+    set_label_text_if_changed(capsule.artist, artist_text);
     crazypod_now_capsule_update_artwork(track);
     if(length_ms > 0) {
         width = 171 * elapsed_ms / length_ms;
@@ -340,7 +361,8 @@ void crazypod_now_capsule_update(
         if(width > 171)
             width = 171;
     }
-    lv_obj_set_width(capsule.progress, width);
+    if(lv_obj_get_width(capsule.progress) != width)
+        lv_obj_set_width(capsule.progress, width);
 }
 
 void crazypod_now_capsule_reset_motion(long now)

@@ -10,11 +10,21 @@ void crazypod_home_input_handle(
     const struct crazypod_input_event *event,
     const struct crazypod_home_input_actions *actions)
 {
-    if(event->base == BUTTON_SCROLL_FWD)
+#ifdef HAVE_WHEEL_POSITION
+    if(event->base == BUTTON_SCROLL_FWD ||
+       event->base == BUTTON_SCROLL_BACK)
+        return;
+#else
+    if(event->base == BUTTON_SCROLL_FWD) {
         actions->move_selection(1);
-    else if(event->base == BUTTON_SCROLL_BACK)
+        return;
+    }
+    if(event->base == BUTTON_SCROLL_BACK) {
         actions->move_selection(-1);
-    else if(event->base == BUTTON_RIGHT && !event->repeated)
+        return;
+    }
+#endif
+    if(event->base == BUTTON_RIGHT && !event->repeated)
         actions->next_track();
     else if(event->base == BUTTON_LEFT && !event->repeated)
         actions->previous_track();
