@@ -11,7 +11,6 @@ enum crazypod_now_playing_overlay {
     CRAZYPOD_NOW_OVERLAY_ACTIONS,
     CRAZYPOD_NOW_OVERLAY_QUEUE,
     CRAZYPOD_NOW_OVERLAY_PROGRESS,
-    CRAZYPOD_NOW_OVERLAY_VOLUME,
 };
 
 struct crazypod_now_playing_overlay_host {

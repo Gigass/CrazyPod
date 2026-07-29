@@ -23,8 +23,6 @@
 #define COLOR_FAVORITE 0xFF375F
 #define NOW_ACTION_CELL_COUNT 4
 #define NOW_PROGRESS_STEP_MS 5000
-#define NOW_VOLUME_VISIBLE_TICKS \
-    ((HZ * 3 / 2) > 0 ? (HZ * 3 / 2) : 1)
 #define CRAZYPOD_NOW_POPUP_X 35
 #define CRAZYPOD_NOW_POPUP_Y 32
 #define CRAZYPOD_NOW_POPUP_WIDTH 250
@@ -67,17 +65,10 @@ struct now_progress_popup_view {
     lv_obj_t *icon;
 };
 
-struct now_volume_popup_view {
-    lv_obj_t *fill;
-    lv_obj_t *percent;
-    lv_obj_t *icon;
-};
-
 static struct crazypod_now_playing_overlay_host overlay_host;
 static struct now_queue_popup_view now_queue_view;
 static struct now_actions_popup_view now_actions_view;
 static struct now_progress_popup_view now_progress_view;
-static struct now_volume_popup_view now_volume_view;
 static enum crazypod_now_playing_overlay now_overlay;
 static int now_action_selected;
 static int now_queue_selected;
@@ -89,7 +80,6 @@ static bool now_favorite_save_failed;
 static uint32_t now_progress_elapsed_ms;
 static uint32_t now_progress_length_ms;
 static long now_progress_follow_after;
-static long now_volume_hide_after;
 
 static const struct crazypod_track *current_track(void)
 {
@@ -127,7 +117,6 @@ static void clear_now_overlay_objects(void)
     memset(&now_queue_view, 0, sizeof(now_queue_view));
     memset(&now_actions_view, 0, sizeof(now_actions_view));
     memset(&now_progress_view, 0, sizeof(now_progress_view));
-    memset(&now_volume_view, 0, sizeof(now_volume_view));
 }
 
 static void now_popup_y_anim(void *target, int32_t value)
@@ -702,84 +691,6 @@ static void show_now_progress_popup(void)
     animate_now_popup(now_overlay_panel, 65);
 }
 
-static void refresh_now_volume_popup(void)
-{
-    char text[16];
-    int minimum = sound_min(SOUND_VOLUME);
-    int maximum = sound_max(SOUND_VOLUME);
-    int percent = maximum > minimum
-        ? (global_status.volume - minimum) * 100 /
-            (maximum - minimum)
-        : 0;
-    int width;
-
-    if(now_volume_view.fill == NULL)
-        return;
-    if(percent < 0)
-        percent = 0;
-    if(percent > 100)
-        percent = 100;
-    width = 2 + 176 * percent / 100;
-    lv_obj_set_width(now_volume_view.fill, width);
-    snprintf(text, sizeof(text), "%d%%", percent);
-    lv_label_set_text(now_volume_view.percent, text);
-    lv_label_set_text(
-        now_volume_view.icon,
-        global_status.volume <= minimum
-            ? LV_SYMBOL_MUTE : LV_SYMBOL_VOLUME_MAX);
-}
-
-static void show_now_volume_popup(void)
-{
-    lv_obj_t *title;
-    lv_obj_t *track;
-    lv_obj_t *instruction;
-
-    if(now_overlay == CRAZYPOD_NOW_OVERLAY_NONE)
-        prepare_now_overlay_glass(true);
-    begin_now_overlay(CRAZYPOD_NOW_OVERLAY_VOLUME);
-    now_volume_hide_after =
-        current_tick + NOW_VOLUME_VISIBLE_TICKS;
-    now_overlay_panel = make_now_glass_panel(35, 65, 250, 110);
-    title = crazypod_ui_widget_label(
-        now_overlay_panel, "VOLUME",
-        &lv_font_montserrat_10, COLOR_WHITE, 100);
-    lv_obj_set_width(title, 250);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 0, 13);
-    now_volume_view.icon = crazypod_ui_widget_label(
-        now_overlay_panel, LV_SYMBOL_VOLUME_MAX,
-        &lv_font_montserrat_16, COLOR_CYAN, LV_OPA_COVER);
-    lv_obj_set_width(now_volume_view.icon, 28);
-    lv_obj_set_style_text_align(
-        now_volume_view.icon, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(now_volume_view.icon, 18, 43);
-    track = crazypod_ui_widget_box(
-        now_overlay_panel, 51, 47, 180, 10,
-        LV_RADIUS_CIRCLE, COLOR_WHITE, 48);
-    lv_obj_set_style_border_width(track, 1, 0);
-    lv_obj_set_style_border_color(
-        track, lv_color_hex(COLOR_CYAN), 0);
-    lv_obj_set_style_border_opa(track, 190, 0);
-    now_volume_view.fill = crazypod_ui_widget_box(
-        track, 1, 1, 2, 8, LV_RADIUS_CIRCLE,
-        COLOR_CYAN, LV_OPA_COVER);
-    now_volume_view.percent = crazypod_ui_widget_label(
-        now_overlay_panel, "0%",
-        &lv_font_montserrat_10, COLOR_WHITE, 235);
-    lv_obj_set_width(now_volume_view.percent, 60);
-    lv_obj_set_style_text_align(
-        now_volume_view.percent, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(now_volume_view.percent, 171, 70);
-    instruction = crazypod_ui_widget_label(
-        now_overlay_panel, "Scroll adjusts volume",
-        &lv_font_montserrat_8, COLOR_WHITE, 145);
-    lv_obj_set_width(instruction, 118);
-    lv_obj_set_pos(instruction, 51, 72);
-    refresh_now_volume_popup();
-    animate_now_popup(now_overlay_panel, 65);
-}
-
 static void restore_now_overlay(enum crazypod_now_playing_overlay overlay)
 {
     if(overlay == CRAZYPOD_NOW_OVERLAY_ACTIONS)
@@ -788,8 +699,6 @@ static void restore_now_overlay(enum crazypod_now_playing_overlay overlay)
         show_now_queue_popup();
     else if(overlay == CRAZYPOD_NOW_OVERLAY_PROGRESS)
         show_now_progress_popup();
-    else if(overlay == CRAZYPOD_NOW_OVERLAY_VOLUME)
-        show_now_volume_popup();
 }
 
 static void dismiss_now_overlay(bool refresh_now_playing)
@@ -940,13 +849,6 @@ void crazypod_now_playing_adjust_volume(int direction)
         global_status.volume = volume;
         crazypod_state_mark_dirty();
     }
-    if(now_overlay != CRAZYPOD_NOW_OVERLAY_VOLUME)
-        show_now_volume_popup();
-    else {
-        now_volume_hide_after =
-            current_tick + NOW_VOLUME_VISIBLE_TICKS;
-        refresh_now_volume_popup();
-    }
 }
 
 static void adjust_now_progress(int direction)
@@ -1006,8 +908,6 @@ void crazypod_now_playing_overlay_move(int direction)
     }
     else if(now_overlay == CRAZYPOD_NOW_OVERLAY_PROGRESS)
         adjust_now_progress(direction);
-    else if(now_overlay == CRAZYPOD_NOW_OVERLAY_VOLUME)
-        crazypod_now_playing_adjust_volume(direction);
 }
 
 void crazypod_now_playing_overlay_refresh_queue(void)
@@ -1036,9 +936,6 @@ void crazypod_now_playing_overlay_refresh_tick(void)
         sync_now_progress_from_playback();
         refresh_now_progress_popup();
     }
-    else if(now_overlay == CRAZYPOD_NOW_OVERLAY_VOLUME &&
-            !TIME_BEFORE(current_tick, now_volume_hide_after))
-        dismiss_now_overlay(true);
 }
 
 #endif
