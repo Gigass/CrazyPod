@@ -43,6 +43,17 @@ static struct route_state *current_route(void)
     return crazypod_ui_routes_current();
 }
 
+static bool music_route_available(void)
+{
+    enum crazypod_route route;
+
+    if(!route_available())
+        return false;
+    route = current_route()->route;
+    return route <= MUSIC_ROUTE_NOW_PLAYING ||
+        route == PODCASTS_ROUTE_MENU;
+}
+
 static enum crazypod_route current_route_id(void)
 {
     return crazypod_ui_routes_depth() > 0
@@ -102,9 +113,6 @@ static void push_now_playing(void)
 static void configure_now_navigation(void)
 {
     const struct crazypod_now_playing_navigation_host navigation = {
-        .product_active = crazypod_shell_product_active,
-        .route_depth = crazypod_ui_routes_depth,
-        .current_route = current_route_id,
         .push_now_playing = push_now_playing,
         .boost = host.boost,
     };
@@ -233,7 +241,7 @@ void crazypod_composition_configure(
         .parent = crazypod_shell_product_content(),
         .prepare_loading_surface = prepare_loading,
         .render_route = new_host->render,
-        .route_visible = route_available,
+        .route_visible = music_route_available,
     };
     const struct crazypod_wallpaper_crop_runtime_host crop = {
         .product_active = crazypod_shell_product_active,

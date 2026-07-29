@@ -8,6 +8,7 @@
 
 #include "../../../crazypod_coverflow.h"
 #include "../../../crazypod_music.h"
+#include "../../presentation/crazypod_empty_state.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_album_flow_screen.h"
 
@@ -59,26 +60,9 @@ void crazypod_album_flow_screen_render(
     lv_obj_set_style_bg_color(parent, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
     if(count <= 0) {
-        lv_obj_t *symbol = make_label(
-            parent, LV_SYMBOL_AUDIO, &lv_font_montserrat_24,
-            COLOR_WHITE, 80);
-        lv_obj_t *label;
-
-        lv_obj_set_pos(symbol, 148, 96);
-        label = make_label(
-            parent, "No Albums", &lv_font_montserrat_12,
-            COLOR_WHITE, LV_OPA_COVER);
-        lv_obj_set_width(label, 260);
-        lv_obj_set_style_text_align(
-            label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(label, 30, 137);
-        label = make_label(
-            parent, "Add local music and rescan.",
-            &lv_font_montserrat_8, COLOR_WHITE, 105);
-        lv_obj_set_width(label, 260);
-        lv_obj_set_style_text_align(
-            label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(label, 30, 158);
+        crazypod_empty_state_render(
+            parent, LV_SYMBOL_AUDIO, "No Albums",
+            "Add local music and rescan.");
         return;
     }
 

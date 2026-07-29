@@ -23,7 +23,6 @@ void crazypod_route_actions_push_selected(
     enum crazypod_route route, int group, int selected);
 void crazypod_route_actions_pop(void);
 void crazypod_route_actions_request_now_playing(void);
-void crazypod_route_actions_process_now_playing(void);
 void crazypod_route_actions_activate(long now);
 void crazypod_route_actions_move(int direction, long now);
 void crazypod_route_actions_begin_note(

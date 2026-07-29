@@ -31,6 +31,8 @@
 #endif
 
 bool is_backlight_on(bool ignore_always_off);
+/* Monotonic counter for observing an off transition even after a fast wake. */
+unsigned int backlight_off_generation(void);
 void backlight_on_ignore(bool value, int timeout);
 void backlight_on(void);
 void backlight_off(void);

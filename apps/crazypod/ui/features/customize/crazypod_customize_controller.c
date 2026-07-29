@@ -112,6 +112,8 @@ crazypod_customize_controller_select(
                 crazypod_customize_background_wallpaper(
                     crazypod_appearance_get(), field);
 
+            crazypod_photos_set_route_suspended(false);
+            crazypod_photos_ensure_catalog();
             return result(
                 CRAZYPOD_CUSTOMIZE_COMMAND_PUSH_ROUTE,
                 DIY_ROUTE_WALLPAPER_FILES, field,

@@ -96,7 +96,7 @@ unsigned long pcm_sampr SHAREDBSS_ATTR = HW_SAMPR_DEFAULT;
 /* samplerate frequency selection index */
 int pcm_fsel SHAREDBSS_ATTR = HW_FREQ_DEFAULT;
 
-static void pcm_play_data_start_int(const void *addr, size_t size);
+static bool pcm_play_data_start_int(const void *addr, size_t size);
 void pcm_play_stop_int(void);
 
 #if !defined(HAVE_SW_VOLUME_CONTROL) || defined(PCM_SW_VOLUME_UNBUFFERED)
@@ -132,23 +132,28 @@ bool pcm_play_dma_complete_callback(enum pcm_dma_status status,
 }
 #endif /* !HAVE_SW_VOLUME_CONTROL || PCM_SW_VOLUME_UNBUFFERED */
 
-static void pcm_play_data_start_int(const void *addr, size_t size)
+static bool pcm_play_data_start_int(const void *addr, size_t size)
 {
     ALIGN_AUDIOBUF(addr, size);
 
     if ((addr && size) || pcm_get_more_int(&addr, &size))
     {
         pcm_apply_settings();
+#ifdef HAVE_PCM_CODEC_IDLE
+        /* The blocking half of this reservation completed before the
+         * caller took pcm_play_lock(). */
+        pcm_play_dma_commit_prepare();
+#endif
         logf(" pcm_play_dma_start_int");
         pcm_play_dma_start_int(addr, size);
         pcm_playing = true;
+        return true;
     }
-    else
-    {
-        /* Force a stop */
-        logf(" pcm_play_stop_int");
-        pcm_play_stop_int();
-    }
+
+    /* Force a stop */
+    logf(" pcm_play_stop_int");
+    pcm_play_stop_int();
+    return false;
 }
 
 void pcm_play_stop_int(void)
@@ -276,22 +281,54 @@ bool pcm_is_initialized(void)
     return pcm_is_ready;
 }
 
-void pcm_play_data(pcm_play_callback_type get_more,
-                   pcm_status_callback_type status_cb,
-                   const void *start, size_t size)
+static bool pcm_play_data_common(pcm_play_callback_type get_more,
+                                 pcm_status_callback_type status_cb,
+                                 const void *start, size_t size)
 {
-    logf("pcm_play_data");
-
     pcm_play_lock();
 
     pcm_callback_for_more = get_more;
     pcm_play_status_callback = status_cb;
 
     logf(" pcm_play_data_start_int");
-    pcm_play_data_start_int(start, size);
+    bool started = pcm_play_data_start_int(start, size);
 
     pcm_play_unlock();
+
+    return started;
 }
+
+void pcm_play_data(pcm_play_callback_type get_more,
+                   pcm_status_callback_type status_cb,
+                   const void *start, size_t size)
+{
+    logf("pcm_play_data");
+
+#ifdef HAVE_PCM_CODEC_IDLE
+    pcm_play_dma_prepare();
+#endif
+
+    bool started = pcm_play_data_common(get_more, status_cb, start, size);
+
+#ifdef HAVE_PCM_CODEC_IDLE
+    if (!started)
+        pcm_play_dma_cancel_prepare();
+#else
+    (void)started;
+#endif
+}
+
+#ifdef HAVE_PCM_CODEC_IDLE
+/* Mixer callers reserve power before taking their outer pcm_play_lock().
+ * This entry point consumes that reservation without another wake. */
+void pcm_play_data_prepared(pcm_play_callback_type get_more,
+                            pcm_status_callback_type status_cb,
+                            const void *start, size_t size)
+{
+    if (!pcm_play_data_common(get_more, status_cb, start, size))
+        pcm_play_dma_cancel_prepare();
+}
+#endif
 
 void pcm_play_stop(void)
 {
@@ -438,6 +475,11 @@ void pcm_init_recording(void)
 
     /* Stop the beasty before attempting recording */
     mixer_reset();
+
+#ifdef HAVE_PCM_CODEC_IDLE
+    /* Codec wake may sleep; never perform it while pcm_rec_lock is held. */
+    pcm_rec_dma_prepare();
+#endif
 
     /* Recording init is locked unlike general pcm init since this is not
      * just a one-time event at startup and it should and must be safe by

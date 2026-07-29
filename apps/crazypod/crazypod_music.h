@@ -39,6 +39,8 @@ struct crazypod_playlist {
 struct crazypod_album {
     char title[72];
     char artist[72];
+    uint16_t first_track;
+    uint16_t track_count;
 };
 
 enum crazypod_music_scope {
@@ -48,12 +50,28 @@ enum crazypod_music_scope {
     CRAZYPOD_SCOPE_PLAYLIST,
 };
 
+enum crazypod_music_catalog_validation {
+    CRAZYPOD_MUSIC_VALIDATION_UNCHECKED,
+    CRAZYPOD_MUSIC_VALIDATION_RUNNING,
+    CRAZYPOD_MUSIC_VALIDATION_CURRENT,
+    CRAZYPOD_MUSIC_VALIDATION_STALE,
+    CRAZYPOD_MUSIC_VALIDATION_FAILED,
+};
+
 void crazypod_music_init(void);
 void crazypod_music_scan(void);
 bool crazypod_music_scan_async(void);
+bool crazypod_music_validate_catalog_async(void);
+void crazypod_music_require_catalog_validation(void);
+enum crazypod_music_catalog_validation
+crazypod_music_catalog_validation(void);
+bool crazypod_music_take_catalog_stale(void);
 void crazypod_music_cancel_scan(void);
 bool crazypod_music_is_scanning(void);
 unsigned crazypod_music_scan_generation(void);
+bool crazypod_music_catalog_ready(void);
+void crazypod_music_invalidate_catalog(void);
+void crazypod_music_set_scan_suspended(bool suspended);
 
 int crazypod_music_track_count(void);
 const struct crazypod_track *crazypod_music_track(int index);
@@ -72,6 +90,8 @@ int crazypod_music_playlist_count(void);
 const struct crazypod_playlist *crazypod_music_playlist(int index);
 const struct crazypod_track *crazypod_music_playlist_track(int playlist_index,
                                                             int track_index);
+bool crazypod_music_track_is_favorite(const char *path);
+bool crazypod_music_toggle_favorite(const char *path);
 int crazypod_music_search_count(const char *query);
 const struct crazypod_track *crazypod_music_search_track(const char *query,
                                                           int result_index);

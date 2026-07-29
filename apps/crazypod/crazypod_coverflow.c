@@ -262,6 +262,7 @@ static bool prefetch_covers(bool include_distant)
         struct flow_cache_entry *entry;
         const struct crazypod_track *track;
         const lv_image_dsc_t *image;
+        bool decode_allowed;
         int slot;
 
         if(album_index < 0 || album_index >= count)
@@ -276,10 +277,22 @@ static bool prefetch_covers(bool include_distant)
         }
         slot = (int)(entry - cache);
         track = crazypod_music_album_track(album_index, 0);
-        image = track != NULL
-            ? crazypod_artwork_load_coverflow_priority(
-                slot, track, candidate_number)
-            : NULL;
+        /*
+         * Visible covers may read/decode on demand. Distant look-ahead is
+         * cache-only so an idle CoverFlow never walks and decodes the whole
+         * surrounding window just to prepare off-screen albums.
+         */
+        decode_allowed = !include_distant ||
+            candidate_number <= FLOW_PREFETCH_VISIBLE * 2;
+        image = track == NULL
+            ? NULL
+            : decode_allowed
+                ? crazypod_artwork_load_priority(
+                      slot, track, FLOW_COVER_SIZE,
+                      candidate_number)
+                : crazypod_artwork_load_cached_priority(
+                      slot, track, FLOW_COVER_SIZE,
+                      candidate_number);
         if(image == NULL)
             entry->image = NULL;
         if(track != NULL && image == NULL &&
@@ -890,6 +903,14 @@ void crazypod_coverflow_leave(void)
 bool crazypod_coverflow_active(void)
 {
     return flow_active;
+}
+
+bool crazypod_coverflow_motion_active(void)
+{
+    return flow_active && !wheel_input_suspended &&
+        (flow_dirty || wheel_tracking || input_active ||
+         position_q16 != target_position_q16 ||
+         velocity_q16 != 0);
 }
 
 void crazypod_coverflow_set_input_suspended(bool suspended)

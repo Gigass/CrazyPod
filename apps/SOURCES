@@ -39,6 +39,7 @@ crazypod/ui/features/miniapps/crazypod_miniapp_activation.c
 crazypod/crazypod_videos.c
 crazypod/crazypod_video_mpeg_misc.c
 crazypod/crazypod_artwork.c
+crazypod/crazypod_artwork_palette.c
 crazypod/crazypod_coverflow.c
 crazypod/crazypod_music.c
 crazypod/crazypod_playlist.c
@@ -176,6 +177,7 @@ crazypod/ui/presentation/crazypod_corner_masks.c
 crazypod/ui/presentation/crazypod_glass_sampler.c
 crazypod/ui/presentation/crazypod_glass_slots.c
 crazypod/ui/presentation/crazypod_glass_panel.c
+crazypod/ui/presentation/crazypod_empty_state.c
 crazypod/ui/features/photos/crazypod_photos_preview.c
 crazypod/ui/shell/crazypod_extras_preview.c
 crazypod/ui/features/notes/crazypod_notes_preview.c

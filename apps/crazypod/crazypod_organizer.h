@@ -19,6 +19,8 @@ struct crazypod_calendar_event {
 };
 
 void crazypod_organizer_scan(void);
+void crazypod_organizer_ensure_loaded(void);
+void crazypod_organizer_invalidate(void);
 int crazypod_contacts_count(void);
 const struct crazypod_contact *crazypod_contact_get(int index);
 int crazypod_calendar_event_count(void);

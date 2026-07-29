@@ -7,6 +7,7 @@
 #include "kernel.h"
 
 #include "../../../crazypod_photos.h"
+#include "../../presentation/crazypod_empty_state.h"
 #include "../../presentation/crazypod_glass_panel.h"
 #include "../../presentation/crazypod_glass_slots.h"
 #include "../../presentation/crazypod_ui_widgets.h"
@@ -149,30 +150,13 @@ lv_obj_t *crazypod_photo_screen_render_image(
 static void render_empty(
     lv_obj_t *parent, enum crazypod_photo_grid_mode mode)
 {
-    lv_obj_t *symbol = crazypod_ui_widget_label(
-        parent, LV_SYMBOL_IMAGE, &lv_font_montserrat_24,
-        WHITE, 145);
-    lv_obj_t *title;
-    lv_obj_t *detail;
-
-    lv_obj_set_pos(symbol, 148, 86);
-    title = crazypod_ui_widget_label(
-        parent,
+    crazypod_empty_state_render(
+        parent, LV_SYMBOL_IMAGE,
         mode == CRAZYPOD_PHOTO_GRID_FAVORITES
             ? "No Favorites" : "No Pictures",
-        &lv_font_montserrat_12, WHITE, LV_OPA_COVER);
-    lv_obj_set_width(title, 260);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 30, 124);
-    detail = crazypod_ui_widget_label(
-        parent,
         mode == CRAZYPOD_PHOTO_GRID_FAVORITES
             ? "Hold Select on a photo to save it here."
-            : "Add JPG, JPEG or BMP files to /Pictures.",
-        &lv_font_montserrat_8, WHITE, 125);
-    lv_obj_set_width(detail, 250);
-    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(detail, 35, 148);
+            : "Add JPG, JPEG or BMP files to /Pictures.");
 }
 
 void crazypod_photo_screen_render_grid(

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "audio.h"
+#include "backlight.h"
 #include "kernel.h"
 #include "playlist.h"
 
@@ -21,8 +22,10 @@
 #include "../navigation/crazypod_ui_routes.h"
 #include "../presentation/crazypod_menu_list.h"
 #include "../presentation/crazypod_preview_motion.h"
+#include "../shell/crazypod_lock_screen.h"
 #include "../shell/crazypod_now_capsule.h"
 #include "../shell/crazypod_shell.h"
+#include "crazypod_app_launcher.h"
 #include "crazypod_menu_preview.h"
 #include "crazypod_playback.h"
 
@@ -34,6 +37,11 @@ static struct {
     struct crazypod_playback_host host;
     unsigned preview_generation;
     unsigned menu_generation;
+    unsigned track_queue_generation;
+    unsigned track_catalog_generation;
+    int track_queue_index;
+    int track_library_index;
+    int track_album_index;
     long last_album_warm;
 } playback;
 
@@ -42,13 +50,56 @@ static struct route_state *current_route(void)
     return crazypod_ui_routes_current();
 }
 
+static int current_track_index(void)
+{
+    unsigned queue_generation = crazypod_queue_generation();
+    unsigned catalog_generation =
+        crazypod_music_scan_generation();
+    int queue_index = crazypod_queue_index();
+
+    if(!crazypod_music_catalog_ready()) {
+        playback.track_queue_generation = queue_generation;
+        playback.track_catalog_generation = catalog_generation;
+        playback.track_queue_index = queue_index;
+        playback.track_library_index = -1;
+        playback.track_album_index = -1;
+        return -1;
+    }
+    if(playback.track_queue_generation != queue_generation ||
+       playback.track_catalog_generation != catalog_generation ||
+       playback.track_queue_index != queue_index) {
+        const char *path = crazypod_queue_path(queue_index);
+        const struct crazypod_track *track;
+        int album_count;
+        int i;
+
+        playback.track_queue_generation = queue_generation;
+        playback.track_catalog_generation = catalog_generation;
+        playback.track_queue_index = queue_index;
+        playback.track_library_index =
+            crazypod_music_find_track(path);
+        playback.track_album_index = -1;
+        track = crazypod_music_track(
+            playback.track_library_index);
+        album_count = crazypod_music_album_count();
+        for(i = 0; track != NULL && i < album_count; ++i) {
+            const struct crazypod_album *album =
+                crazypod_music_album(i);
+
+            if(album != NULL &&
+               strcmp(album->title, track->album) == 0 &&
+               strcmp(album->artist, track->album_artist) == 0) {
+                playback.track_album_index = i;
+                break;
+            }
+        }
+    }
+    return playback.track_library_index;
+}
+
 static const struct crazypod_track *current_track(void)
 {
-    const char *path =
-        crazypod_queue_path(crazypod_queue_index());
-
-    return crazypod_music_track(
-        crazypod_music_find_track(path));
+    return crazypod_music_track(current_track_index());
 }
 
 static unsigned menu_artwork_signature(void)
@@ -87,27 +138,21 @@ void crazypod_playback_initialize(void)
             CRAZYPOD_PREVIEW_ARTWORK_SLOT);
     playback.menu_generation =
         menu_artwork_signature();
+    playback.track_queue_generation = (unsigned)-1;
+    playback.track_catalog_generation = (unsigned)-1;
+    playback.track_queue_index = -1;
+    playback.track_library_index = -1;
+    playback.track_album_index = -1;
     playback.last_album_warm = 0;
 }
 
 int crazypod_playback_initial_album_index(void)
 {
     const struct crazypod_track *track = current_track();
-    int count = crazypod_music_album_count();
-    int i;
 
-    if(track == NULL || count <= 0)
+    if(track == NULL || playback.track_album_index < 0)
         return 0;
-    for(i = 0; i < count; ++i) {
-        const struct crazypod_album *album =
-            crazypod_music_album(i);
-
-        if(album != NULL &&
-           strcmp(album->title, track->album) == 0 &&
-           strcmp(album->artist, track->album_artist) == 0)
-            return i;
-    }
-    return 0;
+    return playback.track_album_index;
 }
 
 void crazypod_playback_toggle(void)
@@ -154,8 +199,12 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
     struct mp3entry *id3;
 
     (void)timer;
+    if(!is_backlight_on(true) ||
+       crazypod_lock_screen_is_locked())
+        return;
     if(crazypod_music_library_update())
         return;
+    crazypod_app_launcher_process_pending();
     track = current_track();
     id3 = audio_current_track();
     crazypod_now_capsule_update(
@@ -193,7 +242,7 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
         crazypod_now_playing_overlay_restore(overlay);
         return;
     }
-    crazypod_now_playing_overlay_refresh_if_queue_changed();
+    crazypod_now_playing_overlay_refresh_tick();
     if(id3 != NULL)
         crazypod_now_playing_feature_update_playback(
             (uint32_t)id3->elapsed,

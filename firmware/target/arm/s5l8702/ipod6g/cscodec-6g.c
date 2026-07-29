@@ -49,8 +49,8 @@ void cscodec_write(int reg, unsigned char data)
 
 void cscodec_power(bool state)
 {
-    if (state) pmu_ldo_power_on(3);
-    else pmu_ldo_power_off(3);
+    if (state) pmu_ldo_power_on(LDO_CODEC);
+    else pmu_ldo_power_off(LDO_CODEC);
 }
 
 void cscodec_reset(bool state)

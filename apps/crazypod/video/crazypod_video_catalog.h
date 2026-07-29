@@ -16,8 +16,9 @@ struct crazypod_video_catalog_entry {
     uint32_t duration_ticks;
 };
 
-void crazypod_video_catalog_init(void);
+bool crazypod_video_catalog_init(void);
 void crazypod_video_catalog_refresh(void);
+void crazypod_video_catalog_invalidate(void);
 int crazypod_video_catalog_count(void);
 const struct crazypod_video_catalog_entry *
 crazypod_video_catalog_get(int index);

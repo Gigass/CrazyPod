@@ -23,6 +23,7 @@ struct crazypod_app_input_host {
         const struct route_state *state);
     void (*previous_track)(void);
     void (*toggle_playback)(void);
+    void (*open_now_playing)(void);
     void (*begin_music_scan)(void);
 };
 
@@ -30,5 +31,7 @@ void crazypod_app_input_configure(
     const struct crazypod_app_input_host *host);
 void crazypod_app_input_handle(
     long button, intptr_t data, long now);
+int crazypod_app_input_wait_ticks(long now);
+void crazypod_app_input_tick(long now, bool locked);
 
 #endif

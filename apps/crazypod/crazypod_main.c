@@ -89,7 +89,6 @@ static void crazypod_platform_init(void)
     crazypod_presets_load();
     crazypod_notes_init();
     crazypod_books_init();
-    crazypod_organizer_scan();
     crazypod_workouts_init();
     crazypod_music_init();
 
@@ -176,7 +175,6 @@ static void crazypod_platform_init(void)
     crazypod_presets_load();
     crazypod_notes_init();
     crazypod_books_init();
-    crazypod_organizer_scan();
     crazypod_workouts_init();
     crazypod_music_init();
 

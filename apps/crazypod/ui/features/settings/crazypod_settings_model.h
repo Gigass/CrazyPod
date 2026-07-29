@@ -21,6 +21,9 @@ enum settings_item {
 #ifdef HAVE_USB_CHARGING_ENABLE
     SETTINGS_ITEM_USB_CHARGING,
 #endif
+#ifdef HAVE_DISK_STORAGE
+    SETTINGS_ITEM_STORAGE_MODE,
+#endif
     SETTINGS_ITEM_BEEP,
     SETTINGS_ITEM_KEYCLICK,
 #ifdef HAVE_HARDWARE_CLICK
@@ -40,4 +43,3 @@ const char *crazypod_ui_settings_item_value_label(int item);
 void crazypod_ui_settings_apply_choice(int item, int index);
 
 #endif
-

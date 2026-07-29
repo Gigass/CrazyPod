@@ -8,6 +8,7 @@
 #include "lvgl.h"
 
 void crazypod_photo_cache_init(void);
+void crazypod_photo_cache_invalidate(void);
 bool crazypod_photo_cache_load(
     bool view, const char *path, uint32_t source_size,
     uint32_t source_mtime, lv_image_dsc_t *descriptor,

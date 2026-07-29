@@ -84,6 +84,11 @@ static unsigned photo_publish_generation;
 static unsigned photo_view_publish_generation;
 static bool photo_worker_decoding;
 static bool photo_suspended;
+static bool photo_storage_suspended;
+static bool photo_lock_suspended;
+static bool photo_route_suspended;
+static bool photo_refresh_pending;
+static bool photo_cache_initialized;
 static bool photo_wake_queued;
 static struct mutex photo_mutex;
 static struct event_queue photo_queue;
@@ -325,6 +330,19 @@ static void wake_worker(void)
         queue_post(&photo_queue, CRAZYPOD_PHOTO_WAKE, 0);
 }
 
+static void wait_for_photo_idle(void)
+{
+    bool active;
+
+    do {
+        mutex_lock(&photo_mutex);
+        active = photo_worker_decoding;
+        mutex_unlock(&photo_mutex);
+        if(active)
+            yield();
+    } while(active);
+}
+
 void crazypod_photos_init(void)
 {
     int slot;
@@ -337,31 +355,55 @@ void crazypod_photos_init(void)
     }
     view_slot.requested_index = -1;
     view_slot.decoded_index = -1;
+    photo_worker_decoding = false;
+    photo_suspended = true;
+    photo_storage_suspended = false;
+    photo_lock_suspended = false;
+    photo_route_suspended = true;
+    photo_refresh_pending = false;
+    photo_cache_initialized = false;
+    photo_wake_queued = false;
     mutex_init(&photo_mutex);
     queue_init(&photo_queue, false);
     create_thread(photo_thread, photo_stack, sizeof(photo_stack), 0,
                   "crazypod photos"
                   IF_PRIO(, PRIORITY_USER_INTERFACE)
                   IF_COP(, CPU));
-    crazypod_photo_catalog_init();
-    crazypod_photo_cache_init();
-    crazypod_photos_refresh();
+    (void)crazypod_photo_catalog_init();
+    /* A persistent catalog makes Home/lock startup disk-idle. Validate it
+     * once, lazily, when a photo route is actually opened. The thumbnail
+     * cache index is deferred for the same reason. */
+    photo_refresh_pending = true;
 }
 
 void crazypod_photos_refresh(void)
 {
+    int slot;
+
     mutex_lock(&photo_mutex);
+    if(photo_storage_suspended || photo_lock_suspended ||
+       photo_route_suspended) {
+        photo_refresh_pending = true;
+        mutex_unlock(&photo_mutex);
+        return;
+    }
+    photo_refresh_pending = false;
     photo_suspended = true;
     mutex_unlock(&photo_mutex);
-    while(photo_worker_decoding)
-        yield();
+    wait_for_photo_idle();
     crazypod_photo_catalog_refresh();
     mutex_lock(&photo_mutex);
     memset(thumbnail_slots, 0, sizeof(thumbnail_slots));
     memset(&view_slot, 0, sizeof(view_slot));
+    for(slot = 0; slot < CRAZYPOD_PHOTO_THUMB_SLOTS; ++slot) {
+        thumbnail_slots[slot].requested_index = -1;
+        thumbnail_slots[slot].decoded_index = -1;
+    }
     view_slot.requested_index = -1;
     view_slot.decoded_index = -1;
-    photo_suspended = false;
+    photo_suspended =
+        photo_storage_suspended || photo_lock_suspended ||
+        photo_route_suspended;
     photo_wake_queued = false;
     ++photo_publish_generation;
     ++photo_view_publish_generation;
@@ -369,22 +411,98 @@ void crazypod_photos_refresh(void)
     mutex_unlock(&photo_mutex);
 }
 
+void crazypod_photos_ensure_catalog(void)
+{
+    bool refresh;
+
+    mutex_lock(&photo_mutex);
+    refresh = photo_refresh_pending &&
+        !photo_storage_suspended &&
+        !photo_lock_suspended &&
+        !photo_route_suspended;
+    mutex_unlock(&photo_mutex);
+    if(refresh) {
+        if(!photo_cache_initialized) {
+            crazypod_photo_cache_init();
+            photo_cache_initialized = true;
+        }
+        crazypod_photos_refresh();
+    }
+}
+
 void crazypod_photos_suspend(void)
 {
     mutex_lock(&photo_mutex);
+    photo_storage_suspended = true;
     photo_suspended = true;
     mutex_unlock(&photo_mutex);
-    while(photo_worker_decoding)
-        yield();
+    wait_for_photo_idle();
 }
 
 void crazypod_photos_resume(void)
 {
     mutex_lock(&photo_mutex);
-    photo_suspended = false;
+    photo_storage_suspended = false;
+    photo_suspended =
+        photo_lock_suspended || photo_route_suspended;
+    photo_refresh_pending = true;
     photo_wake_queued = false;
     mutex_unlock(&photo_mutex);
-    crazypod_photos_refresh();
+}
+
+void crazypod_photos_set_lock_suspended(bool suspended)
+{
+    bool wait_for_worker = false;
+    bool wake = false;
+
+    mutex_lock(&photo_mutex);
+    if(photo_lock_suspended != suspended) {
+        photo_lock_suspended = suspended;
+        photo_suspended =
+            photo_storage_suspended || photo_lock_suspended ||
+            photo_route_suspended;
+        if(photo_suspended)
+            wait_for_worker = true;
+        else if(!photo_refresh_pending)
+            wake = true;
+    }
+    mutex_unlock(&photo_mutex);
+    if(wait_for_worker)
+        wait_for_photo_idle();
+    if(wake)
+        wake_worker();
+}
+
+void crazypod_photos_set_route_suspended(bool suspended)
+{
+    bool wait_for_worker = false;
+    bool wake = false;
+
+    mutex_lock(&photo_mutex);
+    if(photo_route_suspended != suspended) {
+        photo_route_suspended = suspended;
+        photo_suspended =
+            photo_storage_suspended || photo_lock_suspended ||
+            photo_route_suspended;
+        if(photo_suspended)
+            wait_for_worker = true;
+        else if(!photo_refresh_pending)
+            wake = true;
+    }
+    mutex_unlock(&photo_mutex);
+    if(wait_for_worker)
+        wait_for_photo_idle();
+    if(wake)
+        wake_worker();
+}
+
+void crazypod_photos_invalidate_catalog(void)
+{
+    mutex_lock(&photo_mutex);
+    photo_refresh_pending = true;
+    mutex_unlock(&photo_mutex);
+    crazypod_photo_catalog_invalidate();
+    crazypod_photo_cache_invalidate();
 }
 
 int crazypod_photo_count(void)
@@ -594,8 +712,12 @@ bool crazypod_photos_busy(void)
     int slot;
 
     mutex_lock(&photo_mutex);
-    busy = photo_worker_decoding || view_slot.pending;
-    for(slot = 0; !busy && slot < CRAZYPOD_PHOTO_THUMB_SLOTS; ++slot)
+    busy = photo_worker_decoding ||
+        (!photo_suspended && view_slot.pending);
+    for(slot = 0;
+        !busy && !photo_suspended &&
+        slot < CRAZYPOD_PHOTO_THUMB_SLOTS;
+        ++slot)
         busy = thumbnail_slots[slot].pending;
     mutex_unlock(&photo_mutex);
     return busy;

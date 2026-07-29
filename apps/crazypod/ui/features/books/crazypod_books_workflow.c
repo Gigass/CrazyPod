@@ -157,13 +157,17 @@ static void load_metadata(int start_percent, int end_percent)
 
 void crazypod_books_workflow_ensure_metadata(void)
 {
-    if(metadata_ready)
+    bool scan_needed = crazypod_books_scan_needed();
+
+    if(metadata_ready && !scan_needed)
         return;
     render_loading(
         NULL, "Loading Library",
         "Reading final book titles and covers");
-    update_progress(6, "Scanning Books folder", NULL);
-    crazypod_books_scan();
+    if(scan_needed) {
+        update_progress(6, "Scanning Books folder", NULL);
+        crazypod_books_scan();
+    }
     load_metadata(16, 96);
     metadata_ready = true;
     update_progress(100, "Library ready", NULL);

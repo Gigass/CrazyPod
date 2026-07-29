@@ -164,7 +164,7 @@ void crazypod_appearance_load(void)
     int fd;
 
     memset(&appearance, 0, sizeof(appearance));
-    appearance.icon_scale = 2;
+    appearance.icon_scale = 4;
     appearance.glow = 1;
     appearance.highlight_style = 1;
     appearance.primary_color = 1;

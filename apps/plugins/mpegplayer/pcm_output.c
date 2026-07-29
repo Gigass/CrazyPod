@@ -23,11 +23,6 @@
 #include "plugin.h"
 #include "mpegplayer.h"
 
-#if defined(CRAZYPOD_VIDEO_CORE) && defined(HAVE_CS42L55) && \
-    !defined(SIMULATOR)
-#include "audiohw.h"
-#endif
-
 /* PCM channel we're using */
 #define MPEG_PCM_CHANNEL    PCM_MIXER_CHAN_PLAYBACK
 
@@ -328,17 +323,6 @@ void pcm_output_play_pause(bool play)
         }
     }
 
-#if defined(CRAZYPOD_VIDEO_CORE) && defined(HAVE_CS42L55) && \
-    !defined(SIMULATOR)
-    if (play &&
-        rb->mixer_channel_status(MPEG_PCM_CHANNEL) != CHANNEL_STOPPED)
-    {
-        /* audio_stop() leaves the CS42L55 in PDN_CODEC.  MPEGplayer starts
-         * the mixer directly instead of going through pcmbuf_play_start(),
-         * so perform the matching wake only after I2S/MCLK is running. */
-        audiohw_idle_powerup();
-    }
-#endif
 }
 
 /* Stops all playback and resets the clock */
@@ -350,12 +334,6 @@ void pcm_output_stop(void)
         rb->mixer_channel_stop(MPEG_PCM_CHANNEL);
 
     rb->pcm_play_unlock();
-
-#if defined(CRAZYPOD_VIDEO_CORE) && defined(HAVE_CS42L55) && \
-    !defined(SIMULATOR)
-    /* Match the direct codec wake in pcm_output_play_pause(). */
-    audiohw_idle_powerdown();
-#endif
 
     pcm_output_flush();
     pcm_output_set_clock(0);

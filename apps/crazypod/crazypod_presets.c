@@ -229,7 +229,7 @@ static void seed_builtins(void)
 {
     static const struct crazypod_appearance classic = {
         .icon_theme = 0,
-        .icon_scale = 2,
+        .icon_scale = 4,
         .sound_wave_style = CRAZYPOD_SOUND_WAVE_TORRENT,
         .glow = 1,
         .highlight_style = 1,
@@ -240,7 +240,7 @@ static void seed_builtins(void)
     };
     static const struct crazypod_appearance black_red = {
         .icon_theme = 12,
-        .icon_scale = 2,
+        .icon_scale = 4,
         .sound_wave_style = CRAZYPOD_SOUND_WAVE_RADIAL_SPECTRUM,
         .glow = 2,
         .highlight_style = 1,

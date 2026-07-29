@@ -69,6 +69,7 @@ struct crazypod_miniapp_alarm {
 };
 
 int crazypod_miniapps_init(void);
+int crazypod_miniapps_prepare(void);
 int crazypod_miniapps_rescan(void);
 int crazypod_miniapps_install(const char *package_path);
 

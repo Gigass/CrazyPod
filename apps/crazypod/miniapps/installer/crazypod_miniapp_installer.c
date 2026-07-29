@@ -10,6 +10,7 @@
 #include "file.h"
 
 #include "../../crazypod_miniapps.h"
+#include "../crazypod_miniapp_alarm_store.h"
 #include "../catalog/crazypod_miniapp_registry_loader.h"
 #include "../runtime/crazypod_miniapp_native_validator.h"
 #include "../runtime/crazypod_miniapp_verification_cache.h"
@@ -31,6 +32,9 @@ static struct {
     struct crazypod_miniapp_metadata verified_metadata;
     char manifest[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     bool in_progress;
+    bool rescan_in_progress;
+    bool initialized;
+    bool packages_scanned;
 } installer;
 
 static bool ensure_directory(const char *path)
@@ -148,7 +152,10 @@ int crazypod_miniapps_install(const char *package_path)
     if(result == CRAZYPOD_MINIAPP_OK) {
         crazypod_miniapp_verification_cache_mark(
             metadata->id, metadata->version_code);
-        (void)crazypod_miniapp_registry_rebuild();
+        if(!installer.rescan_in_progress) {
+            (void)crazypod_miniapp_registry_rebuild();
+            crazypod_miniapp_alarm_store_reload();
+        }
     }
 done:
     crazypod_cpk_close(&reader);
@@ -192,32 +199,79 @@ static int scan_directory(const char *path)
     return first_error;
 }
 
-int crazypod_miniapps_rescan(void)
+static int rescan_packages(bool recover_publication)
 {
     int result;
     int user_result;
 
-    if(crazypod_miniapps_is_open())
-        return CRAZYPOD_MINIAPP_ERROR_BUSY;
     crazypod_miniapp_verification_cache_clear();
     (void)ensure_directory("/.crazypod");
     (void)ensure_directory(MINIAPP_ROOT);
     (void)ensure_directory(DATA_ROOT);
     (void)ensure_directory(USER_ROOT);
     (void)ensure_directory(USER_INSTALL);
-    crazypod_miniapp_stage_recover_all();
-    (void)crazypod_miniapp_registry_rebuild();
+    if(recover_publication)
+        crazypod_miniapp_stage_recover_all();
+    installer.rescan_in_progress = true;
     result = scan_directory(SYSTEM_PACKAGES);
     user_result = scan_directory(USER_INSTALL);
+    installer.rescan_in_progress = false;
     (void)crazypod_miniapp_registry_rebuild();
+    crazypod_miniapp_alarm_store_reload();
+    installer.packages_scanned = true;
     return result < 0 ? result : user_result;
+}
+
+int crazypod_miniapps_rescan(void)
+{
+    int result;
+
+    if(crazypod_miniapps_is_open())
+        return CRAZYPOD_MINIAPP_ERROR_BUSY;
+    if(!installer.initialized) {
+        result = crazypod_miniapps_init();
+        if(result < 0)
+            return result;
+    }
+    return rescan_packages(true);
 }
 
 int crazypod_miniapps_init(void)
 {
-    return crazypod_miniapps_is_open()
-        ? CRAZYPOD_MINIAPP_ERROR_BUSY
-        : crazypod_miniapps_rescan();
+    int result;
+
+    if(crazypod_miniapps_is_open())
+        return CRAZYPOD_MINIAPP_ERROR_BUSY;
+    if(installer.initialized)
+        return CRAZYPOD_MINIAPP_OK;
+
+    /*
+     * Boot only restores interrupted publications and loads the installed
+     * catalog needed by global alarms. Package discovery and verification
+     * are deliberately deferred until Mini Apps is opened.
+     */
+    crazypod_miniapp_stage_recover_all();
+    result = crazypod_miniapp_registry_rebuild();
+    crazypod_miniapp_alarm_store_reload();
+    installer.initialized = true;
+    installer.packages_scanned = false;
+    return result;
+}
+
+int crazypod_miniapps_prepare(void)
+{
+    int result;
+
+    if(!installer.initialized) {
+        result = crazypod_miniapps_init();
+        if(result < 0)
+            return result;
+    }
+    if(installer.packages_scanned)
+        return CRAZYPOD_MINIAPP_OK;
+    if(crazypod_miniapps_is_open())
+        return CRAZYPOD_MINIAPP_ERROR_BUSY;
+    return rescan_packages(false);
 }
 
 #endif

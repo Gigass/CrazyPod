@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "audio.h"
+#include "kernel.h"
 #include "settings.h"
 #include "sound.h"
 
@@ -19,6 +20,11 @@
 #define COLOR_DETAIL 0x08080D
 #define COLOR_WHITE 0xFFFFFF
 #define COLOR_CYAN 0x26CFF5
+#define COLOR_FAVORITE 0xFF375F
+#define NOW_ACTION_CELL_COUNT 4
+#define NOW_PROGRESS_STEP_MS 5000
+#define NOW_VOLUME_VISIBLE_TICKS \
+    ((HZ * 3 / 2) > 0 ? (HZ * 3 / 2) : 1)
 #define CRAZYPOD_NOW_POPUP_X 35
 #define CRAZYPOD_NOW_POPUP_Y 32
 #define CRAZYPOD_NOW_POPUP_WIDTH 250
@@ -27,9 +33,10 @@
 
 enum now_playing_action {
     NOW_ACTION_QUEUE = 0,
+    NOW_ACTION_FAVORITE,
     NOW_ACTION_PLAYBACK,
     NOW_ACTION_LYRICS,
-    NOW_ACTION_VOLUME,
+    NOW_ACTION_PROGRESS,
     NOW_ACTION_COUNT,
 };
 
@@ -47,10 +54,17 @@ struct now_actions_popup_view {
     lv_obj_t *queue_row;
     lv_obj_t *queue_icon;
     lv_obj_t *queue_label;
-    lv_obj_t *cells[3];
-    lv_obj_t *cell_icons[3];
-    lv_obj_t *cell_labels[3];
+    lv_obj_t *cells[NOW_ACTION_CELL_COUNT];
+    lv_obj_t *cell_icons[NOW_ACTION_CELL_COUNT];
+    lv_obj_t *cell_labels[NOW_ACTION_CELL_COUNT];
     lv_obj_t *detail;
+};
+
+struct now_progress_popup_view {
+    lv_obj_t *fill;
+    lv_obj_t *elapsed;
+    lv_obj_t *duration;
+    lv_obj_t *icon;
 };
 
 struct now_volume_popup_view {
@@ -62,6 +76,7 @@ struct now_volume_popup_view {
 static struct crazypod_now_playing_overlay_host overlay_host;
 static struct now_queue_popup_view now_queue_view;
 static struct now_actions_popup_view now_actions_view;
+static struct now_progress_popup_view now_progress_view;
 static struct now_volume_popup_view now_volume_view;
 static enum crazypod_now_playing_overlay now_overlay;
 static int now_action_selected;
@@ -70,6 +85,11 @@ static unsigned now_queue_generation_seen;
 static lv_obj_t *now_overlay_root;
 static lv_obj_t *now_overlay_panel;
 static bool now_lyrics_mode;
+static bool now_favorite_save_failed;
+static uint32_t now_progress_elapsed_ms;
+static uint32_t now_progress_length_ms;
+static long now_progress_follow_after;
+static long now_volume_hide_after;
 
 static const struct crazypod_track *current_track(void)
 {
@@ -106,6 +126,7 @@ static void clear_now_overlay_objects(void)
     now_overlay_panel = NULL;
     memset(&now_queue_view, 0, sizeof(now_queue_view));
     memset(&now_actions_view, 0, sizeof(now_actions_view));
+    memset(&now_progress_view, 0, sizeof(now_progress_view));
     memset(&now_volume_view, 0, sizeof(now_volume_view));
 }
 
@@ -155,21 +176,6 @@ static void begin_now_overlay(enum crazypod_now_playing_overlay overlay)
     lv_obj_remove_flag(now_overlay_root, LV_OBJ_FLAG_CLICKABLE);
 }
 
-static int now_volume_percent(void)
-{
-    int minimum = sound_min(SOUND_VOLUME);
-    int maximum = sound_max(SOUND_VOLUME);
-    int volume = global_status.volume;
-
-    if(volume < minimum)
-        volume = minimum;
-    if(volume > maximum)
-        volume = maximum;
-    if(maximum <= minimum)
-        return 0;
-    return (volume - minimum) * 100 / (maximum - minimum);
-}
-
 static const char *now_playback_mode_label(void)
 {
     if(crazypod_queue_repeat() == REPEAT_ONE)
@@ -192,13 +198,46 @@ static const char *now_playback_mode_icon(void)
     return LV_SYMBOL_PLAY;
 }
 
+static bool current_track_is_favorite(void)
+{
+    const struct crazypod_track *track = current_track();
+
+    return track != NULL &&
+        crazypod_music_track_is_favorite(track->path);
+}
+
+static void refresh_now_favorite_icon(bool selected, bool favorite)
+{
+    lv_obj_t *icon = now_actions_view.cell_icons[0];
+    uint32_t child_count;
+    uint32_t child_index;
+
+    if(icon == NULL)
+        return;
+    lv_obj_set_style_opa(
+        icon,
+        selected ? LV_OPA_COVER : favorite ? 235 : 124, 0);
+    child_count = lv_obj_get_child_count(icon);
+    for(child_index = 0;
+        child_index < child_count;
+        ++child_index) {
+        lv_obj_set_style_bg_color(
+            lv_obj_get_child(icon, (int32_t)child_index),
+            lv_color_hex(
+                favorite ? COLOR_FAVORITE : COLOR_WHITE),
+            0);
+    }
+}
+
 static void refresh_now_actions_popup(void)
 {
-    static const int action_for_cell[3] = {
-        NOW_ACTION_PLAYBACK, NOW_ACTION_LYRICS, NOW_ACTION_VOLUME
+    static const int action_for_cell[NOW_ACTION_CELL_COUNT] = {
+        NOW_ACTION_FAVORITE, NOW_ACTION_PLAYBACK,
+        NOW_ACTION_LYRICS, NOW_ACTION_PROGRESS
     };
     char detail[64];
     int i;
+    bool favorite = current_track_is_favorite();
     bool queue_selected = now_action_selected == NOW_ACTION_QUEUE;
 
     if(now_actions_view.queue_row == NULL)
@@ -225,8 +264,9 @@ static void refresh_now_actions_popup(void)
     lv_obj_set_style_text_opa(
         now_actions_view.queue_label, queue_selected ? 250 : 215, 0);
 
-    for(i = 0; i < 3; ++i) {
+    for(i = 0; i < NOW_ACTION_CELL_COUNT; ++i) {
         bool selected = now_action_selected == action_for_cell[i];
+
         lv_obj_set_style_bg_color(
             now_actions_view.cells[i],
             lv_color_hex(selected ? 0xDBD1BD : COLOR_WHITE), 0);
@@ -238,22 +278,40 @@ static void refresh_now_actions_popup(void)
             lv_color_hex(selected ? 0xDBD1BD : COLOR_WHITE), 0);
         lv_obj_set_style_border_opa(
             now_actions_view.cells[i], selected ? 163 : 31, 0);
-        lv_obj_set_style_text_opa(
-            now_actions_view.cell_icons[i], selected ? 245 : 124, 0);
+        if(i == 0)
+            refresh_now_favorite_icon(selected, favorite);
+        else
+            lv_obj_set_style_text_opa(
+                now_actions_view.cell_icons[i],
+                selected ? 245 : 124, 0);
         lv_obj_set_style_text_opa(
             now_actions_view.cell_labels[i], selected ? 230 : 120, 0);
     }
 
-    lv_label_set_text(now_actions_view.cell_icons[0],
-                      now_playback_mode_icon());
     lv_label_set_text(now_actions_view.cell_icons[1],
-                      LV_SYMBOL_FILE);
+                      now_playback_mode_icon());
     lv_label_set_text(now_actions_view.cell_icons[2],
-                      now_volume_percent() <= 0
-                          ? LV_SYMBOL_MUTE : LV_SYMBOL_VOLUME_MAX);
+                      LV_SYMBOL_FILE);
+    lv_label_set_text(now_actions_view.cell_icons[3],
+                      LV_SYMBOL_BARS);
     if(now_action_selected == NOW_ACTION_QUEUE) {
         snprintf(detail, sizeof(detail),
                  "Scroll browse  Center play  Menu exits");
+    }
+    else if(now_action_selected == NOW_ACTION_FAVORITE) {
+        const struct crazypod_track *track = current_track();
+
+        if(now_favorite_save_failed)
+            snprintf(detail, sizeof(detail),
+                     "Could not update My Favorites");
+        else if(track == NULL)
+            snprintf(detail, sizeof(detail),
+                     "No track available");
+        else
+            snprintf(detail, sizeof(detail),
+                     favorite
+                         ? "Saved to My Favorites  Center removes"
+                         : "Center adds to My Favorites");
     }
     else if(now_action_selected == NOW_ACTION_PLAYBACK) {
         snprintf(detail, sizeof(detail), "Center cycles mode  %s",
@@ -267,10 +325,9 @@ static void refresh_now_actions_popup(void)
                  now_lyrics_mode ? "Lyrics visible" : "Lyrics hidden",
                  available ? "Local LRC" : "No local LRC");
     }
-    else {
-        snprintf(detail, sizeof(detail), "Volume  %d%%",
-                 now_volume_percent());
-    }
+    else
+        snprintf(detail, sizeof(detail),
+                 "Center adjusts track progress");
     lv_label_set_text(now_actions_view.detail, detail);
 }
 
@@ -314,31 +371,48 @@ static void show_now_actions_popup(void)
                          COLOR_WHITE, 110);
     lv_obj_set_pos(chevron, 207, 14);
 
-    for(i = 0; i < 3; ++i) {
-        static const int x_positions[3] = { 42, 99, 156 };
-        static const char *const labels[3] = {
-            "Playback", "Lyrics", "Volume"
+    for(i = 0; i < NOW_ACTION_CELL_COUNT; ++i) {
+        static const int x_positions[NOW_ACTION_CELL_COUNT] = {
+            16, 71, 126, 181
         };
-        static const char *const icons[3] = {
-            LV_SYMBOL_PLAY, LV_SYMBOL_FILE, LV_SYMBOL_VOLUME_MAX
+        static const char *const labels[NOW_ACTION_CELL_COUNT] = {
+            "Favorite", "Playback", "Lyrics", "Progress"
+        };
+        static const char *const icons[NOW_ACTION_CELL_COUNT] = {
+            "", LV_SYMBOL_PLAY, LV_SYMBOL_FILE, LV_SYMBOL_BARS
         };
         int x = x_positions[i];
+
         now_actions_view.cells[i] = crazypod_ui_widget_box(
-            now_overlay_panel, x, 75, 52, 52, 14,
+            now_overlay_panel, x, 75, 48, 52, 14,
             COLOR_WHITE, 10);
-        now_actions_view.cell_icons[i] = crazypod_ui_widget_label(
-            now_actions_view.cells[i], icons[i],
-            &lv_font_montserrat_12,
-            COLOR_WHITE, 124);
-        lv_obj_set_width(now_actions_view.cell_icons[i], 52);
-        lv_obj_set_style_text_align(
-            now_actions_view.cell_icons[i], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(now_actions_view.cell_icons[i], 0, 8);
+        if(i == 0) {
+            now_actions_view.cell_icons[i] =
+                crazypod_ui_widget_box(
+                    now_actions_view.cells[i],
+                    0, 8, 48, 14, 0,
+                    COLOR_WHITE, LV_OPA_TRANSP);
+            crazypod_ui_widget_pixel_heart(
+                now_actions_view.cell_icons[i],
+                16, 1, 2, COLOR_WHITE, LV_OPA_COVER);
+        }
+        else {
+            now_actions_view.cell_icons[i] =
+                crazypod_ui_widget_label(
+                    now_actions_view.cells[i], icons[i],
+                    &lv_font_montserrat_12,
+                    COLOR_WHITE, 124);
+            lv_obj_set_width(now_actions_view.cell_icons[i], 48);
+            lv_obj_set_style_text_align(
+                now_actions_view.cell_icons[i],
+                LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_pos(now_actions_view.cell_icons[i], 0, 8);
+        }
         now_actions_view.cell_labels[i] = crazypod_ui_widget_label(
             now_actions_view.cells[i], labels[i],
             &lv_font_montserrat_8,
             COLOR_WHITE, 120);
-        lv_obj_set_width(now_actions_view.cell_labels[i], 52);
+        lv_obj_set_width(now_actions_view.cell_labels[i], 48);
         lv_obj_set_style_text_align(
             now_actions_view.cell_labels[i], LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_pos(now_actions_view.cell_labels[i], 0, 32);
@@ -519,55 +593,189 @@ static void show_now_queue_popup(void)
     animate_now_popup(now_overlay_panel, CRAZYPOD_NOW_POPUP_Y);
 }
 
+static void format_now_progress_time(
+    uint32_t milliseconds, char *text, size_t capacity)
+{
+    unsigned seconds = milliseconds / 1000;
+
+    snprintf(text, capacity, "%u:%02u",
+             seconds / 60, seconds % 60);
+}
+
+static void sync_now_progress_from_playback(void)
+{
+    const struct mp3entry *id3 = audio_current_track();
+
+    if(id3 == NULL || id3->length <= 0) {
+        now_progress_elapsed_ms = 0;
+        now_progress_length_ms = 0;
+        return;
+    }
+    now_progress_length_ms = (uint32_t)id3->length;
+    now_progress_elapsed_ms =
+        id3->elapsed > 0 ? (uint32_t)id3->elapsed : 0;
+    if(now_progress_elapsed_ms > now_progress_length_ms)
+        now_progress_elapsed_ms = now_progress_length_ms;
+}
+
+static void refresh_now_progress_popup(void)
+{
+    char elapsed[16];
+    char duration[16];
+    int width = 2;
+
+    if(now_progress_view.fill == NULL)
+        return;
+    if(now_progress_length_ms > 0 &&
+       now_progress_elapsed_ms > 0) {
+        width = 2 + (int)(
+            (uint64_t)176 * now_progress_elapsed_ms /
+            now_progress_length_ms);
+    }
+    if(width > 178)
+        width = 178;
+    lv_obj_set_width(now_progress_view.fill, width);
+    format_now_progress_time(
+        now_progress_elapsed_ms, elapsed, sizeof(elapsed));
+    format_now_progress_time(
+        now_progress_length_ms, duration, sizeof(duration));
+    lv_label_set_text(now_progress_view.elapsed, elapsed);
+    lv_label_set_text(now_progress_view.duration, duration);
+}
+
+static void show_now_progress_popup(void)
+{
+    lv_obj_t *title;
+    lv_obj_t *track;
+    lv_obj_t *instruction;
+
+    if(now_overlay == CRAZYPOD_NOW_OVERLAY_NONE)
+        prepare_now_overlay_glass(true);
+    begin_now_overlay(CRAZYPOD_NOW_OVERLAY_PROGRESS);
+    sync_now_progress_from_playback();
+    now_progress_follow_after = 0;
+    now_overlay_panel = make_now_glass_panel(35, 65, 250, 110);
+    title = crazypod_ui_widget_label(now_overlay_panel, "PROGRESS",
+                       &lv_font_montserrat_10,
+                       COLOR_WHITE, 100);
+    lv_obj_set_width(title, 250);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(title, 0, 14);
+    now_progress_view.icon = crazypod_ui_widget_label(
+        now_overlay_panel, LV_SYMBOL_BARS,
+        &lv_font_montserrat_16,
+        COLOR_CYAN, LV_OPA_COVER);
+    lv_obj_set_pos(now_progress_view.icon, 23, 47);
+    track = crazypod_ui_widget_box(
+        now_overlay_panel, 53, 50, 180, 10,
+        LV_RADIUS_CIRCLE, COLOR_WHITE, 48);
+    lv_obj_set_style_border_width(track, 1, 0);
+    lv_obj_set_style_border_color(
+        track, lv_color_hex(COLOR_CYAN), 0);
+    lv_obj_set_style_border_opa(track, 190, 0);
+    now_progress_view.fill = crazypod_ui_widget_box(
+        track, 1, 1, 2, 8, LV_RADIUS_CIRCLE,
+        COLOR_CYAN, LV_OPA_COVER);
+    now_progress_view.elapsed = crazypod_ui_widget_label(
+        now_overlay_panel, "0:00",
+        &lv_font_montserrat_10,
+        COLOR_WHITE, 235);
+    lv_obj_set_width(now_progress_view.elapsed, 85);
+    lv_obj_set_pos(now_progress_view.elapsed, 53, 70);
+    now_progress_view.duration = crazypod_ui_widget_label(
+        now_overlay_panel, "0:00",
+        &lv_font_montserrat_10,
+        COLOR_WHITE, 235);
+    lv_obj_set_width(now_progress_view.duration, 85);
+    lv_obj_set_style_text_align(
+        now_progress_view.duration, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_pos(now_progress_view.duration, 148, 70);
+    instruction = crazypod_ui_widget_label(
+        now_overlay_panel, "Scroll seeks 5s  Menu exits",
+        &lv_font_montserrat_8,
+        COLOR_WHITE, 145);
+    lv_obj_set_width(instruction, 250);
+    lv_obj_set_style_text_align(
+        instruction, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(instruction, 0, 92);
+    refresh_now_progress_popup();
+    animate_now_popup(now_overlay_panel, 65);
+}
+
 static void refresh_now_volume_popup(void)
 {
-    int percent = now_volume_percent();
     char text[16];
+    int minimum = sound_min(SOUND_VOLUME);
+    int maximum = sound_max(SOUND_VOLUME);
+    int percent = maximum > minimum
+        ? (global_status.volume - minimum) * 100 /
+            (maximum - minimum)
+        : 0;
+    int width;
 
     if(now_volume_view.fill == NULL)
         return;
-    lv_obj_set_width(now_volume_view.fill,
-                     percent > 0 ? 2 + 176 * percent / 100 : 2);
+    if(percent < 0)
+        percent = 0;
+    if(percent > 100)
+        percent = 100;
+    width = 2 + 176 * percent / 100;
+    lv_obj_set_width(now_volume_view.fill, width);
     snprintf(text, sizeof(text), "%d%%", percent);
     lv_label_set_text(now_volume_view.percent, text);
-    lv_label_set_text(now_volume_view.icon,
-                      percent <= 0 ? LV_SYMBOL_MUTE
-                                   : LV_SYMBOL_VOLUME_MAX);
+    lv_label_set_text(
+        now_volume_view.icon,
+        global_status.volume <= minimum
+            ? LV_SYMBOL_MUTE : LV_SYMBOL_VOLUME_MAX);
 }
 
 static void show_now_volume_popup(void)
 {
     lv_obj_t *title;
     lv_obj_t *track;
+    lv_obj_t *instruction;
 
     if(now_overlay == CRAZYPOD_NOW_OVERLAY_NONE)
         prepare_now_overlay_glass(true);
     begin_now_overlay(CRAZYPOD_NOW_OVERLAY_VOLUME);
+    now_volume_hide_after =
+        current_tick + NOW_VOLUME_VISIBLE_TICKS;
     now_overlay_panel = make_now_glass_panel(35, 65, 250, 110);
-    title = crazypod_ui_widget_label(now_overlay_panel, "VOLUME",
-                       &lv_font_montserrat_10,
-                       COLOR_WHITE, 100);
+    title = crazypod_ui_widget_label(
+        now_overlay_panel, "VOLUME",
+        &lv_font_montserrat_10, COLOR_WHITE, 100);
     lv_obj_set_width(title, 250);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 0, 14);
+    lv_obj_set_pos(title, 0, 13);
     now_volume_view.icon = crazypod_ui_widget_label(
         now_overlay_panel, LV_SYMBOL_VOLUME_MAX,
-        &lv_font_montserrat_16,
-        COLOR_WHITE, 235);
-    lv_obj_set_pos(now_volume_view.icon, 23, 47);
-    track = crazypod_ui_widget_box(now_overlay_panel, 53, 51, 180, 8,
-                     LV_RADIUS_CIRCLE, COLOR_WHITE, 26);
+        &lv_font_montserrat_16, COLOR_CYAN, LV_OPA_COVER);
+    lv_obj_set_width(now_volume_view.icon, 28);
+    lv_obj_set_style_text_align(
+        now_volume_view.icon, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(now_volume_view.icon, 18, 43);
+    track = crazypod_ui_widget_box(
+        now_overlay_panel, 51, 47, 180, 10,
+        LV_RADIUS_CIRCLE, COLOR_WHITE, 48);
+    lv_obj_set_style_border_width(track, 1, 0);
+    lv_obj_set_style_border_color(
+        track, lv_color_hex(COLOR_CYAN), 0);
+    lv_obj_set_style_border_opa(track, 190, 0);
     now_volume_view.fill = crazypod_ui_widget_box(
-        track, 0, 0, 2, 8, LV_RADIUS_CIRCLE,
+        track, 1, 1, 2, 8, LV_RADIUS_CIRCLE,
         COLOR_CYAN, LV_OPA_COVER);
     now_volume_view.percent = crazypod_ui_widget_label(
         now_overlay_panel, "0%",
-        &lv_font_montserrat_10,
-        COLOR_WHITE, 220);
-    lv_obj_set_width(now_volume_view.percent, 180);
+        &lv_font_montserrat_10, COLOR_WHITE, 235);
+    lv_obj_set_width(now_volume_view.percent, 60);
     lv_obj_set_style_text_align(
         now_volume_view.percent, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(now_volume_view.percent, 53, 72);
+    lv_obj_set_pos(now_volume_view.percent, 171, 70);
+    instruction = crazypod_ui_widget_label(
+        now_overlay_panel, "Scroll adjusts volume",
+        &lv_font_montserrat_8, COLOR_WHITE, 145);
+    lv_obj_set_width(instruction, 118);
+    lv_obj_set_pos(instruction, 51, 72);
     refresh_now_volume_popup();
     animate_now_popup(now_overlay_panel, 65);
 }
@@ -578,6 +786,8 @@ static void restore_now_overlay(enum crazypod_now_playing_overlay overlay)
         show_now_actions_popup();
     else if(overlay == CRAZYPOD_NOW_OVERLAY_QUEUE)
         show_now_queue_popup();
+    else if(overlay == CRAZYPOD_NOW_OVERLAY_PROGRESS)
+        show_now_progress_popup();
     else if(overlay == CRAZYPOD_NOW_OVERLAY_VOLUME)
         show_now_volume_popup();
 }
@@ -629,6 +839,7 @@ bool crazypod_now_playing_lyrics_mode(void)
 void crazypod_now_playing_overlay_show_actions(void)
 {
     now_action_selected = NOW_ACTION_QUEUE;
+    now_favorite_save_failed = false;
     show_now_actions_popup();
 }
 
@@ -637,9 +848,9 @@ void crazypod_now_playing_overlay_show_queue(void)
     show_now_queue_popup();
 }
 
-void crazypod_now_playing_overlay_show_volume(void)
+void crazypod_now_playing_overlay_show_progress(void)
 {
-    show_now_volume_popup();
+    show_now_progress_popup();
 }
 
 void crazypod_now_playing_overlay_restore(
@@ -684,6 +895,14 @@ void crazypod_now_playing_overlay_activate(void)
                 ? crazypod_queue_index() : 0;
             show_now_queue_popup();
         }
+        else if(now_action_selected == NOW_ACTION_FAVORITE) {
+            const struct crazypod_track *track = current_track();
+
+            now_favorite_save_failed =
+                track == NULL ||
+                !crazypod_music_toggle_favorite(track->path);
+            refresh_now_actions_popup();
+        }
         else if(now_action_selected == NOW_ACTION_PLAYBACK)
             crazypod_now_playing_overlay_cycle_playback_mode();
         else if(now_action_selected == NOW_ACTION_LYRICS) {
@@ -693,7 +912,7 @@ void crazypod_now_playing_overlay_activate(void)
             show_now_actions_popup();
         }
         else
-            show_now_volume_popup();
+            show_now_progress_popup();
         return;
     }
     if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE) {
@@ -702,14 +921,57 @@ void crazypod_now_playing_overlay_activate(void)
             playlist_start(now_queue_selected, 0, 0);
             crazypod_state_forget_resume();
             crazypod_state_mark_dirty();
-            if(overlay_host.render != NULL)
-                overlay_host.render(overlay_host.context);
-            show_now_queue_popup();
+            dismiss_now_overlay(true);
         }
         return;
     }
-    if(now_overlay == CRAZYPOD_NOW_OVERLAY_VOLUME)
-        dismiss_now_overlay(true);
+}
+
+void crazypod_now_playing_adjust_volume(int direction)
+{
+    int volume = global_status.volume + direction * 2;
+
+    if(volume < sound_min(SOUND_VOLUME))
+        volume = sound_min(SOUND_VOLUME);
+    if(volume > sound_max(SOUND_VOLUME))
+        volume = sound_max(SOUND_VOLUME);
+    if(volume != global_status.volume) {
+        sound_set_volume(volume);
+        global_status.volume = volume;
+        crazypod_state_mark_dirty();
+    }
+    if(now_overlay != CRAZYPOD_NOW_OVERLAY_VOLUME)
+        show_now_volume_popup();
+    else {
+        now_volume_hide_after =
+            current_tick + NOW_VOLUME_VISIBLE_TICKS;
+        refresh_now_volume_popup();
+    }
+}
+
+static void adjust_now_progress(int direction)
+{
+    int64_t target;
+
+    if(direction == 0 || now_progress_length_ms == 0)
+        return;
+    target = (int64_t)now_progress_elapsed_ms +
+        (int64_t)direction * NOW_PROGRESS_STEP_MS;
+    if(target < 0)
+        target = 0;
+    if((uint64_t)target >= now_progress_length_ms)
+        target = now_progress_length_ms > 0
+            ? now_progress_length_ms - 1 : 0;
+    if((uint32_t)target == now_progress_elapsed_ms)
+        return;
+
+    now_progress_elapsed_ms = (uint32_t)target;
+    audio_pre_ff_rewind();
+    audio_ff_rewind((long)target);
+    crazypod_state_mark_dirty();
+    now_progress_follow_after =
+        current_tick + (HZ / 2 > 0 ? HZ / 2 : 1);
+    refresh_now_progress_popup();
 }
 
 void crazypod_now_playing_overlay_move(int direction)
@@ -742,18 +1004,10 @@ void crazypod_now_playing_overlay_move(int direction)
             refresh_now_queue_popup();
         }
     }
-    else if(now_overlay == CRAZYPOD_NOW_OVERLAY_VOLUME) {
-        int volume = global_status.volume + direction * 2;
-
-        if(volume < sound_min(SOUND_VOLUME))
-            volume = sound_min(SOUND_VOLUME);
-        if(volume > sound_max(SOUND_VOLUME))
-            volume = sound_max(SOUND_VOLUME);
-        sound_set_volume(volume);
-        global_status.volume = volume;
-        crazypod_state_mark_dirty();
-        refresh_now_volume_popup();
-    }
+    else if(now_overlay == CRAZYPOD_NOW_OVERLAY_PROGRESS)
+        adjust_now_progress(direction);
+    else if(now_overlay == CRAZYPOD_NOW_OVERLAY_VOLUME)
+        crazypod_now_playing_adjust_volume(direction);
 }
 
 void crazypod_now_playing_overlay_refresh_queue(void)
@@ -765,13 +1019,26 @@ void crazypod_now_playing_overlay_refresh_queue(void)
 void crazypod_now_playing_overlay_refresh_after_playback(void)
 {
     crazypod_now_playing_overlay_refresh_queue();
+    if(now_overlay == CRAZYPOD_NOW_OVERLAY_PROGRESS &&
+       !TIME_BEFORE(current_tick, now_progress_follow_after)) {
+        sync_now_progress_from_playback();
+        refresh_now_progress_popup();
+    }
 }
 
-void crazypod_now_playing_overlay_refresh_if_queue_changed(void)
+void crazypod_now_playing_overlay_refresh_tick(void)
 {
     if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE &&
        now_queue_generation_seen != crazypod_queue_generation())
         refresh_now_queue_popup();
+    else if(now_overlay == CRAZYPOD_NOW_OVERLAY_PROGRESS &&
+            !TIME_BEFORE(current_tick, now_progress_follow_after)) {
+        sync_now_progress_from_playback();
+        refresh_now_progress_popup();
+    }
+    else if(now_overlay == CRAZYPOD_NOW_OVERLAY_VOLUME &&
+            !TIME_BEFORE(current_tick, now_volume_hide_after))
+        dismiss_now_overlay(true);
 }
 
 #endif

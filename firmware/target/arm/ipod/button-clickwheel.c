@@ -110,6 +110,9 @@ static inline int ipod_4g_button_read(void)
 {
     int whl = -1;
     int btn = BUTTON_NONE;
+#ifdef HAVE_WHEEL_POSITION
+    bool wheel_position_changed = false;
+#endif
 
 #ifdef CPU_PP    
     if ((inl(0x7000c104) & 0x04000000) != 0) 
@@ -169,6 +172,9 @@ static inline int ipod_4g_button_read(void)
                         wheel_delta += WHEELCLICKS_PER_ROTATION; /* Forward wrapping case */
                     else if (wheel_delta >  WHEELCLICKS_PER_ROTATION/2)
                         wheel_delta -= WHEELCLICKS_PER_ROTATION; /* Backward wrapping case */
+#ifdef HAVE_WHEEL_POSITION
+                    wheel_position_changed = wheel_delta != 0;
+#endif
     
                     /* Getting direction and wheel_keycode from wheel_delta.
                      * Need at least some clicks to be sure to avoid haptic fuzziness */
@@ -275,11 +281,17 @@ static inline int ipod_4g_button_read(void)
                     /* scrollwheel was touched for the first time after finger lifting */
                     old_wheel_value = new_wheel_value;
                     wheel_is_touched = true;
+#ifdef HAVE_WHEEL_POSITION
+                    wheel_position_changed = true;
+#endif
                 }
             }
             else
             {
                 /* In this case the finger was lifted from the scrollwheel. */
+#ifdef HAVE_WHEEL_POSITION
+                wheel_position_changed = wheel_is_touched;
+#endif
                 wheel_is_touched = false; 
             }
 
@@ -316,6 +328,11 @@ static inline int ipod_4g_button_read(void)
 #ifdef HAVE_WHEEL_POSITION
     /* Save the new absolute wheel position */
     wheel_position = whl;
+    /* Raw-position clients suppress scroll events. Wake their button wait
+       without turning the position change into an application button. */
+    if(btn == BUTTON_NONE && wheel_position_changed && !send_events &&
+       button_queue_empty())
+        button_queue_post(BUTTON_NONE, 0);
 #endif
     return btn;
 }

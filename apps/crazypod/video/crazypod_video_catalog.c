@@ -20,6 +20,12 @@
 #define VIDEO_STATE_TMP VIDEO_STATE_DIRECTORY "/video-resume.tmp"
 #define VIDEO_STATE_MAGIC 0x43505652u
 #define VIDEO_STATE_VERSION 1u
+#define VIDEO_CACHE_DIRECTORY VIDEO_STATE_DIRECTORY "/cache"
+#define VIDEO_CATALOG_PATH VIDEO_CACHE_DIRECTORY "/video-catalog.bin"
+#define VIDEO_CATALOG_TMP VIDEO_CACHE_DIRECTORY "/video-catalog.tmp"
+#define MEDIA_INVALID_PATH VIDEO_CACHE_DIRECTORY "/media.invalid"
+#define VIDEO_CATALOG_MAGIC 0x43505643u
+#define VIDEO_CATALOG_VERSION 1u
 
 struct video_resume_file_header {
     uint32_t magic;
@@ -36,9 +42,28 @@ struct video_resume_disk_entry {
     uint32_t duration_ticks;
 };
 
+struct video_catalog_header {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t entry_size;
+    uint32_t count;
+    uint32_t checksum;
+};
+
 static struct crazypod_video_catalog_entry
     entries[CRAZYPOD_VIDEO_MAX_FILES];
 static int entry_count;
+
+static uint32_t checksum_update(uint32_t hash, const void *data, size_t size)
+{
+    const uint8_t *bytes = data;
+
+    while(size-- > 0) {
+        hash ^= *bytes++;
+        hash *= 16777619u;
+    }
+    return hash;
+}
 
 static bool write_exact(int fd, const void *data, size_t size)
 {
@@ -107,6 +132,20 @@ static void poster_path(char *poster, size_t size, const char *path)
     if(extension != NULL)
         snprintf(
             extension, size - (size_t)(extension - poster), ".bmp");
+}
+
+static void disk_entry_from_catalog(
+    struct video_resume_disk_entry *disk_entry,
+    const struct crazypod_video_catalog_entry *entry)
+{
+    memset(disk_entry, 0, sizeof(*disk_entry));
+    memcpy(disk_entry->path, entry->path,
+           sizeof(disk_entry->path));
+    disk_entry->path[sizeof(disk_entry->path) - 1] = '\0';
+    disk_entry->size = entry->size;
+    disk_entry->mtime = entry->mtime;
+    disk_entry->resume_ticks = entry->resume_ticks;
+    disk_entry->duration_ticks = entry->duration_ticks;
 }
 
 static void insert_entry(const char *path, const struct dirinfo *info)
@@ -198,7 +237,9 @@ static void load_state(void)
 
         if(!read_exact(fd, &disk_entry, sizeof(disk_entry)))
             break;
-        disk_entry.path[MAX_PATH - 1] = '\0';
+        if(memchr(disk_entry.path, '\0',
+                  sizeof(disk_entry.path)) == NULL)
+            continue;
         index = index_for_path(
             disk_entry.path, disk_entry.size, disk_entry.mtime);
         if(index >= 0) {
@@ -252,10 +293,140 @@ static bool save_state(void)
     return true;
 }
 
-void crazypod_video_catalog_init(void)
+static uint32_t catalog_checksum(
+    const struct video_catalog_header *source)
+{
+    struct video_catalog_header header = *source;
+    struct video_resume_disk_entry disk_entry;
+    uint32_t hash = 2166136261u;
+    int index;
+
+    header.checksum = 0;
+    hash = checksum_update(hash, &header, sizeof(header));
+    for(index = 0; index < (int)header.count; ++index) {
+        disk_entry_from_catalog(&disk_entry, &entries[index]);
+        hash = checksum_update(
+            hash, &disk_entry, sizeof(disk_entry));
+    }
+    return hash;
+}
+
+static bool load_catalog(void)
+{
+    struct video_catalog_header header;
+    uint32_t hash;
+    uint32_t record;
+    int marker_fd = open(MEDIA_INVALID_PATH, O_RDONLY);
+    int fd;
+
+    if(marker_fd >= 0) {
+        close(marker_fd);
+        return false;
+    }
+    fd = open(VIDEO_CATALOG_PATH, O_RDONLY);
+    if(fd < 0)
+        return false;
+    if(!read_exact(fd, &header, sizeof(header)) ||
+       header.magic != VIDEO_CATALOG_MAGIC ||
+       header.version != VIDEO_CATALOG_VERSION ||
+       header.entry_size != sizeof(struct video_resume_disk_entry) ||
+       header.count > CRAZYPOD_VIDEO_MAX_FILES) {
+        close(fd);
+        return false;
+    }
+    {
+        struct video_catalog_header checksum_header = header;
+
+        checksum_header.checksum = 0;
+        hash = checksum_update(
+            2166136261u, &checksum_header,
+            sizeof(checksum_header));
+    }
+    for(record = 0; record < header.count; ++record) {
+        struct video_resume_disk_entry disk_entry;
+        struct crazypod_video_catalog_entry *entry =
+            &entries[record];
+
+        if(!read_exact(fd, &disk_entry, sizeof(disk_entry))) {
+            close(fd);
+            return false;
+        }
+        hash = checksum_update(
+            hash, &disk_entry, sizeof(disk_entry));
+        if(memchr(disk_entry.path, '\0',
+                  sizeof(disk_entry.path)) == NULL ||
+           disk_entry.path[0] != '/' ||
+           !crazypod_video_catalog_path_supported(
+               disk_entry.path)) {
+            close(fd);
+            return false;
+        }
+        memset(entry, 0, sizeof(*entry));
+        snprintf(entry->path, sizeof(entry->path), "%s",
+                 disk_entry.path);
+        poster_path(
+            entry->poster_path, sizeof(entry->poster_path),
+            entry->path);
+        name_from_path(
+            entry->name, sizeof(entry->name), entry->path);
+        entry->size = disk_entry.size;
+        entry->mtime = disk_entry.mtime;
+        entry->resume_ticks = disk_entry.resume_ticks;
+        entry->duration_ticks = disk_entry.duration_ticks;
+    }
+    close(fd);
+    if(hash != header.checksum)
+        return false;
+    entry_count = (int)header.count;
+    return true;
+}
+
+static bool save_catalog(void)
+{
+    struct video_catalog_header header;
+    struct video_resume_disk_entry disk_entry;
+    bool complete;
+    int index;
+    int fd;
+
+    mkdir(VIDEO_STATE_DIRECTORY);
+    mkdir(VIDEO_CACHE_DIRECTORY);
+    memset(&header, 0, sizeof(header));
+    header.magic = VIDEO_CATALOG_MAGIC;
+    header.version = VIDEO_CATALOG_VERSION;
+    header.entry_size = sizeof(disk_entry);
+    header.count = (uint32_t)entry_count;
+    header.checksum = catalog_checksum(&header);
+    remove(VIDEO_CATALOG_TMP);
+    fd = open(VIDEO_CATALOG_TMP,
+              O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(fd < 0)
+        return false;
+    complete = write_exact(fd, &header, sizeof(header));
+    for(index = 0; complete && index < entry_count; ++index) {
+        disk_entry_from_catalog(&disk_entry, &entries[index]);
+        complete = write_exact(
+            fd, &disk_entry, sizeof(disk_entry));
+    }
+    if(complete)
+        complete = fsync(fd) >= 0;
+    close(fd);
+    if(!complete ||
+       rename(VIDEO_CATALOG_TMP, VIDEO_CATALOG_PATH) < 0) {
+        remove(VIDEO_CATALOG_TMP);
+        return false;
+    }
+    return true;
+}
+
+bool crazypod_video_catalog_init(void)
 {
     mkdir(VIDEO_DIRECTORY);
     mkdir(VIDEO_STATE_DIRECTORY);
+    mkdir(VIDEO_CACHE_DIRECTORY);
+    entry_count = 0;
+    memset(entries, 0, sizeof(entries));
+    return load_catalog();
 }
 
 void crazypod_video_catalog_refresh(void)
@@ -264,6 +435,13 @@ void crazypod_video_catalog_refresh(void)
     memset(entries, 0, sizeof(entries));
     scan_directory(VIDEO_DIRECTORY, 0);
     load_state();
+    (void)save_catalog();
+}
+
+void crazypod_video_catalog_invalidate(void)
+{
+    remove(VIDEO_CATALOG_TMP);
+    remove(VIDEO_CATALOG_PATH);
 }
 
 int crazypod_video_catalog_count(void)
@@ -284,7 +462,7 @@ bool crazypod_video_catalog_update_playback(
         return false;
     entries[index].resume_ticks = resume_ticks;
     entries[index].duration_ticks = duration_ticks;
-    return save_state();
+    return save_state() && save_catalog();
 }
 
 #endif

@@ -21,8 +21,12 @@ enum crazypod_video_result {
 
 void crazypod_videos_init(void);
 void crazypod_videos_refresh(void);
+void crazypod_videos_ensure_catalog(void);
 void crazypod_videos_suspend(void);
 void crazypod_videos_resume(void);
+void crazypod_videos_set_lock_suspended(bool suspended);
+void crazypod_videos_set_route_suspended(bool suspended);
+void crazypod_videos_invalidate_catalog(void);
 
 int crazypod_video_count(void);
 const char *crazypod_video_path(int index);

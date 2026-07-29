@@ -10,6 +10,7 @@ enum crazypod_now_playing_overlay {
     CRAZYPOD_NOW_OVERLAY_NONE = 0,
     CRAZYPOD_NOW_OVERLAY_ACTIONS,
     CRAZYPOD_NOW_OVERLAY_QUEUE,
+    CRAZYPOD_NOW_OVERLAY_PROGRESS,
     CRAZYPOD_NOW_OVERLAY_VOLUME,
 };
 
@@ -26,9 +27,6 @@ struct crazypod_now_playing_overlay_host {
 };
 
 struct crazypod_now_playing_navigation_host {
-    bool (*product_active)(void);
-    int (*route_depth)(void);
-    enum crazypod_route (*current_route)(void);
     void (*push_now_playing)(void);
     void (*boost)(int ticks);
 };
@@ -62,22 +60,21 @@ crazypod_now_playing_overlay_kind(void);
 bool crazypod_now_playing_lyrics_mode(void);
 void crazypod_now_playing_overlay_show_actions(void);
 void crazypod_now_playing_overlay_show_queue(void);
-void crazypod_now_playing_overlay_show_volume(void);
+void crazypod_now_playing_overlay_show_progress(void);
 void crazypod_now_playing_overlay_restore(
     enum crazypod_now_playing_overlay overlay);
 void crazypod_now_playing_overlay_dismiss(bool refresh);
 void crazypod_now_playing_overlay_activate(void);
 void crazypod_now_playing_overlay_move(int direction);
+void crazypod_now_playing_adjust_volume(int direction);
 void crazypod_now_playing_overlay_cycle_playback_mode(void);
 void crazypod_now_playing_overlay_refresh_queue(void);
 void crazypod_now_playing_overlay_refresh_after_playback(void);
-void crazypod_now_playing_overlay_refresh_if_queue_changed(void);
+void crazypod_now_playing_overlay_refresh_tick(void);
 void crazypod_now_playing_navigation_configure(
     const struct crazypod_now_playing_navigation_host *host);
 void crazypod_now_playing_navigation_initialize(void);
-void crazypod_now_playing_navigation_reset(void);
 void crazypod_now_playing_request_open(void);
-void crazypod_now_playing_process_open(void);
 void crazypod_now_playing_prefetch_queue_artwork(
     int queue_index);
 int crazypod_now_playing_artwork_slot(

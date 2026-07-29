@@ -119,7 +119,6 @@
 #define CRAZYPOD_BOOT_FADE_DURATION_MS 220
 #define CRAZYPOD_DESKTOP_NATIVE_TOP 40
 #define CRAZYPOD_DESKTOP_NATIVE_BOTTOM 143
-
 static bool cpu_is_boosted;
 static long boost_until;
 static struct crazypod_frameclock lvgl_clock;
@@ -200,6 +199,8 @@ static bool handle_lock_button(long button, intptr_t data)
 static void update_status_bars(lv_timer_t *timer)
 {
     (void)timer;
+    if(!is_backlight_on(true))
+        return;
     crazypod_status_bars_update();
     if(crazypod_lock_screen_is_locked())
         refresh_lock_clock();
@@ -269,6 +270,8 @@ static void create_lock_screen(void)
     const struct crazypod_lock_screen_callbacks callbacks = {
         .play_wheel_feedback = play_wheel_feedback,
         .unlocked = lock_screen_unlocked,
+        .lock_inhibited =
+            crazypod_music_library_preparing_artwork,
     };
     lv_obj_t *root = crazypod_lock_screen_create(
         crazypod_desktop_screen(), &callbacks);
@@ -331,13 +334,17 @@ static void close_product(void)
 {
     if(!crazypod_shell_product_active())
         return;
+    if(crazypod_coverflow_active())
+        crazypod_coverflow_leave();
+    crazypod_app_launcher_cancel_pending();
+    crazypod_music_library_leave(current_tick);
+    crazypod_artwork_cancel_product_requests();
     if(crazypod_miniapps_feature_is_open()) {
         crazypod_miniapps_feature_reset_input();
         crazypod_miniapps_feature_close();
     }
     crazypod_choice_coordinator_dismiss(false);
     crazypod_now_playing_overlay_dismiss(false);
-    crazypod_now_playing_navigation_reset();
     crazypod_shell_close_product();
     crazypod_ui_routes_clear();
     lv_obj_invalidate(crazypod_desktop_screen());
@@ -353,11 +360,6 @@ static void push_route(enum crazypod_route route, int group)
     crazypod_route_actions_push(route, group);
 }
 #endif
-
-static void process_pending_now_playing_open(void)
-{
-    crazypod_route_actions_process_now_playing();
-}
 
 #ifdef SIMULATOR
 static void activate_selected(void)
@@ -509,6 +511,8 @@ static void configure_app_input(void)
         .handle_confirmation = handle_confirmation,
         .previous_track = crazypod_playback_previous_or_restart,
         .toggle_playback = crazypod_playback_toggle,
+        .open_now_playing =
+            crazypod_app_launcher_open_now_playing,
         .begin_music_scan = begin_music_scan,
     };
 
@@ -661,29 +665,63 @@ void crazypod_ui_run(void)
 
     while(true) {
         long button;
+        bool locked;
         int drained = 0;
+        int wait_ticks;
+
+        /* Once mass storage is acknowledged, the host owns the filesystem.
+         * The UI thread must not run timers, services, rendering or accept
+         * local actions until USB broadcasts disconnect. */
+        if(crazypod_system_prompts_storage_active()) {
+            button = button_get_w_tmo(HZ);
+            if(button == SYS_USB_DISCONNECTED)
+                handle_button(button, button_get_data());
+            if(crazypod_system_prompts_storage_active()) {
+                set_cpu_boost(false);
+                continue;
+            }
+        }
 
         process_lock_state();
-        button = button_get_w_tmo(1);
+        wait_ticks = crazypod_runtime_services_wait_ticks();
+        {
+            int input_wait =
+                crazypod_app_input_wait_ticks(current_tick);
+
+            if(input_wait < wait_ticks)
+                wait_ticks = input_wait;
+        }
+        button = button_get_w_tmo(wait_ticks);
+        process_lock_state();
         while(button != BUTTON_NONE && drained < 16) {
             intptr_t data = button_get_data();
             handle_button(button, data);
             ++drained;
+            if(crazypod_system_prompts_storage_active())
+                break;
             button = button_get_w_tmo(0);
         }
+        if(crazypod_system_prompts_storage_active()) {
+            set_cpu_boost(false);
+            continue;
+        }
         process_lock_state();
+        locked = crazypod_lock_screen_is_locked();
+        crazypod_app_input_tick(current_tick, locked);
         crazypod_runtime_services_tick(
             current_tick,
             crazypod_frameclock_due(&lvgl_clock, current_tick),
-            crazypod_lock_screen_is_locked());
-        process_deferred_route_render();
-        crazypod_playback_warm_album_flow(current_tick, crazypod_lock_screen_is_locked());
-        process_pending_now_playing_open();
-        crazypod_playback_process_artwork();
-        crazypod_playback_process_media();
+            locked);
+        if(!locked) {
+            process_deferred_route_render();
+            crazypod_playback_warm_album_flow(
+                current_tick, false);
+            crazypod_playback_process_artwork();
+            crazypod_playback_process_media();
+        }
         {
             bool desktop_interactive =
-                !crazypod_lock_screen_is_locked() &&
+                !locked &&
                 !crazypod_shell_product_active() &&
                 !modal_prompt_visible();
             int desktop_feedback;
@@ -701,7 +739,7 @@ void crazypod_ui_run(void)
                         ? BUTTON_SCROLL_BACK
                         : BUTTON_SCROLL_FWD);
         }
-        if(!crazypod_lock_screen_is_locked()) {
+        if(!locked) {
             crazypod_now_capsule_tick(current_tick, !crazypod_shell_product_active());
             crazypod_playback_tick_wave(current_tick);
         }
@@ -709,7 +747,7 @@ void crazypod_ui_run(void)
             lv_timer_handler();
             crazypod_frameclock_schedule_next(&lvgl_clock, current_tick);
         }
-        if(!crazypod_lock_screen_is_locked()) {
+        if(!locked) {
             int coverflow_feedback;
 
             crazypod_desktop_render_carousel(
@@ -746,10 +784,14 @@ void crazypod_ui_run(void)
         if(crazypod_artwork_busy() || crazypod_photos_busy() ||
            crazypod_videos_busy())
             keep_cpu_boosted(HZ / 10);
-        if(!lv_anim_count_running() &&
-           !crazypod_desktop_motion_active() &&
-           !crazypod_music_is_scanning() &&
-           !crazypod_coverflow_active() &&
+        if(crazypod_music_is_scanning() && !locked)
+            keep_cpu_boosted(HZ / 10);
+        if(!(locked
+             ? crazypod_lock_screen_motion_active()
+             : (lv_anim_count_running() ||
+                crazypod_desktop_motion_active() ||
+                crazypod_coverflow_motion_active())) &&
+           (!crazypod_music_is_scanning() || locked) &&
            !crazypod_artwork_busy() &&
            !crazypod_photos_busy() &&
            !crazypod_videos_busy() &&

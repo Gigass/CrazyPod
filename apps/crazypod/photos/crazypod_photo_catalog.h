@@ -14,8 +14,9 @@ struct crazypod_photo_catalog_entry {
     bool favorite;
 };
 
-void crazypod_photo_catalog_init(void);
+bool crazypod_photo_catalog_init(void);
 void crazypod_photo_catalog_refresh(void);
+void crazypod_photo_catalog_invalidate(void);
 int crazypod_photo_catalog_count(void);
 int crazypod_photo_catalog_favorite_count(void);
 int crazypod_photo_catalog_favorite_index(int favorite_index);

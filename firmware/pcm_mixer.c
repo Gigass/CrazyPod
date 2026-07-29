@@ -241,7 +241,15 @@ fill_frame:
 
         next_size = mix_frame_size;
     }
-    /* else silence period ran out - go to sleep */
+    else
+    {
+        /* The mixer already supplied its three-second anti-churn window.
+         * Tell targets with deeper codec idle not to add another one. */
+#ifdef HAVE_PCM_CODEC_IDLE
+        pcm_play_dma_mixer_idle();
+#endif
+        /* Silence period ran out - go to sleep. */
+    }
 
 #if FRAME_BOUNDARY_MARKERS != 0
     if (next_size)
@@ -254,15 +262,16 @@ fill_frame:
     return PCM_DMAST_OK;
 }
 
-/* Start PCM driver if it's not currently playing */
-static void mixer_start_pcm(void)
+/* Start PCM driver if it's not currently playing. Returns true when the
+ * caller's codec-power reservation was handed to the PCM layer. */
+static bool mixer_start_pcm(void)
 {
     if (pcm_is_playing())
-        return;
+        return false;
 
 #if defined(HAVE_RECORDING)
     if (pcm_is_recording())
-        return;
+        return false;
 #endif
 
     /* Requires a shared global sample rate for all channels */
@@ -276,8 +285,14 @@ static void mixer_start_pcm(void)
 
     mixer_buffer_callback(PCM_DMAST_STARTED);
 
+#ifdef HAVE_PCM_CODEC_IDLE
+    pcm_play_data_prepared(mixer_pcm_callback, mixer_buffer_callback,
+                           start, mix_frame_size);
+#else
     pcm_play_data(mixer_pcm_callback, mixer_buffer_callback,
                   start, mix_frame_size);
+#endif
+    return true;
 }
 
 /** Public interfaces **/
@@ -288,6 +303,10 @@ void mixer_channel_play_data(enum pcm_mixer_channel channel,
                              const void *start, size_t size)
 {
     struct mixer_channel *chan = &channels[channel];
+#ifdef HAVE_PCM_CODEC_IDLE
+    bool power_prepared = false;
+    bool power_consumed = false;
+#endif
 
     ALIGN_AUDIOBUF(start, size);
 
@@ -305,6 +324,16 @@ void mixer_channel_play_data(enum pcm_mixer_channel channel,
         ALIGN_AUDIOBUF(start, size);
     }
 
+#ifdef HAVE_PCM_CODEC_IDLE
+    if (start && size)
+    {
+        /* May wait for codec stabilization, so this must precede the
+         * channel's outer pcm_play_lock(). */
+        pcm_play_dma_prepare();
+        power_prepared = true;
+    }
+#endif
+
     pcm_play_lock();
 
     if (start && size)
@@ -318,7 +347,11 @@ void mixer_channel_play_data(enum pcm_mixer_channel channel,
 
         mixer_activate_channel(chan);
         chan_call_buffer_hook(chan);
+#ifdef HAVE_PCM_CODEC_IDLE
+        power_consumed = mixer_start_pcm();
+#else
         mixer_start_pcm();
+#endif
     }
     else
     {
@@ -327,12 +360,29 @@ void mixer_channel_play_data(enum pcm_mixer_channel channel,
     }
 
     pcm_play_unlock();
+
+#ifdef HAVE_PCM_CODEC_IDLE
+    if (power_prepared && !power_consumed)
+        pcm_play_dma_cancel_prepare();
+#endif
 }
 
 /* Pause or resume a channel (when started) */
 void mixer_channel_play_pause(enum pcm_mixer_channel channel, bool play)
 {
     struct mixer_channel *chan = &channels[channel];
+#ifdef HAVE_PCM_CODEC_IDLE
+    bool power_prepared = false;
+    bool power_consumed = false;
+
+    if (play)
+    {
+        /* A resume after deep idle may wait 75 ms. Do it before masking
+         * the PCM DMA interrupt. Invalid/no-op resumes are cancelled below. */
+        pcm_play_dma_prepare();
+        power_prepared = true;
+    }
+#endif
 
     pcm_play_lock();
 
@@ -343,7 +393,11 @@ void mixer_channel_play_pause(enum pcm_mixer_channel channel, bool play)
         {
             chan->status = CHANNEL_PLAYING;
             mixer_activate_channel(chan);
+#ifdef HAVE_PCM_CODEC_IDLE
+            power_consumed = mixer_start_pcm();
+#else
             mixer_start_pcm();
+#endif
         }
         else
         {
@@ -353,6 +407,11 @@ void mixer_channel_play_pause(enum pcm_mixer_channel channel, bool play)
     }
 
     pcm_play_unlock();
+
+#ifdef HAVE_PCM_CODEC_IDLE
+    if (power_prepared && !power_consumed)
+        pcm_play_dma_cancel_prepare();
+#endif
 }
 
 /* Stop playback on a channel */

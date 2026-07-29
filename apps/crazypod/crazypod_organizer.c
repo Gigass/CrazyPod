@@ -43,6 +43,8 @@ static struct calendar_disk calendar_save_buffer;
 static int contact_count;
 static int event_count;
 static uint32_t next_event_id = 1;
+static bool organizer_loaded;
+static bool organizer_dirty = true;
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 {
@@ -473,25 +475,42 @@ void crazypod_organizer_scan(void)
     scan_directory("/Calendars", ".ics", parse_ics);
     scan_directory("/Calendar", ".ics", parse_ics);
     sort_events();
+    organizer_loaded = true;
+    organizer_dirty = false;
+}
+
+void crazypod_organizer_ensure_loaded(void)
+{
+    if(!organizer_loaded || organizer_dirty)
+        crazypod_organizer_scan();
+}
+
+void crazypod_organizer_invalidate(void)
+{
+    organizer_dirty = true;
 }
 
 int crazypod_contacts_count(void)
 {
+    crazypod_organizer_ensure_loaded();
     return contact_count;
 }
 
 const struct crazypod_contact *crazypod_contact_get(int index)
 {
+    crazypod_organizer_ensure_loaded();
     return index >= 0 && index < contact_count ? &contacts[index] : NULL;
 }
 
 int crazypod_calendar_event_count(void)
 {
+    crazypod_organizer_ensure_loaded();
     return event_count;
 }
 
 const struct crazypod_calendar_event *crazypod_calendar_event_get(int index)
 {
+    crazypod_organizer_ensure_loaded();
     return index >= 0 && index < event_count ? &events[index] : NULL;
 }
 
@@ -500,6 +519,7 @@ const struct crazypod_calendar_event *crazypod_calendar_event_find(
 {
     int i;
 
+    crazypod_organizer_ensure_loaded();
     if(id == 0)
         return NULL;
     for(i = 0; i < event_count; ++i)
@@ -516,6 +536,7 @@ uint32_t crazypod_calendar_event_add(int date, const char *time,
     int local_count = 0;
     int i;
 
+    crazypod_organizer_ensure_loaded();
     if(!valid_date(date) || summary == NULL || summary[0] == '\0' ||
        event_count >= EVENTS_MAX)
         return 0;
@@ -557,6 +578,7 @@ bool crazypod_calendar_event_update(uint32_t id, int date,
 {
     int i;
 
+    crazypod_organizer_ensure_loaded();
     if(id == 0 || !valid_date(date) ||
        summary == NULL || summary[0] == '\0')
         return false;
@@ -587,6 +609,7 @@ bool crazypod_calendar_event_delete(uint32_t id)
 {
     int i;
 
+    crazypod_organizer_ensure_loaded();
     if(id == 0)
         return false;
     for(i = 0; i < event_count; ++i) {

@@ -12,6 +12,7 @@
 #include "../navigation/crazypod_route_query.h"
 #include "../navigation/crazypod_ui_routes.h"
 #include "../presentation/crazypod_menu_list.h"
+#include "../presentation/crazypod_ui_menu_layout.h"
 #include "../shell/crazypod_app_catalog.h"
 #include "crazypod_menu_rows.h"
 
@@ -68,12 +69,8 @@ void crazypod_menu_rows_refresh(const struct route_state *state)
 
     if(!crazypod_menu_list_matches(state->route) || count <= 0)
         return;
-    start = count <= VISIBLE_ROWS ? 0 :
-        state->selected - VISIBLE_ROWS / 2;
-    if(start < 0)
-        start = 0;
-    if(start > count - VISIBLE_ROWS)
-        start = count - VISIBLE_ROWS;
+    start = crazypod_ui_menu_window_start(
+        count, state->selected, VISIBLE_ROWS);
 
     for(row = 0; row < VISIBLE_ROWS; ++row) {
         int index = start + row;

@@ -24,6 +24,7 @@
 #include "usb.h"
 #include "disk.h"
 #include "pathfuncs.h"
+#include "system.h"
 
 #ifdef HAVE_SDMMC_HOST
 # include "sdmmc_host.h"
@@ -70,6 +71,7 @@ static unsigned int num_drives;
 
 static struct event_queue storage_queue SHAREDBSS_ATTR;
 static unsigned int storage_thread_id = 0;
+static volatile bool storage_prewake_pending;
 
 static union {
 #if (CONFIG_STORAGE & STORAGE_ATA)
@@ -194,8 +196,15 @@ static void NORETURN_ATTR storage_thread(void)
 
 #if (CONFIG_STORAGE & STORAGE_ATA)
         case Q_STORAGE_SLEEP:
+            storage_event_send(bdcast, ev.id, 0);
+            break;
         case Q_STORAGE_PRE_WAKE:
             storage_event_send(bdcast, ev.id, 0);
+            {
+                int oldlevel = disable_irq_save();
+                storage_prewake_pending = false;
+                restore_irq(oldlevel);
+            }
             break;
 #endif
 
@@ -273,12 +282,30 @@ void storage_post_event(long event, intptr_t data)
         queue_post(&storage_queue, event, data);
 }
 
+void storage_request_prewake(void)
+{
+#if (CONFIG_STORAGE & STORAGE_ATA)
+    bool post = false;
+    int oldlevel = disable_irq_save();
+
+    if (storage_thread_id && !storage_prewake_pending)
+    {
+        storage_prewake_pending = true;
+        post = true;
+    }
+    restore_irq(oldlevel);
+    if (post)
+        queue_post(&storage_queue, Q_STORAGE_PRE_WAKE, 0);
+#endif
+}
+
 static inline void storage_thread_init(void)
 {
     if (storage_thread_id) {
         return;
     }
 
+    storage_prewake_pending = false;
     queue_init(&storage_queue, true);
     storage_thread_id = create_thread(storage_thread, &storage_thread_stack,
                                       sizeof (storage_thread_stack),

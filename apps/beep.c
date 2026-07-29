@@ -45,6 +45,13 @@ static int beep_count;          /* Number of samples remaining to generate */
 #define BEEP_BUF_COUNT  BEEP_COUNT(PLAY_SAMPR_MAX, KEYCLICK_DURATION)
 static int16_t beep_buf[BEEP_BUF_COUNT*2] IBSS_ATTR __attribute__((aligned(4)));
 
+static const int16_t *pcm_effect_samples;
+static size_t pcm_effect_frame_count;
+static uint32_t pcm_effect_phase;
+static uint32_t pcm_effect_step;
+static int16_t pcm_effect_buf[MIX_FRAME_SAMPLES * 2]
+    IBSS_ATTR __attribute__((aligned(4)));
+
 /* Callback to generate the beep frames - also don't want inlining of
    call below in beep_play */
 static void __attribute__((noinline))
@@ -100,4 +107,71 @@ void beep_play(unsigned int frequency, unsigned int duration,
     mixer_channel_play_data(PCM_MIXER_CHAN_BEEP,
                             beep_count ? beep_get_more : NULL,
                             start, size);
+}
+
+static void pcm_effect_get_more(const void **start, size_t *size)
+{
+    int frames = 0;
+
+    while(frames < MIX_FRAME_SAMPLES) {
+        uint32_t index = pcm_effect_phase >> 15;
+        uint32_t fraction = pcm_effect_phase & 0x7fffu;
+        int32_t first;
+        int32_t second;
+        int16_t sample;
+
+        if(index >= pcm_effect_frame_count)
+            break;
+        first = pcm_effect_samples[index];
+        second = index + 1 < pcm_effect_frame_count
+            ? pcm_effect_samples[index + 1] : first;
+        sample = (int16_t)(
+            first + ((second - first) * (int32_t)fraction >> 15));
+        pcm_effect_buf[frames * 2] = sample;
+        pcm_effect_buf[frames * 2 + 1] = sample;
+        pcm_effect_phase += pcm_effect_step;
+        ++frames;
+    }
+
+    if(frames <= 0) {
+        *start = NULL;
+        *size = 0;
+        return;
+    }
+    *start = pcm_effect_buf;
+    *size = (size_t)frames * 2 * sizeof(int16_t);
+}
+
+void beep_play_pcm(const int16_t *samples, size_t frame_count,
+                   unsigned int sample_rate,
+                   unsigned int mixer_amplitude)
+{
+    const void *start = NULL;
+    size_t size = 0;
+    unsigned int output_rate;
+
+    mixer_channel_stop(PCM_MIXER_CHAN_BEEP);
+    if(samples == NULL || frame_count == 0 ||
+       sample_rate == 0 || mixer_amplitude == 0)
+        return;
+
+    output_rate = mixer_get_frequency();
+    if(output_rate == 0)
+        return;
+    pcm_effect_samples = samples;
+    pcm_effect_frame_count = frame_count;
+    pcm_effect_phase = 0;
+    pcm_effect_step = (uint32_t)(
+        ((uint64_t)sample_rate << 15) / output_rate);
+    if(pcm_effect_step == 0)
+        pcm_effect_step = 1;
+
+    pcm_effect_get_more(&start, &size);
+    mixer_channel_set_amplitude(
+        PCM_MIXER_CHAN_BEEP, mixer_amplitude);
+    mixer_channel_play_data(
+        PCM_MIXER_CHAN_BEEP,
+        (pcm_effect_phase >> 15) < pcm_effect_frame_count
+            ? pcm_effect_get_more : NULL,
+        start, size);
 }

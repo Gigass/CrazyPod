@@ -17,11 +17,64 @@
 #define PHOTO_STATE_DIRECTORY "/.crazypod"
 #define PHOTO_FAVORITES_PATH PHOTO_STATE_DIRECTORY "/photo-favorites.cfg"
 #define PHOTO_FAVORITES_TMP PHOTO_STATE_DIRECTORY "/photo-favorites.tmp"
+#define PHOTO_CACHE_DIRECTORY PHOTO_STATE_DIRECTORY "/cache"
+#define PHOTO_CATALOG_PATH PHOTO_CACHE_DIRECTORY "/photo-catalog.bin"
+#define PHOTO_CATALOG_TMP PHOTO_CACHE_DIRECTORY "/photo-catalog.tmp"
+#define MEDIA_INVALID_PATH PHOTO_CACHE_DIRECTORY "/media.invalid"
+#define PHOTO_CATALOG_MAGIC 0x43505043u
+#define PHOTO_CATALOG_VERSION 1u
+
+struct photo_catalog_header {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t entry_size;
+    uint32_t count;
+    uint32_t checksum;
+};
 
 static struct crazypod_photo_catalog_entry
     entries[CRAZYPOD_PHOTO_MAX_FILES];
 static int entry_count;
 static int favorites;
+
+static uint32_t checksum_update(uint32_t hash, const void *data, size_t size)
+{
+    const uint8_t *bytes = data;
+
+    while(size-- > 0) {
+        hash ^= *bytes++;
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static uint32_t catalog_checksum(
+    const struct photo_catalog_header *source)
+{
+    struct photo_catalog_header header = *source;
+    uint32_t hash = 2166136261u;
+
+    header.checksum = 0;
+    hash = checksum_update(hash, &header, sizeof(header));
+    return checksum_update(
+        hash, entries,
+        (size_t)header.count * sizeof(entries[0]));
+}
+
+static bool read_exact(int fd, void *data, size_t size)
+{
+    uint8_t *cursor = data;
+
+    while(size > 0) {
+        ssize_t count = read(fd, cursor, size);
+
+        if(count <= 0)
+            return false;
+        cursor += count;
+        size -= (size_t)count;
+    }
+    return true;
+}
 
 static bool write_exact(int fd, const void *data, size_t size)
 {
@@ -237,10 +290,92 @@ static bool save_favorites(void)
     return true;
 }
 
-void crazypod_photo_catalog_init(void)
+static bool load_catalog(void)
+{
+    struct photo_catalog_header header;
+    bool valid;
+    uint32_t index;
+    int marker_fd = open(MEDIA_INVALID_PATH, O_RDONLY);
+    int fd;
+
+    if(marker_fd >= 0) {
+        close(marker_fd);
+        return false;
+    }
+    fd = open(PHOTO_CATALOG_PATH, O_RDONLY);
+    if(fd < 0)
+        return false;
+    valid =
+        read_exact(fd, &header, sizeof(header)) &&
+        header.magic == PHOTO_CATALOG_MAGIC &&
+        header.version == PHOTO_CATALOG_VERSION &&
+        header.entry_size == sizeof(entries[0]) &&
+        header.count <= CRAZYPOD_PHOTO_MAX_FILES &&
+        read_exact(
+            fd, entries,
+            (size_t)header.count * sizeof(entries[0]));
+    close(fd);
+    if(!valid || header.checksum != catalog_checksum(&header))
+        return false;
+    for(index = 0; index < header.count; ++index) {
+        if(memchr(entries[index].path, '\0',
+                  sizeof(entries[index].path)) == NULL ||
+           entries[index].path[0] != '/' ||
+           !crazypod_photo_catalog_path_supported(
+               entries[index].path) ||
+           entries[index].key !=
+               crazypod_photo_catalog_key(entries[index].path))
+            return false;
+        entries[index].favorite = false;
+    }
+    entry_count = (int)header.count;
+    load_favorites();
+    return true;
+}
+
+static bool save_catalog(void)
+{
+    struct photo_catalog_header header;
+    bool complete;
+    int fd;
+
+    mkdir(PHOTO_STATE_DIRECTORY);
+    mkdir(PHOTO_CACHE_DIRECTORY);
+    memset(&header, 0, sizeof(header));
+    header.magic = PHOTO_CATALOG_MAGIC;
+    header.version = PHOTO_CATALOG_VERSION;
+    header.entry_size = sizeof(entries[0]);
+    header.count = (uint32_t)entry_count;
+    header.checksum = catalog_checksum(&header);
+    remove(PHOTO_CATALOG_TMP);
+    fd = open(PHOTO_CATALOG_TMP,
+              O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(fd < 0)
+        return false;
+    complete =
+        write_exact(fd, &header, sizeof(header)) &&
+        write_exact(
+            fd, entries,
+            (size_t)entry_count * sizeof(entries[0])) &&
+        fsync(fd) >= 0;
+    close(fd);
+    if(!complete ||
+       rename(PHOTO_CATALOG_TMP, PHOTO_CATALOG_PATH) < 0) {
+        remove(PHOTO_CATALOG_TMP);
+        return false;
+    }
+    return true;
+}
+
+bool crazypod_photo_catalog_init(void)
 {
     mkdir(PHOTO_DIRECTORY);
     mkdir(PHOTO_STATE_DIRECTORY);
+    mkdir(PHOTO_CACHE_DIRECTORY);
+    entry_count = 0;
+    favorites = 0;
+    memset(entries, 0, sizeof(entries));
+    return load_catalog();
 }
 
 void crazypod_photo_catalog_refresh(void)
@@ -250,6 +385,13 @@ void crazypod_photo_catalog_refresh(void)
     memset(entries, 0, sizeof(entries));
     scan_directory(PHOTO_DIRECTORY, 0);
     load_favorites();
+    (void)save_catalog();
+}
+
+void crazypod_photo_catalog_invalidate(void)
+{
+    remove(PHOTO_CATALOG_TMP);
+    remove(PHOTO_CATALOG_PATH);
 }
 
 int crazypod_photo_catalog_count(void)

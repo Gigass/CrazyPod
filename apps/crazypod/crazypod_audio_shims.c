@@ -3,11 +3,13 @@
 #ifdef IPOD_6G
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "abrepeat.h"
 #include "cuesheet.h"
 #include "misc.h"
+#include "pcm_mixer.h"
 #include "settings.h"
 #include "sound.h"
 #include "talk.h"
@@ -15,6 +17,7 @@
 #include "string-extra.h"
 
 #include "crazypod_music.h"
+#include "crazypod_sharp_pop_pcm.inc"
 
 struct user_settings global_settings;
 struct system_status global_status;
@@ -76,6 +79,19 @@ void system_sound_play(enum system_sound sound)
 
     if(sound > SOUND_LIST_EDGE_BEEP_NOWRAP)
         return;
+    if(sound == SOUND_TRACK_SKIP) {
+        unsigned int level = global_settings.beep;
+
+        if(level > 3)
+            level = 3;
+        if(level > 0)
+            beep_play_pcm(
+                crazypod_sharp_pop_pcm,
+                sizeof(crazypod_sharp_pop_pcm) /
+                    sizeof(crazypod_sharp_pop_pcm[0]),
+                44100, MIX_AMP_UNITY * level / 8);
+        return;
+    }
 
     params = &beep_params[sound];
     if(*params->setting)

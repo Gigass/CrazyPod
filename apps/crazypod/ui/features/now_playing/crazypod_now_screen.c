@@ -18,6 +18,7 @@
 #include "crazypod_now_screen.h"
 
 #define COLOR_CYAN 0x55D6E7
+#define COLOR_FAVORITE 0xFF375F
 #define COLOR_WHITE 0xFFFFFF
 #define CRAZYPOD_NOW_ARTWORK_CACHE_SIZE CRAZYPOD_COVERFLOW_ARTWORK_SIZE
 #define CRAZYPOD_NOW_LYRICS_COVER_SIZE 108
@@ -219,6 +220,9 @@ void crazypod_now_screen_render(
         }
         else {
             lv_obj_t *album;
+            bool favorite =
+                track != NULL &&
+                crazypod_music_track_is_favorite(track->path);
 
             title = make_label(
                 context->parent,
@@ -257,6 +261,10 @@ void crazypod_now_screen_render(
                 album, LV_LABEL_LONG_MODE_DOTS);
             lv_obj_set_pos(album, 144, 119);
 
+            crazypod_ui_widget_pixel_heart(
+                context->parent, 190, 145, 2,
+                favorite ? COLOR_FAVORITE : content_color,
+                favorite ? LV_OPA_COVER : 120);
             mode = make_label(
                 context->parent,
                 crazypod_queue_repeat() == REPEAT_ONE ? "1" :

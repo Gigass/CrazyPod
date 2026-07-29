@@ -29,6 +29,7 @@ void crazypod_usb_prompt_register(void);
 void crazypod_usb_prompt_set_ui_ready(bool ready);
 bool crazypod_usb_prompt_visible(void);
 bool crazypod_usb_prompt_matches_request(unsigned request);
+bool crazypod_usb_prompt_data_blocking(void);
 void crazypod_usb_prompt_show(unsigned request);
 void crazypod_usb_prompt_finish(int mode);
 void crazypod_usb_prompt_dismiss(void);

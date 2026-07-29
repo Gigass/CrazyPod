@@ -124,6 +124,8 @@ struct storage_info
 int storage_init(void) STORAGE_INIT_ATTR;
 void storage_close(void);
 void storage_post_event(long event, intptr_t data);
+/* Coalesced asynchronous ATA wake request, safe for input/backlight paths. */
+void storage_request_prewake(void);
 
 #ifdef HAVE_HOSTFS
 #include "hostfs.h"

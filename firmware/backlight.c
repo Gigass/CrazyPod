@@ -120,12 +120,24 @@ static unsigned int backlight_thread_id = 0;
 int backlight_brightness = DEFAULT_BRIGHTNESS_SETTING;
 #endif
 static int backlight_timer SHAREDBSS_ATTR;
+static volatile unsigned int backlight_off_counter SHAREDBSS_ATTR;
 static int backlight_timeout_normal = 5*HZ;
 #if CONFIG_CHARGING
 static int backlight_timeout_plugged = 5*HZ;
 #endif
 static int backlight_on_button_hold = 0;
 static void backlight_handle_timeout(void);
+
+static void backlight_storage_prewake(void)
+{
+    if (!storage_get_ssd_mode() || storage_disk_is_active())
+        return;
+    /*
+     * Clickwheel samples can arrive faster than ATA reinitialization.
+     * The storage layer keeps at most one PRE_WAKE queued or in flight.
+     */
+    storage_request_prewake();
+}
 
 #ifdef HAVE_BUTTON_LIGHT
 static int buttonlight_timer;
@@ -485,6 +497,7 @@ static void backlight_setup_fade_down(void)
 static inline void do_backlight_off(void)
 {
     backlight_timer = 0;
+    ++backlight_off_counter;
 #if BACKLIGHT_FADE_IN_THREAD
     backlight_setup_fade_down();
 #else
@@ -659,7 +672,15 @@ void backlight_thread(void)
 #endif /* HAVE_BACKLIGHT_BRIGHTNESS */
 #ifdef HAVE_LCD_SLEEP
             case LCD_SLEEP:
-                lcd_sleep();
+                lcd_sleep_timer = 0;
+                /*
+                 * A wake request can be queued while an older forced-sleep
+                 * request is still pending. BACKLIGHT_ON is processed by this
+                 * same thread, so the timer is the authoritative state here.
+                 * Never let a stale LCD_SLEEP turn the panel off after wake.
+                 */
+                if (!is_backlight_on(true) && lcd_active())
+                    lcd_sleep();
                 break;
 #endif
 #ifdef HAVE_BUTTON_LIGHT
@@ -828,11 +849,8 @@ void backlight_on(void)
 {
     if(!ignore_backlight_on)
     {
-        /* Pre-wake SSD from ISR context so the storage thread
-         * starts power-up before the UI thread processes the
-         * button event that triggered this. */
-        if (storage_get_ssd_mode())
-            storage_post_event(Q_STORAGE_PRE_WAKE, 0);
+        /* Start SSD power-up before the UI consumes the triggering input. */
+        backlight_storage_prewake();
         queue_remove_from_head(&backlight_queue, BACKLIGHT_ON);
         queue_post(&backlight_queue, BACKLIGHT_ON, 0);
     }
@@ -857,6 +875,11 @@ bool is_backlight_on(bool ignore_always_off)
     return (backlight_timer > 0)   /* countdown */
         || (timeout == 0) /* always on */
         || ((timeout < 0) && !ignore_always_off);
+}
+
+unsigned int backlight_off_generation(void)
+{
+    return backlight_off_counter;
 }
 
 /* return value in ticks; 0 means always on, <0 means always off */
@@ -903,8 +926,7 @@ void backlight_hold_changed(bool hold_button)
     if (!hold_button || (backlight_on_button_hold > 0))
     {
         /* if unlocked or override in effect */
-        if (storage_get_ssd_mode())
-            storage_post_event(Q_STORAGE_PRE_WAKE, 0);
+        backlight_storage_prewake();
         queue_remove_from_head(&backlight_queue, BACKLIGHT_ON);
         queue_post(&backlight_queue, BACKLIGHT_ON, 0);
     }
@@ -1057,6 +1079,11 @@ bool is_backlight_on(bool ignore_always_off)
 {
     (void)ignore_always_off;
     return true;
+}
+
+unsigned int backlight_off_generation(void)
+{
+    return 0;
 }
 #ifdef HAVE_REMOTE_LCD
 void remote_backlight_on(void) {}

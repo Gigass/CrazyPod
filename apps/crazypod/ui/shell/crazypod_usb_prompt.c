@@ -11,6 +11,7 @@
 
 #include "lvgl.h"
 
+#include "../../crazypod_frameclock.h"
 #include "../../crazypod_state.h"
 #include "../presentation/crazypod_ui_widgets.h"
 #include "crazypod_usb_prompt.h"
@@ -35,6 +36,7 @@ struct usb_prompt_state {
     volatile bool waiting;
     volatile unsigned request_id;
     volatile int result;
+    bool data_blocking;
 };
 
 static struct usb_prompt_state prompt;
@@ -74,6 +76,11 @@ bool crazypod_usb_prompt_matches_request(unsigned request)
     return prompt.root != NULL && prompt.request == request;
 }
 
+bool crazypod_usb_prompt_data_blocking(void)
+{
+    return prompt.root != NULL && prompt.data_blocking;
+}
+
 static void refresh_prompt(void)
 {
     int index;
@@ -107,7 +114,8 @@ static void refresh_prompt(void)
 void crazypod_usb_prompt_dismiss(void)
 {
     if(prompt.root != NULL) {
-        lv_anim_delete(prompt.panel, NULL);
+        if(prompt.panel != NULL)
+            lv_anim_delete(prompt.panel, NULL);
         lv_obj_delete(prompt.root);
     }
     prompt.root = NULL;
@@ -117,6 +125,7 @@ void crazypod_usb_prompt_dismiss(void)
     memset(prompt.hints, 0, sizeof(prompt.hints));
     prompt.selected = 0;
     prompt.request = 0;
+    prompt.data_blocking = false;
     if(prompt.callbacks.dismissed != NULL)
         prompt.callbacks.dismissed();
 }
@@ -156,6 +165,7 @@ void crazypod_usb_prompt_show(unsigned request)
         prompt.callbacks.before_show();
     prompt.request = request;
     prompt.selected = 0;
+    prompt.data_blocking = false;
     prompt.root = make_box(
         prompt.parent, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0, 0x000000, 86);
     lv_obj_remove_flag(prompt.root, LV_OBJ_FLAG_CLICKABLE);
@@ -213,6 +223,74 @@ void crazypod_usb_prompt_show(unsigned request)
         prompt.callbacks.animate_panel(prompt.panel, 55);
 }
 
+static void show_data_blocker(void)
+{
+    lv_obj_t *label;
+
+    if(prompt.root == NULL)
+        return;
+
+    lv_anim_delete(prompt.panel, NULL);
+    lv_obj_clean(prompt.root);
+    prompt.panel = NULL;
+    memset(prompt.rows, 0, sizeof(prompt.rows));
+    memset(prompt.markers, 0, sizeof(prompt.markers));
+    memset(prompt.hints, 0, sizeof(prompt.hints));
+    prompt.data_blocking = true;
+
+    lv_obj_set_style_bg_color(prompt.root, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(prompt.root, LV_OPA_COVER, 0);
+    lv_obj_move_foreground(prompt.root);
+
+    label = make_label(
+        prompt.root, LV_SYMBOL_USB, &lv_font_montserrat_24,
+        COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_size(label, LCD_WIDTH, 30);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 0, 39);
+
+    label = make_label(
+        prompt.root, "USB DATA MODE", &lv_font_montserrat_16,
+        COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_size(label, LCD_WIDTH, 20);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 0, 81);
+
+    label = make_label(
+        prompt.root, "Computer storage connection is active",
+        &lv_font_montserrat_10, COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_size(label, LCD_WIDTH, 16);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 0, 108);
+
+    make_box(
+        prompt.root, 80, 137, LCD_WIDTH - 160, 1, 0,
+        COLOR_WHITE, LV_OPA_COVER);
+
+    label = make_label(
+        prompt.root, "Eject CrazyPod before unplugging the cable",
+        &lv_font_montserrat_10, COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_size(label, LCD_WIDTH, 16);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 0, 153);
+
+    label = make_label(
+        prompt.root, "Controls are disabled while USB is connected",
+        &lv_font_montserrat_8, COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_size(label, LCD_WIDTH, 14);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 0, 176);
+
+    /*
+     * The USB worker is released immediately after this function returns.
+     * Present synchronously so the blocker reaches the LCD before storage
+     * teardown can stall the UI thread.
+     */
+    lv_obj_invalidate(prompt.root);
+    lv_refr_now(NULL);
+    crazypod_present_now();
+}
+
 void crazypod_usb_prompt_finish(int mode)
 {
     unsigned request = prompt.request;
@@ -222,7 +300,10 @@ void crazypod_usb_prompt_finish(int mode)
     if(mode == USB_MODE_CHARGE)
         apply_charge_mode();
     prompt.result = mode;
-    crazypod_usb_prompt_dismiss();
+    if(mode == USB_MODE_MASS_STORAGE)
+        show_data_blocker();
+    else
+        crazypod_usb_prompt_dismiss();
     if(prompt.waiting && request == prompt.request_id)
         semaphore_release(&prompt.response);
 }
@@ -251,6 +332,8 @@ bool crazypod_usb_prompt_handle_button(
 
     if(prompt.root == NULL)
         return false;
+    if(prompt.data_blocking)
+        return true;
     if(base == BUTTON_SCROLL_FWD || base == BUTTON_RIGHT)
         move_selection(1);
     else if(base == BUTTON_SCROLL_BACK || base == BUTTON_LEFT)

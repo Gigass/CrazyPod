@@ -148,12 +148,28 @@ void pcm_play_dma_stop(void);
 
 void pcm_dma_apply_settings(void);
 
+#ifdef HAVE_PCM_CODEC_IDLE
+/* Codec wake may sleep and must be completed before taking a PCM lock.
+ * Commit/cancel and mixer-idle are IRQ-safe, nonblocking operations. */
+void pcm_play_dma_prepare(void);
+void pcm_play_dma_commit_prepare(void);
+void pcm_play_dma_cancel_prepare(void);
+void pcm_play_dma_mixer_idle(void);
+void pcm_play_data_prepared(pcm_play_callback_type get_more,
+                            pcm_status_callback_type status_cb,
+                            const void *start, size_t size);
+#endif
+
 #ifdef HAVE_RECORDING
 
 /* DMA transfer in is currently active */
 extern volatile bool pcm_recording;
 
 /* APIs implemented in the target-specific portion */
+#ifdef HAVE_PCM_CODEC_IDLE
+void pcm_rec_dma_prepare(void);
+void pcm_rec_dma_commit_prepare(void);
+#endif
 void pcm_rec_dma_init(void);
 void pcm_rec_dma_close(void);
 void pcm_rec_dma_start(void *addr, size_t size);

@@ -8,6 +8,7 @@
 #include "powermgmt.h"
 #include "settings.h"
 #include "sound.h"
+#include "storage.h"
 #include "usb.h"
 
 #include "lvgl.h"
@@ -55,6 +56,9 @@ const char *crazypod_ui_settings_item_title(int item)
 #ifdef HAVE_USB_CHARGING_ENABLE
     case SETTINGS_ITEM_USB_CHARGING: return "USB Charging";
 #endif
+#ifdef HAVE_DISK_STORAGE
+    case SETTINGS_ITEM_STORAGE_MODE: return "Storage Type";
+#endif
     case SETTINGS_ITEM_BEEP: return "System Beep";
     case SETTINGS_ITEM_KEYCLICK: return "Keyclick";
 #ifdef HAVE_HARDWARE_CLICK
@@ -90,6 +94,9 @@ const char *crazypod_ui_settings_item_symbol(int item)
 #ifdef HAVE_USB_CHARGING_ENABLE
     case SETTINGS_ITEM_USB_CHARGING:
 #endif
+#ifdef HAVE_DISK_STORAGE
+    case SETTINGS_ITEM_STORAGE_MODE:
+#endif
         return LV_SYMBOL_POWER;
     default:
         return LV_SYMBOL_SETTINGS;
@@ -102,7 +109,7 @@ const char *crazypod_ui_settings_group_detail(int index)
     case 0: return "EQ, tone and balance";
     case 1: return "Backlight, sleep and brightness";
     case 2: return "Shuffle and repeat";
-    case 3: return "Charging and sleep timer";
+    case 3: return "Charging, storage and sleep";
     case 4: return "Beeps and wheel feedback";
     case 5: return "Reorder or hide entries";
     default: return "";
@@ -230,6 +237,10 @@ static int settings_item_current_value(int item)
     case SETTINGS_ITEM_USB_CHARGING:
         return global_settings.usb_charging;
 #endif
+#ifdef HAVE_DISK_STORAGE
+    case SETTINGS_ITEM_STORAGE_MODE:
+        return global_settings.storage_mode;
+#endif
     case SETTINGS_ITEM_BEEP:
         return global_settings.beep;
     case SETTINGS_ITEM_KEYCLICK:
@@ -260,6 +271,10 @@ int crazypod_ui_settings_choice_count(int item)
         return 2;
 #ifdef HAVE_USB_CHARGING_ENABLE
     case SETTINGS_ITEM_USB_CHARGING:
+        return 3;
+#endif
+#ifdef HAVE_DISK_STORAGE
+    case SETTINGS_ITEM_STORAGE_MODE:
         return 3;
 #endif
     case SETTINGS_ITEM_BASS:
@@ -322,6 +337,12 @@ static int settings_choice_value(int item, int index)
         if(index > USB_CHARGING_FORCE)
             return USB_CHARGING_FORCE;
         return index;
+#endif
+#ifdef HAVE_DISK_STORAGE
+    case SETTINGS_ITEM_STORAGE_MODE:
+        if(index < 0)
+            return 0;
+        return index > 2 ? 2 : index;
 #endif
     case SETTINGS_ITEM_BASS:
         return range_choice_value(index, sound_min(SOUND_BASS),
@@ -392,6 +413,12 @@ int crazypod_ui_settings_choice_index(int item)
         if(current > USB_CHARGING_FORCE)
             return USB_CHARGING_FORCE;
         return current;
+#endif
+#ifdef HAVE_DISK_STORAGE
+    case SETTINGS_ITEM_STORAGE_MODE:
+        if(current < 0)
+            return 0;
+        return current > 2 ? 2 : current;
 #endif
     case SETTINGS_ITEM_BASS:
         return range_choice_index(current, sound_min(SOUND_BASS),
@@ -480,6 +507,17 @@ static const char *settings_usb_charging_title(int value)
 }
 #endif
 
+#ifdef HAVE_DISK_STORAGE
+static const char *settings_storage_mode_title(int value)
+{
+    switch(value) {
+    case 1: return "HDD";
+    case 2: return "SSD";
+    default: return "Auto";
+    }
+}
+#endif
+
 const char *crazypod_ui_settings_choice_title(int item, int index)
 {
     static char text[24];
@@ -527,6 +565,10 @@ const char *crazypod_ui_settings_choice_title(int item, int index)
     case SETTINGS_ITEM_USB_CHARGING:
         return settings_usb_charging_title(value);
 #endif
+#ifdef HAVE_DISK_STORAGE
+    case SETTINGS_ITEM_STORAGE_MODE:
+        return settings_storage_mode_title(value);
+#endif
     case SETTINGS_ITEM_BEEP:
     case SETTINGS_ITEM_KEYCLICK:
         return settings_level_title(value);
@@ -537,6 +579,11 @@ const char *crazypod_ui_settings_choice_title(int item, int index)
 
 const char *crazypod_ui_settings_item_value_label(int item)
 {
+#ifdef HAVE_DISK_STORAGE
+    if(item == SETTINGS_ITEM_STORAGE_MODE &&
+       global_settings.storage_mode == 0)
+        return storage_get_ssd_mode() ? "Auto (SSD)" : "Auto (HDD)";
+#endif
     return crazypod_ui_settings_choice_title(item, crazypod_ui_settings_choice_index(item));
 }
 
@@ -610,6 +657,12 @@ void crazypod_ui_settings_apply_choice(int item, int index)
     case SETTINGS_ITEM_USB_CHARGING:
         global_settings.usb_charging = value;
         usb_charging_enable(global_settings.usb_charging);
+        break;
+#endif
+#ifdef HAVE_DISK_STORAGE
+    case SETTINGS_ITEM_STORAGE_MODE:
+        global_settings.storage_mode = value;
+        storage_set_storage_mode(global_settings.storage_mode);
         break;
 #endif
     case SETTINGS_ITEM_BEEP:

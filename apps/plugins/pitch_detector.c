@@ -1084,6 +1084,8 @@ static void record_and_get_pitch(void)
         }
     }
     rb->pcm_close_recording();
+    rb->audio_set_input_source(
+        AUDIO_SRC_PLAYBACK, SRCF_PLAYBACK);
     rb->pcm_set_frequency(HW_SAMPR_RESET | SAMPR_TYPE_REC);
 #ifdef HAVE_SCHEDULER_BOOSTCTRL
     rb->cancel_cpu_boost();
@@ -1106,12 +1108,6 @@ static void init_everything(void)
 
     /* --------- Init the audio recording ----------------- */
     rb->audio_set_output_source(AUDIO_SRC_PLAYBACK);
-    rb->audio_set_input_source(INPUT_TYPE, SRCF_RECORDING);
-
-    /* set to maximum gain */
-    rb->audio_set_recording_gain(settings.record_gain,
-                                 settings.record_gain,
-                                 AUDIO_GAIN_MIC);
 
     /* Highest C on piano is approx 4.186 kHz, so we need just over
      * 8.372 kHz to pass it. */
@@ -1120,6 +1116,12 @@ static void init_everything(void)
     sample_rate = rb->rec_freq_sampr[sample_rate];
     rb->pcm_set_frequency(sample_rate | SAMPR_TYPE_REC);
     rb->pcm_init_recording();
+    rb->audio_set_input_source(INPUT_TYPE, SRCF_RECORDING);
+
+    /* set to maximum gain */
+    rb->audio_set_recording_gain(settings.record_gain,
+                                 settings.record_gain,
+                                 AUDIO_GAIN_MIC);
 
     /* avoid divsion by zero */
     if(settings.lowest_freq == 0)

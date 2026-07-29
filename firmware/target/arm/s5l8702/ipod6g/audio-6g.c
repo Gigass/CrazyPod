@@ -97,7 +97,7 @@ void audio_input_mux(int source, unsigned flags)
                 audiohw_disable_recording();
 
                 /* Vcodec = 1800mV (900mV + value*100mV) */
-                pmu_ldo_set_voltage(3, 0x9);
+                pmu_ldo_set_voltage(LDO_CODEC, 0x9);
 
                 audio_enable_mic(false);
             }
@@ -111,7 +111,7 @@ void audio_input_mux(int source, unsigned flags)
                 audio_enable_mic(true);
 
                 /* Vcodec = 2400mV (900mV + value*100mV) */
-                pmu_ldo_set_voltage(3, 0xf);
+                pmu_ldo_set_voltage(LDO_CODEC, 0xf);
 
                 audiohw_set_monitor(true);
                 audiohw_enable_recording(true);  /* source mic */
@@ -126,7 +126,7 @@ void audio_input_mux(int source, unsigned flags)
                 audio_enable_mic(false);
 
                 /* Vcodec = 2400mV (900mV + value*100mV) */
-                pmu_ldo_set_voltage(3, 0xf);
+                pmu_ldo_set_voltage(LDO_CODEC, 0xf);
 
                 audiohw_set_monitor(true);
                 audiohw_enable_recording(false); /* source line */

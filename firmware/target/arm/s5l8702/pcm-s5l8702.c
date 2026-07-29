@@ -22,6 +22,7 @@
 
 #include "config.h"
 #include "system.h"
+#include "kernel.h"
 #include "audio.h"
 #include "s5l87xx.h"
 #include "panic.h"
@@ -89,6 +90,286 @@ static unsigned char dblbuf[2][WATERMARK_BYTES] CACHEALIGN_ATTR;
 static int active_dblbuf;
 size_t pcm_remaining;
 
+#ifdef HAVE_PCM_CODEC_IDLE
+enum pcm_audio_power_state
+{
+    PCM_AUDIO_POWER_ACTIVE = 0,
+    PCM_AUDIO_POWERING_DOWN,
+    PCM_AUDIO_POWER_IDLE,
+};
+
+enum
+{
+    Q_PCM_AUDIO_POWERDOWN = 1,
+};
+
+#define PCM_AUDIO_IDLE_TIMEOUT (3 * HZ)
+
+static struct mutex pcm_audio_power_mutex;
+static struct event_queue pcm_audio_power_queue;
+static long pcm_audio_power_stack[DEFAULT_STACK_SIZE / sizeof(long)];
+static volatile enum pcm_audio_power_state pcm_audio_power_state;
+static volatile bool pcm_playback_power_wanted;
+static volatile unsigned int pcm_playback_prepare_count;
+static volatile bool pcm_mixer_idle_pending;
+static volatile long pcm_audio_idle_deadline;
+#ifdef HAVE_RECORDING
+static volatile bool pcm_recording_power_wanted;
+static volatile unsigned int pcm_recording_prepare_count;
+#endif
+
+static bool pcm_audio_power_wanted_locked(void)
+{
+    bool wanted = pcm_playback_power_wanted ||
+                  pcm_playback_prepare_count != 0;
+#ifdef HAVE_RECORDING
+    wanted |= pcm_recording_power_wanted ||
+              pcm_recording_prepare_count != 0;
+#endif
+
+    return wanted;
+}
+
+static bool pcm_audio_power_wanted(void)
+{
+    int oldlevel = disable_irq_save();
+    bool wanted = pcm_audio_power_wanted_locked();
+    restore_irq(oldlevel);
+    return wanted;
+}
+
+static void pcm_audio_clocks_enable(void)
+{
+    /* Preserve the selected CLKCON3 divider; bit 15 only gates MCLK. */
+    CLKCON3 &= ~0x8000;
+    PWRCON(1) &= ~(1 << 7);
+    I2SCLKCON = 1;
+}
+
+static void pcm_audio_clocks_disable(void)
+{
+    I2SCLKCON = 0;
+    PWRCON(1) |= (1 << 7);
+    CLKCON3 |= 0x8000;
+}
+
+static void pcm_audio_powerdown_now(void)
+{
+    mutex_lock(&pcm_audio_power_mutex);
+
+    int oldlevel = disable_irq_save();
+    bool wanted = pcm_audio_power_wanted_locked();
+
+    if (wanted || pcm_audio_power_state != PCM_AUDIO_POWER_ACTIVE)
+    {
+        restore_irq(oldlevel);
+        mutex_unlock(&pcm_audio_power_mutex);
+        return;
+    }
+
+    pcm_audio_power_state = PCM_AUDIO_POWERING_DOWN;
+    restore_irq(oldlevel);
+
+    /* I2C uses a mutex on this target, so this sequence must run in this
+     * worker/thread context rather than the DMA completion interrupt. */
+    audiohw_idle_powerdown();
+
+    if (pcm_audio_power_wanted())
+    {
+        /* A new stream arrived while the I2C power-down completed. */
+        pcm_audio_clocks_enable();
+        audiohw_idle_powerup();
+        pcm_audio_power_state = PCM_AUDIO_POWER_ACTIVE;
+    }
+    else
+    {
+        /* PDN_CODEC and MCLKDIS are set before the external clocks stop. */
+        pcm_audio_clocks_disable();
+        pcm_audio_power_state = PCM_AUDIO_POWER_IDLE;
+    }
+
+    mutex_unlock(&pcm_audio_power_mutex);
+}
+
+static void NORETURN_ATTR pcm_audio_power_thread(void)
+{
+    struct queue_event ev;
+
+    while (true)
+    {
+        queue_wait(&pcm_audio_power_queue, &ev);
+        if (ev.id != Q_PCM_AUDIO_POWERDOWN)
+            continue;
+
+        while (!pcm_audio_power_wanted())
+        {
+            long deadline;
+            int oldlevel = disable_irq_save();
+
+            deadline = pcm_audio_idle_deadline;
+            restore_irq(oldlevel);
+            if (TIME_BEFORE(current_tick, deadline))
+            {
+                /* A later release can shorten the deadline (the mixer has
+                 * already supplied its own idle grace). Wait on the queue so
+                 * that event interrupts this delay and forces a recheck. */
+                queue_wait_w_tmo(&pcm_audio_power_queue, &ev,
+                                 deadline - current_tick);
+                continue;
+            }
+            pcm_audio_powerdown_now();
+            break;
+        }
+    }
+}
+
+/* Reserve codec power before taking a PCM lock. This is the only stream
+ * transition allowed to wait for the CS42L55 power-up interval. */
+static void pcm_audio_power_prepare(bool recording)
+{
+    int oldlevel = disable_irq_save();
+    bool playback = true;
+
+#ifdef HAVE_RECORDING
+    if (recording)
+    {
+        pcm_recording_prepare_count++;
+        playback = false;
+    }
+#else
+    (void)recording;
+#endif
+
+    if (playback)
+    {
+        pcm_playback_prepare_count++;
+        pcm_mixer_idle_pending = false;
+    }
+
+    /* USB source pull mode needs logical PCM callbacks but no analog path. */
+    bool inhibited = playback && pcm_dma_start_inhibit;
+    restore_irq(oldlevel);
+
+    if (inhibited)
+        return;
+
+    mutex_lock(&pcm_audio_power_mutex);
+
+    if (pcm_audio_power_state != PCM_AUDIO_POWER_ACTIVE)
+    {
+        pcm_audio_clocks_enable();
+        audiohw_idle_powerup();
+        pcm_audio_power_state = PCM_AUDIO_POWER_ACTIVE;
+    }
+
+    mutex_unlock(&pcm_audio_power_mutex);
+}
+
+static void pcm_audio_power_release(bool recording)
+{
+    int oldlevel = disable_irq_save();
+    bool released;
+    bool immediate = recording;
+
+#ifdef HAVE_RECORDING
+    if (recording)
+    {
+        released = pcm_recording_power_wanted;
+        pcm_recording_power_wanted = false;
+    }
+    else
+    {
+        released = pcm_playback_power_wanted;
+        pcm_playback_power_wanted = false;
+        immediate |= pcm_mixer_idle_pending;
+        pcm_mixer_idle_pending = false;
+    }
+#else
+    (void)recording;
+    released = pcm_playback_power_wanted;
+    pcm_playback_power_wanted = false;
+    immediate |= pcm_mixer_idle_pending;
+    pcm_mixer_idle_pending = false;
+#endif
+
+    bool powerdown = released && !pcm_audio_power_wanted_locked();
+    if (powerdown)
+        pcm_audio_idle_deadline = current_tick +
+            (immediate ? 0 : PCM_AUDIO_IDLE_TIMEOUT);
+    restore_irq(oldlevel);
+
+    if (powerdown)
+        queue_post(&pcm_audio_power_queue, Q_PCM_AUDIO_POWERDOWN, 0);
+}
+
+void pcm_play_dma_prepare(void)
+{
+    pcm_audio_power_prepare(false);
+}
+
+/* Consume a reservation after the generic PCM layer has found real data.
+ * This is called with pcm_play_lock held and therefore must not block. */
+void pcm_play_dma_commit_prepare(void)
+{
+    int oldlevel = disable_irq_save();
+
+    if (pcm_playback_prepare_count != 0)
+        pcm_playback_prepare_count--;
+
+    if (!pcm_dma_start_inhibit)
+        pcm_playback_power_wanted = true;
+
+    bool powerdown = !pcm_audio_power_wanted_locked();
+    if (powerdown)
+        pcm_audio_idle_deadline = current_tick;
+    restore_irq(oldlevel);
+
+    if (powerdown)
+        queue_post(&pcm_audio_power_queue, Q_PCM_AUDIO_POWERDOWN, 0);
+}
+
+void pcm_play_dma_cancel_prepare(void)
+{
+    int oldlevel = disable_irq_save();
+
+    if (pcm_playback_prepare_count != 0)
+        pcm_playback_prepare_count--;
+
+    bool powerdown = !pcm_audio_power_wanted_locked();
+    if (powerdown)
+        pcm_audio_idle_deadline = current_tick;
+    restore_irq(oldlevel);
+
+    if (powerdown)
+        queue_post(&pcm_audio_power_queue, Q_PCM_AUDIO_POWERDOWN, 0);
+}
+
+void pcm_play_dma_mixer_idle(void)
+{
+    int oldlevel = disable_irq_save();
+    pcm_mixer_idle_pending = true;
+    restore_irq(oldlevel);
+}
+
+#ifdef HAVE_RECORDING
+void pcm_rec_dma_prepare(void)
+{
+    pcm_audio_power_prepare(true);
+}
+
+void pcm_rec_dma_commit_prepare(void)
+{
+    int oldlevel = disable_irq_save();
+
+    if (pcm_recording_prepare_count != 0)
+        pcm_recording_prepare_count--;
+
+    pcm_recording_power_wanted = true;
+    restore_irq(oldlevel);
+}
+#endif
+#endif /* HAVE_PCM_CODEC_IDLE */
+
 /* Mask the DMA interrupt */
 void pcm_play_lock(void)
 {
@@ -150,11 +431,16 @@ void pcm_play_dma_start(const void* addr, size_t size)
     if (pcm_dma_start_inhibit)
         return;
 
+#ifdef HAVE_PCM_CODEC_IDLE
+    dmac_ch_stop(&dma_play_ch);
+    I2STXCOM = 0xa;
+#else
     pcm_play_dma_stop();
 
     /* un-gate I2S clock before starting DMA */
     PWRCON(1) &= ~(1 << 7);
     I2SCLKCON = 1;
+#endif
 
     pcm_remaining = size;
     I2STXCOM = 0xe;
@@ -165,10 +451,13 @@ void pcm_play_dma_stop(void)
 {
     dmac_ch_stop(&dma_play_ch);
     I2STXCOM = 0xa;
-
+#ifdef HAVE_PCM_CODEC_IDLE
+    pcm_audio_power_release(false);
+#else
     /* gate I2S clock to save power when idle */
     I2SCLKCON = 0;
     PWRCON(1) |= (1 << 7);
+#endif
 }
 
 /* MCLK = 12MHz (MCLKDIV2=1), [CS42L55 DS, s4.8] */
@@ -199,6 +488,10 @@ void pcm_dma_apply_settings(void)
     /* configure MCLK */
     /* TODO: maybe all CLKCON management should be moved to
        cscodec-ipod6g.c and system-s5l8702.c */
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&pcm_audio_power_mutex);
+#endif
+
     if (last_clkcon3l != clkcon3l) {
         CLKCON3 = (CLKCON3 & ~0xffff) | 0x8000 | clkcon3l;
         udelay(100);
@@ -210,10 +503,31 @@ void pcm_dma_apply_settings(void)
     I2SCLKDIV = MCLK_FREQ / hw_freq_sampr[fsel];
     /* select CS42L55 sample rate */
     audiohw_set_frequency(fsel);
+
+#ifdef HAVE_PCM_CODEC_IDLE
+    if (pcm_audio_power_state == PCM_AUDIO_POWER_IDLE)
+        CLKCON3 |= 0x8000;
+
+    mutex_unlock(&pcm_audio_power_mutex);
+#endif
 }
 
 void pcm_play_dma_init(void)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_init(&pcm_audio_power_mutex);
+    queue_init(&pcm_audio_power_queue, false);
+    pcm_audio_power_state = PCM_AUDIO_POWER_ACTIVE;
+    pcm_playback_power_wanted = true;
+    pcm_playback_prepare_count = 0;
+    pcm_mixer_idle_pending = false;
+    pcm_audio_idle_deadline = current_tick;
+#ifdef HAVE_RECORDING
+    pcm_recording_power_wanted = false;
+    pcm_recording_prepare_count = 0;
+#endif
+#endif
+
     PWRCON(1) &= ~(1 << 7);
 
     dmac_ch_init(&dma_play_ch, &dma_play_ch_cfg);
@@ -223,11 +537,23 @@ void pcm_play_dma_init(void)
 
     audiohw_preinit();
     pcm_dma_apply_settings();
+
+#ifdef HAVE_PCM_CODEC_IDLE
+    if (!create_thread(pcm_audio_power_thread, pcm_audio_power_stack,
+                       sizeof(pcm_audio_power_stack), 0, "audio power"
+                       IF_PRIO(, PRIORITY_SYSTEM) IF_COP(, CPU)))
+        panicf("pcm: no audio power thread");
+#endif
 }
 
 void pcm_play_dma_postinit(void)
 {
     audiohw_postinit();
+
+#ifdef HAVE_PCM_CODEC_IDLE
+    pcm_playback_power_wanted = false;
+    pcm_audio_powerdown_now();
+#endif
 }
 
 #ifdef HAVE_PCM_DMA_ADDRESS
@@ -391,10 +717,17 @@ void pcm_rec_dma_start(void *addr, size_t size)
 void pcm_rec_dma_close(void)
 {
     pcm_rec_dma_stop();
+#ifdef HAVE_PCM_CODEC_IDLE
+    pcm_audio_power_release(true);
+#endif
 }
 
 void pcm_rec_dma_init(void)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    pcm_rec_dma_commit_prepare();
+#endif
+
     if (pcm_rec_initialized)
         return;
 

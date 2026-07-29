@@ -40,11 +40,13 @@ void crazypod_music_library_configure(
     const struct crazypod_music_library_host *host);
 void crazypod_music_library_initialize(long now);
 void crazypod_music_library_begin(long now);
+void crazypod_music_library_leave(long now);
 void crazypod_music_library_service(long now, bool storage_active);
 bool crazypod_music_library_update(void);
 void crazypod_music_library_schedule_rescan(long not_before);
 bool crazypod_music_library_loaded(void);
 bool crazypod_music_library_loading(void);
+bool crazypod_music_library_preparing_artwork(void);
 bool crazypod_music_feature_activate(
     const struct route_state *state,
     const struct crazypod_music_activation_host *host);

@@ -10,15 +10,42 @@
 #include "dir.h"
 #include "errno.h"
 #include "file.h"
+#include "kernel.h"
 
 #include "../../../miniapps/sdk/crazypod_miniapp.h"
 #include "../crazypod_miniapps.h"
+#include "catalog/crazypod_miniapp_catalog.h"
 #include "crazypod_miniapp_alarm_store.h"
 
 #define DATA_ROOT "/.crazypod/miniapp-data"
 #define ALARM_MAGIC 0x4350414cu
 #define DISK_VERSION 1u
 #define FILENAME_SIZE 24
+#define WRITE_RETRY_INTERVAL (30 * HZ)
+
+struct failed_alarm_write {
+    struct crazypod_miniapp_alarm_record desired;
+    long retry_not_before;
+    bool pending;
+};
+
+struct cached_alarm_slots {
+    char id[CRAZYPOD_MINIAPP_ID_SIZE];
+    struct crazypod_miniapp_alarm_record
+        alarms[CP_MINIAPP_ALARM_SLOT_COUNT];
+    struct crazypod_miniapp_alarm_record
+        notifications[CP_MINIAPP_ALARM_SLOT_COUNT];
+    int8_t alarm_status[CP_MINIAPP_ALARM_SLOT_COUNT];
+    int8_t notification_status[CP_MINIAPP_ALARM_SLOT_COUNT];
+    struct failed_alarm_write
+        alarm_failures[CP_MINIAPP_ALARM_SLOT_COUNT];
+    struct failed_alarm_write
+        notification_failures[CP_MINIAPP_ALARM_SLOT_COUNT];
+};
+
+static struct cached_alarm_slots cache[CRAZYPOD_MINIAPP_MAX_APPS];
+static int cache_count;
+static bool cache_ready;
 
 static uint32_t record_checksum(
     const struct crazypod_miniapp_alarm_record *record)
@@ -197,7 +224,7 @@ static bool record_save(
     return true;
 }
 
-static int load_slot(
+static int disk_load_slot(
     const char *id, uint8_t slot, bool notification,
     struct crazypod_miniapp_alarm_record *record)
 {
@@ -217,7 +244,7 @@ static int load_slot(
     return loaded;
 }
 
-static bool save_slot(
+static bool disk_save_slot(
     const char *id, uint8_t slot, bool notification,
     struct crazypod_miniapp_alarm_record *record)
 {
@@ -230,32 +257,180 @@ static bool save_slot(
            record_save(id, filename, temporary, record);
 }
 
+static struct cached_alarm_slots *cache_find(const char *id)
+{
+    int index;
+
+    if(id == NULL)
+        return NULL;
+    for(index = 0; index < cache_count; ++index)
+        if(strcmp(cache[index].id, id) == 0)
+            return &cache[index];
+    return NULL;
+}
+
+static void cache_load_entry(
+    struct cached_alarm_slots *entry, const char *id)
+{
+    uint8_t slot;
+
+    memset(entry, 0, sizeof(*entry));
+    snprintf(entry->id, sizeof(entry->id), "%s", id);
+    for(slot = 0; slot < CP_MINIAPP_ALARM_SLOT_COUNT; ++slot) {
+        entry->alarm_status[slot] = disk_load_slot(
+            id, slot, false, &entry->alarms[slot]);
+        entry->notification_status[slot] = disk_load_slot(
+            id, slot, true, &entry->notifications[slot]);
+    }
+}
+
+void crazypod_miniapp_alarm_store_reload(void)
+{
+    int index;
+
+    cache_ready = false;
+    cache_count = 0;
+    memset(cache, 0, sizeof(cache));
+    for(index = 0;
+        index < crazypod_miniapp_catalog_count() &&
+        cache_count < CRAZYPOD_MINIAPP_MAX_APPS;
+        ++index) {
+        const struct crazypod_miniapp_metadata *metadata =
+            crazypod_miniapp_catalog_get(index);
+
+        if(metadata == NULL || !valid_id(metadata->id))
+            continue;
+        cache_load_entry(&cache[cache_count], metadata->id);
+        ++cache_count;
+    }
+    cache_ready = true;
+}
+
+static void ensure_cache_ready(void)
+{
+    if(!cache_ready)
+        crazypod_miniapp_alarm_store_reload();
+}
+
+static struct cached_alarm_slots *cache_get_or_add(const char *id)
+{
+    struct cached_alarm_slots *entry;
+
+    ensure_cache_ready();
+    entry = cache_find(id);
+    if(entry != NULL)
+        return entry;
+    if(!valid_id(id) || crazypod_miniapp_catalog_find(id) < 0 ||
+       cache_count >= CRAZYPOD_MINIAPP_MAX_APPS)
+        return NULL;
+    entry = &cache[cache_count++];
+    cache_load_entry(entry, id);
+    return entry;
+}
+
+static int cached_load(
+    const char *id, uint8_t slot, bool notification,
+    struct crazypod_miniapp_alarm_record *record)
+{
+    struct cached_alarm_slots *entry;
+    int status;
+
+    if(record == NULL || slot >= CP_MINIAPP_ALARM_SLOT_COUNT)
+        return -1;
+    memset(record, 0, sizeof(*record));
+    ensure_cache_ready();
+    entry = cache_find(id);
+    if(entry == NULL)
+        return -1;
+    status = notification
+        ? entry->notification_status[slot]
+        : entry->alarm_status[slot];
+    if(status == 1)
+        *record = notification
+            ? entry->notifications[slot]
+            : entry->alarms[slot];
+    return status;
+}
+
+static bool same_persisted_state(
+    const struct crazypod_miniapp_alarm_record *left,
+    const struct crazypod_miniapp_alarm_record *right)
+{
+    return left->deadline_epoch == right->deadline_epoch &&
+           left->token == right->token &&
+           left->flags == right->flags;
+}
+
+static bool cached_save(
+    const char *id, uint8_t slot, bool notification,
+    struct crazypod_miniapp_alarm_record *record)
+{
+    struct cached_alarm_slots *entry;
+    struct crazypod_miniapp_alarm_record *cached_record;
+    struct failed_alarm_write *failure;
+    int8_t *status;
+
+    if(record == NULL || slot >= CP_MINIAPP_ALARM_SLOT_COUNT)
+        return false;
+    entry = cache_get_or_add(id);
+    if(entry == NULL)
+        return false;
+    cached_record = notification
+        ? &entry->notifications[slot]
+        : &entry->alarms[slot];
+    status = notification
+        ? &entry->notification_status[slot]
+        : &entry->alarm_status[slot];
+    failure = notification
+        ? &entry->notification_failures[slot]
+        : &entry->alarm_failures[slot];
+    if(*status == 1 && same_persisted_state(cached_record, record)) {
+        failure->pending = false;
+        return true;
+    }
+    if(failure->pending &&
+       same_persisted_state(&failure->desired, record) &&
+       TIME_BEFORE(current_tick, failure->retry_not_before))
+        return false;
+    if(!disk_save_slot(id, slot, notification, record)) {
+        failure->desired = *record;
+        failure->retry_not_before =
+            current_tick + WRITE_RETRY_INTERVAL;
+        failure->pending = true;
+        return false;
+    }
+    *cached_record = *record;
+    *status = 1;
+    failure->pending = false;
+    return true;
+}
+
 int crazypod_miniapp_alarm_store_load(
     const char *id, uint8_t slot,
     struct crazypod_miniapp_alarm_record *record)
 {
-    return load_slot(id, slot, false, record);
+    return cached_load(id, slot, false, record);
 }
 
 bool crazypod_miniapp_alarm_store_save(
     const char *id, uint8_t slot,
     struct crazypod_miniapp_alarm_record *record)
 {
-    return save_slot(id, slot, false, record);
+    return cached_save(id, slot, false, record);
 }
 
 int crazypod_miniapp_notification_store_load(
     const char *id, uint8_t slot,
     struct crazypod_miniapp_alarm_record *record)
 {
-    return load_slot(id, slot, true, record);
+    return cached_load(id, slot, true, record);
 }
 
 bool crazypod_miniapp_notification_store_save(
     const char *id, uint8_t slot,
     struct crazypod_miniapp_alarm_record *record)
 {
-    return save_slot(id, slot, true, record);
+    return cached_save(id, slot, true, record);
 }
 
 bool crazypod_miniapp_alarm_store_same_event(

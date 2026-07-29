@@ -176,6 +176,16 @@ void crazypod_photo_cache_init(void)
     rebuild(&view_store);
 }
 
+void crazypod_photo_cache_invalidate(void)
+{
+    remove(THUMB_PATH);
+    remove(VIEW_PATH);
+    thumb_store.count = 0;
+    thumb_store.size = 0;
+    view_store.count = 0;
+    view_store.size = 0;
+}
+
 bool crazypod_photo_cache_load(
     bool view, const char *path, uint32_t source_size,
     uint32_t source_mtime, lv_image_dsc_t *descriptor,

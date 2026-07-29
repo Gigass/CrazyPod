@@ -31,11 +31,14 @@ int crazypod_miniapps_feature_service(
     bool active, bool frame_due, long now,
     long ticks_per_second);
 bool crazypod_miniapps_feature_is_open(void);
+bool crazypod_miniapps_feature_motion_active(void);
+bool crazypod_miniapps_feature_alert_active(void);
 void crazypod_miniapps_feature_close(void);
 void crazypod_miniapps_feature_reset_input(void);
 void crazypod_miniapps_feature_rescan(void);
 int crazypod_miniapps_feature_last_error(void);
 void crazypod_miniapps_feature_initialize_runtime(void);
+int crazypod_miniapps_feature_prepare(void);
 struct crazypod_miniapps_activation_host {
     void (*push)(enum crazypod_route route, int group);
     void (*render)(bool transition);

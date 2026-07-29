@@ -206,7 +206,8 @@ static int build_wave_points(const lv_area_t *area, int slot, int step,
 
 static void draw_torrent(lv_layer_t *layer, const lv_area_t *area,
                          int phase, bool playing, bool ball,
-                         uint32_t primary, uint32_t secondary)
+                         uint32_t primary, uint32_t secondary,
+                         uint32_t highlight)
 {
     int height = area_height(area);
     int primary_amp = ball ? height * 22 / 100
@@ -251,7 +252,7 @@ static void draw_torrent(lv_layer_t *layer, const lv_area_t *area,
     count = build_wave_points(
         area, 2, point_step, phase * 17 + 240,
         highlight_cycles, highlight_amp);
-    draw_polyline(layer, 2, count, 1, 0xFFFFFF,
+    draw_polyline(layer, 2, count, 1, highlight,
                   playing ? 151 : 55);
 }
 
@@ -291,13 +292,12 @@ static void draw_mirrored_spectrum(
                   bar_width, bar_height * 2 + 1,
                   LV_RADIUS_CIRCLE, color, opacity);
     }
-    draw_rect(layer, area->x1, center_y,
-              width, 1, LV_RADIUS_CIRCLE, 0xFFFFFF, 61);
 }
 
 static void draw_radial_spectrum(
     lv_layer_t *layer, const lv_area_t *area,
-    int phase, bool playing, uint32_t primary, uint32_t secondary)
+    int phase, bool playing, uint32_t primary, uint32_t secondary,
+    uint32_t highlight)
 {
     static int16_t direction_x[SOUND_WAVE_BALL_RADIAL_RAYS];
     static int16_t direction_y[SOUND_WAVE_BALL_RADIAL_RAYS];
@@ -346,13 +346,13 @@ static void draw_radial_spectrum(
             playing ? 184 : 92, false);
     }
     draw_dot(layer, center_x, center_y, 2,
-             0xFFFFFF, playing ? 140 : 61);
+             highlight, playing ? 140 : 61);
 }
 
 static void draw_liquid_ribbon(
     lv_layer_t *layer, const lv_area_t *area,
     int phase, bool playing, bool ball,
-    uint32_t primary, uint32_t secondary)
+    uint32_t primary, uint32_t secondary, uint32_t highlight)
 {
     int width = area_width(area);
     int height = area_height(area);
@@ -395,7 +395,7 @@ static void draw_liquid_ribbon(
         else if(x * 3 < width * 2)
             color = secondary;
         else
-            color = 0xFFFFFF;
+            color = highlight;
         draw_rect(layer, area->x1 + x,
                   y - local_thickness,
                   step + 1, local_thickness * 2 + 1,
@@ -411,14 +411,14 @@ static void draw_liquid_ribbon(
         sound_wave_points[0][point_count].y = center_y;
         ++point_count;
     }
-    draw_polyline(layer, 0, point_count, 1, 0xFFFFFF,
+    draw_polyline(layer, 0, point_count, 1, highlight,
                   playing ? 122 : 55);
 }
 
 static void draw_liquid_ribbon_ball(
     lv_layer_t *layer, const lv_area_t *area,
     int phase, bool playing,
-    uint32_t primary, uint32_t secondary)
+    uint32_t primary, uint32_t secondary, uint32_t highlight)
 {
     int counts[4] = { 0, 0, 0, 0 };
     int width = area_width(area);
@@ -467,48 +467,68 @@ static void draw_liquid_ribbon_ball(
 
     for(x = 0; x < 3; ++x) {
         uint32_t color = x == 0 ? primary :
-            (x == 1 ? secondary : 0xFFFFFF);
+            (x == 1 ? secondary : highlight);
 
         draw_polyline(
             layer, x, counts[x], thickness * 2 + 1,
             color, playing ? 174 : 70);
     }
     draw_polyline(
-        layer, 3, counts[3], 1, 0xFFFFFF,
+        layer, 3, counts[3], 1, highlight,
         playing ? 122 : 55);
 }
 
 static void draw_vinyl_groove_bar(
     lv_layer_t *layer, const lv_area_t *area,
-    int phase, bool playing, uint32_t primary, uint32_t secondary)
+    int phase, bool playing, uint32_t primary, uint32_t secondary,
+    uint32_t highlight)
 {
+    int width = area_width(area);
     int height = area_height(area);
     int center_y = area->y1 + height / 2;
-    int spacing = clamp_int(height / 9, 2, 5);
-    int amplitude = playing ? clamp_int(height * 6 / 100, 1, 2) : 0;
-    int line;
+    int spacing = clamp_int(height / 5, 5, 7);
+    int amplitude = playing ? clamp_int(height / 8, 2, 4) : 0;
+    int groove;
 
-    for(line = 0; line < 5; ++line) {
-        lv_area_t line_area = *area;
-        int offset = (line - 2) * spacing;
-        int count;
-        uint32_t color = line == 2 ? primary :
-            (line % 2 == 0 ? secondary : 0xFFFFFF);
+    for(groove = 0; groove < 3; ++groove) {
+        int point_count = 0;
+        int offset = (groove - 1) * spacing;
+        int x;
+        uint32_t color = groove == 0 ? highlight :
+            (groove == 1 ? primary : secondary);
+        lv_opa_t opacity = playing
+            ? (groove == 1 ? 210 : 92)
+            : (groove == 1 ? 96 : 45);
 
-        line_area.y1 = center_y + offset - amplitude - 1;
-        line_area.y2 = center_y + offset + amplitude + 1;
-        count = build_wave_points(
-            &line_area, line, 3,
-            phase * 6 + line * 57, 25, amplitude);
-        draw_polyline(layer, line, count,
-                      line == 2 ? 2 : 1, color,
-                      playing ? (line == 2 ? 184 : 87) : 55);
+        for(x = 0; x < width; x += 3) {
+            int taper = wave_taper(x, width);
+            int coarse = wave_sin(x * 4 + phase * 7);
+            int detail = wave_sin(
+                x * 11 - phase * 5 + groove * 37);
+            int mixed = (coarse * 3 + detail) / 4;
+            int vertical =
+                ((mixed * amplitude >> LV_TRIGO_SHIFT) *
+                 taper >> LV_TRIGO_SHIFT);
+
+            if(groove != 1)
+                vertical = vertical * 2 / 3;
+            append_wave_point(
+                groove, &point_count,
+                area->x1 + x, center_y + offset + vertical);
+        }
+        append_wave_point(
+            groove, &point_count,
+            area->x2, center_y + offset);
+        draw_polyline(
+            layer, groove, point_count,
+            groove == 1 ? 2 : 1, color, opacity);
     }
 }
 
 static void draw_vinyl_groove_ball(
     lv_layer_t *layer, const lv_area_t *area,
-    int phase, bool playing, uint32_t primary, uint32_t secondary)
+    int phase, bool playing, uint32_t primary, uint32_t secondary,
+    uint32_t highlight)
 {
     int width = area_width(area);
     int height = area_height(area);
@@ -552,7 +572,7 @@ static void draw_vinyl_groove_ball(
         glint.end_angle = start + 26;
         glint.width = 2;
         glint.rounded = 1;
-        glint.color = lv_color_white();
+        glint.color = lv_color_hex(highlight);
         glint.opa = playing ? 107 : 36;
         lv_draw_arc(layer, &glint);
     }
@@ -561,7 +581,7 @@ static void draw_vinyl_groove_ball(
 static void draw_mini_led_meter(
     lv_layer_t *layer, const lv_area_t *area,
     int phase, bool playing, bool ball,
-    uint32_t primary, uint32_t secondary)
+    uint32_t primary, uint32_t secondary, uint32_t highlight)
 {
     int width = area_width(area);
     int height = area_height(area);
@@ -595,7 +615,7 @@ static void draw_mini_led_meter(
             int x = start_x +
                 column * (segment_width + gap_x);
             uint32_t color = column == column_count / 2
-                ? 0xFFFFFF
+                ? highlight
                 : (column % 2 == 0 ? secondary : primary);
 
             draw_rect(
@@ -642,7 +662,8 @@ static void draw_mini_led_meter(
 
 static void draw_particle_pulse_bar(
     lv_layer_t *layer, const lv_area_t *area,
-    int phase, bool playing, uint32_t primary, uint32_t secondary)
+    int phase, bool playing, uint32_t primary, uint32_t secondary,
+    uint32_t highlight)
 {
     int width = area_width(area);
     int height = area_height(area);
@@ -666,7 +687,7 @@ static void draw_particle_pulse_bar(
         int sparkle =
             16384 + wave_sin(phase * 10 + index * 29) / 2;
         int radius = playing && sparkle > 22000 ? 2 : 1;
-        uint32_t color = index % 3 == 0 ? 0xFFFFFF :
+        uint32_t color = index % 3 == 0 ? highlight :
             (index % 2 == 0 ? secondary : primary);
         lv_opa_t opacity = playing
             ? (lv_opa_t)clamp_int(89 + sparkle * 122 / 32767, 0, 255)
@@ -678,7 +699,8 @@ static void draw_particle_pulse_bar(
 
 static void draw_particle_pulse_ball(
     lv_layer_t *layer, const lv_area_t *area,
-    int phase, bool playing, uint32_t primary, uint32_t secondary)
+    int phase, bool playing, uint32_t primary, uint32_t secondary,
+    uint32_t highlight)
 {
     static int16_t base_x[SOUND_WAVE_BALL_PARTICLES];
     static int16_t base_y[SOUND_WAVE_BALL_PARTICLES];
@@ -741,7 +763,7 @@ static void draw_particle_pulse_ball(
         int y = center_y +
             (direction_y * orbit >> LV_TRIGO_SHIFT);
         int dot_radius = playing && pulse > 23000 ? 2 : 1;
-        uint32_t color = index % 5 == 0 ? 0xFFFFFF :
+        uint32_t color = index % 5 == 0 ? highlight :
             (index % 2 == 0 ? secondary : primary);
         lv_opa_t opacity = playing
             ? (lv_opa_t)clamp_int(82 + pulse * 117 / 32767, 0, 255)
@@ -760,14 +782,15 @@ const char *crazypod_sound_wave_style_name(int style)
 void crazypod_sound_wave_draw_bar(
     lv_layer_t *layer, const lv_area_t *area,
     enum crazypod_sound_wave_style style, int phase, bool playing,
-    uint32_t primary_color, uint32_t secondary_color)
+    uint32_t primary_color, uint32_t secondary_color,
+    uint32_t highlight_color)
 {
     if(layer == NULL || area == NULL)
         return;
     switch(style) {
     case CRAZYPOD_SOUND_WAVE_TORRENT:
         draw_torrent(layer, area, phase, playing, false,
-                     primary_color, secondary_color);
+                     primary_color, secondary_color, highlight_color);
         break;
     case CRAZYPOD_SOUND_WAVE_RADIAL_SPECTRUM:
         draw_mirrored_spectrum(
@@ -776,21 +799,23 @@ void crazypod_sound_wave_draw_bar(
         break;
     case CRAZYPOD_SOUND_WAVE_LIQUID_RIBBON:
         draw_liquid_ribbon(layer, area, phase, playing, false,
-                           primary_color, secondary_color);
+                           primary_color, secondary_color,
+                           highlight_color);
         break;
     case CRAZYPOD_SOUND_WAVE_VINYL_GROOVE:
         draw_vinyl_groove_bar(
             layer, area, phase, playing,
-            primary_color, secondary_color);
+            primary_color, secondary_color, highlight_color);
         break;
     case CRAZYPOD_SOUND_WAVE_MINI_LED_METER:
         draw_mini_led_meter(layer, area, phase, playing, false,
-                            primary_color, secondary_color);
+                            primary_color, secondary_color,
+                            highlight_color);
         break;
     case CRAZYPOD_SOUND_WAVE_PARTICLE_PULSE:
         draw_particle_pulse_bar(
             layer, area, phase, playing,
-            primary_color, secondary_color);
+            primary_color, secondary_color, highlight_color);
         break;
     }
 }
@@ -798,38 +823,40 @@ void crazypod_sound_wave_draw_bar(
 void crazypod_sound_wave_draw_ball(
     lv_layer_t *layer, const lv_area_t *area,
     enum crazypod_sound_wave_style style, int phase, bool playing,
-    uint32_t primary_color, uint32_t secondary_color)
+    uint32_t primary_color, uint32_t secondary_color,
+    uint32_t highlight_color)
 {
     if(layer == NULL || area == NULL)
         return;
     switch(style) {
     case CRAZYPOD_SOUND_WAVE_TORRENT:
         draw_torrent(layer, area, phase, playing, true,
-                     primary_color, secondary_color);
+                     primary_color, secondary_color, highlight_color);
         break;
     case CRAZYPOD_SOUND_WAVE_RADIAL_SPECTRUM:
         draw_radial_spectrum(
             layer, area, phase, playing,
-            primary_color, secondary_color);
+            primary_color, secondary_color, highlight_color);
         break;
     case CRAZYPOD_SOUND_WAVE_LIQUID_RIBBON:
         draw_liquid_ribbon_ball(
             layer, area, phase, playing,
-            primary_color, secondary_color);
+            primary_color, secondary_color, highlight_color);
         break;
     case CRAZYPOD_SOUND_WAVE_VINYL_GROOVE:
         draw_vinyl_groove_ball(
             layer, area, phase, playing,
-            primary_color, secondary_color);
+            primary_color, secondary_color, highlight_color);
         break;
     case CRAZYPOD_SOUND_WAVE_MINI_LED_METER:
         draw_mini_led_meter(layer, area, phase, playing, true,
-                            primary_color, secondary_color);
+                            primary_color, secondary_color,
+                            highlight_color);
         break;
     case CRAZYPOD_SOUND_WAVE_PARTICLE_PULSE:
         draw_particle_pulse_ball(
             layer, area, phase, playing,
-            primary_color, secondary_color);
+            primary_color, secondary_color, highlight_color);
         break;
     }
 }

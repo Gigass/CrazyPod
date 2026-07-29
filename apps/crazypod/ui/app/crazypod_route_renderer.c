@@ -43,6 +43,22 @@
 
 static struct crazypod_route_renderer_host host;
 
+static void reset_feature_surfaces(void)
+{
+    if(crazypod_coverflow_active())
+        crazypod_coverflow_leave();
+    crazypod_now_playing_overlay_reset();
+    crazypod_choice_coordinator_reset();
+    crazypod_menu_list_clear();
+    crazypod_preview_motion_forget();
+    crazypod_menu_preview_reset();
+    crazypod_now_playing_feature_reset_screen();
+    crazypod_photos_feature_reset_view();
+    crazypod_customize_feature_reset_view();
+    crazypod_books_feature_reset_view();
+    crazypod_music_feature_reset_view();
+}
+
 static uint32_t primary_color(void)
 {
     return crazypod_appearance_color(
@@ -111,9 +127,10 @@ static lv_obj_t *make_search_panel(
 
 static void render_menu(const struct route_state *state)
 {
+    int item_count = host.item_count(state);
     const struct crazypod_menu_screen_context context = {
         .parent = crazypod_shell_product_content(),
-        .item_count = host.item_count(state),
+        .item_count = item_count,
         .primary_color = primary_color(),
         .secondary_color = secondary_color(),
         .panel_color = COLOR_PANEL,
@@ -125,8 +142,11 @@ static void render_menu(const struct route_state *state)
     };
 
     create_panel_backgrounds();
+    if(item_count <= 0)
+        crazypod_menu_preview_render(state, false);
     crazypod_menu_screen_render(state, &context);
-    crazypod_menu_preview_render(state, false);
+    if(item_count > 0)
+        crazypod_menu_preview_render(state, false);
 }
 
 static void render_music(const struct route_state *state)
@@ -273,18 +293,7 @@ void crazypod_route_renderer_render(
               CRAZYPOD_ROUTE_FLAG_DARK_STATUS)
             ? 0x0E0E0E : COLOR_WHITE;
 
-    if(crazypod_coverflow_active())
-        crazypod_coverflow_leave();
-    crazypod_now_playing_overlay_reset();
-    crazypod_choice_coordinator_reset();
-    crazypod_menu_list_clear();
-    crazypod_preview_motion_forget();
-    crazypod_menu_preview_reset();
-    crazypod_now_playing_feature_reset_screen();
-    crazypod_photos_feature_reset_view();
-    crazypod_customize_feature_reset_view();
-    crazypod_books_feature_reset_view();
-    crazypod_music_feature_reset_view();
+    reset_feature_surfaces();
     lv_obj_clean(crazypod_shell_product_content());
     lv_obj_set_pos(crazypod_shell_product_content(), 0, 0);
     lv_obj_set_style_bg_color(
@@ -323,10 +332,8 @@ void crazypod_route_renderer_render(
 
 void crazypod_route_renderer_prepare_loading(void)
 {
+    reset_feature_surfaces();
     lv_obj_clean(crazypod_shell_product_content());
-    crazypod_menu_list_clear();
-    crazypod_preview_motion_forget();
-    crazypod_menu_preview_reset();
     crazypod_status_bar_set_palette(
         1, COLOR_WHITE, COLOR_DETAIL);
     lv_obj_set_style_bg_color(

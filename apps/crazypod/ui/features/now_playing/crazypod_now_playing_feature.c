@@ -17,10 +17,6 @@
 static struct {
     struct crazypod_now_playing_navigation_host host;
     char prefetch_track_path[MAX_PATH];
-    char pending_track_path[MAX_PATH];
-    bool open_pending;
-    int pending_route_depth;
-    enum crazypod_route pending_route;
     unsigned artwork_generation_seen;
     unsigned prefetch_generation_seen;
 } navigation;
@@ -88,15 +84,7 @@ void crazypod_now_playing_navigation_configure(
 void crazypod_now_playing_navigation_initialize(void)
 {
     navigation.prefetch_track_path[0] = '\0';
-    navigation.pending_track_path[0] = '\0';
-    navigation.open_pending = false;
     remember_artwork_generations();
-}
-
-void crazypod_now_playing_navigation_reset(void)
-{
-    navigation.pending_track_path[0] = '\0';
-    navigation.open_pending = false;
 }
 
 int crazypod_now_playing_artwork_slot(
@@ -133,76 +121,15 @@ void crazypod_now_playing_prefetch_queue_artwork(
 void crazypod_now_playing_request_open(void)
 {
     const struct crazypod_track *track = current_track();
-    enum crazypod_artwork_state state;
     int slot;
 
-    crazypod_now_playing_navigation_reset();
-    if(track == NULL) {
-        navigation.host.push_now_playing();
-        return;
+    if(track != NULL) {
+        slot = crazypod_now_playing_artwork_slot(track);
+        (void)crazypod_artwork_load_priority(
+            slot, track, NOW_ARTWORK_CACHE_SIZE, 0);
+        if(navigation.host.boost != NULL)
+            navigation.host.boost(HZ / 2);
     }
-    slot = crazypod_now_playing_artwork_slot(track);
-    (void)crazypod_artwork_load_priority(
-        slot, track, NOW_ARTWORK_CACHE_SIZE, 0);
-    state = crazypod_artwork_state(
-        slot, track, NOW_ARTWORK_CACHE_SIZE);
-    if(state != CRAZYPOD_ARTWORK_PENDING) {
-        remember_artwork_generations();
-        navigation.host.push_now_playing();
-        return;
-    }
-
-    navigation.open_pending = true;
-    navigation.pending_route_depth =
-        navigation.host.route_depth();
-    navigation.pending_route =
-        navigation.host.current_route();
-    snprintf(
-        navigation.pending_track_path,
-        sizeof(navigation.pending_track_path),
-        "%s", track->path);
-    navigation.host.boost(HZ / 2);
-}
-
-void crazypod_now_playing_process_open(void)
-{
-    const struct crazypod_track *track;
-    enum crazypod_artwork_state state;
-    int slot;
-
-    if(!navigation.open_pending)
-        return;
-    if(!navigation.host.product_active() ||
-       navigation.host.route_depth() <= 0 ||
-       navigation.host.route_depth() !=
-           navigation.pending_route_depth ||
-       navigation.host.current_route() !=
-           navigation.pending_route) {
-        crazypod_now_playing_navigation_reset();
-        return;
-    }
-    track = current_track();
-    if(track == NULL) {
-        crazypod_now_playing_navigation_reset();
-        navigation.host.push_now_playing();
-        return;
-    }
-    if(strcmp(
-           navigation.pending_track_path,
-           track->path) != 0) {
-        snprintf(
-            navigation.pending_track_path,
-            sizeof(navigation.pending_track_path),
-            "%s", track->path);
-    }
-    slot = crazypod_now_playing_artwork_slot(track);
-    (void)crazypod_artwork_load_priority(
-        slot, track, NOW_ARTWORK_CACHE_SIZE, 0);
-    state = crazypod_artwork_state(
-        slot, track, NOW_ARTWORK_CACHE_SIZE);
-    if(state == CRAZYPOD_ARTWORK_PENDING)
-        return;
-    crazypod_now_playing_navigation_reset();
     remember_artwork_generations();
     navigation.host.push_now_playing();
 }

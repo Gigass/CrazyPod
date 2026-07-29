@@ -3,12 +3,15 @@
 #ifdef IPOD_6G
 
 #include "backlight.h"
+#include "file.h"
 #include "kernel.h"
 #include "powermgmt.h"
 #include "usb.h"
 
 #include "../../crazypod_artwork.h"
+#include "../../crazypod_books.h"
 #include "../../crazypod_music.h"
+#include "../../crazypod_organizer.h"
 #include "../../crazypod_photos.h"
 #include "../../crazypod_state.h"
 #include "../../crazypod_videos.h"
@@ -28,6 +31,7 @@
 #include "crazypod_usb_prompt.h"
 
 #define POWER_HOLD_TICKS (3 * HZ)
+#define MEDIA_INVALID_PATH "/.crazypod/cache/media.invalid"
 
 static struct {
     struct crazypod_system_prompts_host host;
@@ -196,7 +200,8 @@ void crazypod_system_prompts_show_usb(unsigned request)
 void crazypod_system_prompts_usb_done(unsigned request)
 {
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
-    if(crazypod_usb_prompt_matches_request(request))
+    if(crazypod_usb_prompt_matches_request(request) &&
+       !crazypod_usb_prompt_data_blocking())
         crazypod_usb_prompt_dismiss();
 #else
     (void)request;
@@ -205,8 +210,13 @@ void crazypod_system_prompts_usb_done(unsigned request)
 
 void crazypod_system_prompts_usb_connected(intptr_t data)
 {
-    if(crazypod_miniapps_feature_is_open())
-        prompts.host.close_product();
+    /*
+     * The host may replace any storage-backed catalog while it owns mass
+     * storage. Drop every product route now so stale numeric selections
+     * cannot target a different book, contact or calendar event afterward.
+     * close_product() is a no-op when Home is already visible.
+     */
+    prompts.host.close_product();
     prompts.storage_active = true;
     crazypod_music_library_schedule_rescan(
         prompts.host.now() + HZ / 2);
@@ -214,16 +224,30 @@ void crazypod_system_prompts_usb_connected(intptr_t data)
     crazypod_photos_suspend();
     crazypod_videos_suspend();
     crazypod_music_cancel_scan();
+    crazypod_music_require_catalog_validation();
+    crazypod_photos_invalidate_catalog();
+    crazypod_videos_invalidate_catalog();
     crazypod_state_save(true);
+    /* Every catalog and decoded-media cache is now invalidated. Removing
+     * the transaction marker here prevents newly rebuilt photo/video
+     * catalogs from being rejected on the next boot when Music was never
+     * opened. A crash before this point leaves the marker for boot cleanup. */
+    remove(MEDIA_INVALID_PATH);
     usb_acknowledge(SYS_USB_CONNECTED_ACK, data);
 }
 
 void crazypod_system_prompts_usb_disconnected(void)
 {
     prompts.storage_active = false;
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+    if(crazypod_usb_prompt_data_blocking())
+        crazypod_usb_prompt_dismiss();
+#endif
+    crazypod_books_invalidate_scan();
+    crazypod_organizer_invalidate();
     crazypod_artwork_resume();
     crazypod_photos_resume();
-    crazypod_videos_refresh();
+    crazypod_videos_resume();
     crazypod_miniapps_feature_rescan();
     crazypod_music_library_schedule_rescan(
         prompts.host.now() + HZ / 2);

@@ -81,11 +81,6 @@ void crazypod_route_actions_request_now_playing(void)
     crazypod_now_playing_request_open();
 }
 
-void crazypod_route_actions_process_now_playing(void)
-{
-    crazypod_now_playing_process_open();
-}
-
 void crazypod_route_actions_pop(void)
 {
     if(crazypod_ui_routes_depth() > 0 &&
@@ -520,6 +515,8 @@ void crazypod_route_actions_move(int direction, long now)
     if(state->route == MUSIC_ROUTE_NOW_PLAYING) {
         if(crazypod_now_playing_overlay_visible())
             crazypod_now_playing_overlay_move(direction);
+        else
+            crazypod_now_playing_adjust_volume(direction);
         return;
     }
     if(state->route == PHOTOS_ROUTE_DETAIL) {

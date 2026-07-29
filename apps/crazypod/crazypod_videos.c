@@ -67,6 +67,10 @@ static int video_audio_buffer_handle;
 static size_t video_audio_buffer_size;
 static bool video_buffer_allocation_failed;
 static char video_engine_message[96];
+static bool videos_storage_suspended;
+static bool videos_lock_suspended;
+static bool videos_route_suspended;
+static bool videos_refresh_pending;
 
 static void video_engine_splashf(int ticks, const char *format, ...)
 {
@@ -267,26 +271,83 @@ static uint32_t seek_target(int direction)
 
 void crazypod_videos_init(void)
 {
+    videos_storage_suspended = false;
+    videos_lock_suspended = false;
+    videos_route_suspended = true;
+    videos_refresh_pending = true;
     crazypod_video_poster_init();
-    crazypod_video_catalog_init();
-    crazypod_videos_refresh();
+    crazypod_video_poster_suspend();
+    (void)crazypod_video_catalog_init();
 }
 
 void crazypod_videos_refresh(void)
 {
-    crazypod_videos_suspend();
+    if(videos_storage_suspended || videos_lock_suspended ||
+       videos_route_suspended) {
+        videos_refresh_pending = true;
+        return;
+    }
+    videos_refresh_pending = false;
+    crazypod_video_poster_suspend();
     crazypod_video_catalog_refresh();
     crazypod_video_poster_reset();
 }
 
+void crazypod_videos_ensure_catalog(void)
+{
+    if(videos_refresh_pending &&
+       !videos_storage_suspended &&
+       !videos_lock_suspended &&
+       !videos_route_suspended)
+        crazypod_videos_refresh();
+}
+
 void crazypod_videos_suspend(void)
 {
+    videos_storage_suspended = true;
     crazypod_video_poster_suspend();
 }
 
 void crazypod_videos_resume(void)
 {
-    crazypod_video_poster_resume();
+    videos_storage_suspended = false;
+    videos_refresh_pending = true;
+}
+
+void crazypod_videos_set_lock_suspended(bool suspended)
+{
+    if(videos_lock_suspended == suspended)
+        return;
+    videos_lock_suspended = suspended;
+    if(suspended) {
+        crazypod_video_poster_suspend();
+        return;
+    }
+    if(!videos_storage_suspended &&
+       !videos_route_suspended &&
+       !videos_refresh_pending)
+        crazypod_video_poster_resume();
+}
+
+void crazypod_videos_set_route_suspended(bool suspended)
+{
+    if(videos_route_suspended == suspended)
+        return;
+    videos_route_suspended = suspended;
+    if(suspended) {
+        crazypod_video_poster_suspend();
+        return;
+    }
+    if(!videos_storage_suspended &&
+       !videos_lock_suspended &&
+       !videos_refresh_pending)
+        crazypod_video_poster_resume();
+}
+
+void crazypod_videos_invalidate_catalog(void)
+{
+    videos_refresh_pending = true;
+    crazypod_video_catalog_invalidate();
 }
 
 int crazypod_video_count(void)
@@ -389,7 +450,7 @@ enum crazypod_video_result crazypod_video_play(int index)
         return last_video_result;
     }
 
-    crazypod_videos_suspend();
+    crazypod_video_poster_suspend();
     video_engine_message[0] = '\0';
     video_buffer_allocation_failed = false;
     audio_stop();
@@ -546,7 +607,11 @@ cleanup:
     button_clear_queue();
     if(repost_system_event)
         button_queue_post(system_event, system_event_data);
-    crazypod_videos_resume();
+    if(!videos_storage_suspended &&
+       !videos_lock_suspended &&
+       !videos_route_suspended &&
+       !videos_refresh_pending)
+        crazypod_video_poster_resume();
     last_video_result = result;
     return result;
 }

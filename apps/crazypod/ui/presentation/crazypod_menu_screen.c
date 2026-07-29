@@ -10,6 +10,7 @@
 #include "crazypod_ui_widgets.h"
 #include "../features/customize/crazypod_customize_feature.h"
 #include "../shell/crazypod_app_catalog.h"
+#include "crazypod_empty_state.h"
 #include "crazypod_menu_list.h"
 #include "../navigation/crazypod_route_query.h"
 #include "../features/settings/crazypod_settings_feature.h"
@@ -88,46 +89,6 @@ static const char *miniapp_symbol(int index)
         ? metadata->symbol : LV_SYMBOL_FILE;
 }
 
-static void render_empty_state(
-    lv_obj_t *parent, const char *symbol_text,
-    const char *title, const char *message)
-{
-    lv_obj_t *symbol;
-    lv_obj_t *label;
-
-    if(symbol_text != NULL) {
-        symbol = make_label(
-            parent, symbol_text, &lv_font_montserrat_24,
-            COLOR_WHITE, 80);
-        lv_obj_set_pos(symbol, 148, 96);
-    }
-    else {
-        lv_obj_t *outline = make_box(
-            parent, 145, 91, 30, 30,
-            LV_RADIUS_CIRCLE, COLOR_WHITE, LV_OPA_TRANSP);
-        lv_obj_set_style_border_width(outline, 2, 0);
-        lv_obj_set_style_border_color(
-            outline, lv_color_hex(COLOR_WHITE), 0);
-        lv_obj_set_style_border_opa(outline, 80, 0);
-        make_box(outline, 10, 6, 10, 10,
-                 LV_RADIUS_CIRCLE, COLOR_WHITE, 80);
-        make_box(outline, 6, 17, 18, 8,
-                 LV_RADIUS_CIRCLE, COLOR_WHITE, 80);
-    }
-    label = make_label(
-        parent, title, &lv_font_montserrat_12,
-        COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(label, 260);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 30, 137);
-    label = make_label(
-        parent, message, &lv_font_montserrat_8,
-        COLOR_WHITE, 105);
-    lv_obj_set_width(label, 260);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 30, 158);
-}
-
 void crazypod_menu_screen_render(
     const struct route_state *state,
     const struct crazypod_menu_screen_context *context)
@@ -149,76 +110,78 @@ void crazypod_menu_screen_render(
 
     if(count <= 0) {
         if(state->route == DIY_ROUTE_WALLPAPER_FILES)
-            render_empty_state(context->parent, LV_SYMBOL_IMAGE, "No Pictures",
-                               "Add JPG or BMP files to /Pictures.");
+            crazypod_empty_state_render(
+                context->parent, LV_SYMBOL_IMAGE, "No Pictures",
+                "Add JPG or BMP files to /Pictures.");
         else if(state->route == PHOTOS_ROUTE_LIBRARY)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_IMAGE,
                 "No Pictures",
                 "Add JPG, JPEG or BMP files to /Pictures.");
         else if(state->route == PHOTOS_ROUTE_VIDEOS)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_PLAY,
                 "No Videos",
                 "Convert MPG or MPEG files into /Videos.");
         else if(state->route == PHOTOS_ROUTE_FAVORITES)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_IMAGE,
                 "No Favorites",
                                "Hold Select on a photo to save it here.");
         else if(state->route == EXTRAS_ROUTE_MENU)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_DIRECTORY,
                 "Nothing Hidden",
                 "Hide apps in Settings > Main Menu.");
         else if(state->route == UTILITIES_ROUTE_MENU)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
                 "No Mini Apps",
                 "Copy a signed CPK to /MiniApps/Install.");
         else if(state->route == NOTES_ROUTE_DELETED)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_EDIT,
                 "Deleted Is Empty",
                 "Deleted notes can be restored from here.");
         else if(state->route == BOOKS_ROUTE_LIBRARY)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
                 "No Books",
                 "Add EPUB, TXT or Markdown files to /Books.");
         else if(state->route == BOOKS_ROUTE_RECENTS)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
                 "No Recent Books",
                 "Open a book to add it here.");
         else if(state->route == BOOKS_ROUTE_FAVORITES)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
                 "No Favorites",
                 "Favorite a book from Book Actions.");
         else if(state->route == BOOKS_ROUTE_BOOKMARKS)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
                 "No Bookmark",
                 "Press PLAY while reading to save this page.");
         else if(state->route == PODCASTS_ROUTE_MENU)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_AUDIO,
                 "No Podcasts",
                 "Add audio files under /Podcasts and rescan.");
         else if(state->route == CONTACTS_ROUTE_LIST)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 NULL,
                 "No Contacts",
                 "Add VCF files to /Contacts.");
         else if(state->route == WORKOUT_ROUTE_HISTORY)
-            render_empty_state(context->parent, 
+            crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_PLAY,
                 "No Workouts",
                 "Start a time-only workout first.");
         else
-            render_empty_state(context->parent, LV_SYMBOL_AUDIO, "Nothing Here",
-                               "Add local music and rescan.");
+            crazypod_empty_state_render(
+                context->parent, LV_SYMBOL_AUDIO, "Nothing Here",
+                "Add local music and rescan.");
         return;
     }
 

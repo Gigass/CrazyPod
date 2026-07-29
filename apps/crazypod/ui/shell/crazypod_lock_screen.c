@@ -3,6 +3,7 @@
 #ifdef IPOD_6G
 
 #include <stdio.h>
+#include <string.h>
 
 #include "backlight.h"
 #include "button.h"
@@ -43,6 +44,7 @@ struct lock_screen_state {
     struct crazypod_lock_screen_callbacks callbacks;
     bool locked;
     bool backlight_was_on;
+    unsigned int backlight_off_generation;
     bool wait_for_wake_release;
     bool release_guard;
     bool opening;
@@ -90,7 +92,8 @@ void crazypod_lock_screen_refresh_clock(void)
     int weekday;
     int month;
 
-    if(lock_state.time_label == NULL || lock_state.date_label == NULL)
+    if(lock_state.time_label == NULL || lock_state.date_label == NULL ||
+       !lock_state.locked)
         return;
     now = get_time();
     weekday = now->tm_wday >= 0 && now->tm_wday < 7
@@ -101,8 +104,10 @@ void crazypod_lock_screen_refresh_clock(void)
              now->tm_hour, now->tm_min);
     snprintf(date_text, sizeof(date_text), "%s  \xE2\x80\xA2  %s %d",
              days[weekday], months[month], now->tm_mday);
-    lv_label_set_text(lock_state.time_label, time_text);
-    lv_label_set_text(lock_state.date_label, date_text);
+    if(strcmp(lv_label_get_text(lock_state.time_label), time_text) != 0)
+        lv_label_set_text(lock_state.time_label, time_text);
+    if(strcmp(lv_label_get_text(lock_state.date_label), date_text) != 0)
+        lv_label_set_text(lock_state.date_label, date_text);
 }
 
 void crazypod_lock_screen_refresh_appearance(void)
@@ -250,6 +255,9 @@ void crazypod_lock_screen_show(bool turn_display_off)
 {
     if(lock_state.root == NULL)
         return;
+    if(lock_state.callbacks.lock_inhibited != NULL &&
+       lock_state.callbacks.lock_inhibited())
+        return;
     lock_state.locked = true;
     crazypod_coverflow_set_input_suspended(true);
     lock_state.release_guard = false;
@@ -288,14 +296,33 @@ static void finish_unlock(void)
 
 void crazypod_lock_screen_process(void)
 {
-    bool backlight_is_on = is_backlight_on(false);
+    bool backlight_is_on = is_backlight_on(true);
+    unsigned int off_generation = backlight_off_generation();
+    bool went_off =
+        off_generation != lock_state.backlight_off_generation ||
+        (lock_state.backlight_was_on && !backlight_is_on);
 
-    if(lock_state.backlight_was_on && !backlight_is_on) {
+    lock_state.backlight_off_generation = off_generation;
+    if(went_off) {
+        if(!lock_state.locked &&
+           lock_state.callbacks.lock_inhibited != NULL &&
+           lock_state.callbacks.lock_inhibited()) {
+            backlight_on();
+            lock_state.backlight_was_on = true;
+            lock_state.backlight_off_generation =
+                backlight_off_generation();
+            return;
+        }
         if(!lock_state.locked)
             crazypod_lock_screen_show(false);
         else
             reset_wheel();
-        lock_state.wait_for_wake_release = false;
+        /*
+         * If the display already woke before this UI turn, consume the
+         * triggering press on the lock screen instead of letting Home act
+         * on an input that occurred after an off transition.
+         */
+        lock_state.wait_for_wake_release = backlight_is_on;
     }
     else if(!lock_state.backlight_was_on && backlight_is_on &&
             lock_state.locked) {
@@ -386,6 +413,7 @@ bool crazypod_lock_screen_handle_button(long button, intptr_t data)
         lock_state.backlight_was_on = true;
         lock_state.wait_for_wake_release = !scroll;
         reset_wheel();
+        crazypod_lock_screen_refresh_clock();
         return true;
     }
     if(lock_state.wait_for_wake_release) {
@@ -520,11 +548,25 @@ bool crazypod_lock_screen_is_locked(void)
     return lock_state.locked;
 }
 
+bool crazypod_lock_screen_motion_active(void)
+{
+    return lock_state.opening ||
+           lock_state.wrong_direction ||
+           (lock_state.wheel_steps > 0 &&
+            lock_state.wheel_last_input_tick != 0);
+}
+
 void crazypod_lock_screen_initialize_backlight_state(void)
 {
-    lock_state.backlight_was_on = is_backlight_on(false);
+    bool backlight_is_on = is_backlight_on(true);
+
+    lock_state.backlight_was_on = backlight_is_on;
+    lock_state.backlight_off_generation =
+        backlight_off_generation();
     lock_state.locked = false;
     lock_state.release_guard = false;
+    if(!backlight_is_on)
+        crazypod_lock_screen_show(false);
 }
 
 #endif

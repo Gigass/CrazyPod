@@ -224,6 +224,9 @@ enum current_activity {
 
 void beep_play(unsigned int frequency, unsigned int duration,
                unsigned int amplitude);
+void beep_play_pcm(const int16_t *samples, size_t frame_count,
+                   unsigned int sample_rate,
+                   unsigned int mixer_amplitude);
 
 enum system_sound
 {

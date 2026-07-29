@@ -56,6 +56,8 @@ static uint32_t recent_sequences[BOOKS_MAX];
 static unsigned char book_text_encodings[BOOKS_MAX];
 static bool book_utf8_bom[BOOKS_MAX];
 static int book_count;
+static bool books_scan_loaded;
+static bool books_scan_dirty;
 static struct books_state_disk persisted;
 static unsigned char page_input[BOOK_PAGE_INPUT_SIZE];
 static unsigned char page_utf8[BOOK_PAGE_INPUT_SIZE * 3 + 1];
@@ -570,6 +572,13 @@ void crazypod_books_init(void)
     static struct books_state_disk loaded;
     int fd;
 
+    memset(books, 0, sizeof(books));
+    memset(recent_sequences, 0, sizeof(recent_sequences));
+    memset(book_text_encodings, 0, sizeof(book_text_encodings));
+    memset(book_utf8_bom, 0, sizeof(book_utf8_bom));
+    book_count = 0;
+    books_scan_loaded = false;
+    books_scan_dirty = true;
     memset(&persisted, 0, sizeof(persisted));
     persisted.magic = BOOKS_MAGIC;
     persisted.version = BOOKS_VERSION;
@@ -590,7 +599,6 @@ void crazypod_books_init(void)
         }
         close(fd);
     }
-    crazypod_books_scan();
 }
 
 void crazypod_books_scan(void)
@@ -601,6 +609,18 @@ void crazypod_books_scan(void)
     memset(book_utf8_bom, 0, sizeof(book_utf8_bom));
     book_count = 0;
     scan_directory(BOOKS_DIRECTORY, 0);
+    books_scan_loaded = true;
+    books_scan_dirty = false;
+}
+
+bool crazypod_books_scan_needed(void)
+{
+    return !books_scan_loaded || books_scan_dirty;
+}
+
+void crazypod_books_invalidate_scan(void)
+{
+    books_scan_dirty = true;
 }
 
 int crazypod_books_count(void)

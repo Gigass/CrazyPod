@@ -536,6 +536,12 @@ static int rx_usb_idx;
 bool playback_audio_underflow;
 /* usb overflow ? */
 bool usb_rx_overflow;
+#ifdef HAVE_PCM_CODEC_IDLE
+/* The fast completion callback runs in IRQ context. A codec wake can sleep,
+ * so only the one-shot mixer restart is handed to the USB worker thread. */
+static volatile bool playback_restart_pending;
+static bool playback_power_prepared;
+#endif
 
 /* dsp processing buffers */
 #define DSP_BUF_SIZE (BUFFER_SIZE*4) /* arbitrarily x4 */
@@ -885,6 +891,10 @@ int usb_audio_get_config_descriptor(unsigned char *dest, int max_packet_size)
 
 static void playback_audio_get_more(const void **start, size_t *size)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    int oldlevel = disable_irq_save();
+#endif
+
     /* if there are no more filled buffers, playback has just underflowed */
     if(rx_play_idx == rx_usb_idx)
     {
@@ -892,6 +902,9 @@ static void playback_audio_get_more(const void **start, size_t *size)
         playback_audio_underflow = true;
         *start = NULL;
         *size = 0;
+#ifdef HAVE_PCM_CODEC_IDLE
+        restore_irq(oldlevel);
+#endif
         return;
     }
 
@@ -901,10 +914,14 @@ static void playback_audio_get_more(const void **start, size_t *size)
     *size = dsp_buf_size[rx_play_idx];
     rx_play_idx = (rx_play_idx + 1) % NR_BUFFERS;
 
-    /* if usb RX buffers had overflowed, we can start to receive again
-     * guard against IRQ to avoid race with completion usb completion (although
-     * this function is probably running in IRQ context anyway) */
+    /* If USB RX buffers had overflowed, start receiving again. */
+#ifndef HAVE_PCM_CODEC_IDLE
+    /* Guard against the USB completion interrupt. */
     int oldlevel = disable_irq_save();
+#else
+    /* Keep the index advance in this critical section now that initial
+     * restart can run from the USB worker thread. */
+#endif
     if(usb_rx_overflow)
     {
         logf("usbaudio: recover usb rx overflow");
@@ -916,6 +933,19 @@ static void playback_audio_get_more(const void **start, size_t *size)
 
 static void __attribute__((unused)) usb_audio_start_playback(void)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    /* Complete the potentially blocking analog wake before accepting the
+     * first isochronous packets. The worker transfers this reservation to
+     * the first mixer start, so USB buffers are not lost during the 75 ms
+     * codec stabilization interval. */
+    if (!playback_power_prepared)
+    {
+        pcm_play_dma_prepare();
+        playback_power_prepared = true;
+    }
+    playback_restart_pending = false;
+#endif
+
     usb_audio_playing = true;
     usb_rx_overflow = false;
     playback_audio_underflow = true;
@@ -967,6 +997,18 @@ static void __attribute__((unused)) usb_audio_start_playback(void)
 static void usb_audio_stop_playback(void)
 {
     logf("usbaudio: stop playback");
+#ifdef HAVE_PCM_CODEC_IDLE
+    int oldlevel = disable_irq_save();
+    playback_restart_pending = false;
+    restore_irq(oldlevel);
+
+    if (playback_power_prepared)
+    {
+        playback_power_prepared = false;
+        pcm_play_dma_cancel_prepare();
+    }
+#endif
+
     if(usb_audio_playing)
     {
         mixer_channel_stop(PCM_MIXER_CHAN_USBAUDIO);
@@ -1717,6 +1759,14 @@ void usb_audio_init_connection(void)
     usb_as_playback_intf_alt = 0;
     tmp_saved_vol = sound_current(SOUND_VOLUME);
     usb_audio_playing = false;
+#ifdef HAVE_PCM_CODEC_IDLE
+    playback_restart_pending = false;
+    if (playback_power_prepared)
+    {
+        playback_power_prepared = false;
+        pcm_play_dma_cancel_prepare();
+    }
+#endif
 
     /* source mode init */
     usb_as_source_intf_alt = 0;
@@ -1840,18 +1890,52 @@ int usb_audio_get_frames_dropped(void)
 
 void usb_audio_transfer_complete(int ep, int dir, int status, int length)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    bool restart = false;
+    bool restart_event = false;
+    int oldlevel = disable_irq_save();
+
+    if (playback_restart_pending &&
+        ep == EP_NUM(EP_ISO_OUT) && dir == USB_DIR_OUT)
+    {
+        playback_restart_pending = false;
+        restart_event = true;
+        restart = usb_audio_playing && usb_as_playback_intf_alt == 1;
+    }
+
+    restore_irq(oldlevel);
+
+    if (restart)
+    {
+        mixer_channel_play_data(PCM_MIXER_CHAN_USBAUDIO,
+                                playback_audio_get_more, NULL, 0);
+    }
+
+    /* The mixer took its own reservation while the startup reservation kept
+     * the codec awake. Drop the startup reservation after a successful
+     * handoff, or after a queued restart was cancelled by an interface stop. */
+    if (restart_event && playback_power_prepared)
+    {
+        playback_power_prepared = false;
+        pcm_play_dma_cancel_prepare();
+    }
+#else
     /* normal handler is too slow to handle the completion rate, because
      * of the low thread schedule rate */
     (void) ep;
-    (void) dir;
-    (void) status;
-    (void) length;
+#endif
+    (void)dir;
+    (void)status;
+    (void)length;
 }
 
 bool usb_audio_fast_transfer_complete(int ep, int dir, int status, int length)
 {
     (void) dir;
     bool retval = false;
+#ifdef HAVE_PCM_CODEC_IDLE
+    bool defer_restart = false;
+#endif
 
     if(ep == EP_NUM(EP_ISO_OUT) && usb_as_playback_intf_alt == 1)
     {
@@ -1917,7 +2001,12 @@ bool usb_audio_fast_transfer_complete(int ep, int dir, int status, int length)
             logf("usbaudio: prebuffering done");
             playback_audio_underflow = false;
             usb_rx_overflow = false;
+#ifdef HAVE_PCM_CODEC_IDLE
+            playback_restart_pending = true;
+            defer_restart = true;
+#else
             mixer_channel_play_data(PCM_MIXER_CHAN_USBAUDIO, playback_audio_get_more, NULL, 0);
+#endif
         }
         restore_irq(oldlevel);
         retval =  true;
@@ -2026,5 +2115,12 @@ bool usb_audio_fast_transfer_complete(int ep, int dir, int status, int length)
         }
     }
 
+#ifdef HAVE_PCM_CODEC_IDLE
+    /* Returning false asks usb_core to dispatch this single completion to
+     * usb_audio_transfer_complete() in its worker thread. Normal isochronous
+     * completions remain entirely on the fast path. */
+    if (defer_restart)
+        return false;
+#endif
     return retval;
 }

@@ -2,9 +2,14 @@
 
 #ifdef IPOD_6G
 
+#include <stdio.h>
+#include <string.h>
+
 #include "audio.h"
 
 #include "../../../crazypod_appearance.h"
+#include "../../../crazypod_artwork.h"
+#include "../../../crazypod_artwork_palette.h"
 #include "../../../crazypod_playlist.h"
 #include "../../../crazypod_soundwave.h"
 #include "crazypod_now_playing_feature.h"
@@ -12,6 +17,11 @@
 
 #define NOW_SHADE_OPA 118
 #define COLOR_WHITE 0xFFFFFF
+
+static struct crazypod_artwork_palette wave_palette;
+static char wave_palette_path[MAX_PATH];
+static unsigned wave_palette_generation;
+static bool wave_palette_from_artwork;
 
 static uint32_t text_hash(const char *text)
 {
@@ -49,6 +59,12 @@ static uint32_t secondary_color(void)
 {
     return crazypod_appearance_color(
         crazypod_appearance_get()->secondary_color);
+}
+
+static void use_fallback_wave_palette(void)
+{
+    crazypod_artwork_palette_fallback(
+        &wave_palette, primary_color(), secondary_color());
 }
 
 static uint32_t contrast_color(unsigned luminance)
@@ -91,6 +107,41 @@ static const struct crazypod_track *current_track(void)
         crazypod_music_find_track(path));
 }
 
+static void refresh_wave_palette(const struct crazypod_track *track)
+{
+    const lv_image_dsc_t *artwork;
+    unsigned generation;
+    int slot;
+
+    if(track == NULL) {
+        wave_palette_path[0] = '\0';
+        wave_palette_generation = 0;
+        wave_palette_from_artwork = false;
+        use_fallback_wave_palette();
+        return;
+    }
+    slot = crazypod_now_playing_artwork_slot(track);
+    generation = crazypod_artwork_slot_generation(slot);
+    if(generation == wave_palette_generation &&
+       strcmp(wave_palette_path, track->path) == 0) {
+        if(!wave_palette_from_artwork)
+            use_fallback_wave_palette();
+        return;
+    }
+
+    artwork = crazypod_artwork_load_priority(
+        slot, track, CRAZYPOD_COVERFLOW_ARTWORK_SIZE, 0);
+    wave_palette_from_artwork =
+        crazypod_artwork_palette_extract(
+            artwork, &wave_palette);
+    if(!wave_palette_from_artwork)
+        use_fallback_wave_palette();
+    snprintf(
+        wave_palette_path, sizeof(wave_palette_path),
+        "%s", track->path);
+    wave_palette_generation = generation;
+}
+
 static void draw_wave(lv_event_t *event)
 {
     lv_obj_t *surface = lv_event_get_target(event);
@@ -109,15 +160,18 @@ static void draw_wave(lv_event_t *event)
         (enum crazypod_sound_wave_style)
             crazypod_appearance_get()->sound_wave_style,
         crazypod_now_screen_wave_phase(), playing,
-        primary_color(), secondary_color());
+        wave_palette.primary,
+        wave_palette.secondary,
+        wave_palette.highlight);
 }
 
 void crazypod_now_playing_feature_render(
     const struct crazypod_now_playing_render_context *context)
 {
+    const struct crazypod_track *track = current_track();
     const struct crazypod_now_screen_context screen = {
         .parent = context->parent,
-        .track = current_track(),
+        .track = track,
         .lyrics_mode = crazypod_now_playing_lyrics_mode(),
         .metadata_font = context->metadata_font,
         .primary_color = primary_color(),
@@ -128,6 +182,7 @@ void crazypod_now_playing_feature_render(
         .draw_wave = draw_wave,
     };
 
+    refresh_wave_palette(track);
     crazypod_now_screen_render(&screen);
 }
 
@@ -141,6 +196,10 @@ void crazypod_now_playing_feature_tick_wave(
 
 void crazypod_now_playing_feature_reset_screen(void)
 {
+    wave_palette_path[0] = '\0';
+    wave_palette_generation = 0;
+    wave_palette_from_artwork = false;
+    use_fallback_wave_palette();
     crazypod_now_screen_reset();
 }
 

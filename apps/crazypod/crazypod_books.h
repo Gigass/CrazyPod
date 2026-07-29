@@ -33,6 +33,8 @@ typedef void (*crazypod_book_progress_callback)(
 
 void crazypod_books_init(void);
 void crazypod_books_scan(void);
+bool crazypod_books_scan_needed(void);
+void crazypod_books_invalidate_scan(void);
 int crazypod_books_count(void);
 const struct crazypod_book *crazypod_book_get(int index);
 int crazypod_book_index(const struct crazypod_book *book);

@@ -99,6 +99,17 @@ bool crazypod_miniapps_feature_is_open(void)
     return crazypod_miniapps_is_open();
 }
 
+bool crazypod_miniapps_feature_motion_active(void)
+{
+    return crazypod_miniapps_is_open() &&
+        crazypod_miniapp_runtime_motion_active();
+}
+
+bool crazypod_miniapps_feature_alert_active(void)
+{
+    return crazypod_miniapp_runtime_alert_active();
+}
+
 void crazypod_miniapps_feature_close(void)
 {
     crazypod_miniapps_close();
@@ -122,6 +133,11 @@ int crazypod_miniapps_feature_last_error(void)
 void crazypod_miniapps_feature_initialize_runtime(void)
 {
     crazypod_miniapp_runtime_initialize();
+}
+
+int crazypod_miniapps_feature_prepare(void)
+{
+    return crazypod_miniapp_runtime_prepare();
 }
 
 bool crazypod_miniapps_feature_activate(

@@ -30,6 +30,12 @@
 #include "crazypod_route_actions.h"
 
 static struct crazypod_app_input_host host;
+static bool play_short_press_pending;
+static bool home_hold_pending;
+static long home_hold_deadline;
+
+#define HOME_NOW_PLAYING_HOLD_TICKS \
+    ((HZ / 2) > 0 ? (HZ / 2) : 1)
 
 static long button_base(long button)
 {
@@ -90,14 +96,52 @@ static void home_open_selected_app(void)
 void crazypod_app_input_configure(
     const struct crazypod_app_input_host *new_host)
 {
-    if(new_host != NULL)
+    if(new_host != NULL) {
         host = *new_host;
+        home_hold_pending = false;
+    }
+}
+
+int crazypod_app_input_wait_ticks(long now)
+{
+    long remaining;
+
+    if(!home_hold_pending)
+        return HZ > 0 ? HZ : 1;
+    remaining = home_hold_deadline - now;
+    if(remaining <= 0)
+        return 1;
+    return remaining > HZ ? HZ : (int)remaining;
+}
+
+void crazypod_app_input_tick(long now, bool locked)
+{
+    if(!home_hold_pending)
+        return;
+    if(locked ||
+       crazypod_shell_product_active() ||
+       host.power_prompt_visible()
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+       || host.usb_prompt_visible()
+#endif
+       ) {
+        home_hold_pending = false;
+        return;
+    }
+    if((long)(now - home_hold_deadline) < 0)
+        return;
+
+    home_hold_pending = false;
+    backlight_on();
+    host.open_now_playing();
 }
 
 void crazypod_app_input_handle(
     long button, intptr_t data, long now)
 {
     long base;
+    bool play_initial_press = false;
+    bool play_short_release = false;
     bool repeated;
     struct route_state *state;
 
@@ -106,7 +150,13 @@ void crazypod_app_input_handle(
     if(crazypod_system_event_handle(
            button, data, &host.system_events))
         return;
+    base = button_base(button);
+    if(base == BUTTON_MENU &&
+       (button & BUTTON_REL) != 0)
+        home_hold_pending = false;
     if(host.power_prompt_visible()) {
+        if(button_base(button) == BUTTON_PLAY)
+            play_short_press_pending = false;
         wheel_feedback(button);
         if(button & BUTTON_REL)
             return;
@@ -118,6 +168,8 @@ void crazypod_app_input_handle(
     }
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
     if(host.usb_prompt_visible()) {
+        if(button_base(button) == BUTTON_PLAY)
+            play_short_press_pending = false;
         wheel_feedback(button);
         if(button & BUTTON_REL)
             return;
@@ -128,9 +180,28 @@ void crazypod_app_input_handle(
         return;
     }
 #endif
-    if(host.handle_power_hold(button) ||
-       host.handle_lock(button, data))
+    if(host.handle_power_hold(button)) {
+        if(base == BUTTON_PLAY &&
+           (button & BUTTON_REPEAT) != 0)
+            play_short_press_pending = false;
         return;
+    }
+    if(host.handle_lock(button, data)) {
+        if(base == BUTTON_PLAY &&
+           (button & BUTTON_REL) != 0)
+            play_short_press_pending = false;
+        return;
+    }
+    if(base == BUTTON_PLAY) {
+        if((button & BUTTON_REL) != 0) {
+            play_short_release = play_short_press_pending;
+            play_short_press_pending = false;
+        }
+        else if((button & BUTTON_REPEAT) == 0) {
+            play_short_press_pending = true;
+            play_initial_press = true;
+        }
+    }
     wheel_feedback(button);
     if(crazypod_shell_product_active() &&
        crazypod_ui_routes_depth() > 0) {
@@ -143,7 +214,20 @@ void crazypod_app_input_handle(
                host.feature_bindings))
             return;
     }
-    if(button & BUTTON_REL)
+    if(play_initial_press)
+        return;
+    if(button & BUTTON_REL) {
+        if(!play_short_release)
+            return;
+        /*
+         * Replay a completed short Play gesture as a normal press only after
+         * the raw-input owner has declined its release. This keeps feature
+         * actions and playback toggling mutually exclusive with Play hold.
+         */
+        button = BUTTON_PLAY;
+    }
+    else if(base == BUTTON_PLAY &&
+            (button & BUTTON_REPEAT) != 0)
         return;
     repeated = (button & BUTTON_REPEAT) != 0;
     base = button_base(button);
@@ -173,6 +257,14 @@ void crazypod_app_input_handle(
             .toggle_playback = host.toggle_playback,
         };
 
+        if(base == BUTTON_MENU) {
+            if(!repeated) {
+                home_hold_pending = true;
+                home_hold_deadline =
+                    now + HOME_NOW_PLAYING_HOLD_TICKS;
+            }
+            return;
+        }
         crazypod_home_input_handle(&event, &actions);
         return;
     }

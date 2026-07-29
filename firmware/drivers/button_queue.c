@@ -140,6 +140,16 @@ void button_queue_post_remove_head(long id, intptr_t data)
 
 bool button_queue_try_post(long button, int data)
 {
+    struct queue_event head;
+
+    /* BUTTON_NONE may be queued as a wake-only sentinel by raw-position
+     * input users. Never let that sentinel make a following real press look
+     * like afterscroll and get rejected. */
+    if(button != BUTTON_NONE &&
+       queue_peek(&button_queue, &head) &&
+       head.id == BUTTON_NONE)
+        queue_remove_from_head(&button_queue, BUTTON_NONE);
+
 #ifdef HAVE_TOUCHSCREEN
     /* one can swipe over the scren very quickly,
      * for this to work we want to forget about old presses and

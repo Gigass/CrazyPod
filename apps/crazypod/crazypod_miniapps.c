@@ -541,7 +541,6 @@ bool crazypod_miniapps_event(const struct cp_input_event *event)
 
 bool crazypod_miniapps_tick(void)
 {
-    crazypod_miniapps_alarm_service(NULL);
     if(!crazypod_miniapps_is_open())
         return false;
     return active_ops->tick(crazypod_miniapp_host_epoch_seconds(),

@@ -30,12 +30,16 @@ enum crazypod_artwork_state {
 void crazypod_artwork_init(void);
 void crazypod_artwork_prime_library(void);
 void crazypod_artwork_cancel_library_prime(void);
+void crazypod_artwork_cancel_product_requests(void);
+bool crazypod_artwork_library_cache_ready(void);
+void crazypod_artwork_invalidate_library_cache(void);
 bool crazypod_artwork_library_priming(void);
 bool crazypod_artwork_library_prime_failed(void);
 int crazypod_artwork_library_prime_completed(void);
 int crazypod_artwork_library_prime_total(void);
 void crazypod_artwork_suspend(void);
 void crazypod_artwork_resume(void);
+void crazypod_artwork_set_lock_suspended(bool suspended);
 const lv_image_dsc_t *crazypod_artwork_load(int slot,
                                             const struct crazypod_track *track,
                                             int target_size);
@@ -45,8 +49,6 @@ const lv_image_dsc_t *crazypod_artwork_load_priority(
 const lv_image_dsc_t *crazypod_artwork_load_cached_priority(
     int slot, const struct crazypod_track *track, int target_size,
     int priority);
-const lv_image_dsc_t *crazypod_artwork_load_coverflow_priority(
-    int slot, const struct crazypod_track *track, int priority);
 enum crazypod_artwork_state crazypod_artwork_state(
     int slot, const struct crazypod_track *track, int target_size);
 unsigned crazypod_artwork_generation(void);

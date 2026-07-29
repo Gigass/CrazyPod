@@ -252,7 +252,7 @@ bool crazypod_video_poster_busy(void)
     bool busy;
 
     mutex_lock(&poster_mutex);
-    busy = decoding || slot.pending;
+    busy = decoding || (!suspended && slot.pending);
     mutex_unlock(&poster_mutex);
     return busy;
 }

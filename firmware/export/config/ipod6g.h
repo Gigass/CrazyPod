@@ -259,10 +259,23 @@
 #else /* !BOOTLOADER */
 #define HAVE_SERIAL
 #define ROCKBOX_HAS_LOGF
+/* The Classic-specific PCM path may put the CS42L55 and its clocks into
+ * deep idle. Other S5L87xx iPods share drivers but not this policy. */
+#ifndef SIMULATOR
+#define HAVE_PCM_CODEC_IDLE
+#endif
 /* Disable iAP when LOGF_SERIAL is enabled to avoid conflicts */
 #ifndef LOGF_SERIAL
 #define IPOD_ACCESSORY_PROTOCOL
-#define TARGET_EXTRA_THREADS 1
+#ifdef HAVE_PCM_CODEC_IDLE
+#define TARGET_EXTRA_THREADS 2 /* iAP + deferred codec power */
+#else
+#define TARGET_EXTRA_THREADS 1 /* iAP */
+#endif
+#else
+#ifdef HAVE_PCM_CODEC_IDLE
+#define TARGET_EXTRA_THREADS 1 /* deferred codec power */
+#endif
 #endif
 #endif
 

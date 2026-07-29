@@ -33,6 +33,19 @@
 
 static int bass, treble;
 static int active_dsp_modules;  /* powered DSP modules mask */
+#ifdef HAVE_PCM_CODEC_IDLE
+static struct mutex codec_power_mutex;
+static struct mutex codec_rmw_mutex;
+static volatile bool codec_idle;
+static bool headphone_power_requested;
+static bool lineout_power_requested;
+static unsigned char headphone_volume_a;
+static unsigned char headphone_volume_b;
+static unsigned char lineout_volume_a;
+static unsigned char lineout_volume_b;
+
+#define ANALOG_MAX_ATTENUATION 0x40
+#endif
 
 /* convert tenth of dB volume (-600..120) to volume register value */
 static int vol_tenthdb2hw(int db)
@@ -47,8 +60,14 @@ static int vol_tenthdb2hw(int db)
 
 static void cscodec_setbits(int reg, unsigned char off, unsigned char on)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&codec_rmw_mutex);
+#endif
     unsigned char data = (cscodec_read(reg) & ~off) | on;
     cscodec_write(reg, data);
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_unlock(&codec_rmw_mutex);
+#endif
 }
 
 static void audiohw_mute(bool mute)
@@ -57,8 +76,37 @@ static void audiohw_mute(bool mute)
     else cscodec_setbits(PLAYCTL, PLAYCTL_MSTAMUTE | PLAYCTL_MSTBMUTE, 0);
 }
 
+#ifdef HAVE_PCM_CODEC_IDLE
+static void audiohw_apply_output_power(void)
+{
+    unsigned char power = PWRCTL2_PDN_HPA_ALWAYS |
+                          PWRCTL2_PDN_HPB_ALWAYS |
+                          PWRCTL2_PDN_LINA_ALWAYS |
+                          PWRCTL2_PDN_LINB_ALWAYS;
+
+    if (headphone_power_requested)
+    {
+        power &= ~(PWRCTL2_PDN_HPA_MASK | PWRCTL2_PDN_HPB_MASK);
+        power |= PWRCTL2_PDN_HPA_NEVER | PWRCTL2_PDN_HPB_NEVER;
+    }
+
+    if (lineout_power_requested)
+    {
+        power &= ~(PWRCTL2_PDN_LINA_MASK | PWRCTL2_PDN_LINB_MASK);
+        power |= PWRCTL2_PDN_LINA_NEVER | PWRCTL2_PDN_LINB_NEVER;
+    }
+
+    cscodec_write(PWRCTL2, power);
+}
+#endif
+
 void audiohw_preinit(void)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_init(&codec_power_mutex);
+    mutex_init(&codec_rmw_mutex);
+#endif
+
     cscodec_power(true);
     cscodec_clock(true);
     cscodec_reset(true);
@@ -68,6 +116,15 @@ void audiohw_preinit(void)
     bass = 0;
     treble = 0;
     active_dsp_modules = 0;
+#ifdef HAVE_PCM_CODEC_IDLE
+    codec_idle = false;
+    headphone_power_requested = true;
+    lineout_power_requested = false;
+    headphone_volume_a = HPACTL_HPAMUTE;
+    headphone_volume_b = HPBCTL_HPBMUTE;
+    lineout_volume_a = LINEACTL_LINEAMUTE;
+    lineout_volume_b = LINEBCTL_LINEBMUTE;
+#endif
 
     /* Ask Cirrus or maybe Apple what the hell this means */
     cscodec_write(HIDDENCTL, HIDDENCTL_UNLOCK);
@@ -107,71 +164,174 @@ void audiohw_preinit(void)
 
 void audiohw_postinit(void)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    headphone_volume_a = 0;
+    headphone_volume_b = 0;
+    lineout_volume_a = 0;
+    lineout_volume_b = 0;
+#endif
     cscodec_write(HPACTL, 0);
     cscodec_write(HPBCTL, 0);
     cscodec_write(LINEACTL, 0);
     cscodec_write(LINEBCTL, 0);
     cscodec_write(CLSHCTL, CLSHCTL_ADPTPWR_SIGNAL);
     audiohw_mute(false);
+#ifdef HAVE_PCM_CODEC_IDLE
+    codec_idle = false;
+#endif
 }
 
 void audiohw_set_volume(int vol_l, int vol_r)
 {
     vol_l = vol_tenthdb2hw(vol_l);
     vol_r = vol_tenthdb2hw(vol_r);
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&codec_power_mutex);
+    headphone_volume_a = vol_l << HPACTL_HPAVOL_SHIFT;
+    headphone_volume_b = vol_r << HPBCTL_HPBVOL_SHIFT;
+    if (!codec_idle)
+    {
+        cscodec_write(HPACTL, headphone_volume_a);
+        cscodec_write(HPBCTL, headphone_volume_b);
+    }
+    mutex_unlock(&codec_power_mutex);
+#else
     cscodec_setbits(HPACTL, HPACTL_HPAVOL_MASK | HPACTL_HPAMUTE,
                     vol_l << HPACTL_HPAVOL_SHIFT);
     cscodec_setbits(HPBCTL, HPBCTL_HPBVOL_MASK | HPBCTL_HPBMUTE,
                     vol_r << HPBCTL_HPBVOL_SHIFT);
+#endif
 }
 
 void audiohw_set_lineout_volume(int vol_l, int vol_r)
 {
     vol_l = vol_tenthdb2hw(vol_l);
     vol_r = vol_tenthdb2hw(vol_r);
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&codec_power_mutex);
+    lineout_volume_a = vol_l << LINEACTL_LINEAVOL_SHIFT;
+    lineout_volume_b = vol_r << LINEBCTL_LINEBVOL_SHIFT;
+    if (!codec_idle)
+    {
+        cscodec_write(LINEACTL, lineout_volume_a);
+        cscodec_write(LINEBCTL, lineout_volume_b);
+    }
+    mutex_unlock(&codec_power_mutex);
+#else
     cscodec_setbits(LINEACTL, LINEACTL_LINEAVOL_MASK | LINEACTL_LINEAMUTE,
                     vol_l << LINEACTL_LINEAVOL_SHIFT);
     cscodec_setbits(LINEBCTL, LINEBCTL_LINEBVOL_MASK | LINEBCTL_LINEBMUTE,
                     vol_r << LINEBCTL_LINEBVOL_SHIFT);
+#endif
 }
 
 void audiohw_enable_lineout(bool enable)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&codec_power_mutex);
+    lineout_power_requested = enable;
+    audiohw_apply_output_power();
+    mutex_unlock(&codec_power_mutex);
+#else
     if (enable)
         cscodec_setbits(PWRCTL2, PWRCTL2_PDN_LINA_MASK | PWRCTL2_PDN_LINB_MASK,
                         PWRCTL2_PDN_LINA_NEVER | PWRCTL2_PDN_LINB_NEVER);
     else
         cscodec_setbits(PWRCTL2, PWRCTL2_PDN_LINA_MASK | PWRCTL2_PDN_LINB_MASK,
                         PWRCTL2_PDN_LINA_ALWAYS | PWRCTL2_PDN_LINB_ALWAYS);
+#endif
 }
 
 void audiohw_set_hp_power(bool enable)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&codec_power_mutex);
+    headphone_power_requested = enable;
+    audiohw_apply_output_power();
+    mutex_unlock(&codec_power_mutex);
+#else
     if (enable)
         cscodec_setbits(PWRCTL2, PWRCTL2_PDN_HPA_MASK | PWRCTL2_PDN_HPB_MASK,
                         PWRCTL2_PDN_HPA_NEVER | PWRCTL2_PDN_HPB_NEVER);
     else
         cscodec_setbits(PWRCTL2, PWRCTL2_PDN_HPA_MASK | PWRCTL2_PDN_HPB_MASK,
                         PWRCTL2_PDN_HPA_ALWAYS | PWRCTL2_PDN_HPB_ALWAYS);
+#endif
 }
 
 void audiohw_idle_powerdown(void)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&codec_power_mutex);
+
+    if (codec_idle)
+    {
+        mutex_unlock(&codec_power_mutex);
+        return;
+    }
+
+    /* Publish idle first so volume changes racing this sequence are cached
+     * for the next wake rather than undoing the analog mute. */
+    codec_idle = true;
     audiohw_mute(true);
-    /* Master mute prevents pop; don't touch HPACTL/HPBCTL —
-     * CS42L55 preserves register values during PDN_CODEC */
+    cscodec_write(HPACTL,
+                  HPACTL_HPAMUTE | ANALOG_MAX_ATTENUATION);
+    cscodec_write(HPBCTL,
+                  HPBCTL_HPBMUTE | ANALOG_MAX_ATTENUATION);
+    cscodec_write(LINEACTL,
+                  LINEACTL_LINEAMUTE | ANALOG_MAX_ATTENUATION);
+    cscodec_write(LINEBCTL,
+                  LINEBCTL_LINEBMUTE | ANALOG_MAX_ATTENUATION);
     cscodec_write(PWRCTL1, PWRCTL1_PDN_CHRG | PWRCTL1_PDN_ADCA
                          | PWRCTL1_PDN_ADCB | PWRCTL1_PDN_CODEC);
+    /* The datasheet only permits MCLKDIS while PDN_CODEC is set. */
+    cscodec_setbits(CLKCTL1, 0, CLKCTL1_MCLKDIS);
+
+    mutex_unlock(&codec_power_mutex);
+#else
+    audiohw_mute(true);
+    /* Master mute prevents pop; CS42L55 preserves register values during
+     * PDN_CODEC. */
+    cscodec_write(PWRCTL1, PWRCTL1_PDN_CHRG | PWRCTL1_PDN_ADCA
+                         | PWRCTL1_PDN_ADCB | PWRCTL1_PDN_CODEC);
+#endif
 }
 
 void audiohw_idle_powerup(void)
 {
-    /* Clear PDN_CODEC — registers are maintained during power-down */
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&codec_power_mutex);
+
+    if (!codec_idle)
+    {
+        mutex_unlock(&codec_power_mutex);
+        return;
+    }
+
+    /* The target enables the external MCLK before entering here. */
+    cscodec_setbits(CLKCTL1, CLKCTL1_MCLKDIS, 0);
     cscodec_write(PWRCTL1, PWRCTL1_PDN_CHRG | PWRCTL1_PDN_ADCA
                          | PWRCTL1_PDN_ADCB);
-    /* CS42L55 DAC needs ~100us to stabilize after power-up */
+    /* DS773F1 section 4.11 requires 75 ms after clearing PDN_CODEC
+     * before the headphone or line amplifiers may be unmuted. Complete the
+     * interval even if both are currently disabled so a concurrent output
+     * enable cannot expose an incompletely stabilized codec. */
+    sleep((75 * HZ + 999) / 1000);
+    cscodec_write(HPACTL, headphone_volume_a);
+    cscodec_write(HPBCTL, headphone_volume_b);
+    cscodec_write(LINEACTL, lineout_volume_a);
+    cscodec_write(LINEBCTL, lineout_volume_b);
+    audiohw_mute(false);
+    codec_idle = false;
+
+    mutex_unlock(&codec_power_mutex);
+#else
+    /* Clear PDN_CODEC; registers are maintained during power-down. */
+    cscodec_write(PWRCTL1, PWRCTL1_PDN_CHRG | PWRCTL1_PDN_ADCA
+                         | PWRCTL1_PDN_ADCB);
     udelay(200);
     audiohw_mute(false);
+#endif
 }
 
 static void handle_dsp_power(int dsp_module, bool onoff)
@@ -245,16 +405,36 @@ void audiohw_set_prescaler(int value)
 /* Nice shutdown of CS42L55 codec */
 void audiohw_close(void)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&codec_power_mutex);
+
+    codec_idle = true;
+#endif
     audiohw_mute(true);
+#ifdef HAVE_PCM_CODEC_IDLE
+    cscodec_write(HPACTL,
+                  HPACTL_HPAMUTE | ANALOG_MAX_ATTENUATION);
+    cscodec_write(HPBCTL,
+                  HPBCTL_HPBMUTE | ANALOG_MAX_ATTENUATION);
+    cscodec_write(LINEACTL,
+                  LINEACTL_LINEAMUTE | ANALOG_MAX_ATTENUATION);
+    cscodec_write(LINEBCTL,
+                  LINEBCTL_LINEBMUTE | ANALOG_MAX_ATTENUATION);
+#else
     cscodec_write(HPACTL, HPACTL_HPAMUTE);
     cscodec_write(HPBCTL, HPBCTL_HPBMUTE);
     cscodec_write(LINEACTL, LINEACTL_LINEAMUTE);
     cscodec_write(LINEBCTL, LINEBCTL_LINEBMUTE);
+#endif
     cscodec_write(PWRCTL1, PWRCTL1_PDN_CHRG | PWRCTL1_PDN_ADCA
                          | PWRCTL1_PDN_ADCB | PWRCTL1_PDN_CODEC);
     cscodec_reset(true);
     cscodec_clock(false);
     cscodec_power(false);
+
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_unlock(&codec_power_mutex);
+#endif
 }
 
 /* Note: Disable output before calling this function */
@@ -283,6 +463,10 @@ void audiohw_set_frequency(int fsel)
 
 void audiohw_enable_recording(bool source_mic)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&codec_power_mutex);
+#endif
+
     /* mute ADCs */
     cscodec_write(ADCCTL, ADCCTL_ADCAMUTE | ADCCTL_ADCBMUTE);
 
@@ -332,10 +516,18 @@ void audiohw_enable_recording(bool source_mic)
     }
 
     cscodec_write(ADCCTL, 0);   /* unmute ADCs */
+
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_unlock(&codec_power_mutex);
+#endif
 }
 
 void audiohw_disable_recording(void)
 {
+#ifdef HAVE_PCM_CODEC_IDLE
+    mutex_lock(&codec_power_mutex);
+#endif
+
     /* reset used registers to default values */
     cscodec_write(PGAACTL, 0);
     cscodec_write(PGABCTL, 0);
@@ -343,9 +535,19 @@ void audiohw_disable_recording(void)
     cscodec_setbits(ALHMUX, ALHMUX_ADCAMUX_MASK | ALHMUX_ADCBMUX_MASK,
                         ALHMUX_ADCAMUX_PGAA | ALHMUX_ADCBMUX_PGAB);
 #endif
+#ifdef HAVE_PCM_CODEC_IDLE
+    /* Power down the ADC section without changing PDN_CODEC. Recording can
+     * close concurrently with the deferred idle transition. */
+    cscodec_setbits(PWRCTL1,
+                    PWRCTL1_PDN_CHRG | PWRCTL1_PDN_ADCA | PWRCTL1_PDN_ADCB,
+                    PWRCTL1_PDN_CHRG | PWRCTL1_PDN_ADCA | PWRCTL1_PDN_ADCB);
+
+    mutex_unlock(&codec_power_mutex);
+#else
     /* power-down ADC section */
     cscodec_write(PWRCTL1, PWRCTL1_PDN_CHRG |
                         PWRCTL1_PDN_ADCA | PWRCTL1_PDN_ADCB);
+#endif
 }
 
 void audiohw_set_recvol(int left, int right, int type)

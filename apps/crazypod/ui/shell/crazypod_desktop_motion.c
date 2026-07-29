@@ -11,16 +11,22 @@
 #include "crazypod_desktop_motion.h"
 
 #define DESKTOP_POSITION_ONE (1L << 16)
-#define DESKTOP_RELEASE_STIFFNESS 400
-#define DESKTOP_RELEASE_DAMPING 40
+#define DESKTOP_RELEASE_STIFFNESS 625
+#define DESKTOP_RELEASE_DAMPING 50
 #define DESKTOP_RELEASE_PROJECTION_TICKS \
-    (((HZ * 32) / 100) > 0 ? ((HZ * 32) / 100) : 1)
+    (((HZ * 10) / 100) > 0 ? ((HZ * 10) / 100) : 1)
+#define DESKTOP_RELEASE_MAX_PROJECTION_Q16 \
+    (2 * DESKTOP_POSITION_ONE)
 #define DESKTOP_RELEASE_MAX_SPEED_Q16 \
     (14 * DESKTOP_POSITION_ONE)
+#define DESKTOP_RELEASE_STALE_VELOCITY_TICKS \
+    (((HZ * 8) / 100) > 0 ? ((HZ * 8) / 100) : 1)
 #define DESKTOP_SNAP_POSITION (DESKTOP_POSITION_ONE / 512)
 #define DESKTOP_SNAP_VELOCITY (DESKTOP_POSITION_ONE / 20)
 #define DESKTOP_WHEEL_POSITIONS 96
 #define DESKTOP_WHEEL_CLICKS_PER_ITEM 12
+/* Match the click-wheel driver's four-position gesture threshold. */
+#define DESKTOP_WHEEL_DEAD_ZONE_CLICKS 3
 #define DESKTOP_WHEEL_FEEDBACK_CLICKS 4
 #define DESKTOP_WHEEL_RELEASE_TICKS \
     (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
@@ -33,8 +39,11 @@ static bool wheel_tracking;
 static int wheel_position;
 static int wheel_feedback_accumulator;
 static int wheel_feedback_direction;
+static int wheel_drag_clicks;
+static bool wheel_drag_started;
 static int motion_direction;
 static int gesture_min_item;
+static int32_t wheel_drag_origin_q16;
 static int32_t target_q16;
 static int32_t position_q16;
 static int32_t velocity_q16;
@@ -73,10 +82,22 @@ static int32_t clamp_velocity(int32_t velocity)
     return velocity;
 }
 
+static int wheel_effective_clicks(int clicks)
+{
+    if(clicks > DESKTOP_WHEEL_DEAD_ZONE_CLICKS)
+        return clicks - DESKTOP_WHEEL_DEAD_ZONE_CLICKS;
+    if(clicks < -DESKTOP_WHEEL_DEAD_ZONE_CLICKS)
+        return clicks + DESKTOP_WHEEL_DEAD_ZONE_CLICKS;
+    return 0;
+}
+
 static void stop_wheel_tracking(long now)
 {
     wheel_tracking = false;
     wheel_position = -1;
+    wheel_drag_clicks = 0;
+    wheel_drag_started = false;
+    wheel_drag_origin_q16 = position_q16;
     wheel_last_seen = 0;
     wheel_last_motion = 0;
     last_physics = now;
@@ -157,19 +178,65 @@ void crazypod_desktop_motion_select(
 }
 
 #ifdef HAVE_WHEEL_POSITION
+static int release_target(
+    int32_t projected_q16, int item_count)
+{
+    int32_t maximum_q16 = maximum_position(item_count);
+    int base;
+    int fraction;
+
+    if(projected_q16 < 0)
+        projected_q16 = 0;
+    if(projected_q16 > maximum_q16)
+        projected_q16 = maximum_q16;
+    base = projected_q16 >> 16;
+    fraction = projected_q16 & (DESKTOP_POSITION_ONE - 1);
+    if(fraction > DESKTOP_POSITION_ONE / 2 ||
+       (fraction == DESKTOP_POSITION_ONE / 2 &&
+        motion_direction > 0))
+        ++base;
+    return clamp_item(base, item_count);
+}
+
 static void release_wheel(long now, int item_count)
 {
+    long stationary_ticks =
+        wheel_last_seen - wheel_last_motion;
+    int32_t release_velocity_q16 = velocity_q16;
+    int32_t projected_delta_q16;
     int32_t projected_q16;
     int target_item;
 
     wheel_tracking = false;
     wheel_position = -1;
+    wheel_drag_clicks = 0;
+    wheel_drag_started = false;
+    if(stationary_ticks >=
+       DESKTOP_RELEASE_STALE_VELOCITY_TICKS) {
+        release_velocity_q16 = 0;
+    }
+    else if(stationary_ticks > 0) {
+        release_velocity_q16 =
+            release_velocity_q16 *
+            (DESKTOP_RELEASE_STALE_VELOCITY_TICKS -
+             stationary_ticks) /
+            DESKTOP_RELEASE_STALE_VELOCITY_TICKS;
+    }
+    projected_delta_q16 =
+        release_velocity_q16 *
+        DESKTOP_RELEASE_PROJECTION_TICKS / HZ;
+    if(projected_delta_q16 >
+       DESKTOP_RELEASE_MAX_PROJECTION_Q16)
+        projected_delta_q16 =
+            DESKTOP_RELEASE_MAX_PROJECTION_Q16;
+    else if(projected_delta_q16 <
+            -DESKTOP_RELEASE_MAX_PROJECTION_Q16)
+        projected_delta_q16 =
+            -DESKTOP_RELEASE_MAX_PROJECTION_Q16;
     projected_q16 =
-        position_q16 +
-        velocity_q16 *
-            DESKTOP_RELEASE_PROJECTION_TICKS / HZ;
-    target_item =
-        (projected_q16 + DESKTOP_POSITION_ONE / 2) >> 16;
+        position_q16 + projected_delta_q16;
+    target_item = release_target(
+        projected_q16, item_count);
     if(motion_direction > 0) {
         if(target_item < gesture_min_item)
             target_item = gesture_min_item;
@@ -179,6 +246,7 @@ static void release_wheel(long now, int item_count)
     }
     target_item = clamp_item(target_item, item_count);
     target_q16 = target_item * DESKTOP_POSITION_ONE;
+    velocity_q16 = release_velocity_q16;
     moving =
         position_q16 != target_q16 ||
         velocity_q16 != 0;
@@ -201,6 +269,9 @@ static void sample_wheel(long now, int item_count)
             wheel_position = current;
             wheel_last_motion = now;
             velocity_q16 = 0;
+            wheel_drag_origin_q16 = position_q16;
+            wheel_drag_clicks = 0;
+            wheel_drag_started = false;
             gesture_min_item = center_item(item_count);
         }
         else {
@@ -211,55 +282,99 @@ static void sample_wheel(long now, int item_count)
             else if(delta > DESKTOP_WHEEL_POSITIONS / 2)
                 delta -= DESKTOP_WHEEL_POSITIONS;
             if(delta != 0) {
-                long elapsed = now - wheel_last_motion;
-                int32_t next_q16;
-                int32_t instant_velocity_q16;
+                int previous_clicks =
+                    wheel_drag_started ? wheel_drag_clicks : 0;
+                int effective_clicks;
+                int effective_delta;
+                bool drag_started_now = false;
 
-                if(elapsed < 1)
-                    elapsed = 1;
-                if(wheel_feedback_accumulator != 0 &&
-                   (wheel_feedback_accumulator < 0) !=
-                       (delta < 0))
-                    wheel_feedback_accumulator = 0;
-                wheel_feedback_accumulator += delta;
-                if(wheel_feedback_accumulator >=
-                   DESKTOP_WHEEL_FEEDBACK_CLICKS ||
-                   wheel_feedback_accumulator <=
-                   -DESKTOP_WHEEL_FEEDBACK_CLICKS) {
-                    wheel_feedback_direction =
-                        wheel_feedback_accumulator < 0 ? -1 : 1;
-                    wheel_feedback_accumulator %=
-                        DESKTOP_WHEEL_FEEDBACK_CLICKS;
+                wheel_drag_clicks += delta;
+                if(!wheel_drag_started) {
+                    effective_clicks =
+                        wheel_effective_clicks(wheel_drag_clicks);
+                    if(effective_clicks != 0) {
+                        wheel_drag_started = true;
+                        drag_started_now = true;
+                        wheel_drag_clicks = effective_clicks;
+                        previous_clicks = 0;
+                    }
                 }
-                next_q16 =
-                    position_q16 +
-                    delta * DESKTOP_POSITION_ONE /
-                        DESKTOP_WHEEL_CLICKS_PER_ITEM;
-                if(next_q16 < 0)
-                    position_q16 = 0;
-                else if(next_q16 > maximum_q16)
-                    position_q16 = maximum_q16;
-                else
-                    position_q16 = (int32_t)next_q16;
-                instant_velocity_q16 =
-                    delta * DESKTOP_POSITION_ONE /
-                        DESKTOP_WHEEL_CLICKS_PER_ITEM *
-                        HZ / elapsed;
-                instant_velocity_q16 =
-                    clamp_velocity(instant_velocity_q16);
-                if(velocity_q16 != 0 &&
-                   (velocity_q16 < 0) ==
-                       (instant_velocity_q16 < 0))
-                    velocity_q16 =
-                        (velocity_q16 * 3 +
-                         instant_velocity_q16 * 5) >> 3;
-                else
-                    velocity_q16 = instant_velocity_q16;
-                motion_direction = delta < 0 ? -1 : 1;
-                gesture_min_item = center_item(item_count);
+                else {
+                    effective_clicks = wheel_drag_clicks;
+                }
+                effective_delta =
+                    effective_clicks - previous_clicks;
                 wheel_position = current;
-                wheel_last_motion = now;
-                render_dirty = true;
+                if(effective_delta != 0) {
+                    long elapsed = now - wheel_last_motion;
+                    int32_t next_q16;
+                    int32_t instant_velocity_q16;
+
+                    if(elapsed < 1)
+                        elapsed = 1;
+                    if(drag_started_now) {
+                        wheel_feedback_direction =
+                            effective_delta < 0 ? -1 : 1;
+                        wheel_feedback_accumulator =
+                            effective_delta %
+                            DESKTOP_WHEEL_FEEDBACK_CLICKS;
+                    }
+                    else {
+                        if(wheel_feedback_accumulator != 0 &&
+                           (wheel_feedback_accumulator < 0) !=
+                               (effective_delta < 0))
+                            wheel_feedback_accumulator = 0;
+                        wheel_feedback_accumulator += effective_delta;
+                        if(wheel_feedback_accumulator >=
+                           DESKTOP_WHEEL_FEEDBACK_CLICKS ||
+                           wheel_feedback_accumulator <=
+                           -DESKTOP_WHEEL_FEEDBACK_CLICKS) {
+                            wheel_feedback_direction =
+                                wheel_feedback_accumulator < 0 ? -1 : 1;
+                            wheel_feedback_accumulator %=
+                                DESKTOP_WHEEL_FEEDBACK_CLICKS;
+                        }
+                    }
+                    next_q16 =
+                        wheel_drag_origin_q16 +
+                        effective_clicks *
+                            DESKTOP_POSITION_ONE /
+                        DESKTOP_WHEEL_CLICKS_PER_ITEM;
+                    if(next_q16 < 0) {
+                        position_q16 = 0;
+                        wheel_drag_origin_q16 = 0;
+                        wheel_drag_clicks = 0;
+                    }
+                    else if(next_q16 > maximum_q16) {
+                        position_q16 = maximum_q16;
+                        wheel_drag_origin_q16 =
+                            maximum_q16;
+                        wheel_drag_clicks = 0;
+                    }
+                    else {
+                        position_q16 = (int32_t)next_q16;
+                    }
+                    instant_velocity_q16 =
+                        effective_delta *
+                        DESKTOP_POSITION_ONE * HZ /
+                        (DESKTOP_WHEEL_CLICKS_PER_ITEM *
+                         elapsed);
+                    instant_velocity_q16 =
+                        clamp_velocity(instant_velocity_q16);
+                    if(velocity_q16 != 0 &&
+                       (velocity_q16 < 0) ==
+                           (instant_velocity_q16 < 0))
+                        velocity_q16 =
+                            (velocity_q16 * 3 +
+                             instant_velocity_q16 * 5) >> 3;
+                    else
+                        velocity_q16 = instant_velocity_q16;
+                    motion_direction =
+                        effective_delta < 0 ? -1 : 1;
+                    gesture_min_item = center_item(item_count);
+                    wheel_last_motion = now;
+                    render_dirty = true;
+                }
             }
         }
         wheel_last_seen = now;

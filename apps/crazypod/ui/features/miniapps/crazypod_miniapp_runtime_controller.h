@@ -13,6 +13,7 @@ struct crazypod_miniapp_activation_host {
 
 void crazypod_miniapp_runtime_reset_input(void);
 void crazypod_miniapp_runtime_initialize(void);
+int crazypod_miniapp_runtime_prepare(void);
 void crazypod_miniapp_runtime_rescan(void);
 void crazypod_miniapp_runtime_note_error(int error);
 int crazypod_miniapp_runtime_last_error(void);
@@ -23,6 +24,8 @@ bool crazypod_miniapp_runtime_next_input(
     bool frame_due, struct cp_input_event *event);
 void crazypod_miniapp_runtime_request_render(void);
 bool crazypod_miniapp_runtime_take_render(void);
+bool crazypod_miniapp_runtime_motion_active(void);
+bool crazypod_miniapp_runtime_alert_active(void);
 
 struct crazypod_miniapp_runtime_service_result {
     bool close_requested;

@@ -298,6 +298,8 @@ void crazypod_choice_coordinator_activate(void)
             const char *path =
                 crazypod_customize_feature_background_wallpaper(field);
 
+            crazypod_photos_set_route_suspended(false);
+            crazypod_photos_ensure_catalog();
             crazypod_choice_coordinator_dismiss(false);
             host.push_selected(
                 DIY_ROUTE_WALLPAPER_FILES, field,

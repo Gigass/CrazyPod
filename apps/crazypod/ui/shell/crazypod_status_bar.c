@@ -22,6 +22,10 @@ struct status_bar {
     lv_obj_t *battery_cap;
     lv_obj_t *charge;
     lv_obj_t *playing;
+    int rendered_minute;
+    int rendered_battery_width;
+    int rendered_charging;
+    int rendered_playing;
 };
 
 static struct status_bar status_bars[CRAZYPOD_STATUS_BAR_COUNT];
@@ -61,44 +65,71 @@ void crazypod_status_bar_create(int index, lv_obj_t *screen)
     lv_obj_center(bar->charge);
     bar->battery_cap = crazypod_ui_widget_box(
         screen, 287, 15, 2, 5, 1, STATUS_WHITE, 128);
+    bar->rendered_minute = -1;
+    bar->rendered_battery_width = -1;
+    bar->rendered_charging = -1;
+    bar->rendered_playing = -1;
 }
 
 void crazypod_status_bars_update(void)
 {
     char time_text[8];
     struct tm *now = get_time();
+    int minute = now->tm_hour * 60 + now->tm_min;
     int level = battery_level();
+    int battery_width;
     bool charging = false;
-    bool playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
-                   (audio_status() & AUDIO_STATUS_PAUSE) == 0;
+    int status = audio_status();
+    bool playing = (status & AUDIO_STATUS_PLAY) != 0 &&
+                   (status & AUDIO_STATUS_PAUSE) == 0;
+    bool time_formatted = false;
     int i;
 
     if(level < 0)
         level = 0;
     if(level > 100)
         level = 100;
+    battery_width = level > 0 ? 3 + (21 * level / 100) : 0;
 #if CONFIG_CHARGING >= CHARGING_MONITOR
     charging = charge_state > DISCHARGING;
 #endif
-    snprintf(time_text, sizeof(time_text), "%02d:%02d",
-             now->tm_hour, now->tm_min);
 
     for(i = 0; i < CRAZYPOD_STATUS_BAR_COUNT; ++i) {
         struct status_bar *bar = &status_bars[i];
 
         if(bar->time == NULL)
             continue;
-        lv_label_set_text(bar->time, time_text);
-        lv_obj_set_width(
-            bar->battery_fill, level > 0 ? 3 + (21 * level / 100) : 0);
-        if(charging)
-            lv_obj_remove_flag(bar->charge, LV_OBJ_FLAG_HIDDEN);
-        else
-            lv_obj_add_flag(bar->charge, LV_OBJ_FLAG_HIDDEN);
-        if(playing)
-            lv_obj_remove_flag(bar->playing, LV_OBJ_FLAG_HIDDEN);
-        else
-            lv_obj_add_flag(bar->playing, LV_OBJ_FLAG_HIDDEN);
+        if(bar->rendered_minute != minute) {
+            if(!time_formatted) {
+                snprintf(time_text, sizeof(time_text), "%02d:%02d",
+                         now->tm_hour, now->tm_min);
+                time_formatted = true;
+            }
+            lv_label_set_text(bar->time, time_text);
+            bar->rendered_minute = minute;
+        }
+        if(bar->rendered_battery_width != battery_width) {
+            lv_obj_set_width(bar->battery_fill, battery_width);
+            bar->rendered_battery_width = battery_width;
+        }
+        if(bar->rendered_charging != charging) {
+            if(charging)
+                lv_obj_remove_flag(
+                    bar->charge, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(
+                    bar->charge, LV_OBJ_FLAG_HIDDEN);
+            bar->rendered_charging = charging;
+        }
+        if(bar->rendered_playing != playing) {
+            if(playing)
+                lv_obj_remove_flag(
+                    bar->playing, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(
+                    bar->playing, LV_OBJ_FLAG_HIDDEN);
+            bar->rendered_playing = playing;
+        }
     }
 }
 

@@ -19,6 +19,7 @@ struct crazypod_miniapp_alarm_record {
     uint32_t checksum;
 };
 
+void crazypod_miniapp_alarm_store_reload(void);
 int crazypod_miniapp_alarm_store_load(
     const char *id, uint8_t slot,
     struct crazypod_miniapp_alarm_record *record);

@@ -16,8 +16,12 @@
 
 void crazypod_photos_init(void);
 void crazypod_photos_refresh(void);
+void crazypod_photos_ensure_catalog(void);
 void crazypod_photos_suspend(void);
 void crazypod_photos_resume(void);
+void crazypod_photos_set_lock_suspended(bool suspended);
+void crazypod_photos_set_route_suspended(bool suspended);
+void crazypod_photos_invalidate_catalog(void);
 
 int crazypod_photo_count(void);
 int crazypod_photo_favorite_count(void);
