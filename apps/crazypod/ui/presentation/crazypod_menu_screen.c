@@ -8,11 +8,11 @@
 #include "../../crazypod_miniapps.h"
 #include "crazypod_ui_menu_layout.h"
 #include "crazypod_ui_widgets.h"
-#include "../features/customize/crazypod_customize_catalog.h"
+#include "../features/customize/crazypod_customize_feature.h"
 #include "../shell/crazypod_app_catalog.h"
 #include "crazypod_menu_list.h"
 #include "../navigation/crazypod_route_query.h"
-#include "../features/settings/crazypod_settings_catalog.h"
+#include "../features/settings/crazypod_settings_feature.h"
 #include "crazypod_menu_screen.h"
 
 #define COLOR_WHITE 0xFFFFFF
@@ -272,10 +272,10 @@ void crazypod_menu_screen_render(
                 : state->route == PHOTOS_ROUTE_MENU
                     ? photos_menu_symbols[index]
                 : state->route == SETTINGS_ROUTE_MENU
-                    ? crazypod_settings_menu_symbols[index]
+                    ? crazypod_settings_feature_menu_symbol(index)
                 : state->route == UTILITIES_ROUTE_MENU
                     ? miniapp_symbol(index)
-                    : crazypod_customize_menu_symbols[index];
+                    : crazypod_customize_feature_menu_symbol(index);
             lv_obj_t *circle = make_box(row_box, 6, 2, 21, 21,
                                         LV_RADIUS_CIRCLE, COLOR_WHITE,
                                         selected ? 45 : 18);

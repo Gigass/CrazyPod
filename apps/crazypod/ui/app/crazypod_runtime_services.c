@@ -7,9 +7,8 @@
 #if defined(HAVE_HARDWARE_CLICK) && !defined(SIMULATOR)
 #include "piezo.h"
 #endif
-#include "../../crazypod_miniapps.h"
 #include "../features/customize/crazypod_customize_feature.h"
-#include "../features/miniapps/crazypod_miniapp_runtime_controller.h"
+#include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../features/photos/crazypod_photos_feature.h"
@@ -30,20 +29,20 @@ void crazypod_runtime_services_configure(
 static void service_miniapp(
     bool active, long now, bool frame_due)
 {
-    struct crazypod_miniapp_runtime_service_result result =
-        crazypod_miniapp_runtime_service(active, frame_due, now, HZ);
+    int events = crazypod_miniapps_feature_service(
+        active, frame_due, now, HZ);
 
-    if(result.close_requested) {
+    if((events & CRAZYPOD_MINIAPPS_SERVICE_CLOSE) != 0) {
         crazypod_route_actions_pop();
         return;
     }
-    if(result.beep_requested) {
+    if((events & CRAZYPOD_MINIAPPS_SERVICE_BEEP) != 0) {
 #if defined(HAVE_HARDWARE_CLICK) && !defined(SIMULATOR)
         piezo_button_beep(false, false);
 #endif
         beep_play(1568, 90, 6000);
     }
-    if(active && crazypod_miniapp_runtime_take_render())
+    if((events & CRAZYPOD_MINIAPPS_SERVICE_RENDER) != 0)
         render_route(false);
 }
 
@@ -55,7 +54,7 @@ void crazypod_runtime_services_tick(
         crazypod_ui_routes_depth() > 0;
     bool miniapp_active = !locked && routed &&
         state->route == MINIAPP_ROUTE_VIEW &&
-        crazypod_miniapps_is_open();
+        crazypod_miniapps_feature_is_open();
 
     if(!locked && routed)
         crazypod_photos_runtime_service(state, now);

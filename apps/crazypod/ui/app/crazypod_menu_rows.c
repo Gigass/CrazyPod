@@ -5,10 +5,10 @@
 #include "../../crazypod_appearance.h"
 #include "../../crazypod_apps.h"
 #include "../../crazypod_miniapps.h"
-#include "../features/customize/crazypod_customize_catalog.h"
+#include "../features/customize/crazypod_customize_feature.h"
 #include "../features/music/crazypod_music_feature.h"
-#include "../features/organizer/crazypod_activity_controller.h"
-#include "../features/settings/crazypod_settings_catalog.h"
+#include "../features/organizer/crazypod_organizer_feature.h"
+#include "../features/settings/crazypod_settings_feature.h"
 #include "../navigation/crazypod_route_query.h"
 #include "../navigation/crazypod_ui_routes.h"
 #include "../presentation/crazypod_menu_list.h"
@@ -88,10 +88,10 @@ void crazypod_menu_rows_refresh(const struct route_state *state)
             state->route == PHOTOS_ROUTE_MENU && visible
                 ? photo_symbols[index] :
             state->route == SETTINGS_ROUTE_MENU && visible
-                ? crazypod_settings_menu_symbols[index] :
+                ? crazypod_settings_feature_menu_symbol(index) :
             state->route == UTILITIES_ROUTE_MENU && visible
                 ? miniapp_symbol(index) :
-            visible ? crazypod_customize_menu_symbols[index] : "";
+            visible ? crazypod_customize_feature_menu_symbol(index) : "";
         const char *marker_text =
             visible && crazypod_route_query_item_is_current(state, index)
                 ? LV_SYMBOL_OK :
@@ -102,8 +102,8 @@ void crazypod_menu_rows_refresh(const struct route_state *state)
             row, visible,
             visible ? crazypod_route_query_item_title(
                 state, index, crazypod_music_search_query(),
-                crazypod_activity_stopwatch_running(),
-                crazypod_activity_workout_running()) : "",
+                crazypod_organizer_feature_stopwatch_running(),
+                crazypod_organizer_feature_workout_running()) : "",
             selected,
             selected ? 255 :
                 state->route == MUSIC_ROUTE_SEARCH ? 150 : 195,

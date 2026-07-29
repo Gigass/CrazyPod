@@ -9,6 +9,7 @@
 #include "crazypod_photo_controller.h"
 #include "crazypod_photo_screen.h"
 #include "crazypod_photos_feature.h"
+#include "crazypod_photos_preview.h"
 
 static unsigned photo_generation_seen;
 static unsigned photo_view_generation_seen;
@@ -251,6 +252,33 @@ void crazypod_photos_feature_render_wallpaper_grid(
 void crazypod_photos_feature_note_direction(long now)
 {
     crazypod_photo_controller_note_direction(now);
+}
+
+void crazypod_photos_feature_render_preview(
+    const struct route_state *state, lv_obj_t *parent,
+    bool videos, bool defer_media,
+    bool *media_deferred)
+{
+    const struct crazypod_photos_preview_context context = {
+        .parent = parent,
+        .defer_media = defer_media,
+        .media_deferred = media_deferred,
+    };
+
+    if(videos)
+        crazypod_videos_preview_render(state, &context);
+    else
+        crazypod_photos_preview_render(state, &context);
+}
+
+void crazypod_photos_feature_reset_controller(void)
+{
+    crazypod_photo_controller_reset();
+}
+
+void crazypod_photos_feature_open_detail(int zoom_percent)
+{
+    crazypod_photo_controller_open_detail(zoom_percent);
 }
 
 void crazypod_photos_feature_reset_view(void)

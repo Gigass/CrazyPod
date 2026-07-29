@@ -60,6 +60,23 @@ for path in features.rglob("*"):
                 errors.append(
                     f"{path}:{number}: cross-feature private include")
 
+external_sources = [main]
+external_sources.extend(
+    path for path in ui.rglob("*")
+    if path.suffix in (".c", ".h")
+    and features not in path.parents
+)
+for path in external_sources:
+    for number, line in enumerate(
+        path.read_text(errors="ignore").splitlines(), 1
+    ):
+        if "#include" not in line or "features/" not in line:
+            continue
+        header = line.split("/")[-1].rstrip('>"')
+        if not header.endswith("_feature.h"):
+            errors.append(
+                f"{path}:{number}: Feature private include outside owner")
+
 for path in ui.rglob("*"):
     if path.suffix not in (".c", ".h"):
         continue

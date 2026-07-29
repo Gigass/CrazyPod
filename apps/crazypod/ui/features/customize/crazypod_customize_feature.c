@@ -403,4 +403,74 @@ void crazypod_customize_feature_reset_view(void)
     crazypod_wallpaper_crop_screen_reset();
 }
 
+const char *crazypod_customize_feature_menu_symbol(int index)
+{
+    return crazypod_customize_menu_symbols[index];
+}
+
+int crazypod_customize_feature_choice_count(int field)
+{
+    return crazypod_customize_choice_count(field);
+}
+
+int crazypod_customize_feature_choice_index(int field)
+{
+    return crazypod_customize_choice_index(field);
+}
+
+const char *crazypod_customize_feature_choice_title(
+    int field, int index)
+{
+    return crazypod_customize_choice_title(field, index);
+}
+
+int crazypod_customize_feature_choice_value(
+    int field, int index)
+{
+    return crazypod_customize_choice_value(field, index);
+}
+
+const char *crazypod_customize_feature_field_title(int field)
+{
+    return crazypod_customize_field_title(field);
+}
+
+int crazypod_customize_feature_field_value(int field)
+{
+    return crazypod_customize_field_value(field);
+}
+
+int crazypod_customize_feature_background_target(int field)
+{
+    return crazypod_customize_background_target(
+        (enum crazypod_appearance_field)field);
+}
+
+const char *crazypod_customize_feature_background_title(int target)
+{
+    return crazypod_customize_background_title(target);
+}
+
+uint32_t crazypod_customize_feature_background_color(int target)
+{
+    return crazypod_customize_background_default_color(target);
+}
+
+const char *crazypod_customize_feature_background_wallpaper(int field)
+{
+    return crazypod_customize_background_wallpaper(
+        crazypod_appearance_get(),
+        (enum crazypod_appearance_field)field);
+}
+
+void crazypod_customize_feature_clear_input_holds(void)
+{
+    crazypod_wallpaper_crop_controller_clear_holds();
+}
+
+const char *crazypod_customize_feature_preset_editor_value(void)
+{
+    return crazypod_preset_editor_value();
+}
+
 #endif

@@ -8,6 +8,9 @@
 #include "../../../crazypod_music.h"
 #include "../../../crazypod_playlist.h"
 #include "crazypod_music_activation.h"
+#include "crazypod_music_input.h"
+#include "crazypod_music_item_preview.h"
+#include "crazypod_music_root_preview.h"
 #include "crazypod_album_flow_screen.h"
 #include "crazypod_search_screen.h"
 #include "crazypod_music_feature.h"
@@ -345,6 +348,57 @@ bool crazypod_music_feature_render_special(
         crazypod_search_screen_render(state, &context);
     }
     return true;
+}
+
+static struct crazypod_feature_input_context music_input_context;
+
+static void music_input_render(void)
+{
+    music_input_context.render(false);
+}
+
+static void music_show_search_results(void)
+{
+    if(crazypod_music_search_count(
+           crazypod_music_search_query()) > 0)
+        music_input_context.push(
+            MUSIC_ROUTE_SEARCH_RESULTS, -1);
+}
+
+bool crazypod_music_feature_handle_input(
+    const struct route_state *state,
+    const struct crazypod_input_event *event,
+    const struct crazypod_feature_input_context *context)
+{
+    const struct crazypod_music_input_actions actions = {
+        .move_selection = context->move,
+        .activate = context->activate,
+        .render = music_input_render,
+        .leave = context->pop,
+        .show_search_results = music_show_search_results,
+    };
+
+    if(state->route != MUSIC_ROUTE_SEARCH)
+        return false;
+    music_input_context = *context;
+    return crazypod_music_search_input_handle(
+        event, &actions);
+}
+
+void crazypod_music_feature_render_root_preview(
+    lv_obj_t *parent, int selected, bool defer_media)
+{
+    crazypod_music_root_preview_render(
+        parent, selected, defer_media);
+}
+
+void crazypod_music_feature_render_item_preview(
+    lv_obj_t *parent, const struct route_state *state,
+    const struct crazypod_track *track,
+    const lv_font_t *metadata_font)
+{
+    crazypod_music_item_preview_render(
+        parent, state, track, metadata_font);
 }
 
 #endif

@@ -64,5 +64,20 @@ void crazypod_wallpaper_crop_runtime_configure(
 bool crazypod_wallpaper_crop_runtime_handle_input(
     const struct crazypod_input_event *event, long now);
 void crazypod_wallpaper_crop_runtime_service(long now);
+const char *crazypod_customize_feature_menu_symbol(int index);
+int crazypod_customize_feature_choice_count(int field);
+int crazypod_customize_feature_choice_index(int field);
+const char *crazypod_customize_feature_choice_title(
+    int field, int index);
+int crazypod_customize_feature_choice_value(
+    int field, int index);
+const char *crazypod_customize_feature_field_title(int field);
+int crazypod_customize_feature_field_value(int field);
+int crazypod_customize_feature_background_target(int field);
+const char *crazypod_customize_feature_background_title(int target);
+uint32_t crazypod_customize_feature_background_color(int target);
+const char *crazypod_customize_feature_background_wallpaper(int field);
+void crazypod_customize_feature_clear_input_holds(void);
+const char *crazypod_customize_feature_preset_editor_value(void);
 
 #endif

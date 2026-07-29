@@ -10,15 +10,20 @@
 
 #include "../../../crazypod_organizer.h"
 #include "../../../crazypod_workouts.h"
+#include "../../presentation/crazypod_ui_text.h"
 #include "crazypod_calendar_model.h"
 #include "crazypod_calendar_controller.h"
 #include "crazypod_calendar_screen.h"
 #include "crazypod_activity_controller.h"
+#include "crazypod_activity_input.h"
+#include "crazypod_calendar_input.h"
 #include "crazypod_clock_screen.h"
 #include "crazypod_contacts_screen.h"
 #include "crazypod_clock_activation.h"
 #include "crazypod_organizer_actions.h"
+#include "crazypod_organizer_confirmation.h"
 #include "crazypod_organizer_feature.h"
+#include "crazypod_utility_preview.h"
 #include "crazypod_workout_screen.h"
 
 static long clock_last_render_tick;
@@ -530,6 +535,124 @@ uint32_t crazypod_organizer_feature_background(
        route == WORKOUT_ROUTE_DETAIL)
         return 0x050505;
     return 0x08080D;
+}
+
+static struct crazypod_feature_input_context organizer_input_context;
+
+static void organizer_input_render(void)
+{
+    organizer_input_context.render(false);
+}
+
+static void show_finish_confirmation(void)
+{
+    organizer_input_context.push(
+        WORKOUT_ROUTE_FINISH_CONFIRM, -1);
+}
+
+bool crazypod_organizer_feature_handle_input(
+    const struct route_state *state,
+    const struct crazypod_input_event *event,
+    const struct crazypod_feature_input_context *context)
+{
+    const struct crazypod_activity_input_actions activity = {
+        .activate = context->activate,
+        .render = organizer_input_render,
+        .show_finish_confirmation =
+            show_finish_confirmation,
+        .leave = context->pop,
+    };
+    const struct crazypod_calendar_input_actions calendar = {
+        .move_selection = context->move,
+        .activate = context->activate,
+        .render = organizer_input_render,
+        .leave = context->pop,
+    };
+
+    organizer_input_context = *context;
+    if(crazypod_activity_input_handle(
+           state->route, event, context->now,
+           context->ticks_per_second, &activity))
+        return true;
+    return crazypod_calendar_input_handle(
+        state, event, context->today_date, &calendar);
+}
+
+bool crazypod_organizer_feature_stopwatch_running(void)
+{
+    return crazypod_activity_stopwatch_running();
+}
+
+bool crazypod_organizer_feature_workout_running(void)
+{
+    return crazypod_activity_workout_running();
+}
+
+const char *crazypod_organizer_feature_editor_title(
+    char *buffer, size_t buffer_size)
+{
+    const struct crazypod_calendar_editor_model editor =
+        crazypod_calendar_controller_editor();
+
+    return crazypod_ui_text_with_cursor(
+        editor.summary, editor.cursor,
+        buffer, buffer_size);
+}
+
+void crazypod_organizer_feature_render_preview(
+    lv_obj_t *parent, const struct route_state *state,
+    const char *title, int miniapp_error,
+    const lv_font_t *metadata_font)
+{
+    crazypod_utility_preview_render(
+        parent, state, title, miniapp_error,
+        metadata_font);
+}
+
+void crazypod_organizer_feature_set_focus_date(int date)
+{
+    crazypod_calendar_controller_set_focus_date(date);
+}
+
+int crazypod_organizer_feature_focus_date(void)
+{
+    return crazypod_calendar_controller_focus_date();
+}
+
+void crazypod_organizer_feature_begin_editor(
+    uint32_t id, int fallback_date)
+{
+    crazypod_calendar_controller_begin_editor(
+        id, fallback_date);
+}
+
+uint32_t crazypod_organizer_feature_commit_editor(int *date)
+{
+    uint32_t id = crazypod_calendar_controller_commit();
+
+    if(date != NULL)
+        *date = crazypod_calendar_controller_editor().date;
+    return id;
+}
+
+#ifdef SIMULATOR
+void crazypod_organizer_feature_simulator_workout(
+    int activity, long accumulated_ticks,
+    long started_at, bool running)
+{
+    crazypod_activity_simulator_workout(
+        activity, accumulated_ticks,
+        started_at, running);
+}
+#endif
+
+struct crazypod_organizer_confirmation_result
+crazypod_organizer_feature_confirm(
+    const struct route_state *state, long now,
+    int ticks_per_second, int fallback_date)
+{
+    return crazypod_organizer_confirmation_execute(
+        state, now, ticks_per_second, fallback_date);
 }
 
 #endif

@@ -113,9 +113,10 @@ domain-rule changes are separate work.
 
 Run `tests/check-crazypod-ui-architecture.sh` after changing UI ownership.
 It rejects horizontal transition directories, cross-feature private
-includes, Domain-to-UI includes, mutable UI `extern` variables, route/input
-switches or static LVGL page state in the composition root, and a root
-outside the 400–800-line budget.
+includes, any Feature-private include from App, Shell, Presentation or the
+composition root, Domain-to-UI includes, mutable UI `extern` variables,
+route/input switches or static LVGL page state in the composition root, and
+a root outside the 400–800-line budget.
 
 `crazypod_ui.c` is now the composition and lifecycle root. Feature route
 rendering, activation, input, previews, runtime services, Now Playing,

@@ -5,6 +5,7 @@
 
 #include "../../../crazypod_music.h"
 #include "../../navigation/crazypod_ui_routes.h"
+#include "../crazypod_feature.h"
 #include "../../presentation/crazypod_glass_slots.h"
 
 struct crazypod_music_library_host {
@@ -65,5 +66,15 @@ bool crazypod_music_feature_render_special(
 const char *crazypod_music_search_query(void);
 void crazypod_music_search_backspace(void);
 int crazypod_music_podcast_track_index(int position);
+bool crazypod_music_feature_handle_input(
+    const struct route_state *state,
+    const struct crazypod_input_event *event,
+    const struct crazypod_feature_input_context *context);
+void crazypod_music_feature_render_root_preview(
+    lv_obj_t *parent, int selected, bool defer_media);
+void crazypod_music_feature_render_item_preview(
+    lv_obj_t *parent, const struct route_state *state,
+    const struct crazypod_track *track,
+    const lv_font_t *metadata_font);
 
 #endif

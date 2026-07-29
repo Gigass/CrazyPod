@@ -16,7 +16,7 @@
 #include "../../crazypod_apps.h"
 #include "../../crazypod_playlist.h"
 #include "../features/music/crazypod_music_feature.h"
-#include "../features/notes/crazypod_notes_controller.h"
+#include "../features/notes/crazypod_notes_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../navigation/crazypod_input_event.h"
 #include "../navigation/crazypod_ui_routes.h"
@@ -270,7 +270,7 @@ void crazypod_app_input_handle(
     else if(base == BUTTON_PLAY) {
         if(state->route == NOTES_ROUTE_COMPOSER &&
            !repeated) {
-            crazypod_notes_controller_toggle_field();
+        crazypod_notes_feature_toggle_editor_field();
             host.render(false);
         }
         else

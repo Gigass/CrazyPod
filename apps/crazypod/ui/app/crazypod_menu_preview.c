@@ -8,23 +8,18 @@
 #include "../../crazypod_artwork.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_playlist.h"
-#include "../features/books/crazypod_books_preview.h"
+#include "../features/books/crazypod_books_feature.h"
 #include "../features/customize/crazypod_customize_feature.h"
-#include "../features/customize/crazypod_preset_editor_controller.h"
-#include "../features/miniapps/crazypod_miniapp_runtime_controller.h"
+#include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/music/crazypod_music_feature.h"
-#include "../features/music/crazypod_music_item_preview.h"
-#include "../features/music/crazypod_music_root_preview.h"
-#include "../features/notes/crazypod_notes_preview.h"
-#include "../features/organizer/crazypod_calendar_controller.h"
-#include "../features/organizer/crazypod_utility_preview.h"
-#include "../features/photos/crazypod_photos_preview.h"
+#include "../features/notes/crazypod_notes_feature.h"
+#include "../features/organizer/crazypod_organizer_feature.h"
+#include "../features/photos/crazypod_photos_feature.h"
 #include "../features/settings/crazypod_settings_feature.h"
 #include "../navigation/crazypod_route_registry.h"
 #include "../presentation/crazypod_glass_slots.h"
 #include "../presentation/crazypod_preview_motion.h"
 #include "../presentation/crazypod_preview_primitives.h"
-#include "../presentation/crazypod_ui_text.h"
 #include "../presentation/crazypod_ui_widgets.h"
 #include "../shell/crazypod_extras_preview.h"
 #include "crazypod_menu_preview.h"
@@ -135,26 +130,19 @@ static void render_editor(
 static void render_photos(
     const struct route_state *state, bool videos)
 {
-    const struct crazypod_photos_preview_context context = {
-        .parent = preview_parent(),
-        .defer_media = preview.defer_media,
-        .media_deferred =
-            crazypod_preview_motion_media_deferred_flag(),
-    };
-
-    if(videos)
-        crazypod_videos_preview_render(state, &context);
-    else
-        crazypod_photos_preview_render(state, &context);
+    crazypod_photos_feature_render_preview(
+        state, preview_parent(), videos,
+        preview.defer_media,
+        crazypod_preview_motion_media_deferred_flag());
 }
 
 static void render_utility(
     const struct route_state *state)
 {
-    crazypod_utility_preview_render(
+    crazypod_organizer_feature_render_preview(
         preview_parent(), state,
         preview.host.item_title(state, state->selected),
-        crazypod_miniapp_runtime_last_error(),
+        crazypod_miniapps_feature_last_error(),
         preview.host.metadata_font);
 }
 
@@ -205,19 +193,16 @@ void crazypod_menu_preview_render(
             "Searches title, artist and album.");
     }
     else if(state->route == CALENDAR_ROUTE_TITLE_EDITOR) {
-        const struct crazypod_calendar_editor_model editor =
-            crazypod_calendar_controller_editor();
         static char cursor_text[98];
 
         render_editor(
-            crazypod_ui_text_with_cursor(
-                editor.summary, editor.cursor,
+            crazypod_organizer_feature_editor_title(
                 cursor_text, sizeof(cursor_text)),
             "Event title",
             "Center inserts · Left/Right moves cursor.");
     }
     else if(state->route == MUSIC_ROUTE_MENU) {
-        crazypod_music_root_preview_render(
+        crazypod_music_feature_render_root_preview(
             preview_parent(), state->selected,
             preview.defer_media);
     }
@@ -232,13 +217,13 @@ void crazypod_menu_preview_render(
     }
     else if(state->route >= NOTES_ROUTE_MENU &&
             state->route <= NOTES_ROUTE_EMPTY_TRASH_CONFIRM) {
-        crazypod_notes_preview_render(
+        crazypod_notes_feature_render_preview(
             preview_parent(), state,
             preview.host.metadata_font);
     }
     else if(state->route >= BOOKS_ROUTE_MENU &&
             state->route <= BOOKS_ROUTE_INFO) {
-        crazypod_books_preview_render(
+        crazypod_books_feature_render_preview(
             preview_parent(), state,
             preview.host.metadata_font);
     }
@@ -275,10 +260,10 @@ void crazypod_menu_preview_render(
             preview.host.item_title(
                 state, state->selected),
             primary_color(), secondary_color(),
-            crazypod_preset_editor_value());
+            crazypod_customize_feature_preset_editor_value());
     }
     else {
-        crazypod_music_item_preview_render(
+        crazypod_music_feature_render_item_preview(
             preview_parent(), state,
             crazypod_music_feature_route_track(
                 state, state->selected),

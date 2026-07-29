@@ -10,7 +10,7 @@
 #include "../../crazypod_icons.h"
 #include "../presentation/crazypod_ui_widgets.h"
 #include "crazypod_app_catalog.h"
-#include "../features/photos/crazypod_photo_screen.h"
+#include "../features/photos/crazypod_photos_feature.h"
 #include "../presentation/crazypod_preview_primitives.h"
 #include "crazypod_extras_preview.h"
 
@@ -60,7 +60,7 @@ void crazypod_extras_preview_render(
         icon_descriptor.header.stride = icon->stride;
         icon_descriptor.data_size = icon->stride * icon->height;
         icon_descriptor.data = icon->pixels;
-        crazypod_photo_screen_render_image(
+        crazypod_photos_feature_render_image(
             parent, &icon_descriptor, 174, 37, 132, 132);
     }
     else {

@@ -70,5 +70,11 @@ void crazypod_photos_feature_render_wallpaper_grid(
     const lv_font_t *title_font,
     uint32_t primary_color, uint32_t panel_color);
 void crazypod_photos_feature_note_direction(long now);
+void crazypod_photos_feature_render_preview(
+    const struct route_state *state, lv_obj_t *parent,
+    bool videos, bool defer_media,
+    bool *media_deferred);
+void crazypod_photos_feature_reset_controller(void);
+void crazypod_photos_feature_open_detail(int zoom_percent);
 
 #endif

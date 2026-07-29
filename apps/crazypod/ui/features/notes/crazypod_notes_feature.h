@@ -6,6 +6,7 @@
 #include "lvgl.h"
 
 #include "../../navigation/crazypod_ui_routes.h"
+#include "../crazypod_feature.h"
 
 struct crazypod_notes_activation_host {
     void (*render)(bool transition);
@@ -16,6 +17,19 @@ struct crazypod_notes_activation_host {
     void (*open_reader)(uint32_t id);
     void (*reset_open_reader)(uint32_t id);
     void (*commit_editor)(void);
+};
+
+enum crazypod_notes_confirmation_navigation {
+    CRAZYPOD_NOTES_CONFIRMATION_NONE = 0,
+    CRAZYPOD_NOTES_CONFIRMATION_RESET_MENU,
+    CRAZYPOD_NOTES_CONFIRMATION_RESET_MENU_SHOW_DELETED,
+    CRAZYPOD_NOTES_CONFIRMATION_TRUNCATE,
+};
+
+struct crazypod_notes_confirmation_result {
+    bool handled;
+    enum crazypod_notes_confirmation_navigation navigation;
+    int depth;
 };
 
 int crazypod_notes_feature_item_count(
@@ -30,5 +44,24 @@ bool crazypod_notes_feature_activate(
     const struct crazypod_notes_activation_host *host);
 bool crazypod_notes_feature_render(
     const struct route_state *state, lv_obj_t *parent);
+bool crazypod_notes_feature_handle_input(
+    const struct route_state *state,
+    const struct crazypod_input_event *event,
+    const struct crazypod_feature_input_context *context);
+void crazypod_notes_feature_render_preview(
+    lv_obj_t *parent, const struct route_state *state,
+    const lv_font_t *metadata_font);
+void crazypod_notes_feature_refresh_draft(void);
+void crazypod_notes_feature_toggle_editor_field(void);
+void crazypod_notes_feature_begin_editor(
+    uint32_t id, bool resume_draft);
+void crazypod_notes_feature_load_reader(uint32_t id);
+bool crazypod_notes_feature_editor_dirty(void);
+void crazypod_notes_feature_service_editor(void);
+uint32_t crazypod_notes_feature_commit_editor(void);
+bool crazypod_notes_feature_draft_available(void);
+struct crazypod_notes_confirmation_result
+crazypod_notes_feature_confirm(
+    const struct route_state *state, int route_depth);
 
 #endif

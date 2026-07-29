@@ -45,7 +45,6 @@
 #include "crazypod_lyrics.h"
 #include "crazypod_lcd.h"
 #include "crazypod_music.h"
-#include "crazypod_miniapps.h"
 #include "crazypod_miniapp_input.h"
 #include "crazypod_miniapp_font.h"
 #include "crazypod_notes.h"
@@ -75,20 +74,14 @@
 #include "ui/presentation/crazypod_ui_widgets.h"
 #include "ui/presentation/crazypod_artwork_widget.h"
 #include "ui/features/books/crazypod_books_feature.h"
-#include "ui/features/books/crazypod_books_workflow.h"
 #include "ui/features/notes/crazypod_notes_feature.h"
-#include "ui/features/organizer/crazypod_activity_controller.h"
 #include "ui/features/photos/crazypod_photos_feature.h"
 #include "ui/shell/crazypod_app_catalog.h"
 #include "ui/shell/crazypod_desktop.h"
 #include "ui/shell/crazypod_desktop_motion.h"
 #include "ui/shell/crazypod_desktop_native.h"
 #include "ui/shell/crazypod_home_input.h"
-#include "ui/features/books/crazypod_books_confirmation.h"
-#include "ui/features/notes/crazypod_notes_confirmation.h"
-#include "ui/features/organizer/crazypod_organizer_confirmation.h"
 #include "ui/presentation/crazypod_menu_list.h"
-#include "ui/features/miniapps/crazypod_miniapp_runtime_controller.h"
 #include "ui/features/miniapps/crazypod_miniapps_feature.h"
 #include "ui/features/music/crazypod_music_feature.h"
 #include "ui/navigation/crazypod_feature_dispatcher.h"
@@ -306,8 +299,8 @@ static const char *route_item_title(const struct route_state *state, int index)
 {
     return crazypod_route_query_item_title(
         state, index, crazypod_music_search_query(),
-        crazypod_activity_stopwatch_running(),
-        crazypod_activity_workout_running());
+        crazypod_organizer_feature_stopwatch_running(),
+        crazypod_organizer_feature_workout_running());
 }
 
 static bool route_item_is_current(const struct route_state *state, int index)
@@ -338,9 +331,9 @@ static void close_product(void)
 {
     if(!crazypod_shell_product_active())
         return;
-    if(crazypod_miniapps_is_open()) {
-        crazypod_miniapp_runtime_reset_input();
-        crazypod_miniapps_close();
+    if(crazypod_miniapps_feature_is_open()) {
+        crazypod_miniapps_feature_reset_input();
+        crazypod_miniapps_feature_close();
     }
     crazypod_choice_coordinator_dismiss(false);
     crazypod_now_playing_overlay_dismiss(false);
@@ -409,7 +402,7 @@ static void play_wheel_feedback(long button)
 static bool handle_confirmation(const struct route_state *state)
 {
     struct crazypod_notes_confirmation_result notes =
-        crazypod_notes_confirmation_execute(
+        crazypod_notes_feature_confirm(
             state, crazypod_ui_routes_depth());
     struct crazypod_books_confirmation_result books;
     struct crazypod_organizer_confirmation_result organizer;
@@ -431,10 +424,10 @@ static bool handle_confirmation(const struct route_state *state)
         return true;
     }
 
-    books = crazypod_books_confirmation_execute(state);
+    books = crazypod_books_feature_confirm(state);
     if(books.handled) {
         if(books.deleted) {
-            crazypod_books_workflow_invalidate_metadata();
+            crazypod_books_feature_invalidate_metadata();
             crazypod_app_launcher_open_books();
         }
         else
@@ -442,7 +435,7 @@ static bool handle_confirmation(const struct route_state *state)
         return true;
     }
 
-    organizer = crazypod_organizer_confirmation_execute(
+    organizer = crazypod_organizer_feature_confirm(
         state, current_tick, HZ, calendar_today_date());
     if(!organizer.handled)
         return false;
@@ -601,7 +594,7 @@ void crazypod_ui_run(void)
     crazypod_photos_init();
     crazypod_videos_init();
     crazypod_wallpaper_init();
-    crazypod_miniapp_runtime_initialize();
+    crazypod_miniapps_feature_initialize_runtime();
     crazypod_miniapps_feature_initialize();
 
     {

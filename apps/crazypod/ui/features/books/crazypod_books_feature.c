@@ -4,7 +4,10 @@
 
 #include "../../../crazypod_books.h"
 #include "crazypod_book_session.h"
+#include "crazypod_book_reader_input.h"
 #include "crazypod_books_actions.h"
+#include "crazypod_books_confirmation.h"
+#include "crazypod_books_preview.h"
 #include "crazypod_books_screen.h"
 #include "crazypod_books_workflow.h"
 #include "crazypod_books_feature.h"
@@ -278,6 +281,94 @@ const uint32_t *crazypod_books_feature_ink_colors(void)
 void crazypod_books_feature_reset_view(void)
 {
     crazypod_books_workflow_reset_view();
+}
+
+static struct crazypod_feature_input_context book_input_context;
+
+static void toggle_bookmark(void)
+{
+    crazypod_book_toggle_bookmark(
+        crazypod_book_session_index(),
+        crazypod_book_session_offset());
+    book_input_context.render(false);
+}
+
+bool crazypod_books_feature_handle_input(
+    const struct route_state *state,
+    const struct crazypod_input_event *event,
+    const struct crazypod_feature_input_context *context)
+{
+    const struct crazypod_book_reader_input_actions actions = {
+        .turn_page = crazypod_book_session_turn,
+        .activate = context->activate,
+        .toggle_bookmark = toggle_bookmark,
+        .leave = context->pop,
+    };
+
+    if(state->route != BOOKS_ROUTE_READER)
+        return false;
+    book_input_context = *context;
+    crazypod_book_reader_input_handle(event, &actions);
+    return true;
+}
+
+void crazypod_books_feature_render_preview(
+    lv_obj_t *parent, const struct route_state *state,
+    const lv_font_t *metadata_font)
+{
+    crazypod_books_preview_render(
+        parent, state, metadata_font);
+}
+
+void crazypod_books_feature_configure_runtime(
+    const struct crazypod_books_runtime_host *host)
+{
+    const struct crazypod_books_workflow_host internal = {
+        .parent = host->parent,
+        .metadata_font = host->metadata_font,
+        .page_colors = host->page_colors,
+        .ink_colors = host->ink_colors,
+        .set_status_palette = host->set_status_palette,
+        .status_foreground = host->status_foreground,
+        .present = host->present,
+        .render_route = host->render_route,
+        .push_reader = host->push_reader,
+    };
+
+    crazypod_books_workflow_configure(&internal);
+}
+
+void crazypod_books_feature_ensure_metadata(void)
+{
+    crazypod_books_workflow_ensure_metadata();
+}
+
+void crazypod_books_feature_invalidate_metadata(void)
+{
+    crazypod_books_workflow_invalidate_metadata();
+}
+
+void crazypod_books_feature_apply_font_size(int value)
+{
+    crazypod_books_workflow_apply_font_size(value);
+}
+
+void crazypod_books_feature_begin_reader(
+    int index, uint32_t offset)
+{
+    crazypod_books_workflow_begin_reader(index, offset);
+}
+
+void crazypod_books_feature_turn_page(int direction)
+{
+    crazypod_book_session_turn(direction);
+}
+
+struct crazypod_books_confirmation_result
+crazypod_books_feature_confirm(
+    const struct route_state *state)
+{
+    return crazypod_books_confirmation_execute(state);
 }
 
 #endif

@@ -8,11 +8,10 @@
 #include "../../crazypod_organizer.h"
 #include "../../crazypod_playlist.h"
 #include "../../crazypod_state.h"
-#include "../features/books/crazypod_books_workflow.h"
+#include "../features/books/crazypod_books_feature.h"
 #include "../features/music/crazypod_music_feature.h"
-#include "../features/notes/crazypod_notes_controller.h"
-#include "../features/organizer/crazypod_calendar_controller.h"
-#include "../features/photos/crazypod_photo_controller.h"
+#include "../features/notes/crazypod_notes_feature.h"
+#include "../features/organizer/crazypod_organizer_feature.h"
 #include "../features/photos/crazypod_photos_feature.h"
 #include "../navigation/crazypod_route_registry.h"
 #include "../navigation/crazypod_ui_routes.h"
@@ -64,7 +63,7 @@ void crazypod_app_launcher_open_root(enum crazypod_route route)
 
 void crazypod_app_launcher_open_books(void)
 {
-    crazypod_books_workflow_ensure_metadata();
+    crazypod_books_feature_ensure_metadata();
     open_route(BOOKS_ROUTE_MENU);
 }
 
@@ -88,7 +87,7 @@ void crazypod_app_launcher_open(enum crazypod_app_id id)
         host.show_lock(true);
         break;
     case CRAZYPOD_APP_PHOTOS:
-        crazypod_photo_controller_reset();
+        crazypod_photos_feature_reset_controller();
         crazypod_photos_feature_reset_view();
         open_route(PHOTOS_ROUTE_MENU);
         break;
@@ -102,7 +101,7 @@ void crazypod_app_launcher_open(enum crazypod_app_id id)
         open_route(EXTRAS_ROUTE_MENU);
         break;
     case CRAZYPOD_APP_NOTES:
-        crazypod_notes_controller_refresh_draft();
+        crazypod_notes_feature_refresh_draft();
         open_route(NOTES_ROUTE_MENU);
         break;
     case CRAZYPOD_APP_BOOKS:
@@ -125,7 +124,7 @@ void crazypod_app_launcher_open(enum crazypod_app_id id)
         break;
     case CRAZYPOD_APP_CALENDAR:
         crazypod_organizer_scan();
-        crazypod_calendar_controller_set_focus_date(
+        crazypod_organizer_feature_set_focus_date(
             today_date());
         open_route(CALENDAR_ROUTE_MENU);
         break;

@@ -8,21 +8,17 @@
 
 #include "../../crazypod_apps.h"
 #include "../../crazypod_coverflow.h"
-#include "../../crazypod_miniapps.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_playlist.h"
 #include "../../crazypod_presets.h"
 #include "../../crazypod_state.h"
 #include "../features/books/crazypod_books_feature.h"
 #include "../features/customize/crazypod_customize_feature.h"
-#include "../features/miniapps/crazypod_miniapp_runtime_controller.h"
+#include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/music/crazypod_music_feature.h"
-#include "../features/notes/crazypod_notes_controller.h"
 #include "../features/notes/crazypod_notes_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
-#include "../features/organizer/crazypod_calendar_controller.h"
 #include "../features/organizer/crazypod_organizer_feature.h"
-#include "../features/photos/crazypod_photo_controller.h"
 #include "../features/photos/crazypod_photos_feature.h"
 #include "../features/settings/crazypod_settings_feature.h"
 #include "../navigation/crazypod_render_scheduler.h"
@@ -94,9 +90,9 @@ void crazypod_route_actions_pop(void)
 {
     if(crazypod_ui_routes_depth() > 0 &&
        current_route()->route == MINIAPP_ROUTE_VIEW &&
-       crazypod_miniapps_is_open()) {
-        crazypod_miniapp_runtime_reset_input();
-        crazypod_miniapps_close();
+       crazypod_miniapps_feature_is_open()) {
+        crazypod_miniapps_feature_reset_input();
+        crazypod_miniapps_feature_close();
     }
     if(crazypod_ui_routes_depth() > 1) {
         crazypod_ui_routes_pop();
@@ -155,31 +151,31 @@ static void play_selected_track(struct route_state *state)
 void crazypod_route_actions_begin_note(
     uint32_t id, bool resume_draft)
 {
-    crazypod_notes_controller_begin(id, resume_draft);
+    crazypod_notes_feature_begin_editor(id, resume_draft);
     crazypod_route_actions_push_selected(
         NOTES_ROUTE_COMPOSER, -1, 0);
 }
 
 static void open_note_reader(uint32_t id)
 {
-    crazypod_notes_controller_load_reader(id);
+    crazypod_notes_feature_load_reader(id);
     crazypod_route_actions_push_selected(
         NOTES_ROUTE_READER, (int)id, 0);
 }
 
 bool crazypod_route_actions_note_dirty(void)
 {
-    return crazypod_notes_controller_dirty();
+    return crazypod_notes_feature_editor_dirty();
 }
 
 void crazypod_route_actions_service_notes(void)
 {
-    crazypod_notes_controller_service();
+    crazypod_notes_feature_service_editor();
 }
 
 static void commit_note_editor(void)
 {
-    uint32_t id = crazypod_notes_controller_commit();
+    uint32_t id = crazypod_notes_feature_commit_editor();
 
     if(id == 0) {
         host.render(false);
@@ -191,7 +187,7 @@ static void commit_note_editor(void)
 
 static void begin_calendar_editor(uint32_t id, int date)
 {
-    crazypod_calendar_controller_begin_editor(
+    crazypod_organizer_feature_begin_editor(
         id, date > 0 ? date : today_date());
     crazypod_route_actions_push(
         CALENDAR_ROUTE_EDITOR, -1);
@@ -202,7 +198,7 @@ void crazypod_route_actions_show_calendar_day(int date)
     int root = -1;
     int i;
 
-    crazypod_calendar_controller_set_focus_date(date);
+    crazypod_organizer_feature_set_focus_date(date);
     for(i = crazypod_ui_routes_depth() - 1; i >= 0; --i) {
         if(crazypod_ui_routes_at(i)->route ==
            CALENDAR_ROUTE_MENU) {
@@ -222,15 +218,15 @@ void crazypod_route_actions_show_calendar_day(int date)
 
 static bool commit_calendar_editor(void)
 {
-    uint32_t id = crazypod_calendar_controller_commit();
-    const struct crazypod_calendar_editor_model editor =
-        crazypod_calendar_controller_editor();
+    int date;
+    uint32_t id =
+        crazypod_organizer_feature_commit_editor(&date);
 
     if(id == 0) {
         host.render(false);
         return false;
     }
-    crazypod_route_actions_show_calendar_day(editor.date);
+    crazypod_route_actions_show_calendar_day(date);
     host.render(true);
     return true;
 }
@@ -429,12 +425,12 @@ static bool activate_domain(
             state, &actions);
     }
     if(feature->id == CRAZYPOD_FEATURE_MINIAPPS) {
-        const struct crazypod_miniapp_activation_host actions = {
+        const struct crazypod_miniapps_activation_host actions = {
             .push = crazypod_route_actions_push,
             .render = host.render,
         };
 
-        return crazypod_miniapp_runtime_activate(
+        return crazypod_miniapps_feature_activate(
             state, &actions);
     }
     return false;
@@ -545,7 +541,7 @@ void crazypod_route_actions_move(int direction, long now)
                         crazypod_photos_feature_route_index(
                             parent, parent->selected);
                     state->selected = 0;
-                    crazypod_photo_controller_open_detail(100);
+                    crazypod_photos_feature_open_detail(100);
                 }
             }
         }

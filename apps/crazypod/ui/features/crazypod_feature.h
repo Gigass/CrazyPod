@@ -1,6 +1,11 @@
 #ifndef CRAZYPOD_FEATURE_H
 #define CRAZYPOD_FEATURE_H
 
+#include <stdbool.h>
+
+#include "../navigation/crazypod_input_event.h"
+#include "../navigation/crazypod_ui_routes.h"
+
 enum crazypod_feature_id {
     CRAZYPOD_FEATURE_MUSIC = 0,
     CRAZYPOD_FEATURE_NOW_PLAYING,
@@ -17,6 +22,19 @@ enum crazypod_feature_id {
 struct crazypod_feature {
     enum crazypod_feature_id id;
     const char *name;
+};
+
+struct crazypod_feature_input_context {
+    long now;
+    long ticks_per_second;
+    int today_date;
+    void (*render)(bool transition);
+    void (*boost)(int ticks);
+    void (*wake_display)(void);
+    void (*move)(int direction);
+    void (*activate)(void);
+    void (*push)(enum crazypod_route route, int group);
+    void (*pop)(void);
 };
 
 enum crazypod_feature_media_update {

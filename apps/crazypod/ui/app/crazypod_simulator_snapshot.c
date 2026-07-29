@@ -18,12 +18,10 @@
 #include "../../crazypod_organizer.h"
 #include "../../crazypod_videos.h"
 #include "../../crazypod_workouts.h"
-#include "../features/books/crazypod_book_session.h"
-#include "../features/books/crazypod_books_workflow.h"
-#include "../features/music/crazypod_music_activation.h"
-#include "../features/notes/crazypod_notes_controller.h"
-#include "../features/organizer/crazypod_activity_controller.h"
-#include "../features/organizer/crazypod_calendar_controller.h"
+#include "../features/books/crazypod_books_feature.h"
+#include "../features/music/crazypod_music_feature.h"
+#include "../features/notes/crazypod_notes_feature.h"
+#include "../features/organizer/crazypod_organizer_feature.h"
 #include "../navigation/crazypod_route_query.h"
 #include "crazypod_simulator_snapshot.h"
 
@@ -54,7 +52,7 @@ static void select_bounded(
 
 static int notes_home_note_start(void)
 {
-    return crazypod_notes_controller_draft_available() ? 2 : 1;
+    return crazypod_notes_feature_draft_available() ? 2 : 1;
 }
 
 static int notes_home_deleted_index(void)
@@ -138,7 +136,7 @@ bool crazypod_simulator_snapshot_prepare(
     else if(strcmp(screen, "notes-draft") == 0) {
         host->open_app(CRAZYPOD_APP_NOTES);
         select_bounded(
-            host, crazypod_notes_controller_draft_available() ? 1 : 0);
+            host, crazypod_notes_feature_draft_available() ? 1 : 0);
     }
     else if(strcmp(screen, "notes-item") == 0) {
         host->open_app(CRAZYPOD_APP_NOTES);
@@ -181,13 +179,13 @@ bool crazypod_simulator_snapshot_prepare(
     else if(strcmp(screen, "book-reader") == 0) {
         host->open_app(CRAZYPOD_APP_BOOKS);
         if(crazypod_books_count() > 0)
-            crazypod_books_workflow_begin_reader(0, 0);
+            crazypod_books_feature_begin_reader(0, 0);
     }
     else if(strcmp(screen, "book-reader-next") == 0) {
         host->open_app(CRAZYPOD_APP_BOOKS);
         if(crazypod_books_count() > 0) {
-            crazypod_books_workflow_begin_reader(0, 0);
-            crazypod_book_session_turn(1);
+            crazypod_books_feature_begin_reader(0, 0);
+            crazypod_books_feature_turn_page(1);
         }
     }
     else if(strcmp(screen, "clock") == 0)
@@ -197,11 +195,12 @@ bool crazypod_simulator_snapshot_prepare(
     else if(strcmp(screen, "workouts") == 0)
         host->open_root_route(WORKOUT_ROUTE_MENU);
     else if(strcmp(screen, "workout-ready") == 0) {
-        crazypod_activity_simulator_workout(0, 0, current_tick, false);
+        crazypod_organizer_feature_simulator_workout(
+            0, 0, current_tick, false);
         host->open_root_route(WORKOUT_ROUTE_READY);
     }
     else if(strcmp(screen, "workout-active") == 0) {
-        crazypod_activity_simulator_workout(
+        crazypod_organizer_feature_simulator_workout(
             0, 62 * HZ, current_tick, true);
         host->open_root_route(WORKOUT_ROUTE_ACTIVE);
     }
@@ -217,7 +216,7 @@ bool crazypod_simulator_snapshot_prepare(
     else if(strcmp(screen, "calendar-day") == 0) {
         host->open_app(CRAZYPOD_APP_CALENDAR);
         host->show_calendar_day(
-            crazypod_calendar_controller_focus_date());
+            crazypod_organizer_feature_focus_date());
         host->render(true);
     }
     else if(strcmp(screen, "contacts") == 0)

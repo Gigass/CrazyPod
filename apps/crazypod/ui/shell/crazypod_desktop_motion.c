@@ -156,6 +156,7 @@ void crazypod_desktop_motion_select(
     render_dirty = true;
 }
 
+#ifdef HAVE_WHEEL_POSITION
 static void release_wheel(long now, int item_count)
 {
     int32_t projected_q16;
@@ -184,6 +185,7 @@ static void release_wheel(long now, int item_count)
     render_dirty = true;
     last_physics = now;
 }
+#endif
 
 static void sample_wheel(long now, int item_count)
 {

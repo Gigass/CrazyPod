@@ -5,6 +5,7 @@
 #include "../../../crazypod_apps.h"
 #include "crazypod_settings_model.h"
 #include "crazypod_eq_studio_controller.h"
+#include "crazypod_eq_studio_input.h"
 #include "crazypod_eq_studio_screen.h"
 #include "crazypod_settings_controller.h"
 #include "../../shell/crazypod_app_catalog.h"
@@ -174,6 +175,63 @@ bool crazypod_settings_feature_render(
     crazypod_eq_studio_screen_render(
         parent, &model, metadata_font, primary_color);
     return true;
+}
+
+static struct crazypod_feature_input_context settings_input_context;
+
+static void settings_input_render(void)
+{
+    settings_input_context.render(false);
+}
+
+bool crazypod_settings_feature_handle_input(
+    const struct route_state *state,
+    const struct crazypod_input_event *event,
+    const struct crazypod_feature_input_context *context)
+{
+    const struct crazypod_eq_studio_input_actions actions = {
+        .render = settings_input_render,
+        .leave = context->pop,
+    };
+
+    if(state->route != SETTINGS_ROUTE_EQ_STUDIO)
+        return false;
+    settings_input_context = *context;
+    crazypod_eq_studio_input_handle(event, &actions);
+    return true;
+}
+
+const char *crazypod_settings_feature_menu_symbol(int index)
+{
+    return crazypod_settings_menu_symbols[index];
+}
+
+int crazypod_settings_feature_choice_count(int item)
+{
+    return crazypod_ui_settings_choice_count(item);
+}
+
+int crazypod_settings_feature_choice_index(int item)
+{
+    return crazypod_ui_settings_choice_index(item);
+}
+
+const char *crazypod_settings_feature_choice_item_title(int item)
+{
+    return crazypod_ui_settings_item_title(item);
+}
+
+const char *crazypod_settings_feature_choice_title(
+    int item, int index)
+{
+    return crazypod_ui_settings_choice_title(
+        item, index);
+}
+
+void crazypod_settings_feature_apply_choice(
+    int item, int index)
+{
+    crazypod_ui_settings_apply_choice(item, index);
 }
 
 #endif

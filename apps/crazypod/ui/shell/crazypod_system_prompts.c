@@ -8,15 +8,14 @@
 #include "usb.h"
 
 #include "../../crazypod_artwork.h"
-#include "../../crazypod_miniapps.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_photos.h"
 #include "../../crazypod_state.h"
 #include "../../crazypod_videos.h"
 #include "../app/crazypod_choice_coordinator.h"
 #include "../app/crazypod_menu_preview.h"
-#include "../features/customize/crazypod_wallpaper_crop_controller.h"
-#include "../features/miniapps/crazypod_miniapp_runtime_controller.h"
+#include "../features/customize/crazypod_customize_feature.h"
+#include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../presentation/crazypod_overlay_glass.h"
@@ -56,9 +55,9 @@ static void dismissed(void)
 
 static void execute(enum shutdown_type type)
 {
-    if(crazypod_miniapps_is_open()) {
-        crazypod_miniapp_runtime_reset_input();
-        crazypod_miniapps_close();
+    if(crazypod_miniapps_feature_is_open()) {
+        crazypod_miniapps_feature_reset_input();
+        crazypod_miniapps_feature_close();
     }
     crazypod_state_save(true);
     shutdown_hw(type);
@@ -74,7 +73,7 @@ static void configure_power(void)
 {
     const struct crazypod_power_prompt_callbacks callbacks = {
         .before_hold_show =
-            crazypod_wallpaper_crop_controller_clear_holds,
+            crazypod_customize_feature_clear_input_holds,
         .before_show = before_show,
         .create_panel = crazypod_overlay_glass_panel,
         .animate_panel = crazypod_popup_animate,
@@ -206,7 +205,7 @@ void crazypod_system_prompts_usb_done(unsigned request)
 
 void crazypod_system_prompts_usb_connected(intptr_t data)
 {
-    if(crazypod_miniapps_is_open())
+    if(crazypod_miniapps_feature_is_open())
         prompts.host.close_product();
     prompts.storage_active = true;
     crazypod_music_library_schedule_rescan(
@@ -225,7 +224,7 @@ void crazypod_system_prompts_usb_disconnected(void)
     crazypod_artwork_resume();
     crazypod_photos_resume();
     crazypod_videos_refresh();
-    crazypod_miniapp_runtime_rescan();
+    crazypod_miniapps_feature_rescan();
     crazypod_music_library_schedule_rescan(
         prompts.host.now() + HZ / 2);
 }

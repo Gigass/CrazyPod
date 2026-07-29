@@ -10,10 +10,9 @@
 #include "../../crazypod_photos.h"
 #include "../../crazypod_wallpaper.h"
 #include "../features/books/crazypod_books_feature.h"
-#include "../features/books/crazypod_books_workflow.h"
-#include "../features/customize/crazypod_customize_catalog.h"
+#include "../features/customize/crazypod_customize_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
-#include "../features/settings/crazypod_settings_model.h"
+#include "../features/settings/crazypod_settings_feature.h"
 #include "../presentation/crazypod_choice_overlay.h"
 #include "../presentation/crazypod_overlay_glass.h"
 #include "../presentation/crazypod_popup_motion.h"
@@ -31,12 +30,12 @@ static int choice_count(int kind_value, int id, void *context)
     case CRAZYPOD_CHOICE_ICON_THEME:
         return CRAZYPOD_ICON_THEME_COUNT;
     case CRAZYPOD_CHOICE_APPEARANCE:
-        return crazypod_customize_choice_count(
+        return crazypod_customize_feature_choice_count(
             (enum crazypod_appearance_field)id);
     case CRAZYPOD_CHOICE_BACKGROUND:
         return CRAZYPOD_APPEARANCE_COLOR_COUNT + 2;
     case CRAZYPOD_CHOICE_SETTING:
-        return crazypod_ui_settings_choice_count(id);
+        return crazypod_settings_feature_choice_count(id);
     case CRAZYPOD_CHOICE_BOOK_FONT_SIZE:
         return 3;
     case CRAZYPOD_CHOICE_BOOK_THEME:
@@ -58,21 +57,18 @@ static int current_index(int kind_value, int id, void *context)
     case CRAZYPOD_CHOICE_ICON_THEME:
         return appearance->icon_theme;
     case CRAZYPOD_CHOICE_APPEARANCE:
-        return crazypod_customize_choice_index(
+        return crazypod_customize_feature_choice_index(
             (enum crazypod_appearance_field)id);
     case CRAZYPOD_CHOICE_BACKGROUND: {
         const char *path =
-            crazypod_customize_background_wallpaper(
-                appearance,
-                (enum crazypod_appearance_field)id);
+            crazypod_customize_feature_background_wallpaper(id);
 
         return path[0] != '\0'
             ? CRAZYPOD_APPEARANCE_COLOR_COUNT + 1
-            : crazypod_customize_field_value(
-                (enum crazypod_appearance_field)id);
+            : crazypod_customize_feature_field_value(id);
     }
     case CRAZYPOD_CHOICE_SETTING:
-        return crazypod_ui_settings_choice_index(id);
+        return crazypod_settings_feature_choice_index(id);
     case CRAZYPOD_CHOICE_BOOK_FONT_SIZE:
         return crazypod_books_font_size();
     case CRAZYPOD_CHOICE_BOOK_THEME:
@@ -93,13 +89,11 @@ static const char *choice_title(
     case CRAZYPOD_CHOICE_ICON_THEME:
         return "ICON THEME";
     case CRAZYPOD_CHOICE_APPEARANCE:
-        return crazypod_customize_field_title(
-            (enum crazypod_appearance_field)id);
+        return crazypod_customize_feature_field_title(id);
     case CRAZYPOD_CHOICE_BACKGROUND:
-        return crazypod_customize_background_title(
-            (enum crazypod_appearance_field)id);
+        return crazypod_customize_feature_background_title(id);
     case CRAZYPOD_CHOICE_SETTING:
-        return crazypod_ui_settings_item_title(id);
+        return crazypod_settings_feature_choice_item_title(id);
     case CRAZYPOD_CHOICE_BOOK_FONT_SIZE:
         return "TEXT SIZE";
     case CRAZYPOD_CHOICE_BOOK_THEME:
@@ -120,8 +114,8 @@ static const char *item_title(
     case CRAZYPOD_CHOICE_ICON_THEME:
         return crazypod_icon_theme_name(index);
     case CRAZYPOD_CHOICE_APPEARANCE:
-        return crazypod_customize_choice_title(
-            (enum crazypod_appearance_field)id, index);
+        return crazypod_customize_feature_choice_title(
+            id, index);
     case CRAZYPOD_CHOICE_BACKGROUND:
         if(index == 0)
             return id == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
@@ -130,7 +124,7 @@ static const char *item_title(
             ? crazypod_appearance_color_name(index - 1)
             : "Choose Picture";
     case CRAZYPOD_CHOICE_SETTING:
-        return crazypod_ui_settings_choice_title(id, index);
+        return crazypod_settings_feature_choice_title(id, index);
     case CRAZYPOD_CHOICE_BOOK_FONT_SIZE: {
         static const char *const sizes[] = {
             "Small  ·  12 pt", "Medium  ·  14 pt",
@@ -168,7 +162,7 @@ static bool item_color(
         if(field == CRAZYPOD_APPEARANCE_PRIMARY ||
            field == CRAZYPOD_APPEARANCE_SECONDARY) {
             *color = crazypod_appearance_color(
-                crazypod_customize_choice_value(
+                crazypod_customize_feature_choice_value(
                     field, index));
             return true;
         }
@@ -177,8 +171,7 @@ static bool item_color(
         *color = index > 0 &&
             index <= CRAZYPOD_APPEARANCE_COLOR_COUNT
                 ? crazypod_appearance_color(index - 1)
-                : crazypod_customize_background_default_color(
-                    (enum crazypod_appearance_field)id);
+                : crazypod_customize_feature_background_color(id);
         return true;
     }
     if(kind == CRAZYPOD_CHOICE_BOOK_THEME &&
@@ -290,7 +283,8 @@ void crazypod_choice_coordinator_activate(void)
 
         crazypod_appearance_set_value(
             field,
-            crazypod_customize_choice_value(field, selected));
+            crazypod_customize_feature_choice_value(
+                field, selected));
         host.appearance_changed();
         crazypod_choice_coordinator_dismiss(true);
     }
@@ -298,12 +292,11 @@ void crazypod_choice_coordinator_activate(void)
         enum crazypod_appearance_field field =
             (enum crazypod_appearance_field)id;
         enum crazypod_wallpaper_target target =
-            crazypod_customize_background_target(field);
+            crazypod_customize_feature_background_target(field);
 
         if(selected == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1) {
             const char *path =
-                crazypod_customize_background_wallpaper(
-                    crazypod_appearance_get(), field);
+                crazypod_customize_feature_background_wallpaper(field);
 
             crazypod_choice_coordinator_dismiss(false);
             host.push_selected(
@@ -318,12 +311,12 @@ void crazypod_choice_coordinator_activate(void)
         }
     }
     else if(kind == CRAZYPOD_CHOICE_SETTING) {
-        crazypod_ui_settings_apply_choice(id, selected);
+        crazypod_settings_feature_apply_choice(id, selected);
         crazypod_choice_coordinator_dismiss(true);
     }
     else if(kind == CRAZYPOD_CHOICE_BOOK_FONT_SIZE) {
         crazypod_choice_coordinator_dismiss(false);
-        crazypod_books_workflow_apply_font_size(selected);
+        crazypod_books_feature_apply_font_size(selected);
     }
     else if(kind == CRAZYPOD_CHOICE_BOOK_THEME) {
         crazypod_books_set_theme(selected);

@@ -6,19 +6,14 @@
 #include "kernel.h"
 #include "timefuncs.h"
 
-#include "../../crazypod_books.h"
-#include "../../crazypod_music.h"
-#include "../features/books/crazypod_book_reader_input.h"
-#include "../features/books/crazypod_book_session.h"
+#include "../features/books/crazypod_books_feature.h"
 #include "../features/customize/crazypod_customize_feature.h"
-#include "../features/miniapps/crazypod_miniapp_input.h"
-#include "../features/music/crazypod_music_input.h"
+#include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/music/crazypod_music_feature.h"
-#include "../features/notes/crazypod_notes_input.h"
-#include "../features/organizer/crazypod_activity_input.h"
-#include "../features/organizer/crazypod_calendar_input.h"
+#include "../features/notes/crazypod_notes_feature.h"
+#include "../features/organizer/crazypod_organizer_feature.h"
 #include "../features/photos/crazypod_photos_feature.h"
-#include "../features/settings/crazypod_eq_studio_input.h"
+#include "../features/settings/crazypod_settings_feature.h"
 #include "../navigation/crazypod_input_event.h"
 #include "crazypod_feature_input.h"
 #include "crazypod_route_actions.h"
@@ -34,45 +29,6 @@ static int today_date(void)
 
     return (now->tm_year + 1900) * 10000 +
         (now->tm_mon + 1) * 100 + now->tm_mday;
-}
-
-static void render(void)
-{
-    host.render(false);
-}
-
-static void show_music_search_results(void)
-{
-    if(crazypod_music_search_count(
-           crazypod_music_search_query()) > 0)
-        crazypod_route_actions_push(
-            MUSIC_ROUTE_SEARCH_RESULTS, -1);
-}
-
-static void toggle_bookmark(void)
-{
-    crazypod_book_toggle_bookmark(
-        crazypod_book_session_index(),
-        crazypod_book_session_offset());
-    host.render(false);
-}
-
-static void show_workout_confirmation(void)
-{
-    crazypod_route_actions_push(
-        WORKOUT_ROUTE_FINISH_CONFIRM, -1);
-}
-
-static void show_notes_exit_actions(void)
-{
-    crazypod_route_actions_push(
-        NOTES_ROUTE_EXIT_ACTIONS, -1);
-}
-
-static void show_notes_search_results(void)
-{
-    crazypod_route_actions_push(
-        NOTES_ROUTE_SEARCH_RESULTS, -1);
 }
 
 static bool handle_customize_raw(
@@ -106,16 +62,17 @@ static bool handle_miniapps_raw(
     const struct crazypod_input_event *event,
     void *context)
 {
-    const struct crazypod_miniapp_input_actions actions = {
+    const struct crazypod_feature_input_context input = {
+        .now = host.now(),
+        .ticks_per_second = HZ,
         .wake_display = backlight_on,
-        .keep_boosted = host.boost,
-        .close = crazypod_route_actions_pop,
+        .boost = host.boost,
+        .pop = crazypod_route_actions_pop,
     };
 
-    (void)state;
     (void)context;
-    return crazypod_miniapp_input_handle(
-        event, HZ / 10, &actions);
+    return crazypod_miniapps_feature_handle_input(
+        state, event, &input);
 }
 
 static bool handle_settings_pressed(
@@ -123,16 +80,15 @@ static bool handle_settings_pressed(
     const struct crazypod_input_event *event,
     void *context)
 {
-    const struct crazypod_eq_studio_input_actions actions = {
-        .render = render,
-        .leave = crazypod_route_actions_pop,
+    const struct crazypod_feature_input_context input = {
+        .now = host.now(),
+        .render = host.render,
+        .pop = crazypod_route_actions_pop,
     };
 
     (void)context;
-    if(state->route != SETTINGS_ROUTE_EQ_STUDIO)
-        return false;
-    crazypod_eq_studio_input_handle(event, &actions);
-    return true;
+    return crazypod_settings_feature_handle_input(
+        state, event, &input);
 }
 
 static bool handle_books_pressed(
@@ -140,18 +96,16 @@ static bool handle_books_pressed(
     const struct crazypod_input_event *event,
     void *context)
 {
-    const struct crazypod_book_reader_input_actions actions = {
-        .turn_page = crazypod_book_session_turn,
+    const struct crazypod_feature_input_context input = {
+        .now = host.now(),
+        .render = host.render,
         .activate = activate,
-        .toggle_bookmark = toggle_bookmark,
-        .leave = crazypod_route_actions_pop,
+        .pop = crazypod_route_actions_pop,
     };
 
     (void)context;
-    if(state->route != BOOKS_ROUTE_READER)
-        return false;
-    crazypod_book_reader_input_handle(event, &actions);
-    return true;
+    return crazypod_books_feature_handle_input(
+        state, event, &input);
 }
 
 static void activate(void)
@@ -169,26 +123,20 @@ static bool handle_organizer_pressed(
     const struct crazypod_input_event *event,
     void *context)
 {
-    const struct crazypod_activity_input_actions activity = {
+    const struct crazypod_feature_input_context input = {
+        .now = host.now(),
+        .ticks_per_second = HZ,
+        .today_date = today_date(),
         .activate = activate,
-        .render = render,
-        .show_finish_confirmation =
-            show_workout_confirmation,
-        .leave = crazypod_route_actions_pop,
-    };
-    const struct crazypod_calendar_input_actions calendar = {
-        .move_selection = move,
-        .activate = activate,
-        .render = render,
-        .leave = crazypod_route_actions_pop,
+        .move = move,
+        .render = host.render,
+        .push = crazypod_route_actions_push,
+        .pop = crazypod_route_actions_pop,
     };
 
     (void)context;
-    if(crazypod_activity_input_handle(
-           state->route, event, host.now(), HZ, &activity))
-        return true;
-    return crazypod_calendar_input_handle(
-        state, event, today_date(), &calendar);
+    return crazypod_organizer_feature_handle_input(
+        state, event, &input);
 }
 
 static bool handle_notes_pressed(
@@ -196,20 +144,18 @@ static bool handle_notes_pressed(
     const struct crazypod_input_event *event,
     void *context)
 {
-    const struct crazypod_notes_input_actions actions = {
-        .move_selection = move,
+    const struct crazypod_feature_input_context input = {
+        .now = host.now(),
         .activate = activate,
-        .render = render,
-        .leave = crazypod_route_actions_pop,
-        .show_exit_actions = show_notes_exit_actions,
-        .show_search_results = show_notes_search_results,
+        .move = move,
+        .render = host.render,
+        .push = crazypod_route_actions_push,
+        .pop = crazypod_route_actions_pop,
     };
 
     (void)context;
-    return crazypod_notes_input_handle(
-        state->route,
-        crazypod_route_actions_note_dirty(),
-        event, &actions);
+    return crazypod_notes_feature_handle_input(
+        state, event, &input);
 }
 
 static bool handle_music_pressed(
@@ -217,18 +163,18 @@ static bool handle_music_pressed(
     const struct crazypod_input_event *event,
     void *context)
 {
-    const struct crazypod_music_input_actions actions = {
-        .move_selection = move,
+    const struct crazypod_feature_input_context input = {
+        .now = host.now(),
         .activate = activate,
-        .render = render,
-        .leave = crazypod_route_actions_pop,
-        .show_search_results = show_music_search_results,
+        .move = move,
+        .render = host.render,
+        .push = crazypod_route_actions_push,
+        .pop = crazypod_route_actions_pop,
     };
 
     (void)context;
-    return state->route == MUSIC_ROUTE_SEARCH &&
-        crazypod_music_search_input_handle(
-            event, &actions);
+    return crazypod_music_feature_handle_input(
+        state, event, &input);
 }
 
 static const struct crazypod_feature_bindings bindings = {

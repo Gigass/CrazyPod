@@ -6,7 +6,10 @@
 #include "../../presentation/crazypod_ui_text.h"
 #include "crazypod_notes_actions.h"
 #include "crazypod_notes_controller.h"
+#include "crazypod_notes_confirmation.h"
 #include "crazypod_notes_feature.h"
+#include "crazypod_notes_input.h"
+#include "crazypod_notes_preview.h"
 #include "crazypod_notes_screen.h"
 
 #define EDITOR_ACTION_COUNT 3
@@ -283,6 +286,103 @@ bool crazypod_notes_feature_render(
         parent, (uint32_t)state->group, state->selected,
         crazypod_notes_controller_reader_body());
     return true;
+}
+
+static struct crazypod_feature_input_context notes_input_context;
+
+static void notes_input_render(void)
+{
+    notes_input_context.render(false);
+}
+
+static void show_exit_actions(void)
+{
+    notes_input_context.push(
+        NOTES_ROUTE_EXIT_ACTIONS, -1);
+}
+
+static void show_search_results(void)
+{
+    notes_input_context.push(
+        NOTES_ROUTE_SEARCH_RESULTS, -1);
+}
+
+bool crazypod_notes_feature_handle_input(
+    const struct route_state *state,
+    const struct crazypod_input_event *event,
+    const struct crazypod_feature_input_context *context)
+{
+    const struct crazypod_notes_input_actions actions = {
+        .move_selection = context->move,
+        .activate = context->activate,
+        .render = notes_input_render,
+        .leave = context->pop,
+        .show_exit_actions = show_exit_actions,
+        .show_search_results = show_search_results,
+    };
+
+    notes_input_context = *context;
+    return crazypod_notes_input_handle(
+        state->route,
+        crazypod_notes_controller_dirty(),
+        event, &actions);
+}
+
+void crazypod_notes_feature_render_preview(
+    lv_obj_t *parent, const struct route_state *state,
+    const lv_font_t *metadata_font)
+{
+    crazypod_notes_preview_render(
+        parent, state, metadata_font);
+}
+
+void crazypod_notes_feature_refresh_draft(void)
+{
+    crazypod_notes_controller_refresh_draft();
+}
+
+void crazypod_notes_feature_toggle_editor_field(void)
+{
+    crazypod_notes_controller_toggle_field();
+}
+
+void crazypod_notes_feature_begin_editor(
+    uint32_t id, bool resume_draft)
+{
+    crazypod_notes_controller_begin(id, resume_draft);
+}
+
+void crazypod_notes_feature_load_reader(uint32_t id)
+{
+    crazypod_notes_controller_load_reader(id);
+}
+
+bool crazypod_notes_feature_editor_dirty(void)
+{
+    return crazypod_notes_controller_dirty();
+}
+
+void crazypod_notes_feature_service_editor(void)
+{
+    crazypod_notes_controller_service();
+}
+
+uint32_t crazypod_notes_feature_commit_editor(void)
+{
+    return crazypod_notes_controller_commit();
+}
+
+bool crazypod_notes_feature_draft_available(void)
+{
+    return crazypod_notes_controller_draft_available();
+}
+
+struct crazypod_notes_confirmation_result
+crazypod_notes_feature_confirm(
+    const struct route_state *state, int route_depth)
+{
+    return crazypod_notes_confirmation_execute(
+        state, route_depth);
 }
 
 #endif

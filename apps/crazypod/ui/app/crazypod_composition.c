@@ -6,7 +6,6 @@
 #include "../../crazypod_lcd.h"
 #include "../../crazypod_state.h"
 #include "../features/books/crazypod_books_feature.h"
-#include "../features/books/crazypod_books_workflow.h"
 #include "../features/customize/crazypod_customize_feature.h"
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
@@ -217,7 +216,7 @@ void crazypod_composition_configure(
         .appearance_changed =
             crazypod_desktop_refresh_appearance,
     };
-    const struct crazypod_books_workflow_host books = {
+    const struct crazypod_books_runtime_host books = {
         .parent = crazypod_shell_product_content(),
         .metadata_font = new_host->metadata_font,
         .page_colors =
@@ -264,7 +263,7 @@ void crazypod_composition_configure(
     crazypod_playback_configure(&playback);
     crazypod_system_prompts_configure(&prompts);
     crazypod_choice_coordinator_configure(&choices);
-    crazypod_books_workflow_configure(&books);
+    crazypod_books_feature_configure_runtime(&books);
     crazypod_music_library_configure(&music);
     crazypod_wallpaper_crop_runtime_configure(&crop);
     crazypod_photos_runtime_configure(&photos);
