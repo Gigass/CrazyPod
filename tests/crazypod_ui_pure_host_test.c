@@ -2,11 +2,13 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "crazypod_collation.h"
 #include "features/organizer/crazypod_calendar_model.h"
 #include "presentation/crazypod_ui_menu_layout.h"
 #include "presentation/crazypod_ui_text.h"
 #include "features/crazypod_feature.h"
 #include "navigation/crazypod_feature_dispatcher.h"
+#include "navigation/crazypod_alpha_jump.h"
 #include "navigation/crazypod_navigation_command.h"
 #include "navigation/crazypod_route_registry.h"
 
@@ -81,6 +83,72 @@ static void test_menu_layout(void)
         &thumb_y, &thumb_height);
     assert(thumb_height == 57);
     assert(thumb_y == 173);
+}
+
+static const char *section_title_at(
+    int index, void *context)
+{
+    const char *const *titles = context;
+
+    return titles[index];
+}
+
+static void test_collation(void)
+{
+    static const char *const titles[] = {
+        "1 Song", "Alice", "Another", "北京",
+        "重庆", "上海"
+    };
+    int target;
+    char key;
+
+    assert(crazypod_collation_initial(" Alice") == 'A');
+    assert(crazypod_collation_initial("9 Songs") == '#');
+    assert(crazypod_collation_initial("Édith") == 'E');
+    assert(crazypod_collation_initial("愛") == 'A');
+    assert(crazypod_collation_initial("北京") == 'B');
+    assert(crazypod_collation_initial("重庆") == 'Z');
+    assert(crazypod_collation_compare("9 Songs", "Alice") < 0);
+    assert(crazypod_collation_compare("北京", "重庆") < 0);
+
+    assert(crazypod_collation_section_target(
+        6, 1, 1, section_title_at,
+        (void *)titles, &target, &key));
+    assert(target == 3);
+    assert(key == 'B');
+    assert(crazypod_collation_section_target(
+        6, 5, -1, section_title_at,
+        (void *)titles, &target, &key));
+    assert(target == 4);
+    assert(key == 'Z');
+    assert(!crazypod_collation_section_target(
+        6, 0, -1, section_title_at,
+        (void *)titles, &target, &key));
+}
+
+static void test_alpha_jump_burst(void)
+{
+    struct crazypod_alpha_jump_state state;
+
+    crazypod_alpha_jump_reset(&state);
+    assert(!crazypod_alpha_jump_consume(
+        &state, MUSIC_ROUTE_SONGS, -1,
+        1, 3, 100, 32, 7));
+    assert(crazypod_alpha_jump_consume(
+        &state, MUSIC_ROUTE_SONGS, -1,
+        1, 4, 110, 32, 7));
+    assert(crazypod_alpha_jump_consume(
+        &state, MUSIC_ROUTE_SONGS, -1,
+        1, 1, 120, 32, 7));
+    assert(!crazypod_alpha_jump_consume(
+        &state, MUSIC_ROUTE_SONGS, -1,
+        -1, 1, 121, 32, 7));
+    assert(!crazypod_alpha_jump_consume(
+        &state, MUSIC_ROUTE_SONGS, -1,
+        -1, 6, 200, 32, 7));
+    assert(!crazypod_alpha_jump_consume(
+        &state, MUSIC_ROUTE_ARTISTS, -1,
+        -1, 1, 201, 32, 7));
 }
 
 static void test_route_registry(void)
@@ -207,6 +275,8 @@ int main(void)
     test_note_layout();
     test_editor();
     test_menu_layout();
+    test_collation();
+    test_alpha_jump_burst();
     test_route_registry();
     test_navigation_commands();
     test_feature_input_dispatcher();

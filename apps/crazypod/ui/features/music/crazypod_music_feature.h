@@ -36,6 +36,11 @@ const char *crazypod_music_feature_title(
 bool crazypod_music_feature_item_title(
     const struct route_state *state, int index,
     const char *search_query, const char **title);
+bool crazypod_music_feature_alpha_jump_available(
+    const struct route_state *state);
+bool crazypod_music_feature_alpha_jump_target(
+    const struct route_state *state, int direction,
+    int *target, char *key);
 void crazypod_music_library_configure(
     const struct crazypod_music_library_host *host);
 void crazypod_music_library_initialize(long now);

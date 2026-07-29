@@ -13,6 +13,7 @@
 #include "../../../crazypod_artwork.h"
 #include "../../../crazypod_lyrics.h"
 #include "../../../crazypod_playlist.h"
+#include "../../presentation/crazypod_marquee.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_now_presentation.h"
 #include "crazypod_now_screen.h"
@@ -178,8 +179,7 @@ void crazypod_now_screen_render(
             lv_obj_set_size(title, 96, 17);
             lv_obj_set_style_text_align(
                 title, LV_TEXT_ALIGN_CENTER, 0);
-            lv_label_set_long_mode(
-                title, LV_LABEL_LONG_MODE_DOTS);
+            crazypod_marquee_configure(title, true);
             lv_obj_set_pos(title, 24, 120);
             artist = make_label(
                 context->parent,
@@ -189,8 +189,7 @@ void crazypod_now_screen_render(
             lv_obj_set_size(artist, 96, 17);
             lv_obj_set_style_text_align(
                 artist, LV_TEXT_ALIGN_CENTER, 0);
-            lv_label_set_long_mode(
-                artist, LV_LABEL_LONG_MODE_DOTS);
+            crazypod_marquee_configure(artist, true);
             lv_obj_set_pos(artist, 24, 140);
 
             view->lyrics_previous = make_label(
@@ -232,8 +231,7 @@ void crazypod_now_screen_render(
             lv_obj_set_size(title, 158, 18);
             lv_obj_set_style_text_align(
                 title, LV_TEXT_ALIGN_CENTER, 0);
-            lv_label_set_long_mode(
-                title, LV_LABEL_LONG_MODE_DOTS);
+            crazypod_marquee_configure(title, true);
             lv_obj_set_pos(title, 144, 71);
 
             artist = make_label(
@@ -244,8 +242,7 @@ void crazypod_now_screen_render(
             lv_obj_set_size(artist, 158, 18);
             lv_obj_set_style_text_align(
                 artist, LV_TEXT_ALIGN_CENTER, 0);
-            lv_label_set_long_mode(
-                artist, LV_LABEL_LONG_MODE_DOTS);
+            crazypod_marquee_configure(artist, true);
             lv_obj_set_pos(artist, 144, 95);
 
             album = make_label(
@@ -257,8 +254,7 @@ void crazypod_now_screen_render(
             lv_obj_set_size(album, 158, 16);
             lv_obj_set_style_text_align(
                 album, LV_TEXT_ALIGN_CENTER, 0);
-            lv_label_set_long_mode(
-                album, LV_LABEL_LONG_MODE_DOTS);
+            crazypod_marquee_configure(album, true);
             lv_obj_set_pos(album, 144, 119);
 
             crazypod_ui_widget_pixel_heart(

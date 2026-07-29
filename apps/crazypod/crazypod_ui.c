@@ -73,6 +73,7 @@
 #include "ui/presentation/crazypod_ui_text.h"
 #include "ui/presentation/crazypod_ui_widgets.h"
 #include "ui/presentation/crazypod_artwork_widget.h"
+#include "ui/presentation/crazypod_alpha_jump_hud.h"
 #include "ui/features/books/crazypod_books_feature.h"
 #include "ui/features/notes/crazypod_notes_feature.h"
 #include "ui/features/photos/crazypod_photos_feature.h"
@@ -190,12 +191,6 @@ static bool handle_lock_button(long button, intptr_t data)
     return crazypod_lock_screen_handle_button(button, data);
 }
 
-
-
-
-
-
-
 static void update_status_bars(lv_timer_t *timer)
 {
     (void)timer;
@@ -211,8 +206,6 @@ static int appearance_tile_size(void)
     static const int sizes[] = { 88, 96, 104, 112, 120 };
     return sizes[crazypod_appearance_get()->icon_scale];
 }
-
-
 
 static long ui_now(void)
 {
@@ -544,7 +537,6 @@ static void platform_queue_present(
     crazypod_present_queue_rect(x, y, width, height);
 }
 
-
 static void process_deferred_route_render(void)
 {
     crazypod_render_scheduler_service(current_tick);
@@ -708,6 +700,9 @@ void crazypod_ui_run(void)
         process_lock_state();
         locked = crazypod_lock_screen_is_locked();
         crazypod_app_input_tick(current_tick, locked);
+        crazypod_alpha_jump_hud_tick(
+            current_tick,
+            !locked && crazypod_shell_product_active());
         crazypod_runtime_services_tick(
             current_tick,
             crazypod_frameclock_due(&lvgl_clock, current_tick),
@@ -739,8 +734,10 @@ void crazypod_ui_run(void)
                         ? BUTTON_SCROLL_BACK
                         : BUTTON_SCROLL_FWD);
         }
+        crazypod_now_capsule_tick(
+            current_tick, !locked && !crazypod_shell_product_active() &&
+            !modal_prompt_visible());
         if(!locked) {
-            crazypod_now_capsule_tick(current_tick, !crazypod_shell_product_active());
             crazypod_playback_tick_wave(current_tick);
         }
         if(crazypod_frameclock_due(&lvgl_clock, current_tick)) {

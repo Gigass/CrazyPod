@@ -42,6 +42,7 @@ crazypod/crazypod_artwork.c
 crazypod/crazypod_artwork_palette.c
 crazypod/crazypod_coverflow.c
 crazypod/crazypod_music.c
+crazypod/crazypod_collation.c
 crazypod/crazypod_playlist.c
 crazypod/crazypod_audio_shims.c
 crazypod/crazypod_soundwave.c
@@ -94,6 +95,8 @@ crazypod/ui/navigation/crazypod_ui_routes.c
 crazypod/ui/features/settings/crazypod_settings_model.c
 crazypod/ui/presentation/crazypod_ui_text.c
 crazypod/ui/presentation/crazypod_ui_widgets.c
+crazypod/ui/presentation/crazypod_marquee.c
+crazypod/ui/presentation/crazypod_alpha_jump_hud.c
 crazypod/ui/presentation/crazypod_artwork_widget.c
 crazypod/ui/presentation/crazypod_choice_overlay.c
 crazypod/ui/presentation/crazypod_popup_motion.c
@@ -103,6 +106,7 @@ crazypod/ui/presentation/crazypod_screen_corners.c
 crazypod/ui/presentation/crazypod_preview_primitives.c
 crazypod/ui/navigation/crazypod_feature_dispatcher.c
 crazypod/ui/navigation/crazypod_input_event.c
+crazypod/ui/navigation/crazypod_alpha_jump.c
 crazypod/ui/navigation/crazypod_navigation_command.c
 crazypod/ui/navigation/crazypod_route_registry.c
 crazypod/ui/navigation/crazypod_render_scheduler.c

@@ -14,6 +14,7 @@
 #include "crazypod_menu_list.h"
 #include "../navigation/crazypod_route_query.h"
 #include "../features/settings/crazypod_settings_feature.h"
+#include "crazypod_marquee.h"
 #include "crazypod_menu_screen.h"
 
 #define COLOR_WHITE 0xFFFFFF
@@ -274,7 +275,7 @@ void crazypod_menu_screen_render(
         lv_obj_set_pos(label, text_x, 5);
         lv_obj_set_width(label, text_width);
         lv_obj_set_height(label, 16);
-        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+        crazypod_marquee_configure(label, selected);
 
         marker = make_label(row_box,
                             context->item_is_current(state, index)

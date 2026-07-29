@@ -12,6 +12,7 @@
 #include "../features/photos/crazypod_photos_feature.h"
 #include "../navigation/crazypod_render_scheduler.h"
 #include "../navigation/crazypod_ui_routes.h"
+#include "../presentation/crazypod_alpha_jump_hud.h"
 #include "../presentation/crazypod_overlay_glass.h"
 #include "../presentation/crazypod_menu_list.h"
 #include "../presentation/crazypod_preview_motion.h"
@@ -163,6 +164,8 @@ void crazypod_composition_configure(
     host = *new_host;
     crazypod_shell_create(
         crazypod_desktop_screen(), new_host->boost);
+    crazypod_alpha_jump_hud_configure(
+        crazypod_shell_product_content());
 
     const struct crazypod_preview_motion_host preview = {
         .now = new_host->now,

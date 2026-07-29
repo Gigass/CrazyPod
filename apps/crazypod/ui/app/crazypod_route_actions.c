@@ -24,6 +24,7 @@
 #include "../navigation/crazypod_render_scheduler.h"
 #include "../navigation/crazypod_route_registry.h"
 #include "../navigation/crazypod_ui_routes.h"
+#include "../presentation/crazypod_alpha_jump_hud.h"
 #include "../presentation/crazypod_menu_list.h"
 #include "../presentation/crazypod_preview_motion.h"
 #include "../shell/crazypod_app_catalog.h"
@@ -35,6 +36,8 @@
 
 #define PREVIEW_SETTLE_TICKS \
     ((HZ * 120 / 1000) > 0 ? (HZ * 120 / 1000) : 1)
+#define ALPHA_JUMP_HUD_TICKS \
+    ((HZ * 760 / 1000) > 0 ? (HZ * 760 / 1000) : 1)
 
 static struct crazypod_route_actions_host host;
 
@@ -578,6 +581,37 @@ void crazypod_route_actions_move(int direction, long now)
     }
     else
         crazypod_render_scheduler_schedule_route(now);
+}
+
+bool crazypod_route_actions_alpha_jump(
+    int direction, long now)
+{
+    struct route_state *state = current_route();
+    int target;
+    char key;
+
+    if(state == NULL ||
+       !crazypod_music_feature_alpha_jump_target(
+           state, direction, &target, &key) ||
+       target == state->selected)
+        return false;
+    host.boost(HZ / 3);
+    state->selected = target;
+    if(crazypod_menu_preview_is_music_route(state->route))
+        crazypod_menu_preview_prefetch(state);
+    if(crazypod_menu_preview_is_skeuomorphic_route(
+           state->route))
+        crazypod_preview_motion_set_direction(direction);
+    if(crazypod_menu_list_matches(state->route)) {
+        host.refresh_menu_rows(state);
+        crazypod_render_scheduler_schedule_preview(
+            now + PREVIEW_SETTLE_TICKS);
+    }
+    else
+        crazypod_render_scheduler_schedule_route(now);
+    crazypod_alpha_jump_hud_show(
+        key, now, ALPHA_JUMP_HUD_TICKS);
+    return true;
 }
 
 #endif

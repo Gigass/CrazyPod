@@ -14,6 +14,7 @@
 #include "metadata.h"
 #include "system.h"
 
+#include "crazypod_collation.h"
 #include "crazypod_music.h"
 #include "crazypod_playlist.h"
 
@@ -34,7 +35,7 @@
     CRAZYPOD_STATE_DIRECTORY "/favorites.tmp"
 #define CRAZYPOD_FAVORITES_NAME "My Favorites"
 #define CRAZYPOD_MUSIC_CACHE_MAGIC 0x43504d4cu
-#define CRAZYPOD_MUSIC_CACHE_VERSION 2u
+#define CRAZYPOD_MUSIC_CACHE_VERSION 3u
 
 struct music_source_fingerprint {
     uint32_t file_count;
@@ -531,12 +532,15 @@ static int compare_tracks(const void *left_ptr, const void *right_ptr)
 {
     const struct crazypod_track *left = left_ptr;
     const struct crazypod_track *right = right_ptr;
-    int result = compare_text(left->title, right->title);
+    int result = crazypod_collation_compare(
+        left->title, right->title);
 
     if(result == 0)
-        result = compare_text(left->artist, right->artist);
+        result = crazypod_collation_compare(
+            left->artist, right->artist);
     if(result == 0)
-        result = compare_text(left->album, right->album);
+        result = crazypod_collation_compare(
+            left->album, right->album);
     if(result == 0)
         result = compare_text(left->path, right->path);
     return result;
@@ -549,7 +553,8 @@ static int compare_artist_track_indices(const void *left_ptr,
         &tracks[*(const uint16_t *)left_ptr];
     const struct crazypod_track *right =
         &tracks[*(const uint16_t *)right_ptr];
-    int result = compare_text(left->artist, right->artist);
+    int result = crazypod_collation_compare(
+        left->artist, right->artist);
 
     return result != 0 ? result : compare_tracks(left, right);
 }
@@ -561,11 +566,12 @@ static int compare_album_track_indices(const void *left_ptr,
         &tracks[*(const uint16_t *)left_ptr];
     const struct crazypod_track *right =
         &tracks[*(const uint16_t *)right_ptr];
-    int result = compare_text(left->album, right->album);
+    int result = crazypod_collation_compare(
+        left->album, right->album);
 
     if(result == 0)
-        result = compare_text(left->album_artist,
-                              right->album_artist);
+        result = crazypod_collation_compare(
+            left->album_artist, right->album_artist);
     return result != 0 ? result : compare_track_order(left, right);
 }
 

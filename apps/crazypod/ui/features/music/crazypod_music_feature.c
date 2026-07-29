@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../../../crazypod_collation.h"
 #include "../../../crazypod_music.h"
 #include "../../../crazypod_playlist.h"
 #include "crazypod_music_activation.h"
@@ -235,6 +236,60 @@ bool crazypod_music_feature_item_title(
     }
     *title = track != NULL ? track->title : "";
     return true;
+}
+
+static bool alpha_jump_route(enum crazypod_route route)
+{
+    switch(route) {
+    case MUSIC_ROUTE_ALL:
+    case MUSIC_ROUTE_SONGS:
+    case MUSIC_ROUTE_ARTISTS:
+    case MUSIC_ROUTE_ARTIST_SONGS:
+    case MUSIC_ROUTE_ALBUMS:
+    case MUSIC_ROUTE_SEARCH_RESULTS:
+    case PODCASTS_ROUTE_MENU:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool crazypod_music_feature_alpha_jump_available(
+    const struct route_state *state)
+{
+    return state != NULL &&
+        alpha_jump_route(state->route) &&
+        crazypod_music_feature_item_count(
+            state, crazypod_music_search_query()) >= 24;
+}
+
+static const char *alpha_jump_title_at(
+    int index, void *context)
+{
+    const struct route_state *state = context;
+    const char *title = "";
+
+    if(crazypod_music_feature_item_title(
+           state, index, crazypod_music_search_query(),
+           &title))
+        return title != NULL ? title : "";
+    return "";
+}
+
+bool crazypod_music_feature_alpha_jump_target(
+    const struct route_state *state, int direction,
+    int *target, char *key)
+{
+    int count;
+
+    if(!crazypod_music_feature_alpha_jump_available(state))
+        return false;
+    count = crazypod_music_feature_item_count(
+        state, crazypod_music_search_query());
+    return crazypod_collation_section_target(
+        count, state->selected, direction,
+        alpha_jump_title_at, (void *)state,
+        target, key);
 }
 
 bool crazypod_music_feature_activate(

@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+#include "crazypod_marquee.h"
 #include "crazypod_menu_list.h"
 
 #define CRAZYPOD_MENU_LIST_ROWS 7
@@ -78,13 +79,18 @@ void crazypod_menu_list_refresh_row(
     if(box == NULL)
         return;
     if(!visible) {
+        crazypod_marquee_configure(
+            view.labels[row], false);
         lv_obj_add_flag(box, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
     lv_obj_remove_flag(box, LV_OBJ_FLAG_HIDDEN);
     if(view.labels[row] != NULL) {
-        lv_label_set_text(view.labels[row], title != NULL ? title : "");
+        crazypod_marquee_set_text(
+            view.labels[row],
+            title != NULL ? title : "",
+            selected);
         lv_obj_set_style_text_opa(view.labels[row], label_opa, 0);
     }
     lv_obj_set_style_bg_color(

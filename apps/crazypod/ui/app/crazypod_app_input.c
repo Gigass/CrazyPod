@@ -18,6 +18,7 @@
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/notes/crazypod_notes_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
+#include "../navigation/crazypod_alpha_jump.h"
 #include "../navigation/crazypod_input_event.h"
 #include "../navigation/crazypod_ui_routes.h"
 #include "../shell/crazypod_desktop.h"
@@ -33,9 +34,13 @@ static struct crazypod_app_input_host host;
 static bool play_short_press_pending;
 static bool home_hold_pending;
 static long home_hold_deadline;
+static struct crazypod_alpha_jump_state alpha_jump;
 
 #define HOME_NOW_PLAYING_HOLD_TICKS \
     ((HZ / 2) > 0 ? (HZ / 2) : 1)
+#define ALPHA_JUMP_WINDOW_TICKS \
+    ((HZ * 320 / 1000) > 0 ? (HZ * 320 / 1000) : 1)
+#define ALPHA_JUMP_STEP_THRESHOLD 7
 
 static long button_base(long button)
 {
@@ -56,6 +61,33 @@ static int wheel_step(intptr_t data, int maximum)
     if(step > maximum)
         step = maximum;
     return step;
+}
+
+static void move_wheel(
+    struct route_state *state, int direction,
+    intptr_t data, long now)
+{
+    int maximum =
+        state->route == MUSIC_ROUTE_NOW_PLAYING
+            ? 1
+            : state->route == MUSIC_ROUTE_ALBUM_FLOW
+                ? 15 : 12;
+    int steps = crazypod_menu_preview_is_skeuomorphic_route(
+        state->route) ? 1 : wheel_step(data, maximum);
+    bool alpha_available =
+        crazypod_music_feature_alpha_jump_available(state);
+
+    if(alpha_available &&
+       crazypod_alpha_jump_consume(
+           &alpha_jump, state->route, state->group,
+           direction, steps, now,
+           ALPHA_JUMP_WINDOW_TICKS,
+           ALPHA_JUMP_STEP_THRESHOLD) &&
+       crazypod_route_actions_alpha_jump(direction, now))
+        return;
+    if(!alpha_available)
+        crazypod_alpha_jump_reset(&alpha_jump);
+    crazypod_route_actions_move(direction * steps, now);
 }
 
 static void wheel_feedback(long button)
@@ -99,6 +131,7 @@ void crazypod_app_input_configure(
     if(new_host != NULL) {
         host = *new_host;
         home_hold_pending = false;
+        crazypod_alpha_jump_reset(&alpha_jump);
     }
 }
 
@@ -116,6 +149,8 @@ int crazypod_app_input_wait_ticks(long now)
 
 void crazypod_app_input_tick(long now, bool locked)
 {
+    if(locked || !crazypod_shell_product_active())
+        crazypod_alpha_jump_reset(&alpha_jump);
     if(!home_hold_pending)
         return;
     if(locked ||
@@ -314,52 +349,36 @@ void crazypod_app_input_handle(
         return;
 #endif
     if(base == BUTTON_SCROLL_FWD)
-        crazypod_route_actions_move(
-            crazypod_menu_preview_is_skeuomorphic_route(
-                state->route)
-                ? 1
-                : wheel_step(
-                    data,
-                    state->route == MUSIC_ROUTE_NOW_PLAYING
-                        ? 1
-                        : state->route ==
-                              MUSIC_ROUTE_ALBUM_FLOW
-                            ? 15 : 12),
-            now);
+        move_wheel(state, 1, data, now);
     else if(base == BUTTON_SCROLL_BACK)
-        crazypod_route_actions_move(
-            crazypod_menu_preview_is_skeuomorphic_route(
-                state->route)
-                ? -1
-                : -wheel_step(
-                    data,
-                    state->route == MUSIC_ROUTE_NOW_PLAYING
-                        ? 1
-                        : state->route ==
-                              MUSIC_ROUTE_ALBUM_FLOW
-                            ? 15 : 12),
-            now);
+        move_wheel(state, -1, data, now);
     else if(base == BUTTON_RIGHT) {
+        crazypod_alpha_jump_reset(&alpha_jump);
         if(state->route == MUSIC_ROUTE_NOW_PLAYING)
             audio_next();
         else
             crazypod_route_actions_move(1, now);
     }
     else if(base == BUTTON_LEFT) {
+        crazypod_alpha_jump_reset(&alpha_jump);
         if(state->route == MUSIC_ROUTE_NOW_PLAYING)
             audio_prev();
         else
             crazypod_route_actions_move(-1, now);
     }
-    else if(base == BUTTON_SELECT && !repeated)
+    else if(base == BUTTON_SELECT && !repeated) {
+        crazypod_alpha_jump_reset(&alpha_jump);
         crazypod_route_actions_activate(now);
+    }
     else if(base == BUTTON_MENU) {
+        crazypod_alpha_jump_reset(&alpha_jump);
         if(repeated && state->route == MUSIC_ROUTE_MENU)
             host.begin_music_scan();
         else if(!repeated)
             crazypod_route_actions_pop();
     }
     else if(base == BUTTON_PLAY) {
+        crazypod_alpha_jump_reset(&alpha_jump);
         if(state->route == NOTES_ROUTE_COMPOSER &&
            !repeated) {
         crazypod_notes_feature_toggle_editor_field();

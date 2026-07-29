@@ -25,6 +25,8 @@ void crazypod_route_actions_pop(void);
 void crazypod_route_actions_request_now_playing(void);
 void crazypod_route_actions_activate(long now);
 void crazypod_route_actions_move(int direction, long now);
+bool crazypod_route_actions_alpha_jump(
+    int direction, long now);
 void crazypod_route_actions_begin_note(
     uint32_t id, bool resume_draft);
 void crazypod_route_actions_show_calendar_day(int date);

@@ -19,6 +19,7 @@
 #include "../features/photos/crazypod_photos_feature.h"
 #include "../features/settings/crazypod_settings_feature.h"
 #include "../navigation/crazypod_route_registry.h"
+#include "../presentation/crazypod_alpha_jump_hud.h"
 #include "../presentation/crazypod_glass_slots.h"
 #include "../presentation/crazypod_menu_list.h"
 #include "../presentation/crazypod_menu_screen.h"
@@ -47,6 +48,7 @@ static void reset_feature_surfaces(void)
 {
     if(crazypod_coverflow_active())
         crazypod_coverflow_leave();
+    crazypod_alpha_jump_hud_reset();
     crazypod_now_playing_overlay_reset();
     crazypod_choice_coordinator_reset();
     crazypod_menu_list_clear();

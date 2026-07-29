@@ -14,6 +14,7 @@
 #include "../../crazypod_soundwave.h"
 #include "../../crazypod_wallpaper.h"
 #include "../presentation/crazypod_glass_sampler.h"
+#include "../presentation/crazypod_marquee.h"
 #include "../presentation/crazypod_ui_widgets.h"
 #include "crazypod_now_capsule.h"
 
@@ -36,6 +37,8 @@ struct capsule_view {
     lv_obj_t *artwork;
     lv_obj_t *artwork_image;
     lv_obj_t *artwork_symbol;
+    char track_text[96];
+    char artist_text[72];
     char artwork_path[MAX_PATH];
     unsigned artwork_generation_seen;
     unsigned palette_generation;
@@ -44,6 +47,7 @@ struct capsule_view {
     int spectrum_phase;
     long spectrum_tick;
     bool spectrum_playing;
+    bool marquee_active;
 };
 
 static struct capsule_view capsule;
@@ -109,13 +113,6 @@ static void use_fallback_wave_palette(void)
         &capsule.wave_palette,
         primary_color(), secondary_color());
     capsule.palette_from_artwork = false;
-}
-
-static void set_label_text_if_changed(lv_obj_t *label, const char *text)
-{
-    if(label != NULL && text != NULL &&
-       strcmp(lv_label_get_text(label), text) != 0)
-        lv_label_set_text(label, text);
 }
 
 static void set_hidden_if_changed(lv_obj_t *object, bool hidden)
@@ -250,7 +247,7 @@ void crazypod_now_capsule_create(
     lv_obj_set_size(capsule.track, 171, 17);
     lv_obj_set_style_text_align(
         capsule.track, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(capsule.track, LV_LABEL_LONG_MODE_DOTS);
+    crazypod_marquee_configure(capsule.track, false);
     capsule.artist = crazypod_ui_widget_label(
         capsule.root, "Local Music", metadata_font,
         COLOR_WHITE, 190);
@@ -258,7 +255,7 @@ void crazypod_now_capsule_create(
     lv_obj_set_size(capsule.artist, 171, 17);
     lv_obj_set_style_text_align(
         capsule.artist, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(capsule.artist, LV_LABEL_LONG_MODE_DOTS);
+    crazypod_marquee_configure(capsule.artist, false);
 
     progress_track = crazypod_ui_widget_box(
         capsule.root, 70, 45, 171, 3,
@@ -395,8 +392,24 @@ void crazypod_now_capsule_update(
     const char *artist_text =
         track != NULL ? track->artist : "Local Music";
 
-    set_label_text_if_changed(capsule.track, track_text);
-    set_label_text_if_changed(capsule.artist, artist_text);
+    if(strcmp(capsule.track_text, track_text) != 0) {
+        snprintf(
+            capsule.track_text,
+            sizeof(capsule.track_text),
+            "%s", track_text);
+        crazypod_marquee_set_text(
+            capsule.track, capsule.track_text,
+            capsule.marquee_active);
+    }
+    if(strcmp(capsule.artist_text, artist_text) != 0) {
+        snprintf(
+            capsule.artist_text,
+            sizeof(capsule.artist_text),
+            "%s", artist_text);
+        crazypod_marquee_set_text(
+            capsule.artist, capsule.artist_text,
+            capsule.marquee_active);
+    }
     crazypod_now_capsule_update_artwork(track);
     if(length_ms > 0) {
         width = 171 * elapsed_ms / length_ms;
@@ -420,6 +433,13 @@ void crazypod_now_capsule_tick(long now, bool home_active)
 {
     bool playing;
 
+    if(capsule.marquee_active != home_active) {
+        capsule.marquee_active = home_active;
+        crazypod_marquee_configure(
+            capsule.track, home_active);
+        crazypod_marquee_configure(
+            capsule.artist, home_active);
+    }
     if(!home_active || capsule.spectrum == NULL)
         return;
     playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
