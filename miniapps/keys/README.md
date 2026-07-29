@@ -7,3 +7,6 @@ complete signature-verification path.
 It is not a production trust root. Anyone who has this repository can sign a
 package accepted by a development build. A release build must embed a different
 public key and keep its corresponding private key outside the repository.
+
+This key remains development-only as of 2026-07-30. Do not publish a production
+firmware image that trusts it.

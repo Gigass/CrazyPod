@@ -4,6 +4,8 @@
 完成后，你会得到一个可在模拟器运行、可签名为 `.cpk`、并可安装到
 iPod Classic 6G 的 `hello-wheel` 计数器。
 
+本文已按 2026-07-30 的 ABI 1、SDK revision 3 和 CPK format 2 源码核对。
+
 最终产物：
 
 ```text

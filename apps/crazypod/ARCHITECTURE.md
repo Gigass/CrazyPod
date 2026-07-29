@@ -4,6 +4,8 @@ The UI is organized as stable infrastructure plus vertical feature domains.
 Files move only when ownership, state, or dependency direction moves with
 them.
 
+This document reflects the source and architecture gate on 2026-07-30.
+
 ## Topology
 
 ```text
@@ -12,7 +14,7 @@ crazypod/
 │   ├── app/             lifecycle and dependency composition
 │   ├── navigation/      route stack, registry, query and dispatch
 │   ├── shell/           Home/Desktop, status, lock and system prompts
-│   ├── presentation/    stateless widgets, glass, menu and motion primitives
+│   ├── presentation/    stateless widgets, glass, menu, HUD and motion
 │   └── features/
 │       ├── music/
 │       ├── now_playing/
@@ -23,9 +25,12 @@ crazypod/
 │       ├── customize/
 │       ├── settings/
 │       └── miniapps/
-├── miniapps/            VM, installer, storage and runtime infrastructure
+├── miniapps/            native loader, installer, storage and runtime
 ├── epub/                EPUB parsing, extraction and cache infrastructure
-└── platform/            audio, display, power and storage adapters
+├── photos/              photo catalog, cache and viewport infrastructure
+├── video/               video catalog and poster infrastructure
+├── wallpaper/           wallpaper cache, crop and storage infrastructure
+└── platform/            display and firmware-facing adapters
 ```
 
 There are exactly nine UI feature owners. Wallpaper crop belongs to
@@ -122,3 +127,13 @@ a root outside the 400–800-line budget.
 rendering, activation, input, previews, runtime services, Now Playing,
 system prompts, deferred rendering, menu presentation, and artwork widgets
 are owned by their declared modules.
+
+Run the complete local gate with:
+
+```sh
+sh tests/check-crazypod-ui-architecture.sh
+sh tests/run-crazypod-ui-host-tests.sh
+sh tests/run-miniapp-host-tests.sh
+sh tests/run-epub-host-tests.sh
+git diff --check
+```

@@ -1,140 +1,144 @@
-# CrazyPod independent product firmware
+# CrazyPod unreleased changes
 
-This revision replaces the static launcher with a persistent, configurable
-main menu and implements the firmware-capable MaxPod applications.
+Last updated: 2026-07-30
 
-Implemented:
+These notes describe the current unreleased CrazyPod source. See
+[README.md](README.md) for the full feature baseline and
+[PROJECT_STATUS.md](PROJECT_STATUS.md) for build, device, and release-blocker
+status.
 
-- silent black iPod 6G boot surface with a centered white Apple mark, continuous
-  CrazyPod LCD handoff, and a 220 ms desktop fade
-- LVGL 9.5.0 low-level integration
-- dedicated RGB565 framebuffer and panic display
-- MaxPodApp-derived animated 16-application icon carousel
-- click-wheel focus, Select, Menu, Left, Right, and Play handling
-- animated 3D carousel focus transitions, reflections, position indicators,
-  default MaxPod wallpaper, and the compressed 6G now-playing capsule
-- live battery and clock status
-- minimal USB mass-storage configuration
-- recursive local metadata scan on a background thread
-- artists, albums, songs, M3U/M3U8 playlists, and local text search
-- album artwork, queue, shuffle, repeat, resume persistence, codec decoding,
-  buffering, and PCM output
-- synchronized sidecar `.lrc` / `.LRC` lyrics
-- atomic Now Playing artwork handoff: the foreground cover, blurred background,
-  and contrast color change together after the new presentation is ready
-- native 50fps Cover Flow with a 25-slot artwork window, bidirectional
-  prefetch, RGB565 subpixel edge coverage, C2-continuous Q16 Hermite pose
-  curves, accumulated wheel momentum, preserved release velocity, and 200ms
-  projected snapping
-- full-frame LCD submission synchronized to the 8-bit panel scan position to
-  address intermittent Cover Flow tearing
-- a wallpaper-aware frosted Home capsule, configurable sound-wave style, and
-  direct Home playback controls
-- MaxPod-derived icon, detail, background, and appearance-preset controls
-- validated, versioned `.upodtheme` import/export
-- 16 packaged 72×72 application icon themes
-- independent Home, Menu, and Lock Screen wallpaper controls
-- independent top and bottom screen corner radii applied to the desktop,
-  application routes, and lock screen
-- Settings > Main Menu visibility and order controls
-- Sound, EQ Studio, Display, Playback, Power, Controls, USB charging, click
-  feedback, sleep-timer, and Reduce Motion settings
-- interruptible two-layer skeuomorphic previews for every first-level Music,
-  Media, Notes, and Books menu item, with object-specific entrance and exit
-  motion
-- procedural preview surfaces that remain complete while artwork loads;
-  optional album-art and photo skins fade in without spinners or replaying the
-  scene, with a bounded four-cover cache budget for All Music
-- persisted Settings > Display > Reduce Motion support
-- deterministic simulator snapshot routes for all new preview variants
-- More Features as the live list of hidden main-menu applications
-- restricted signed native `.cpk` installation with exact manifest, payload,
-  icon, target, ABI, hash, and Ed25519 verification
-- a shared Mini App scene and click-wheel input ABI with appearance-token
-  rendering
-- ABI 1 revision 2 with a stable legacy host-table prefix, capability-gated
-  system status, date/time and duration formatting, four alarm slots, host
-  toasts, asynchronous close requests, dividers, and linear progress
-- backward loading of older ABI 1 packages whose required host table is a
-  valid prefix of the current SDK
-- manifest-derived Mini App package filenames, so version upgrades no longer
-  require a hard-coded builder filename change
-- a standard Calculator with chaining, contextual percent, repeat equals,
-  sign, decimal, backspace, and error recovery
-- exact one-control Mini App wheel navigation at every scroll speed, while
-  numeric Pomodoro setup edits retain accelerated adjustment
-- a bounded host-side Mini App input queue that consumes at most one discrete
-  focus event per presentable frame, discards stale movement on direction
-  reversal, and prevents Select from targeting a focus state not yet visible
-- explicit 8-byte iPod 6G main, IRQ, and FIQ stack alignment so EABI `double`
-  and variadic formatting remain valid on hardware
-- a Pomodoro timer with editable focus/break durations and rounds, persisted
-  deadlines, background alarms, pause, skip, reset, and manual phase advance
-- local notes with drafts, pinning, search, duplication, trash, restore, and
-  hold-confirmed deletion
-- EPUB, TXT, and Markdown reading with progress, recents, favorites,
-  bookmarks, EPUB chapters, font sizes, paper themes, confirmed deletion, and
-  automatic UTF-8 or GBK/GB2312 (CP936) text decoding
-- local podcasts from `/Podcasts`
-- a unified Media app with Photos, Videos, and Favorites
-- JPG, JPEG, and BMP photo browsing with favorites, full-screen viewing, zoom,
-  pan, cached thumbnails, and wallpaper crop previews
-- pre-transcoded MPEG-1/2 video playback from `/Videos`, with same-basename BMP
-  posters, play/pause, 10-second seek, volume, and persistent resume
-- a desktop FFmpeg converter for producing device-ready 320×240 MPEG files and
-  128×96 poster sidecars
-- VCF contacts with folded-line and escaped-text import
-- calendar Today, Upcoming, month, local event editing, and read-only ICS import
-- live clock, Rockbox sleep timer, and lap stopwatch
-- time-only workouts with 20 activity types, pause/resume, persistent history,
-  summaries, and confirmed deletion
-- immediate manual and automatic lock, wake-key isolation, configurable lock
-  appearance, and clockwise 19-step wheel-distance unlock with progress decay
-- an insertion-time USB prompt for Charge or Data mode
-- a three-second Play-hold power menu with Shut Down and Restart choices;
-  CrazyPod owns the hold gesture so the committed Rockbox shutdown broadcast
-  cannot reinitialize the LCD before the prompt
-- iPod 6G charging control restored to SUSP/HPWR current limiting instead of
-  the broken C1/CHRG shutdown path
-- hardware package containing playback codecs, wallpaper, and CrazyPod icon
-  resources
+## Product boundary
 
-Removed from the product:
+CrazyPod remains experimental standalone firmware for the iPod Classic 6G
+(`ipod6g`). It uses Rockbox for codecs, playback, storage, power, USB, kernel,
+and device drivers while replacing the Rockbox application interface with a
+320×240 LVGL product.
 
-- Rockbox root menu and browser UI
-- WPS and skin engine
-- Apple2026 shell, assets, fonts, and generators
-- plugins and the recording/encoder pipeline
-- USB Audio, HID, and iPod accessory protocol
-- iPod 5G product target
-- camera and voice recording applications
+The package excludes the Rockbox root menu, browser, WPS, skin and theme
+engines, plugin UI, recording pipeline, USB Audio, HID, iPod accessory
+protocol, and non-`ipod6g` targets.
 
-Intentionally not implemented:
+## Added
 
-- network music, online lyrics, and network import
-- physical chassis and click-wheel DIY options
-- third-party Mini App sandboxing or capability isolation
-- a supported end-user installer
+### Music and Now Playing
 
-Validation:
+- Persistent `My Favorites` playlist stored at
+  `/.crazypod/favorites.m3u8`.
+- Favorite action and state indicator on Now Playing.
+- Latin/CJK collation with pinyin A-Z grouping.
+- Fast-wheel section jumps after a short input burst, with a 760ms letter HUD.
+- Shared overflow marquee for Home, Now Playing, and selected list rows.
+- Progress seek surface with five-second wheel steps.
+- Direct wheel volume control on the main Now Playing screen without a volume
+  modal.
+- Queue dismissal after selecting and starting a queued track.
+- Artwork-derived primary, secondary, and highlight waveform colors.
+- Embedded 90ms `Sharp_Pop` sample for manual track changes. It mixes through
+  the beep channel without pausing or resetting music playback.
 
-- simulator and iPod 6G ARM builds pass
-- SDK ABI-prefix, Calculator, Pomodoro, input-pacing, and package-crypto host
-  tests pass normally and under ASan/UBSan
-- instruction-level execution of the real ARM Calculator payload renders `0`
-  both initially and after AC with a deliberately dirty BSS before load
-- the generated zip passes an archive integrity test
-- simulator MPEG playback, poster rendering, and persisted resume pass; a
-  physical device listed the converted files, and the AppleDouble false-entry
-  fix was installed, but post-reboot playback and synchronization remain
-  unconfirmed
-- the prior Calculator zero/step build was installed on an iPod 6G; all 300
-  packaged files matched after copy and the post-write FAT32 check exited 0
-- the current Mini App SDK revision 2 build passes simulator and ARM builds,
-  host tests, visual frames, and package validation but has not yet been
-  installed
-- the corrected Calculator display and visible wheel sequence still require a
-  post-boot physical interaction report
-- the optional bootloader builds but has not been flashed or physically
-  regression-tested
-- the current source still requires release-grade hardware regression testing
+### Artwork cache
+
+- CV8 stores one 128×128 RGB565 image per unique album.
+- First-time generation sorts work by source path to reduce storage seeks.
+- Progress persists every 64 albums and resumes after a normal exit or reboot.
+- Cache records track artwork source signatures, so unchanged albums survive
+  firmware-only USB updates.
+- Artwork preparation blocks lock input while active and stops outside Music.
+
+### Shell and presentation
+
+- Shared centered empty-state overlay for empty Music, Media, Books, Podcasts,
+  Contacts, Workouts, Mini Apps, and related routes.
+- Full-screen black-and-white input block after choosing USB Data mode.
+- Home MENU hold opens Now Playing after 0.5 seconds without waiting for
+  artwork.
+- PLAY hold opens the Shut Down / Restart menu after three seconds without
+  also toggling playback.
+- Default icon scale increased from 100% to 120% for new state and built-in
+  presets.
+
+### Architecture
+
+- Replaced the 18,456-line `crazypod_ui.c` implementation with vertical
+  features, Shell, Navigation, Presentation, Platform, and domain modules.
+- Reduced `crazypod_ui.c` to the 800-line composition-root limit.
+- Added feature facades, active-feature dispatch, navigation commands, and a
+  platform display boundary.
+- Added an architecture gate that rejects horizontal transition directories,
+  cross-feature private includes, mutable UI `extern` state, domain-to-UI
+  dependencies, route switches in the composition root, and root-size drift.
+- Added host coverage for collation and fast-wheel section-jump state.
+
+### Mini Apps
+
+- ABI 1 revision 3 retains the original host-table prefix and adds
+  capability-gated asynchronous text, choice, and confirmation surfaces.
+- CPK format 2 adds a deterministic `resources.bin` container and bounded
+  RGB565 bitmap rendering.
+- Read-only Now Playing snapshots are available through an optional host API.
+- Same-version damaged installs repair from a valid package.
+- Package verification is cached by app ID and version for the current
+  firmware session.
+
+## Changed
+
+- Home uses a fixed 50fps motion clock, Q16 wheel position, reduced renderer
+  hot-path work, and a small-movement filter.
+- All six Home waveform styles use lower-cost drawing paths. LVGL now keeps a
+  32×32 shadow cache, and the Home capsule updates text, artwork state, and
+  progress only when values change.
+- Radial Spectrum no longer draws the horizontal center line on Now Playing.
+- Now Playing Vinyl Groove uses three restrained, phase-aligned lines instead
+  of five high-amplitude lines.
+- The music-library cache format is version 3 so collation order and section
+  jumps use the same key.
+- Settings, More, and other short menus share the corrected row-window logic.
+- `Gigass/CrazyPod` is an independent GitHub repository. `origin` points to it;
+  the local `upstream` remote remains fetch-only.
+
+## Fixed
+
+- Settings and More menu corruption after scrolling a list with fewer than
+  seven rows. The previous window calculation could produce a negative source
+  index.
+- Lock-screen white/black wake sequence caused by stale LCD sleep work racing a
+  newer backlight-on request.
+- Short Home wheel movement triggering icon motion while the user intended to
+  click.
+- Long PLAY triggering play/pause before the power menu.
+- Queue selection leaving the queue overlay open.
+- Empty-page content being rendered under or over inconsistent inline notices.
+- Repeated USB entry invalidating completed artwork work after firmware-only
+  updates.
+
+## Validation
+
+- Simulator build and pixel-level short/long marquee checks pass for the
+  current working tree.
+- UI, Mini App, EPUB, and architecture host gates pass.
+- The current working tree builds and packages for `ipod6g`; its ZIP contains
+  324 entries and passes `unzip -tq`.
+- The latest recorded installed firmware has SHA-256
+  `1b939f9266c89aac4d13635a3da5755189d59e7a9d6b956328fd655fb3c0440b`.
+- All 301 package files matched after device copy, and the iPod was safely
+  ejected. The two marquee source files remain uncommitted.
+- Full release-grade physical regression remains incomplete.
+
+## Not implemented
+
+- Nine-language localization. The firmware UI remains English-only and has no
+  language selector, translated string table, font subsets, or state migration.
+- 3.5mm headset remote control. The target does not yet initialize the Mikey
+  remote controller or normalize its multimedia events for CrazyPod.
+- Native Mini App sandboxing, general permissions, direct filesystem access,
+  audio callbacks, networking, sensors, or a multilingual IME.
+- A supported end-user installer.
+
+## Upgrade notes
+
+- CrazyPod persistent state remains version 9.
+- The music-library cache upgrades to version 3 and may rescan once.
+- Artwork uses CV8. The first run of the new cache format prepares each unique
+  album once; later runs resume or preserve unchanged entries.
+- The optional bootloader remains separate from `CrazyPod-6G.zip` and has not
+  completed physical boot regression.

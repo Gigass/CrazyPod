@@ -1,6 +1,6 @@
 # CrazyPod project status
 
-Status date: 2026-07-27
+Status date: 2026-07-30 01:25 CST
 
 This document separates implemented code from build results, device
 installation records, and design proposals. A task discussion is not evidence
@@ -17,19 +17,83 @@ separately.
 
 ### Conversation coverage
 
-The current Codex 50-task index exposes 27 CrazyPod tasks. This audit read the
-new and changed tasks and reused the prior documentation pass for unchanged
-items that were already inspected. The index has no cursor for tasks that have
-fallen outside its current window, so this is a complete audit of the
-currently exposed CrazyPod history, not a claim about every task ever created.
+The current Codex 50-task index exposes 21 CrazyPod tasks updated from
+2026-07-29 through 2026-07-30. This audit read those task records and checked
+their claims against the current Git tree, build artifacts, and working-tree
+diff. The index does not expose tasks that have fallen outside its current
+window, so this is an audit of the available recent history, not every
+CrazyPod task ever created.
+
+## Recent progress: 2026-07-29 to 2026-07-30
+
+### Implemented and committed
+
+- Split `crazypod_ui.c` from 18,456 lines into feature, shell, presentation,
+  navigation, platform, EPUB, photo, video, wallpaper, and Mini App modules.
+  The current composition root is 800 lines. The architecture gate rejects
+  feature-private dependencies from `ui/app/`.
+- Reworked Home rendering and input: fixed the 50fps motion clock, added Q16
+  wheel motion and snap calculations, reduced renderer hot-path work, filtered
+  small click-wheel movement, and reduced the cost of all six waveform styles.
+- Reworked the CV8 artwork cache around unique albums, one 128x128 RGB565
+  cache image per album, path-ordered generation, 64-album checkpoints,
+  resumable preparation, and source-signature-based invalidation. Firmware-only
+  USB updates no longer require a full artwork rebuild after the new firmware
+  has run once.
+- Added artwork-derived three-color palettes for Home and Now Playing
+  waveforms. Removed the Radial Spectrum center line and simplified the
+  Now Playing Vinyl Groove.
+- Fixed Settings and More menu corruption caused by a negative window index
+  when fewer than seven rows were present.
+- Fixed the lock/wake race between the UI and backlight queues, the Home
+  0.5-second MENU hold to Now Playing, the three-second PLAY hold power menu,
+  and the USB Data full-screen input block.
+- Added a shared centered empty-state overlay and applied it to empty Music,
+  Media, Books, Podcasts, Contacts, Workouts, Mini Apps, and related routes.
+- Added a persistent `My Favorites` playlist, the Now Playing favorite action
+  and heart indicator, queue auto-close after selecting a track, direct
+  click-wheel volume control on the main Now Playing screen, and the separate
+  `PROGRESS` seek view.
+- Replaced the manual track-skip square wave with a trimmed 90ms embedded
+  `Sharp_Pop` sample mixed through the beep channel without resetting music
+  playback.
+- Added Latin/CJK collation, pinyin A-Z grouping, fast-wheel section jumps,
+  a 760ms letter HUD, and shared marquee behavior for Home, Now Playing, and
+  selected list rows.
+- Detached `Gigass/CrazyPod` from the upstream GitHub fork network. `origin`
+  points to the independent repository, and `upstream` remains fetch-only
+  because its push URL is `file:///dev/null`.
+
+### In progress or not yet complete
+
+- Two uncommitted working-tree changes fix a marquee regression: short titles
+  remain still, long titles scroll horizontally, and list-row height follows
+  the font's 17px line height. Simulator pixel checks confirmed no movement for
+  short text and horizontal-only movement for long text. Host tests, Simulator,
+  ARM packaging, 301-file device verification, and safe eject all passed. The
+  code still needs a Git commit and post-boot physical interaction check.
+- Nine-language localization remains a design only. No `crazypod_l10n`
+  module, language setting, translated string table, font subset, or state
+  migration exists in source.
+- 3.5mm headset remote support remains unimplemented. The current iPod 6G
+  target lacks the Mikey remote driver, and CrazyPod's raw-button
+  normalization would also need multimedia/remote event handling.
+- The requested branch set `main`, `dev`, and `stable` is not clean yet.
+  Local `DEV` remains uppercase; remote `DEV`, `stablerelease1`, and `release`
+  still exist. `release` contains three commits outside `main`, so deleting it
+  still requires explicit confirmation.
+- The current `DEV` branch is one commit ahead of `origin/DEV`. Commit
+  `96aa042d1f` removes the superseded Now Playing volume popup. The two
+  marquee files above are also uncommitted.
 
 ## Validation snapshot
 
 | Level | Result |
 | --- | --- |
-| Source review | CrazyPod product paths and current feature routes inspected |
-| Simulator build | `./build-sim.sh --incremental` passes |
-| ARM build | `./build-hw.sh --incremental` passes for `ipod6g`; all eight main/IRQ/FIQ stack symbols pass the 8-byte alignment gate |
+| Source review | Recent Codex tasks, commits since 2026-07-29, current source, branch state, and working-tree diff inspected |
+| Simulator build | Current working tree passes the incremental simulator build; `build-sim/rockboxui` was produced at 2026-07-30 01:21 CST |
+| ARM build | Current working tree passes the `ipod6g` build, stack gate, package build, and ZIP integrity check |
+| UI and architecture tests | Current working tree passes UI host tests, Mini App host tests, EPUB host tests, the architecture gate, and `git diff --check` |
 | Video simulator test | MPEG-2 video and MP2 audio open through the integrated engine; poster rendering, playback controls, and persisted resume at 0:06 pass |
 | Mini App host tests | SDK ABI-prefix, Calculator, Pomodoro, crypto, and host input-pacing tests pass, including revision 3 tail gating, fixed-layout bitmap commands, one visible focus step per frame, bounded backlog, direction reversal, and accelerated numeric editing |
 | ARM Mini App runtime | Calculator payload loaded at its real ARM address with dirty-then-cleared BSS renders `0` initially and after AC in instruction-level emulation |
@@ -37,36 +101,30 @@ currently exposed CrazyPod history, not a claim about every task ever created.
 | Mini App launch path | Package verification is cached by app ID and version after startup/install/USB rescan; normal list entry and launch no longer repeat Ed25519, icon, binary, and resource hashing; FAT AppleDouble `._*.cpk` files are ignored before parsing |
 | Package test | `CrazyPod-6G.zip` passes `unzip -tq` |
 | Package contents | 324 ZIP entries, including 39 playback codecs, 256 app icons, and 2 signed Mini App packages |
-| Physical copy | Current revision 3 firmware and both Calculator/Pomodoro 1.2.0 packages were copied to `/Volumes/CRAZYPOD`; source/device SHA-256 values match and a post-write FAT verification passed |
+| Physical copy | Latest recorded device firmware is SHA-256 `1b939f9266c89aac4d13635a3da5755189d59e7a9d6b956328fd655fb3c0440b`; all 301 package files matched and the iPod was safely ejected |
 | Full hardware regression | Incomplete |
 
 Artifact snapshot from this audit:
 
 ```text
 rockbox.ipod
-  size:    1,432,268 bytes
-  sha256:  064042544db9944b9f382eaa5a4b7951e6f33946390affa199b83a1dd1b9142f
+  size:    1,594,044 bytes
+  sha256:  1b939f9266c89aac4d13635a3da5755189d59e7a9d6b956328fd655fb3c0440b
 
 CrazyPod-6G.zip
-  size:    9,682,414 bytes
-  sha256:  31826636f52d4912cee03cdd625a1f71e77f21765f4bd184e9d92fc2d6ad099d
+  size:    9,739,910 bytes
+  sha256:  393b5cdf1e4b56257909f58ab0c105d45a349b1726c2781362496e84d48c177e
 
-calculator-1.2.0.cpk
-  size:    111,346 bytes
-  sha256:  f3759e04ebe3c780f0dae9e3b97b70fd12dfcea01cb9c3270cab907497ff0000
-
-pomodoro-1.2.0.cpk
-  size:    111,112 bytes
-  sha256:  8fed98e6d8eaaf43121ff3b51c96a7d2b02f57b89e21dc268df43d1198e9f432
+build-sim/rockboxui
+  size:    4,120,184 bytes
+  sha256:  ad1a507174d3a20d9e10cc4832195940ad23f46a7cc8130f5b27ff696dbe0ca7
 ```
 
-A pre-existing FAT32 cross-link was repaired only after readable `.rockbox`
-and `.crazypod` data was backed up. Later firmware copies passed per-file or
-firmware-hash comparison and post-write FAT32 checks. The most recent recorded
-copy contains Mini App SDK revision 3 and the launch verification-cache fix.
-Its device SHA-256 is
-`064042544db9944b9f382eaa5a4b7951e6f33946390affa199b83a1dd1b9142f`,
-matching the artifact above.
+All three artifacts include the current uncommitted marquee fixes. The latest
+recorded device copy matches the hardware artifact. Recent flash sessions also
+repaired isolated FAT orphan clusters only after backing up readable `.rockbox`
+and `.crazypod` data; later copies passed source/device hash checks and
+post-write FAT verification.
 
 ## Implementation audit
 
@@ -74,9 +132,10 @@ matching the artifact above.
 
 | Area | Consolidated result |
 | --- | --- |
-| Home | Native application carousel, opaque themed icons, playback controls, waveform styles, and a wallpaper-aware frosted now-playing capsule |
-| Music library | Local metadata scan, artists, albums, songs, M3U/M3U8 playlists, search, and dynamic playback queue |
-| Now Playing | Atomic cover/background handoff, local synchronized LRC lyrics, queue, shuffle/repeat, volume, and contrast-aware text |
+| Architecture | Feature-oriented UI modules, feature registry, active-feature dispatch, navigation commands, platform display facade, and an 800-line composition root guarded by structural tests |
+| Home | Native application carousel, continuous Q16 click-wheel motion, small-movement filtering, opaque themed icons, optimized waveform styles, and a wallpaper-aware frosted now-playing capsule |
+| Music library | Local metadata scan, artists, albums, songs, M3U/M3U8 playlists, persistent favorites, pinyin/Latin collation, A-Z fast jump, search, dynamic playback queue, and resumable CV8 album artwork preparation |
+| Now Playing | Atomic cover/background handoff, local synchronized LRC lyrics, queue, favorite control, shuffle/repeat, direct wheel volume, progress seeking, marquee text, artwork palette waveforms, and contrast-aware text |
 | Cover Flow | Native RGB565 renderer, 50fps frame clock, artwork caching and prefetch, subpixel edge coverage, C2-continuous Q16 pose curves, preserved release velocity, and projected snap physics |
 | Media | Photos, Videos, and Favorites routes; recursive `/Pictures` browsing; pre-transcoded MPEG-1/2 video playback from `/Videos`; cached photo thumbnails and video posters; play/pause, seek, volume, and resume |
 | Appearance | 16 icon themes, colors, glow, scale, wallpapers, independent screen radii, presets, and `.upodtheme` import/export |
@@ -123,6 +182,11 @@ matching the artifact above.
 
 ### Design proposals only
 
+- Nine-language localization for English, Simplified Chinese, Traditional
+  Chinese, Japanese, Korean, German, French, Spanish, and Brazilian
+  Portuguese.
+- Mikey-based 3.5mm headset remote support and the required CrazyPod remote
+  input normalization.
 - Lua or another sandboxed Mini Apps runtime.
 - General Mini App permissions, capability isolation, and native-code
   sandboxing.
@@ -152,18 +216,25 @@ camera and microphone. Workouts record elapsed time only.
 
 1. Run a clean, repeatable simulator and ARM build in CI.
 2. Complete a documented iPod 6G regression matrix.
-3. Test the completed Cover Flow motion-curve change on a physical click wheel.
-4. Test USB Charge/Data and charging behavior on physical hardware.
-5. Test Mini App installation, wheel input, background Pomodoro alarms, and
+3. Commit the current marquee overflow fix and record a post-boot physical
+   interaction check.
+4. Test Home wheel dead-zone, motion, and snap behavior on a physical click
+   wheel.
+5. Test USB Charge/Data, artwork-cache preservation, and charging behavior on
+   physical hardware.
+6. Test Mini App installation, wheel input, background Pomodoro alarms, and
    concurrent music playback on physical hardware.
-6. Test the custom bootloader on hardware and replace or clear the
+7. Test the custom bootloader on hardware and replace or clear the
    Apple-shaped mark before an unaffiliated public release.
-7. Test content limits and corrupted-file handling.
-8. Remove device backups and generated build products from Git tracking in a
-   dedicated cleanup change.
-9. Replace the Mini App development trust key and define key rotation before
+8. Test content limits and corrupted-file handling.
+9. Keep device backups and generated build products out of Git; the repository
+   no longer tracks `device-backups`, but thousands of local backup files still
+   need an external retention policy.
+10. Normalize the branch set after preserving or explicitly discarding the
+    three `release`-only commits.
+11. Replace the Mini App development trust key and define key rotation before
    accepting production packages.
-10. Publish a versioned release, checksums, recovery requirements, and an
+12. Publish a versioned release, checksums, recovery requirements, and an
    installation procedure.
 
 Until these are complete, CrazyPod should be described as experimental

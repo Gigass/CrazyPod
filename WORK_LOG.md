@@ -1,5 +1,50 @@
 # WORK_LOG.md
 
+## 2026-07-30 (Architecture, interaction, music, and documentation sync)
+
+Goal: record the implemented work from 2026-07-29 through 2026-07-30 and align
+all CrazyPod-owned documentation with the current source.
+
+Changed:
+
+- split `crazypod_ui.c` from 18,456 lines into vertical features, Shell,
+  Navigation, Presentation, Platform, and domain infrastructure; the current
+  composition root is 800 lines and passes the strengthened architecture gate
+- optimized Home click-wheel motion, renderer hot paths, and all six waveform
+  styles; added small-movement filtering
+- replaced the artwork pipeline with resumable CV8 unique-album caching and
+  source-signature invalidation
+- added artwork-derived waveform palettes, persistent `My Favorites`, queue
+  auto-close, Now Playing progress seek, direct wheel volume, and embedded
+  `Sharp_Pop` track-skip audio
+- added Latin/CJK collation, pinyin A-Z grouping, fast-wheel section jumps,
+  letter HUD, and shared marquee behavior
+- fixed Settings/More short-list corruption, lock/wake ordering, Home MENU hold,
+  PLAY hold, USB Data input blocking, and centered empty states
+- detached `Gigass/CrazyPod` from the upstream fork network and disabled pushes
+  to `upstream`
+- synchronized README, build, contribution, architecture, Mini App, status,
+  release, and work-log documentation
+
+Verified:
+
+- current simulator build and all existing host tests pass
+- architecture gate passes with an 800-line composition root
+- current marquee fix passes pixel-level short/long text checks, ARM packaging,
+  301-file device verification, and safe eject
+- latest recorded installed firmware hash is
+  `1b939f9266c89aac4d13635a3da5755189d59e7a9d6b956328fd655fb3c0440b`
+
+Still open:
+
+- commit the two-file marquee overflow fix and record post-boot interaction
+- implement nine-language localization; the current firmware remains
+  English-only
+- implement the Mikey headset-remote driver and CrazyPod remote input mapping
+- normalize `main`, `dev`, and `stable` only after deciding whether to preserve
+  the three commits unique to `release`
+- complete the release-grade physical iPod regression matrix
+
 ## 2026-07-27 (Project documentation synchronization)
 
 Goal: align public project documentation with the current source tree, the
@@ -5906,8 +5951,8 @@ Verified vs assumed:
 - Assumed until runtime check: the duplicate battery symptom is stale base-layer
   content surviving a partial refresh on hold transition; the new full-redraw
   gate is intended to prove or disprove that quickly.
- 
- ---
+
+---
 
 ## 2026-04-11 - Apple2026 Filesystem Typography Hierarchy Fix
 

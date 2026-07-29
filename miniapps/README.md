@@ -4,6 +4,8 @@ CrazyPod Mini Apps are native payloads for the iPod 6G. The current SDK and
 loader use ABI 1 and support only the `ipod6g` hardware target and the
 simulator target.
 
+This reference reflects SDK revision 3 and package format 2 as of 2026-07-30.
+
 The two reference packages are:
 
 - `dist/miniapps/calculator-1.2.0.cpk`
@@ -174,7 +176,7 @@ The current capability bits cover:
 - duration and date/time formatting without libc;
 - four independent alarm slots per app;
 - host toasts and an asynchronous request to close the current app;
-- semantic divider and linear-progress drawing commands.
+- semantic divider and linear-progress drawing commands;
 - asynchronous host-owned text, choice, and confirmation surfaces;
 - bounded resource lookup/read and one RGB565 bitmap command per scene;
 - a copied, read-only Now Playing snapshot.
@@ -234,3 +236,12 @@ The normal hardware build also verifies 8-byte alignment of all iPod 6G main,
 IRQ, and FIQ stack boundaries before packaging. This is part of the Mini App
 runtime contract because the host number formatter passes `double` through a
 variadic firmware function.
+
+Run the Mini App host suite with:
+
+```sh
+sh tests/run-miniapp-host-tests.sh
+```
+
+The suite covers manifests, CPK structure, resource access, alarm delivery,
+install records, same-version repair, and installer lifecycle behavior.

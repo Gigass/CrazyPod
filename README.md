@@ -34,11 +34,19 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
 
 - Recursively scans `/Music` and `/iPod_Control/Music` for formats supported by
   the bundled Rockbox codecs.
-- Builds artist, album, song, and M3U/M3U8 playlist views from local metadata.
-- Provides search, a dynamic playback queue, shuffle, repeat, resume, album
-  art, synchronized local LRC lyrics, and native Cover Flow.
+- Builds artist, album, song, M3U/M3U8 playlist, and persistent `My Favorites`
+  views from local metadata.
+- Sorts Latin and CJK metadata through one collation key. Fast wheel movement
+  can jump between pinyin or Latin A-Z sections without changing playlist,
+  album-track, or queue order.
+- Provides search, a dynamic playback queue, shuffle, repeat, resume,
+  synchronized local LRC lyrics, and native Cover Flow.
+- Stores one CV8 128×128 RGB565 image per album. First-time artwork preparation
+  is path-ordered and resumable; later scans preserve unchanged cache entries.
 - Keeps the previous artwork visible until the next cover and blurred
   background are ready, then publishes them together.
+- Scrolls overflowing Home, Now Playing, and selected-list text. Hidden and
+  unselected labels stop animating.
 - Plays podcasts stored under `/Podcasts`.
 - Provides a unified **Media** app with Photos, Videos, and Favorites.
 - Browses JPG, JPEG, and BMP images under `/Pictures`, with favorites,
@@ -62,7 +70,8 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
   CrazyPod records elapsed time only; it does not invent distance, steps, or
   calorie data.
 - **System:** live battery and clock status, selectable USB Charge/Data modes,
-  and a configurable 16-application main menu.
+  a full-screen input block while Data mode is active, and a configurable
+  16-application main menu.
 - **Lock screen:** immediate manual lock, wake-key isolation, a large clock,
   configurable wallpaper and corner radii, and a clockwise 19-step
   wheel-distance unlock with progress and decay.
@@ -198,9 +207,18 @@ to cancel.
 During video playback, Play toggles pause, Left/Right seek by 10 seconds, the
 wheel changes volume, and Menu exits while saving resume progress.
 
+On the main Now Playing screen, the wheel changes volume without opening a
+modal. In the action surface, choose Progress to seek in five-second steps;
+choosing a queue item starts that track and closes the queue. The Favorite
+action adds or removes the current track from `My Favorites`.
+
 ## Known limits
 
 - Only the iPod Classic 6G target is supported.
+- The firmware UI is currently English-only. Nine-language localization is
+  planned but has no runtime implementation or language setting.
+- 3.5mm headset remote buttons are not supported. The current target does not
+  initialize the Mikey remote controller or route its events into CrazyPod.
 - Music, lyrics, books, photos, contacts, and calendars are local-only.
 - Video playback does not accept MP4/H.264/AAC directly. Convert those files
   to MPEG-1/2 first; subtitles, playlists, deletion, and on-device conversion
@@ -228,6 +246,9 @@ wheel changes volume, and Menu exits while saving resume progress.
 
 - `apps/crazypod/` contains the product UI, applications, playback bridge, and
   persistent state.
+- [`apps/crazypod/ARCHITECTURE.md`](apps/crazypod/ARCHITECTURE.md) defines the
+  feature, Shell, Navigation, Presentation, Platform, and composition-root
+  boundaries enforced by the architecture test.
 - `miniapps/` contains the native Mini App SDK, Calculator, Pomodoro, package
   manifests, development key, and host tests.
 - `lib/lvgl/` contains the vendored LVGL 9.5.0 source.

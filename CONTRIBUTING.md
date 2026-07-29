@@ -7,17 +7,22 @@ inside that product boundary unless a proposal explicitly expands it.
 
 1. Read [README.md](README.md) for the supported feature set.
 2. Read [BUILD.md](BUILD.md) and build the simulator once.
-3. For Mini App changes, read
+3. For UI ownership changes, read
+   [apps/crazypod/ARCHITECTURE.md](apps/crazypod/ARCHITECTURE.md).
+4. For Mini App changes, read
    [miniapps/README.md](miniapps/README.md) and the
    [Chinese tutorial](miniapps/TUTORIAL.zh-CN.md).
-4. Create a focused branch from the current default branch.
-5. Check `git status` before editing. Do not overwrite unrelated local work.
+5. Create a focused branch from the current default branch.
+6. Check `git status` before editing. Do not overwrite unrelated local work.
 
 ## Source boundaries
 
 - Put CrazyPod product code under `apps/crazypod/`.
 - Keep LVGL integration under `lib/lvgl/`.
 - Change inherited Rockbox code only when the iPod 6G platform requires it.
+- Expose each UI feature through its `crazypod_<name>_feature.h` facade. Do not
+  include feature-private headers from another feature, App, Shell,
+  Presentation, Platform, or the composition root.
 - Keep Mini App ABI fields append-only. Preserve the ABI 1 host-table prefix
   and gate optional tail functions with size and capability checks.
 - Do not reintroduce the Rockbox WPS, skin, theme, plugin, or recording UI into
@@ -35,7 +40,16 @@ Run the checks that match the change:
 ```sh
 ./build-sim.sh --incremental
 ./build-hw.sh --incremental
+sh tests/check-crazypod-ui-architecture.sh
+sh tests/run-crazypod-ui-host-tests.sh
+sh tests/run-miniapp-host-tests.sh
+sh tests/run-epub-host-tests.sh
+git diff --check
 ```
+
+Run only the relevant host suites while iterating, but run every applicable
+suite before submission. Documentation-only changes still require link and
+Markdown checks.
 
 For interface changes, launch the simulator and verify click-wheel navigation,
 Select, Menu, Left, Right, and Play. For hardware-specific changes, state

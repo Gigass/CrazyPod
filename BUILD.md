@@ -85,6 +85,27 @@ content use files from the simulated disk.
 The script rejects target arguments because no target other than `ipod6g` is
 supported.
 
+## Verification
+
+Run the structural and host tests from the repository root:
+
+```sh
+sh tests/check-crazypod-ui-architecture.sh
+sh tests/run-crazypod-ui-host-tests.sh
+sh tests/run-miniapp-host-tests.sh
+sh tests/run-epub-host-tests.sh
+git diff --check
+```
+
+The UI host test covers collation, A-Z wheel-jump state, route dispatch,
+navigation commands, menu layout, and text helpers. The architecture gate
+requires `crazypod_ui.c` to remain between 400 and 800 lines and rejects
+feature-private includes outside their owner.
+
+For a user-visible change, also run the simulator and exercise the affected
+route. For LCD, storage, USB, power, audio, or native Mini App changes, an ARM
+build proves compilation only; record physical iPod results separately.
+
 ## Bootloader
 
 The normal hardware archive does not replace the installed bootloader. Build
@@ -144,7 +165,7 @@ formatting from reading the wrong stack data on the iPod 6G.
 
 The Mini App package builder requires OpenSSL 3, produces deterministic stored
 ZIP entries, signs each manifest with Ed25519, and records SHA-256 hashes for
-the payload and icon.
+the payload, icon, and resource container.
 
 Check the generated archive and record its hashes before copying it:
 

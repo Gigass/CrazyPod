@@ -12,6 +12,35 @@
 static lv_anim_t marquee_template;
 static bool marquee_template_ready;
 
+static lv_label_long_mode_t marquee_mode(
+    lv_obj_t *label, bool active)
+{
+    const lv_font_t *font;
+    const char *text;
+    lv_point_t text_size;
+    int32_t content_width;
+
+    if(!active)
+        return LV_LABEL_LONG_MODE_DOTS;
+    text = lv_label_get_text(label);
+    font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
+    content_width =
+        lv_obj_calc_dynamic_width(label, LV_STYLE_WIDTH) -
+        lv_obj_get_style_space_left(label, LV_PART_MAIN) -
+        lv_obj_get_style_space_right(label, LV_PART_MAIN);
+    if(text == NULL || text[0] == '\0' ||
+       font == NULL || content_width <= 0)
+        return LV_LABEL_LONG_MODE_DOTS;
+    lv_text_get_size(
+        &text_size, text, font,
+        lv_obj_get_style_text_letter_space(label, LV_PART_MAIN),
+        lv_obj_get_style_text_line_space(label, LV_PART_MAIN),
+        LV_COORD_MAX, LV_TEXT_FLAG_EXPAND);
+    return text_size.x > content_width
+        ? LV_LABEL_LONG_MODE_SCROLL_CIRCULAR
+        : LV_LABEL_LONG_MODE_DOTS;
+}
+
 static void prepare_template(void)
 {
     if(marquee_template_ready)
@@ -27,13 +56,12 @@ static void prepare_template(void)
 
 void crazypod_marquee_configure(lv_obj_t *label, bool active)
 {
-    lv_label_long_mode_t mode = active
-        ? LV_LABEL_LONG_MODE_SCROLL_CIRCULAR
-        : LV_LABEL_LONG_MODE_DOTS;
+    lv_label_long_mode_t mode;
     uint32_t speed = lv_anim_speed(CRAZYPOD_MARQUEE_SPEED);
 
     if(label == NULL)
         return;
+    mode = marquee_mode(label, active);
     prepare_template();
     if(lv_obj_get_style_anim_duration(
            label, LV_PART_MAIN) != speed)
@@ -60,10 +88,7 @@ void crazypod_marquee_set_text(
         lv_label_set_text(label, text);
     crazypod_marquee_configure(label, active);
     if(changed)
-        lv_label_set_long_mode(
-            label, active
-                ? LV_LABEL_LONG_MODE_SCROLL_CIRCULAR
-                : LV_LABEL_LONG_MODE_DOTS);
+        lv_label_set_long_mode(label, marquee_mode(label, active));
 }
 
 #endif

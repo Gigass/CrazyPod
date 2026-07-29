@@ -272,9 +272,10 @@ void crazypod_menu_screen_render(
             title = "";
         label = make_label(row_box, title, context->metadata_font,
                            COLOR_WHITE, selected ? 255 : 195);
-        lv_obj_set_pos(label, text_x, 5);
+        lv_obj_set_pos(label, text_x, 4);
         lv_obj_set_width(label, text_width);
-        lv_obj_set_height(label, 16);
+        lv_obj_set_height(
+            label, lv_font_get_line_height(context->metadata_font));
         crazypod_marquee_configure(label, selected);
 
         marker = make_label(row_box,
