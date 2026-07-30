@@ -4,19 +4,20 @@ CrazyPod Mini Apps are native payloads for the iPod 6G. The current SDK and
 loader use ABI 1 and support only the `ipod6g` hardware target and the
 simulator target.
 
-This reference reflects SDK revision 3 and package format 2 as of 2026-07-30.
+This reference reflects SDK revision 4 and package format 2 as of 2026-07-30.
 
-The two reference packages are:
+The three reference packages are:
 
 - `dist/miniapps/calculator-1.2.0.cpk`
 - `dist/miniapps/pomodoro-1.2.0.cpk`
+- `dist/miniapps/game2048-1.0.0.cpk`
 
 For a complete Chinese walkthrough that creates, builds, signs, tests, and
 installs a new app, read
 [从零开发 CrazyPod Mini App](TUTORIAL.zh-CN.md).
 
 Copy a package to `/MiniApps/Install` on the iPod. CrazyPod verifies and
-installs it when Mini Apps opens. Firmware builds also bundle both reference
+installs it when Mini Apps opens. Firmware builds also bundle all reference
 packages under `/.rockbox/crazypod/miniapps/packages`.
 
 ## Reference apps
@@ -52,6 +53,19 @@ numeric editing, where wheel acceleration may change a value by multiple
 steps. Play saves the configuration. Menu leaves editing first, then closes
 Setup. Labels, phases, actions, and status messages follow the current
 CrazyPod language.
+
+### 2048
+
+2048 maps Menu, Play, Left, and Right to Up, Down, Left, and Right. A short
+Menu press moves up; holding Menu for 0.5 seconds remains the host-owned exit
+gesture. The wheel navigates Home, pause, settings, history, result, and
+confirmation screens, while Center activates the focused item.
+
+The app saves an unfinished session, its deterministic random state, score,
+move count, elapsed play time, settings, and high score. Wins, failures after
+reaching 2048, ordinary failures, and confirmed abandonment enter the ten-item
+recent history with their final boards. Closing the app or returning Home
+does not end the current game.
 
 ## Installation lifecycle
 
@@ -150,6 +164,12 @@ consumes at most one event when a display frame can be rendered and presented.
 Changing direction discards pending events from the old direction. Select,
 Play, Menu, Left, or Right clears wheel movement that has not yet appeared on
 screen, so an action cannot target an invisible future focus state.
+
+A Menu press released before 0.5 seconds is delivered to the Mini App as
+`CP_INPUT_MENU`, so apps may assign it an app-specific action. Holding Menu
+for 0.5 seconds always opens the host-owned exit confirmation instead. This
+exit gesture is reserved by the host and does not depend on whether the app
+handles Menu.
 
 An app exports `cp_miniapp_entry`, returns a `cp_miniapp_ops` table, and
 implements `open`, `close`, `event`, `tick`, and `render`. Rendering is limited

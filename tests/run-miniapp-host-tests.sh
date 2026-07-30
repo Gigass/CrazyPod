@@ -109,3 +109,21 @@ cc -std=c99 -Wall -Wextra -Werror \
     -o "$test_root/crazypod_miniapp_input_host_test"
 
 "$test_root/crazypod_miniapp_input_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/miniapps/game2048" \
+    "$repo_root/miniapps/game2048/engine.c" \
+    "$repo_root/miniapps/tests/test_game2048.c" \
+    -o "$test_root/game2048_test"
+
+"$test_root/game2048_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/miniapps/sdk" \
+    -I"$repo_root/miniapps/game2048" \
+    "$repo_root/miniapps/game2048/app.c" \
+    "$repo_root/miniapps/game2048/engine.c" \
+    "$repo_root/miniapps/tests/test_game2048_app.c" \
+    -o "$test_root/game2048_app_test"
+
+"$test_root/game2048_app_test"

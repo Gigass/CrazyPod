@@ -62,11 +62,11 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
   favorites, chapters, font sizes, and paper themes. TXT and Markdown content
   automatically distinguishes strict UTF-8 from GBK/GB2312 (CP936).
 - **Organizer:** local calendar events, read-only ICS import, and VCF contacts.
-- **Mini Apps:** signed native Calculator and Pomodoro packages using ABI 1,
-  SDK revision 3, CPK format 2 resources, host-owned asynchronous dialogs,
-  read-only Now Playing metadata, and a shared click-wheel runtime. Clock, stopwatch, calendar,
-  and contacts remain under More Features rather than being duplicated as
-  packages.
+- **Mini Apps:** signed native Calculator, Pomodoro, and 2048 packages using
+  ABI 1, SDK revision 4, CPK format 2 resources, host-owned asynchronous
+  dialogs, read-only Now Playing metadata, and a shared click-wheel runtime.
+  Clock, stopwatch, calendar, and contacts remain under More Features rather
+  than being duplicated as packages.
 - **Workouts:** 20 timed activities with pause, resume, history, and summaries.
   CrazyPod records elapsed time only; it does not invent distance, steps, or
   calorie data.
@@ -96,7 +96,7 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
 
 ### Mini Apps
 
-The firmware bundles two usable ABI 1 reference packages:
+The firmware bundles three usable ABI 1 reference packages:
 
 - **Calculator:** a standard calculator that starts at `0` and supports
   chaining, contextual percent, repeat equals, sign, decimal, backspace, clear,
@@ -105,6 +105,9 @@ The firmware bundles two usable ABI 1 reference packages:
   long break, and four rounds. Durations and rounds are editable; running
   sessions support pause, resume, skip, reset, persisted deadlines, and
   background alarms.
+- **2048:** maps the four Click Wheel buttons to board movement, persists an
+  unfinished game, records wins, failures, and abandoned sessions, and keeps
+  the ten most recent completed games with final-board details.
 
 Fast wheel input never skips visible actionable controls. The host keeps a
 bounded input queue and consumes at most one discrete focus movement per
@@ -164,6 +167,7 @@ existing build directory.
 | Optional bootloader | `build-bootloader-ipod6g/bootloader-ipod6g.ipod` |
 | Calculator package | `dist/miniapps/calculator-1.2.0.cpk` |
 | Pomodoro package | `dist/miniapps/pomodoro-1.2.0.cpk` |
+| 2048 package | `dist/miniapps/game2048-1.0.0.cpk` |
 
 The project does not yet claim a supported hardware installation procedure.
 The generated archive is for controlled device testing by users who already

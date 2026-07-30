@@ -164,6 +164,7 @@ Artifacts:
 - `build-hw-ipod6g/CrazyPod-6G.zip`
 - `dist/miniapps/calculator-1.2.0.cpk`
 - `dist/miniapps/pomodoro-1.2.0.cpk`
+- `dist/miniapps/game2048-1.0.0.cpk`
 
 The zip deliberately contains only the firmware and the runtime resources
 required by the independent product:
@@ -177,6 +178,7 @@ required by the independent product:
 .rockbox/crazypod/icons/<theme>/*.bmp
 .rockbox/crazypod/miniapps/packages/calculator-1.2.0.cpk
 .rockbox/crazypod/miniapps/packages/pomodoro-1.2.0.cpk
+.rockbox/crazypod/miniapps/packages/game2048-1.0.0.cpk
 ```
 
 There are no Rockbox WPS files, themes, skin fonts, plugins, or recording

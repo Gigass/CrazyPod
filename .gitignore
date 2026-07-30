@@ -377,6 +377,7 @@ __pycache__
 /scratch_*
 /tmp_*
 /docs/**/*.md
+!/docs/CRAZYPOD_MINIAPP_V2_ARCHITECTURE.zh-CN.md
 /docs/**/*.txt
 /docs/**/*.html
 /apps/plugins/**/README.md

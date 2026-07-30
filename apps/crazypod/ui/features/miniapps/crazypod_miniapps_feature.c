@@ -75,6 +75,7 @@ bool crazypod_miniapps_feature_render(
 void crazypod_miniapps_feature_initialize(void)
 {
     crazypod_miniapp_screen_reset();
+    crazypod_miniapp_input_reset_state();
 }
 
 bool crazypod_miniapps_feature_handle_input(
@@ -90,7 +91,8 @@ bool crazypod_miniapps_feature_handle_input(
 
     (void)state;
     return crazypod_miniapp_input_handle(
-        event, context->ticks_per_second / 10,
+        event, context->now, context->ticks_per_second / 2,
+        context->ticks_per_second / 10,
         &actions);
 }
 
@@ -99,10 +101,12 @@ int crazypod_miniapps_feature_service(
     long ticks_per_second)
 {
     struct crazypod_miniapp_runtime_service_result result =
-        crazypod_miniapp_runtime_service(
-            active, frame_due, now, ticks_per_second);
+        { 0 };
     int events = CRAZYPOD_MINIAPPS_SERVICE_NONE;
 
+    crazypod_miniapp_input_service(active, now);
+    result = crazypod_miniapp_runtime_service(
+        active, frame_due, now, ticks_per_second);
     if(result.close_requested)
         events |= CRAZYPOD_MINIAPPS_SERVICE_CLOSE;
     if(result.beep_requested)
@@ -120,7 +124,8 @@ bool crazypod_miniapps_feature_is_open(void)
 bool crazypod_miniapps_feature_motion_active(void)
 {
     return crazypod_miniapps_is_open() &&
-        crazypod_miniapp_runtime_motion_active();
+        (crazypod_miniapp_runtime_motion_active() ||
+         crazypod_miniapp_input_motion_active());
 }
 
 bool crazypod_miniapps_feature_alert_active(void)
@@ -136,6 +141,7 @@ void crazypod_miniapps_feature_close(void)
 void crazypod_miniapps_feature_reset_input(void)
 {
     crazypod_miniapp_runtime_reset_input();
+    crazypod_miniapp_input_reset_state();
 }
 
 void crazypod_miniapps_feature_rescan(void)

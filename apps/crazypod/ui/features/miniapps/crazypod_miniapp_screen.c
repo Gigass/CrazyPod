@@ -11,6 +11,7 @@
 #include "../../../crazypod_miniapp_font.h"
 #include "../../../crazypod_miniapps.h"
 #include "../../presentation/crazypod_ui_widgets.h"
+#include "crazypod_miniapp_input.h"
 #include "crazypod_miniapp_screen.h"
 
 #define COLOR_DETAIL 0x08080D
@@ -261,6 +262,63 @@ static void render_toast(void)
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
 }
 
+static void render_exit_prompt(void)
+{
+    bool exit_selected = crazypod_miniapp_input_exit_selected();
+    lv_obj_t *panel;
+    lv_obj_t *title;
+    lv_obj_t *cancel;
+    lv_obj_t *exit;
+    lv_obj_t *label;
+
+    if(!crazypod_miniapp_input_exit_prompt_visible())
+        return;
+    crazypod_ui_widget_box(
+        screen.parent, 0, 0, LCD_WIDTH, LCD_HEIGHT,
+        0, 0x000000, 120);
+    panel = crazypod_ui_widget_box(
+        screen.parent, 45, 68, 230, 108,
+        14, 0x24242C, LV_OPA_COVER);
+    lv_obj_set_style_border_width(panel, 1, 0);
+    lv_obj_set_style_border_color(
+        panel, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(panel, 45, 0);
+
+    title = crazypod_ui_widget_label(
+        panel, CP_TR("EXIT MINI APP?"),
+        &lv_font_source_han_sans_sc_14_cjk,
+        COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(title, 15, 18);
+    lv_obj_set_size(title, 200, 18);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+
+    cancel = crazypod_ui_widget_box(
+        panel, 15, 55, 96, 36, 9,
+        exit_selected ? 0x34343D : COLOR_WHITE,
+        exit_selected ? 180 : LV_OPA_COVER);
+    exit = crazypod_ui_widget_box(
+        panel, 119, 55, 96, 36, 9,
+        exit_selected ? 0xFF453A : 0x34343D,
+        exit_selected ? LV_OPA_COVER : 180);
+
+    label = crazypod_ui_widget_label(
+        cancel, CP_TR("Cancel"),
+        &lv_font_source_han_sans_sc_14_cjk,
+        exit_selected ? COLOR_WHITE : 0x111116,
+        LV_OPA_COVER);
+    lv_obj_set_pos(label, 8, 9);
+    lv_obj_set_size(label, 80, 18);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+
+    label = crazypod_ui_widget_label(
+        exit, CP_TR("Exit"),
+        &lv_font_source_han_sans_sc_14_cjk,
+        COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(label, 8, 9);
+    lv_obj_set_size(label, 80, 18);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+}
+
 void crazypod_miniapp_screen_reset(void)
 {
     screen.bitmap_app_index = -1;
@@ -305,6 +363,7 @@ void crazypod_miniapp_screen_render(lv_obj_t *parent, uint32_t accent)
         }
     }
     render_toast();
+    render_exit_prompt();
 }
 
 #endif

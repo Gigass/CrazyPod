@@ -1638,6 +1638,11 @@
         "apps/crazypod/ui/features/organizer/crazypod_organizer_feature.c:164"
       ]
     },
+    "EXIT MINI APP?": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapp_screen.c:288"
+      ]
+    },
     "Edit": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_customize_catalog.c:22",
@@ -1718,6 +1723,11 @@
     "Events on the current date": {
       "locations": [
         "apps/crazypod/ui/features/organizer/crazypod_utility_preview.c:179"
+      ]
+    },
+    "Exit": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapp_screen.c:314"
       ]
     },
     "Export": {
@@ -4553,6 +4563,66 @@
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_screen.c:142"
       ]
+    },
+    "2048 REACHED": {
+      "locations": [
+        "miniapps/game2048/app.c"
+      ],
+      "keepEnglish": true
+    },
+    "CENTER CHANGE": {
+      "locations": [
+        "miniapps/game2048/app.c"
+      ],
+      "keepEnglish": true
+    },
+    "CONFIRM": {
+      "locations": [
+        "miniapps/game2048/app.c"
+      ],
+      "keepEnglish": true
+    },
+    "FINAL BOARD": {
+      "locations": [
+        "miniapps/game2048/app.c"
+      ],
+      "keepEnglish": true
+    },
+    "GAME SAVED": {
+      "locations": [
+        "miniapps/game2048/app.c"
+      ],
+      "keepEnglish": true
+    },
+    "HOW TO PLAY": {
+      "locations": [
+        "miniapps/game2048/app.c"
+      ],
+      "keepEnglish": true
+    },
+    "JOIN THE TILES": {
+      "locations": [
+        "miniapps/game2048/app.c"
+      ],
+      "keepEnglish": true
+    },
+    "NO UNDO": {
+      "locations": [
+        "miniapps/game2048/app.c"
+      ],
+      "keepEnglish": true
+    },
+    "RECENT 10": {
+      "locations": [
+        "miniapps/game2048/app.c"
+      ],
+      "keepEnglish": true
+    },
+    "YOU WIN": {
+      "locations": [
+        "miniapps/game2048/app.c"
+      ],
+      "keepEnglish": true
     },
     "Language": {
       "locations": [

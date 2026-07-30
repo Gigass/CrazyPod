@@ -137,7 +137,8 @@ cp ../assets/crazypod/default-home.bmp \
    simdisk/.rockbox/crazypod/default-home.bmp
 mkdir -p miniapps/packages
 find miniapps/packages -type f \
-    \( -name 'calculator-*.cpk' -o -name 'pomodoro-*.cpk' \) -delete
+    \( -name 'calculator-*.cpk' -o -name 'pomodoro-*.cpk' \
+       -o -name 'game2048-*.cpk' \) -delete
 python3 ../tools/build-miniapp-packages.py \
     --build-dir . \
     --target simulator \
@@ -148,6 +149,7 @@ mkdir -p "$miniapp_package_dir"
 find "$miniapp_package_dir" -type f -name '*.cpk' -delete
 cp miniapps/packages/calculator-1.2.0.cpk \
    miniapps/packages/pomodoro-1.2.0.cpk \
+   miniapps/packages/game2048-1.0.0.cpk \
    "$miniapp_package_dir/"
 
 app_bundle="CrazyPod Simulator.app"

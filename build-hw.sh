@@ -129,7 +129,8 @@ fi
 verify_stack_alignment
 mkdir -p ../dist/miniapps
 find ../dist/miniapps -type f \
-    \( -name 'calculator-*.cpk' -o -name 'pomodoro-*.cpk' \) -delete
+    \( -name 'calculator-*.cpk' -o -name 'pomodoro-*.cpk' \
+       -o -name 'game2048-*.cpk' \) -delete
 python3 ../tools/build-miniapp-packages.py \
     --build-dir . \
     --target ipod6g \
@@ -171,6 +172,7 @@ cp ../assets/crazypod/default-home.bmp \
     "$PACKAGE_DIR/.rockbox/crazypod/default-home.bmp"
 cp ../dist/miniapps/calculator-1.2.0.cpk \
    ../dist/miniapps/pomodoro-1.2.0.cpk \
+   ../dist/miniapps/game2048-1.0.0.cpk \
    "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
 for codec in lib/rbcodec/codecs/*.codec; do
     [ -f "$codec" ] || continue

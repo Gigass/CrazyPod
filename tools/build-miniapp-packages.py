@@ -17,7 +17,7 @@ import zlib
 
 
 ROOT = Path(__file__).resolve().parent.parent
-APP_IDS = ("calculator", "pomodoro")
+APP_IDS = ("calculator", "pomodoro", "game2048")
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 RESOURCE_MAGIC = 0x53525043
 RESOURCE_VERSION = 1
@@ -178,6 +178,33 @@ def draw_pomodoro_icon(pixels: bytearray, width: int, height: int) -> None:
     fill_rect(pixels, width, height, 75, 58, 10, 34, white)
     fill_rect(pixels, width, height, 80, 82, 28, 10, white)
 
+def draw_game2048_icon(pixels: bytearray, width: int, height: int) -> None:
+    panel = (38, 38, 48)
+    empty = (66, 66, 78)
+    amber = (242, 177, 121)
+    rose = (244, 92, 89)
+    green = (48, 209, 88)
+    colors = (
+        amber, empty, rose, amber,
+        empty, green, amber, empty,
+        rose, amber, green, rose,
+        amber, empty, rose, green,
+    )
+    fill_rounded_rect(pixels, width, height, 18, 18, 124, 124, 18, panel)
+    for row in range(4):
+        for column in range(4):
+            fill_rounded_rect(
+                pixels,
+                width,
+                height,
+                28 + column * 27,
+                28 + row * 27,
+                22,
+                22,
+                5,
+                colors[row * 4 + column],
+            )
+
 
 def make_icon(app_id: str) -> bytes:
     width = 160
@@ -189,8 +216,10 @@ def make_icon(app_id: str) -> bytes:
         pixels.extend((blue, green, red, 255))
     if app_id == "calculator":
         draw_calculator_icon(pixels, width, height)
-    else:
+    elif app_id == "pomodoro":
         draw_pomodoro_icon(pixels, width, height)
+    else:
+        draw_game2048_icon(pixels, width, height)
 
     pixel_offset = 14 + 40
     file_size = pixel_offset + len(pixels)

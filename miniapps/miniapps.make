@@ -4,7 +4,7 @@
 MINIAPP_ROOT := $(ROOTDIR)/miniapps
 MINIAPP_BUILD := $(BUILDDIR)/miniapps
 MINIAPP_SDK := $(MINIAPP_ROOT)/sdk/crazypod_miniapp.h
-MINIAPP_NAMES := calculator pomodoro
+MINIAPP_NAMES := calculator pomodoro game2048
 MINIAPP_LINK_LDS := $(MINIAPP_BUILD)/miniapp.link
 MINIAPP_PLUGIN_LDS := $(APPSDIR)/plugins/plugin.lds
 MINIAPP_CONFIG := $(FIRMDIR)/export/config/$(MODELNAME).h
@@ -15,6 +15,9 @@ MINIAPP_CALCULATOR_OBJ := \
 MINIAPP_POMODORO_OBJ := \
 	$(MINIAPP_BUILD)/pomodoro/app.o \
 	$(MINIAPP_BUILD)/pomodoro/engine.o
+MINIAPP_GAME2048_OBJ := \
+	$(MINIAPP_BUILD)/game2048/app.o \
+	$(MINIAPP_BUILD)/game2048/engine.o
 MINIAPP_NATIVE_RUNTIME_OBJ := \
 	$(MINIAPP_BUILD)/sdk/crazypod_miniapp_runtime.o
 
@@ -26,13 +29,16 @@ ifdef APP_TYPE
 MINIAPP_FLAGS += $(SHARED_CFLAGS)
 MINIAPP_PAYLOADS := \
 	$(MINIAPP_BUILD)/calculator/app.dylib \
-	$(MINIAPP_BUILD)/pomodoro/app.dylib
+	$(MINIAPP_BUILD)/pomodoro/app.dylib \
+	$(MINIAPP_BUILD)/game2048/app.dylib
 else
 MINIAPP_CALCULATOR_OBJ += $(MINIAPP_NATIVE_RUNTIME_OBJ)
 MINIAPP_POMODORO_OBJ += $(MINIAPP_NATIVE_RUNTIME_OBJ)
+MINIAPP_GAME2048_OBJ += $(MINIAPP_NATIVE_RUNTIME_OBJ)
 MINIAPP_PAYLOADS := \
 	$(MINIAPP_BUILD)/calculator/app.arm \
-	$(MINIAPP_BUILD)/pomodoro/app.arm
+	$(MINIAPP_BUILD)/pomodoro/app.arm \
+	$(MINIAPP_BUILD)/game2048/app.arm
 endif
 
 OTHER_SRC += \
@@ -40,6 +46,8 @@ OTHER_SRC += \
 	$(MINIAPP_ROOT)/calculator/engine.c \
 	$(MINIAPP_ROOT)/pomodoro/app.c \
 	$(MINIAPP_ROOT)/pomodoro/engine.c \
+	$(MINIAPP_ROOT)/game2048/app.c \
+	$(MINIAPP_ROOT)/game2048/engine.c \
 	$(MINIAPP_ROOT)/sdk/crazypod_miniapp_runtime.c
 
 ROCKS += $(MINIAPP_PAYLOADS)
@@ -72,6 +80,7 @@ endef
 
 $(eval $(call build_native_miniapp,calculator,CALCULATOR))
 $(eval $(call build_native_miniapp,pomodoro,POMODORO))
+$(eval $(call build_native_miniapp,game2048,GAME2048))
 else
 define build_sim_miniapp
 $(MINIAPP_BUILD)/$(1)/app.dylib: $$(MINIAPP_$(2)_OBJ)
@@ -84,4 +93,5 @@ endef
 
 $(eval $(call build_sim_miniapp,calculator,CALCULATOR))
 $(eval $(call build_sim_miniapp,pomodoro,POMODORO))
+$(eval $(call build_sim_miniapp,game2048,GAME2048))
 endif

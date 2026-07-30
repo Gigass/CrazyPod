@@ -216,6 +216,9 @@ static bool hello_event(const struct cp_input_event *event)
         }
         return true;
     case CP_INPUT_MENU:
+        hello.value++;
+        save_state();
+        return true;
     default:
         return false;
     }
@@ -342,7 +345,10 @@ value += amount;
 按键返回值也有语义：
 
 - 已处理事件返回 `true`；
-- `Menu` 若需要退出应用，应返回 `false`，让宿主关闭当前 Mini App；
+- 0.5 秒内释放的 `Menu` 会作为 `CP_INPUT_MENU` 交给应用，可用于
+  应用内操作；
+- 持续按住 `Menu` 满 0.5 秒会恒定打开宿主退出确认框，应用无法
+  拦截；
 - 对 `Select` 和 `Play` 应忽略 `event->repeated != 0` 的重复触发。
 
 ## 6. 定义 manifest
