@@ -98,6 +98,7 @@ sh tests/check-crazypod-ui-architecture.sh
 sh tests/run-crazypod-ui-host-tests.sh
 sh tests/run-miniapp-host-tests.sh
 sh tests/run-epub-host-tests.sh
+sh tests/run-crazypod-font-tests.sh
 python3 tools/check-crazypod-l10n.py --strict-bare
 git diff --check
 ```

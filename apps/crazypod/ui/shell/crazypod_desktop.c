@@ -15,7 +15,6 @@
 #include "../presentation/crazypod_ui_widgets.h"
 #include "crazypod_app_catalog.h"
 #include "crazypod_desktop.h"
-#include "crazypod_desktop_motion.h"
 #include "crazypod_desktop_native.h"
 #include "crazypod_now_capsule.h"
 #include "crazypod_status_bar.h"
@@ -25,13 +24,9 @@
 static struct crazypod_desktop_host desktop_host;
 static lv_obj_t *screen;
 static lv_obj_t *wallpaper;
-static lv_obj_t *carousel;
 static lv_obj_t *title;
 static lv_obj_t *indicators[CRAZYPOD_APP_COUNT];
-static lv_obj_t *launcher_cells[CRAZYPOD_APP_COUNT];
-static lv_group_t *group;
 static int selected_app;
-static long desktop_now;
 
 static const struct crazypod_app_descriptor *visible_app(int index)
 {
@@ -58,7 +53,7 @@ static void update_selection_chrome(void)
             continue;
         }
         lv_obj_remove_flag(indicators[i], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(indicators[i], indicator_x, 166);
+        lv_obj_set_pos(indicators[i], indicator_x, 169);
         lv_obj_set_size(indicators[i], width, 4);
         lv_obj_set_style_bg_opa(
             indicators[i],
@@ -70,45 +65,9 @@ static void update_selection_chrome(void)
 static void layout(bool animated)
 {
     update_selection_chrome();
-    crazypod_desktop_motion_select(
-        desktop_now, selected_app, animated);
     if(animated && desktop_host.boost != NULL)
-        desktop_host.boost(HZ / 4);
+        desktop_host.boost(HZ / 20 > 0 ? HZ / 20 : 1);
     crazypod_desktop_native_invalidate(false);
-}
-
-static void app_focus_event(lv_event_t *event)
-{
-    const struct crazypod_app_descriptor *app =
-        lv_event_get_user_data(event);
-    int visible_index;
-
-    if(lv_event_get_code(event) != LV_EVENT_FOCUSED)
-        return;
-    visible_index = crazypod_apps_visible_index(app->id);
-    if(visible_index < 0)
-        return;
-    selected_app = visible_index;
-    layout(true);
-}
-
-static void create_launcher_app(int index)
-{
-    const struct crazypod_app_descriptor *app =
-        crazypod_app_catalog_at(index);
-    lv_obj_t *cell;
-
-    if(app == NULL)
-        return;
-    cell = lv_obj_create(carousel);
-    launcher_cells[index] = cell;
-    crazypod_ui_widget_make_plain(cell);
-    lv_obj_set_size(cell, 120, 110);
-    lv_obj_set_style_bg_opa(cell, LV_OPA_TRANSP, 0);
-    lv_obj_add_flag(cell, LV_OBJ_FLAG_CLICKABLE);
-    lv_group_add_obj(group, cell);
-    lv_obj_add_event_cb(
-        cell, app_focus_event, LV_EVENT_FOCUSED, (void *)app);
 }
 
 lv_obj_t *crazypod_desktop_create(
@@ -122,7 +81,7 @@ lv_obj_t *crazypod_desktop_create(
     memset(&desktop_host, 0, sizeof(desktop_host));
     if(host != NULL)
         desktop_host = *host;
-    desktop_now = now;
+    (void)now;
     screen = lv_obj_create(NULL);
     crazypod_ui_widget_make_plain(screen);
     lv_obj_set_style_bg_color(
@@ -141,35 +100,21 @@ lv_obj_t *crazypod_desktop_create(
     lv_obj_remove_flag(wallpaper, LV_OBJ_FLAG_CLICKABLE);
     crazypod_status_bar_create(0, screen);
 
-    group = lv_group_create();
-    lv_group_set_wrap(group, false);
-    carousel = lv_obj_create(screen);
-    crazypod_ui_widget_make_plain(carousel);
-    lv_obj_set_pos(carousel, 0, 42);
-    lv_obj_set_size(carousel, LCD_WIDTH, 116);
-    lv_obj_set_style_bg_opa(carousel, LV_OPA_TRANSP, 0);
-    for(i = 0; i < CRAZYPOD_APP_COUNT; ++i)
-        create_launcher_app(i);
-    lv_obj_add_flag(carousel, LV_OBJ_FLAG_HIDDEN);
-
     title = crazypod_ui_widget_label(
         screen, visible_app(0)->name,
         &lv_font_montserrat_16, COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(title, LCD_WIDTH);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 0, 143);
+    lv_obj_set_pos(title, 0, 150);
     for(i = 0; i < CRAZYPOD_APP_COUNT; ++i)
         indicators[i] = crazypod_ui_widget_box(
-            screen, 0, 166, 5, 4,
+            screen, 0, 169, 5, 4,
             LV_RADIUS_CIRCLE, COLOR_WHITE, 89);
 
     crazypod_now_capsule_create(screen, metadata_font);
     selected_app = 0;
     crazypod_desktop_native_reset();
-    crazypod_desktop_motion_initialize(now, selected_app);
     layout(false);
-    lv_group_focus_obj(launcher_cells[
-        crazypod_app_catalog_index(crazypod_apps_visible_id(0))]);
     if(desktop_host.create_corner_masks != NULL)
         desktop_host.create_corner_masks(screen, 0);
     return screen;
@@ -199,8 +144,14 @@ void crazypod_desktop_set_selected(int selected, bool animated)
 
 void crazypod_desktop_move_selection(int direction)
 {
-    crazypod_desktop_set_selected(
-        selected_app + direction, true);
+    int count = crazypod_apps_visible_count();
+    int selected = selected_app + direction;
+
+    if(count <= 1 || direction == 0 ||
+       selected < 0 || selected >= count ||
+       selected == selected_app)
+        return;
+    crazypod_desktop_set_selected(selected, true);
 }
 
 void crazypod_desktop_refresh_appearance(void)
@@ -241,46 +192,30 @@ void crazypod_desktop_refresh_appearance(void)
     lv_obj_invalidate(screen);
 }
 
-void crazypod_desktop_set_input_enabled(
-    long now, bool enabled, bool restore_wheel_events)
-{
-    desktop_now = now;
-    crazypod_desktop_motion_set_input_enabled(
-        now, enabled, restore_wheel_events,
-        crazypod_apps_visible_count());
-}
-
-void crazypod_desktop_tick(long now)
-{
-    int visible_count = crazypod_apps_visible_count();
-    int visual_selection;
-
-    desktop_now = now;
-    if(!crazypod_desktop_motion_tick(now, visible_count))
-        return;
-    visual_selection =
-        crazypod_desktop_motion_center(visible_count);
-    if(visual_selection != selected_app) {
-        selected_app = visual_selection;
-        update_selection_chrome();
-    }
-    if(desktop_host.boost != NULL &&
-       crazypod_desktop_motion_active())
-        desktop_host.boost(HZ / 10);
-    if(screen != NULL)
-        crazypod_desktop_native_invalidate(false);
-}
-
-int crazypod_desktop_take_wheel_feedback(void)
-{
-    return crazypod_desktop_motion_take_wheel_feedback();
-}
-
-void crazypod_desktop_render_carousel(
+void crazypod_desktop_render_icon(
     int tile_size, bool blocked)
 {
+    int count = crazypod_apps_visible_count();
+    int left_index = -1;
+    int center_index = -1;
+    int right_index = -1;
+
+    if(count > 0) {
+        center_index = crazypod_app_catalog_index(
+            crazypod_apps_visible_id(selected_app));
+        if(selected_app > 0) {
+            left_index = crazypod_app_catalog_index(
+                crazypod_apps_visible_id(
+                    selected_app - 1));
+        }
+        if(selected_app + 1 < count) {
+            right_index = crazypod_app_catalog_index(
+                crazypod_apps_visible_id(
+                    selected_app + 1));
+        }
+    }
     crazypod_desktop_native_render(
-        crazypod_desktop_motion_position_q8(),
+        left_index, center_index, right_index,
         tile_size, blocked);
 }
 

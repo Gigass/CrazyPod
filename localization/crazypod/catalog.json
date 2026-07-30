@@ -1195,11 +1195,6 @@
         "apps/crazypod/ui/shell/crazypod_app_catalog.c"
       ]
     },
-    "Computer storage connection is active": {
-      "locations": [
-        "apps/crazypod/ui/shell/crazypod_usb_prompt.c:260"
-      ]
-    },
     "Contact Details": {
       "locations": [
         "apps/crazypod/ui/features/organizer/crazypod_organizer_feature.c:326"
@@ -1223,11 +1218,6 @@
     "Controls": {
       "locations": [
         "apps/crazypod/ui/features/settings/crazypod_settings_catalog.c:13"
-      ]
-    },
-    "Controls are disabled while USB is connected": {
-      "locations": [
-        "apps/crazypod/ui/shell/crazypod_usb_prompt.c:278"
       ]
     },
     "Convert MPG or MPEG files into /Videos.": {

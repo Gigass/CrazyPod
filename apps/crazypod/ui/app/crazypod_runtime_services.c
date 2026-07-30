@@ -22,7 +22,6 @@
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../features/photos/crazypod_photos_feature.h"
 #include "../navigation/crazypod_ui_routes.h"
-#include "../shell/crazypod_desktop_motion.h"
 #include "../shell/crazypod_lock_screen.h"
 #include "../shell/crazypod_shell.h"
 #include "../shell/crazypod_system_prompts.h"
@@ -82,7 +81,6 @@ int crazypod_runtime_services_wait_ticks(void)
     }
     if(crazypod_miniapps_feature_motion_active() ||
        lv_anim_count_running() ||
-       crazypod_desktop_motion_active() ||
        crazypod_coverflow_motion_active())
         return CRAZYPOD_FRAME_WAIT_TICKS;
     if(crazypod_artwork_busy() || crazypod_photos_busy() ||

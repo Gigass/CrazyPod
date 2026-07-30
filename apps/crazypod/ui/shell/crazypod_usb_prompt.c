@@ -246,42 +246,24 @@ static void show_data_blocker(void)
 
     label = make_label(
         prompt.root, LV_SYMBOL_USB, &lv_font_montserrat_24,
-        COLOR_WHITE, LV_OPA_COVER);
+        COLOR_WHITE, 220);
     lv_obj_set_size(label, LCD_WIDTH, 30);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 0, 39);
+    lv_obj_set_pos(label, 0, 65);
 
     label = make_label(
         prompt.root, CP_TR("USB DATA MODE"), &lv_font_montserrat_16,
-        COLOR_WHITE, LV_OPA_COVER);
+        COLOR_WHITE, 235);
     lv_obj_set_size(label, LCD_WIDTH, 20);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 0, 81);
-
-    label = make_label(
-        prompt.root, CP_TR("Computer storage connection is active"),
-        &lv_font_montserrat_10, COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_size(label, LCD_WIDTH, 16);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 0, 108);
-
-    make_box(
-        prompt.root, 80, 137, LCD_WIDTH - 160, 1, 0,
-        COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(label, 0, 103);
 
     label = make_label(
         prompt.root, CP_TR("Eject CrazyPod before unplugging the cable"),
-        &lv_font_montserrat_10, COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_size(label, LCD_WIDTH, 16);
+        &lv_font_montserrat_10, COLOR_WHITE, 150);
+    lv_obj_set_size(label, LCD_WIDTH - 32, 16);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 0, 153);
-
-    label = make_label(
-        prompt.root, CP_TR("Controls are disabled while USB is connected"),
-        &lv_font_montserrat_8, COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_size(label, LCD_WIDTH, 14);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 0, 176);
+    lv_obj_set_pos(label, 16, 136);
 
     /*
      * The USB worker is released immediately after this function returns.

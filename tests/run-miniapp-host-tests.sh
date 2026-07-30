@@ -97,3 +97,15 @@ cc -std=c99 -Wall -Wextra -Werror \
 
 "$test_root/crazypod_miniapp_installer_lifecycle_host_test" lazy
 "$test_root/crazypod_miniapp_installer_lifecycle_host_test" usb
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-miniapp-input-stubs" \
+    -I"$repo_root/tests/miniapp-host-stubs" \
+    -I"$repo_root/apps/crazypod/ui/features/miniapps" \
+    -I"$repo_root/apps/crazypod/ui/navigation" \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/apps/crazypod/ui/features/miniapps/crazypod_miniapp_input.c" \
+    "$repo_root/tests/crazypod_miniapp_input_host_test.c" \
+    -o "$test_root/crazypod_miniapp_input_host_test"
+
+"$test_root/crazypod_miniapp_input_host_test"

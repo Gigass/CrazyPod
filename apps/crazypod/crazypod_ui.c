@@ -79,7 +79,6 @@
 #include "ui/features/photos/crazypod_photos_feature.h"
 #include "ui/shell/crazypod_app_catalog.h"
 #include "ui/shell/crazypod_desktop.h"
-#include "ui/shell/crazypod_desktop_motion.h"
 #include "ui/shell/crazypod_desktop_native.h"
 #include "ui/shell/crazypod_home_input.h"
 #include "ui/presentation/crazypod_menu_list.h"
@@ -118,8 +117,6 @@
     ((HZ * 120 / 1000) > 0 ? (HZ * 120 / 1000) : 1)
 #define CRAZYPOD_METADATA_FONT (&lv_font_source_han_sans_sc_14_cjk)
 #define CRAZYPOD_BOOT_FADE_DURATION_MS 220
-#define CRAZYPOD_DESKTOP_NATIVE_TOP 40
-#define CRAZYPOD_DESKTOP_NATIVE_BOTTOM 143
 static bool cpu_is_boosted;
 static long boost_until;
 static struct crazypod_frameclock lvgl_clock;
@@ -714,26 +711,6 @@ void crazypod_ui_run(void)
             crazypod_playback_process_artwork();
             crazypod_playback_process_media();
         }
-        {
-            bool desktop_interactive =
-                !locked &&
-                !crazypod_shell_product_active() &&
-                !modal_prompt_visible();
-            int desktop_feedback;
-
-            crazypod_desktop_set_input_enabled(
-                current_tick, desktop_interactive,
-                !crazypod_coverflow_active());
-            if(desktop_interactive)
-                crazypod_desktop_tick(current_tick);
-            desktop_feedback =
-                crazypod_desktop_take_wheel_feedback();
-            if(desktop_feedback != 0)
-                play_wheel_feedback(
-                    desktop_feedback < 0
-                        ? BUTTON_SCROLL_BACK
-                        : BUTTON_SCROLL_FWD);
-        }
         crazypod_now_capsule_tick(
             current_tick, !locked && !crazypod_shell_product_active() &&
             !modal_prompt_visible());
@@ -747,7 +724,7 @@ void crazypod_ui_run(void)
         if(!locked) {
             int coverflow_feedback;
 
-            crazypod_desktop_render_carousel(
+            crazypod_desktop_render_icon(
                 appearance_tile_size(),
                 crazypod_shell_product_active() || modal_prompt_visible());
             crazypod_coverflow_tick();
@@ -786,7 +763,6 @@ void crazypod_ui_run(void)
         if(!(locked
              ? crazypod_lock_screen_motion_active()
              : (lv_anim_count_running() ||
-                crazypod_desktop_motion_active() ||
                 crazypod_coverflow_motion_active())) &&
            (!crazypod_music_is_scanning() || locked) &&
            !crazypod_artwork_busy() &&

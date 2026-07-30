@@ -52,6 +52,8 @@ bool crazypod_miniapp_input_handle(
     bool handled;
     bool ui_refresh;
 
+    if(!crazypod_miniapps_is_open())
+        return false;
     if(input->release)
         return true;
     if(!translate_event(input, &event))

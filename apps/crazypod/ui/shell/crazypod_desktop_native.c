@@ -7,48 +7,144 @@
 #include "lcd.h"
 #include "system.h"
 
-#include "../../crazypod_apps.h"
 #include "../../crazypod_frameclock.h"
 #include "../../crazypod_icons.h"
 #include "../../platform/crazypod_platform_display.h"
 #include "crazypod_app_catalog.h"
 #include "crazypod_desktop_native.h"
 
-#define NATIVE_TOP 40
-#define NATIVE_BOTTOM 143
+#define NATIVE_TOP CRAZYPOD_DESKTOP_NATIVE_TOP
+#define NATIVE_BOTTOM CRAZYPOD_DESKTOP_NATIVE_BOTTOM
 #define NATIVE_HEIGHT (NATIVE_BOTTOM - NATIVE_TOP)
-#define NATIVE_MAX_ICON_SIZE LCD_WIDTH
+#define NATIVE_ICON_CENTER_X 160
+#define NATIVE_ICON_CENTER_Y 91
+#define NATIVE_MAX_ICON_SIZE 120
+#define NATIVE_SLOT_COUNT 3
+#define NATIVE_SLOT_LEFT 0
+#define NATIVE_SLOT_CENTER 1
+#define NATIVE_SLOT_RIGHT 2
+#define NATIVE_SLOT_GAP 2
+#define NATIVE_SIDE_OPACITY 208
 
 static fb_data backdrop[LCD_WIDTH * NATIVE_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data icon_patches
+    [NATIVE_SLOT_COUNT][CRAZYPOD_ICON_COUNT]
+    [NATIVE_MAX_ICON_SIZE * NATIVE_HEIGHT]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static uint16_t sample_x_offset[NATIVE_MAX_ICON_SIZE];
 static uint16_t sample_x_next_offset[NATIVE_MAX_ICON_SIZE];
 static uint8_t sample_x_fraction[NATIVE_MAX_ICON_SIZE];
+static bool patch_valid[NATIVE_SLOT_COUNT][CRAZYPOD_ICON_COUNT];
+static int patch_size;
+static bool rendered_bounds_valid;
+static int rendered_left;
+static int rendered_top;
+static int rendered_width;
+static int rendered_height;
 static bool dirty;
 static bool backdrop_ready;
 
-static int interpolate_pose(const int *values, int absolute_q8)
+static void invalidate_patches(void)
 {
-    int segment = absolute_q8 / 256;
-    int fraction = absolute_q8 & 255;
+    memset(patch_valid, 0, sizeof(patch_valid));
+}
 
-    if(segment >= 3)
-        return values[3];
-    return values[segment] +
-           (values[segment + 1] - values[segment]) * fraction / 256;
+static int clamp_icon_size(int size)
+{
+    if(size < 1)
+        return 1;
+    if(size > NATIVE_MAX_ICON_SIZE)
+        return NATIVE_MAX_ICON_SIZE;
+    return size;
+}
+
+static void icon_bounds(int center_x, int center_y, int size,
+                        int *left, int *top,
+                        int *width, int *height)
+{
+    int right;
+    int bottom;
+
+    size = clamp_icon_size(size);
+    *left = center_x - size / 2;
+    *top = center_y - size / 2;
+    right = *left + size;
+    bottom = *top + size;
+    if(*left < 0)
+        *left = 0;
+    if(*top < NATIVE_TOP)
+        *top = NATIVE_TOP;
+    if(right > LCD_WIDTH)
+        right = LCD_WIDTH;
+    if(bottom > NATIVE_BOTTOM)
+        bottom = NATIVE_BOTTOM;
+    *width = right - *left;
+    *height = bottom - *top;
+}
+
+static void restore_backdrop_rect(
+    fb_data *framebuffer, int left, int top, int width, int height)
+{
+    int row;
+
+    for(row = 0; row < height; ++row) {
+        memcpy(
+            framebuffer + (top + row) * LCD_WIDTH + left,
+            backdrop + (top + row - NATIVE_TOP) * LCD_WIDTH + left,
+            (size_t)width * sizeof(fb_data));
+    }
+}
+
+static void save_patch(
+    int slot, int app_index, const fb_data *framebuffer,
+    int left, int top, int width, int height)
+{
+    fb_data *patch = icon_patches[slot][app_index];
+    int row;
+
+    for(row = 0; row < height; ++row) {
+        memcpy(
+            patch + row * NATIVE_MAX_ICON_SIZE,
+            framebuffer + (top + row) * LCD_WIDTH + left,
+            (size_t)width * sizeof(fb_data));
+    }
+    patch_valid[slot][app_index] = true;
+}
+
+static void restore_patch(
+    int slot, int app_index, fb_data *framebuffer,
+    int left, int top, int width, int height)
+{
+    const fb_data *patch = icon_patches[slot][app_index];
+    int row;
+
+    for(row = 0; row < height; ++row) {
+        memcpy(
+            framebuffer + (top + row) * LCD_WIDTH + left,
+            patch + row * NATIVE_MAX_ICON_SIZE,
+            (size_t)width * sizeof(fb_data));
+    }
 }
 
 void crazypod_desktop_native_reset(void)
 {
     dirty = true;
     backdrop_ready = false;
+    patch_size = 0;
+    rendered_bounds_valid = false;
+    invalidate_patches();
 }
 
 void crazypod_desktop_native_invalidate(bool discard_backdrop)
 {
     dirty = true;
-    if(discard_backdrop)
+    if(discard_backdrop) {
         backdrop_ready = false;
+        patch_size = 0;
+        rendered_bounds_valid = false;
+        invalidate_patches();
+    }
 }
 
 void crazypod_desktop_native_capture_flush(const lv_area_t *area)
@@ -79,6 +175,8 @@ void crazypod_desktop_native_capture_flush(const lv_area_t *area)
                 framebuffer + y * LCD_WIDTH + left,
                 (size_t)width * sizeof(fb_data));
         }
+        invalidate_patches();
+        rendered_bounds_valid = false;
     }
     dirty = true;
 }
@@ -294,14 +392,30 @@ static void draw_desktop_icon(int app_index, int center_x, int center_y,
 }
 
 void crazypod_desktop_native_render(
-    int position_q8, int base_size, bool blocked)
+    int left_app_index, int center_app_index, int right_app_index,
+    int base_size, bool blocked)
 {
-    static const int size_percent[] = { 100, 72, 56, 44 };
     fb_data *framebuffer =
         (fb_data *)crazypod_platform_display_framebuffer();
-    int distance_layer;
+    int app_indices[NATIVE_SLOT_COUNT];
+    int centers_x[NATIVE_SLOT_COUNT];
+    int sizes[NATIVE_SLOT_COUNT];
+    int opacities[NATIVE_SLOT_COUNT];
+    int left[NATIVE_SLOT_COUNT];
+    int top[NATIVE_SLOT_COUNT];
+    int width[NATIVE_SLOT_COUNT];
+    int height[NATIVE_SLOT_COUNT];
+    int dirty_left;
+    int dirty_top;
+    int dirty_right;
+    int dirty_bottom;
+    bool any_bounds = false;
+    int side_size;
+    int slot;
 
-    if(blocked || !dirty)
+    if(blocked)
+        return;
+    if(!dirty)
         return;
     if(!backdrop_ready) {
         memcpy(
@@ -309,42 +423,108 @@ void crazypod_desktop_native_render(
             framebuffer + NATIVE_TOP * LCD_WIDTH,
             sizeof(backdrop));
         backdrop_ready = true;
+        rendered_bounds_valid = false;
     }
-    memcpy(
-        framebuffer + NATIVE_TOP * LCD_WIDTH,
-        backdrop, sizeof(backdrop));
-    for(distance_layer = 2; distance_layer >= 0; --distance_layer) {
-        int i;
+    base_size = clamp_icon_size(base_size);
+    if(patch_size != base_size) {
+        patch_size = base_size;
+        invalidate_patches();
+    }
+    side_size = base_size * 2 / 3;
+    if(side_size >
+       (LCD_WIDTH - base_size - NATIVE_SLOT_GAP * 2) / 2)
+        side_size =
+            (LCD_WIDTH - base_size - NATIVE_SLOT_GAP * 2) / 2;
+    if((side_size & 1) != 0)
+        ++side_size;
+    app_indices[NATIVE_SLOT_LEFT] = left_app_index;
+    app_indices[NATIVE_SLOT_CENTER] = center_app_index;
+    app_indices[NATIVE_SLOT_RIGHT] = right_app_index;
+    sizes[NATIVE_SLOT_LEFT] = side_size;
+    sizes[NATIVE_SLOT_CENTER] = base_size;
+    sizes[NATIVE_SLOT_RIGHT] = side_size;
+    centers_x[NATIVE_SLOT_CENTER] = NATIVE_ICON_CENTER_X;
+    centers_x[NATIVE_SLOT_LEFT] =
+        NATIVE_ICON_CENTER_X - base_size / 2 -
+        NATIVE_SLOT_GAP - side_size / 2;
+    centers_x[NATIVE_SLOT_RIGHT] =
+        NATIVE_ICON_CENTER_X + base_size / 2 +
+        NATIVE_SLOT_GAP + side_size / 2;
+    opacities[NATIVE_SLOT_LEFT] = NATIVE_SIDE_OPACITY;
+    opacities[NATIVE_SLOT_CENTER] = 255;
+    opacities[NATIVE_SLOT_RIGHT] = NATIVE_SIDE_OPACITY;
+    dirty_left = LCD_WIDTH;
+    dirty_top = NATIVE_BOTTOM;
+    dirty_right = 0;
+    dirty_bottom = NATIVE_TOP;
+    for(slot = 0; slot < NATIVE_SLOT_COUNT; ++slot) {
+        icon_bounds(
+            centers_x[slot], NATIVE_ICON_CENTER_Y, sizes[slot],
+            &left[slot], &top[slot], &width[slot], &height[slot]);
+        if(app_indices[slot] < 0 ||
+           app_indices[slot] >= CRAZYPOD_ICON_COUNT)
+            continue;
+        if(left[slot] < dirty_left)
+            dirty_left = left[slot];
+        if(top[slot] < dirty_top)
+            dirty_top = top[slot];
+        if(left[slot] + width[slot] > dirty_right)
+            dirty_right = left[slot] + width[slot];
+        if(top[slot] + height[slot] > dirty_bottom)
+            dirty_bottom = top[slot] + height[slot];
+        any_bounds = true;
+    }
+    if(rendered_bounds_valid) {
+        int rendered_right = rendered_left + rendered_width;
+        int rendered_bottom = rendered_top + rendered_height;
 
-        for(i = 0; i < crazypod_apps_visible_count(); ++i) {
-            int catalog_index = crazypod_app_catalog_index(
-                crazypod_apps_visible_id(i));
-            int distance_q8 = i * 256 - position_q8;
-            int absolute_q8 =
-                distance_q8 < 0 ? -distance_q8 : distance_q8;
-            int rounded_distance = (absolute_q8 + 128) / 256;
-            int direction = distance_q8 < 0 ? -1 : 1;
-            int center_x;
-            int center_y;
-            int icon_size;
+        if(rendered_left < dirty_left)
+            dirty_left = rendered_left;
+        if(rendered_top < dirty_top)
+            dirty_top = rendered_top;
+        if(rendered_right > dirty_right)
+            dirty_right = rendered_right;
+        if(rendered_bottom > dirty_bottom)
+            dirty_bottom = rendered_bottom;
+        any_bounds = true;
+    }
+    if(!any_bounds) {
+        dirty = false;
+        return;
+    }
+    restore_backdrop_rect(
+        framebuffer, dirty_left, dirty_top,
+        dirty_right - dirty_left, dirty_bottom - dirty_top);
+    for(slot = 0; slot < NATIVE_SLOT_COUNT; ++slot) {
+        int app_index = app_indices[slot];
 
-            if(absolute_q8 > 640 ||
-               rounded_distance != distance_layer)
-                continue;
-            center_x = 160 + direction *
-                (absolute_q8 <= 256
-                    ? 92 * absolute_q8 / 256
-                    : 92 + 46 * (absolute_q8 - 256) / 256);
-            center_y = 91 + 4 * absolute_q8 / 256;
-            icon_size = base_size *
-                interpolate_pose(size_percent, absolute_q8) / 100;
-            if(catalog_index >= 0)
-                draw_desktop_icon(
-                    catalog_index, center_x, center_y, icon_size, 255);
+        if(app_index < 0 || app_index >= CRAZYPOD_ICON_COUNT)
+            continue;
+        if(patch_valid[slot][app_index]) {
+            restore_patch(
+                slot, app_index, framebuffer,
+                left[slot], top[slot], width[slot], height[slot]);
+        }
+        else {
+            draw_desktop_icon(
+                app_index,
+                centers_x[slot],
+                NATIVE_ICON_CENTER_Y,
+                sizes[slot], opacities[slot]);
+            save_patch(
+                slot, app_index, framebuffer,
+                left[slot], top[slot], width[slot], height[slot]);
         }
     }
+    rendered_bounds_valid = true;
+    rendered_left = dirty_left;
+    rendered_top = dirty_top;
+    rendered_width = dirty_right - dirty_left;
+    rendered_height = dirty_bottom - dirty_top;
     crazypod_present_queue_rect(
-        0, NATIVE_TOP, LCD_WIDTH, NATIVE_HEIGHT);
+        dirty_left, dirty_top,
+        dirty_right - dirty_left,
+        dirty_bottom - dirty_top);
     dirty = false;
 }
 

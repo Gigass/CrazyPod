@@ -3,6 +3,11 @@
 `crazypod_font_tool.py` makes font coverage a build-time invariant. It does
 not silently substitute another font or ignore missing glyphs.
 
+The manifest retains Unicode spacing separators, including ordinary
+`U+0020 SPACE`. A blank glyph still needs a non-zero advance width. Tabs,
+newlines, and other layout controls are excluded because LVGL handles them
+outside the font.
+
 ## Source fonts
 
 Use the official open-source Source Han Sans / Noto CJK regional fonts:
@@ -90,3 +95,6 @@ python3 tools/crazypod_font_tool.py check \
 
 Run this for every font size used for localized UI text. A single successful
 font-size check does not prove that the other generated sizes are complete.
+The audit must report `U+0020` as covered; otherwise localized labels will
+visually concatenate words even when their source strings contain spaces.
+Artifact checks also reject spacing glyphs whose advance width is zero.

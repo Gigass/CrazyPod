@@ -143,7 +143,6 @@ crazypod/ui/features/customize/crazypod_wallpaper_crop_controller.c
 crazypod/ui/features/customize/crazypod_wallpaper_crop_runtime.c
 crazypod/ui/features/customize/crazypod_wallpaper_crop_input.c
 crazypod/ui/shell/crazypod_app_catalog.c
-crazypod/ui/shell/crazypod_desktop_motion.c
 crazypod/ui/shell/crazypod_desktop_native.c
 crazypod/ui/shell/crazypod_home_input.c
 crazypod/ui/features/music/crazypod_music_activation.c

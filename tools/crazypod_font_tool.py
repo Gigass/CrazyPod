@@ -15,7 +15,9 @@ Typical use:
       --size 14 --symbol lv_font_crazypod_14 \
       --output lib/lvgl/src/font/lv_font_crazypod_14.c
 
-Any missing non-whitespace character is a fatal error.  There is no fallback.
+Any missing renderable character is a fatal error.  Spacing separators such as
+U+0020 SPACE are glyphs with advance width and must not be discarded.  There
+is no fallback.
 """
 
 from __future__ import annotations
@@ -33,6 +35,9 @@ from typing import Iterable
 
 
 LVGL_CODEPOINT = re.compile(r'/\*\s*U\+([0-9A-Fa-f]{4,6})\s+"')
+LVGL_GLYPH_ADVANCE = re.compile(
+    r"\{\s*\.bitmap_index\s*=\s*\d+,\s*\.adv_w\s*=\s*(-?\d+)"
+)
 C_COMMENT = re.compile(r"/\*.*?\*/|//[^\r\n]*", re.DOTALL)
 C_STRING = re.compile(r'"(?:\\.|[^"\\])*"', re.DOTALL)
 
@@ -128,6 +133,30 @@ def lvgl_codepoints(path: Path) -> set[int]:
     )}
 
 
+def lvgl_glyph_advances(path: Path) -> dict[int, int]:
+    text = path.read_text(encoding="utf-8", errors="strict")
+    codepoints = [
+        int(value, 16) for value in LVGL_CODEPOINT.findall(text)
+    ]
+    marker = "glyph_dsc[] = {"
+    start = text.find(marker)
+    if start < 0:
+        raise ValueError(f"{path}: missing glyph descriptor table")
+    end_match = re.search(r"\n\s*};", text[start:])
+    if end_match is None:
+        raise ValueError(f"{path}: unterminated glyph descriptor table")
+    end = start + end_match.start()
+    advances = [
+        int(value) for value in LVGL_GLYPH_ADVANCE.findall(text[start:end])
+    ]
+    if len(advances) != len(codepoints) + 1:
+        raise ValueError(
+            f"{path}: {len(codepoints)} glyph comments do not match "
+            f"{len(advances) - 1} non-reserved descriptors"
+        )
+    return dict(zip(codepoints, advances[1:]))
+
+
 def _json_strings(value: object) -> Iterable[str]:
     if isinstance(value, str):
         yield value
@@ -156,18 +185,25 @@ def input_strings(path: Path) -> Iterable[str]:
         yield path.read_text(encoding="utf-8", errors="strict")
 
 
+def requires_font_glyph(char: str) -> bool:
+    """Keep visible characters and spacing separators, not layout controls."""
+    return not char.isspace() or unicodedata.category(char) == "Zs"
+
+
 def required_codepoints(paths: list[Path]) -> set[int]:
     result: set[int] = set()
     for path in paths:
         for text in input_strings(path):
             normalized = unicodedata.normalize("NFC", text)
-            result.update(ord(char) for char in normalized if not char.isspace())
+            result.update(
+                ord(char) for char in normalized if requires_font_glyph(char)
+            )
     return result
 
 
 def read_chars(path: Path) -> set[int]:
     text = unicodedata.normalize("NFC", path.read_text(encoding="utf-8"))
-    return {ord(char) for char in text if not char.isspace()}
+    return {ord(char) for char in text if requires_font_glyph(char)}
 
 
 def printable(codepoint: int) -> str:
@@ -184,17 +220,23 @@ def write_chars(path: Path, codepoints: set[int]) -> None:
 def command_collect(args: argparse.Namespace) -> int:
     codepoints = required_codepoints(args.input)
     write_chars(args.output, codepoints)
-    print(f"{args.output}: {len(codepoints)} required non-whitespace characters")
+    print(f"{args.output}: {len(codepoints)} required renderable characters")
     return 0
 
 
 def command_check(args: argparse.Namespace) -> int:
     required = read_chars(args.chars)
     available: set[int] = set()
+    artifact_advances: dict[int, int] = {}
     for path in args.font:
         available.update(font_codepoints(path, args.face))
     for path in args.lvgl_c:
-        available.update(lvgl_codepoints(path))
+        advances = lvgl_glyph_advances(path)
+        available.update(advances)
+        for codepoint, advance in advances.items():
+            artifact_advances[codepoint] = max(
+                artifact_advances.get(codepoint, 0), advance
+            )
     missing = sorted(required - available)
     if missing:
         print(
@@ -203,6 +245,20 @@ def command_check(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         for codepoint in missing:
+            print(f"  {printable(codepoint)}", file=sys.stderr)
+        return 1
+    zero_width_spacing = sorted(
+        codepoint for codepoint in required
+        if unicodedata.category(chr(codepoint)) == "Zs"
+        and args.lvgl_c
+        and artifact_advances.get(codepoint, 0) <= 0
+    )
+    if zero_width_spacing:
+        print(
+            "ERROR: required spacing glyphs lack positive advance width:",
+            file=sys.stderr,
+        )
+        for codepoint in zero_width_spacing:
             print(f"  {printable(codepoint)}", file=sys.stderr)
         return 1
     print(
@@ -268,7 +324,8 @@ def command_generate(args: argparse.Namespace) -> int:
     )
     args.output.write_text(generated_text, encoding="utf-8")
 
-    generated = lvgl_codepoints(args.output)
+    generated_advances = lvgl_glyph_advances(args.output)
+    generated = set(generated_advances)
     missing_after = sorted(required - generated)
     if missing_after:
         print(
@@ -276,6 +333,19 @@ def command_generate(args: argparse.Namespace) -> int:
             "characters; output is not usable",
             file=sys.stderr,
         )
+        return 1
+    zero_width_spacing = sorted(
+        codepoint for codepoint in required
+        if unicodedata.category(chr(codepoint)) == "Zs"
+        and generated_advances.get(codepoint, 0) <= 0
+    )
+    if zero_width_spacing:
+        print(
+            "ERROR: generated spacing glyphs lack positive advance width:",
+            file=sys.stderr,
+        )
+        for codepoint in zero_width_spacing:
+            print(f"  {printable(codepoint)}", file=sys.stderr)
         return 1
     print(f"{args.output}: generated {len(generated)} glyphs")
     return 0

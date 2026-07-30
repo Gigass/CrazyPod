@@ -20,3 +20,13 @@ cc -std=c99 -Wall -Wextra -Werror \
     -o "$test_root/crazypod_ui_pure_host_test"
 
 "$test_root/crazypod_ui_pure_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-home-input-stubs" \
+    -I"$repo_root/apps/crazypod/ui" \
+    "$repo_root/apps/crazypod/ui/navigation/crazypod_input_event.c" \
+    "$repo_root/apps/crazypod/ui/shell/crazypod_home_input.c" \
+    "$repo_root/tests/crazypod_home_input_host_test.c" \
+    -o "$test_root/crazypod_home_input_host_test"
+
+"$test_root/crazypod_home_input_host_test"
