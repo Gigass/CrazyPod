@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -56,7 +58,7 @@ void crazypod_search_screen_render(
 
     crazypod_menu_list_reset(state->route);
 
-    label = make_label(context->parent, "SEARCH",
+    label = make_label(context->parent, CP_TR("SEARCH"),
                        context->metadata_font,
                        COLOR_WHITE, 85);
     lv_obj_set_pos(label, CRAZYPOD_MENU_HEADER_X,
@@ -85,7 +87,7 @@ void crazypod_search_screen_render(
     lv_obj_set_pos(label, 10, 12);
     label = make_label(query_box,
                        context->query[0] != '\0'
-                           ? context->query : "Start typing",
+                           ? context->query : CP_TR("Start typing"),
                        context->metadata_font,
                        COLOR_WHITE,
                        context->query[0] != '\0' ? 255 : 120);
@@ -131,27 +133,26 @@ void crazypod_search_screen_render(
                            context->metadata_font,
                            COLOR_WHITE,
                            selected ? 255 : 150);
-        lv_obj_set_pos(label, 14, 5);
         lv_obj_set_width(label, 104);
-        lv_obj_set_height(label, 16);
+        crazypod_ui_widget_align_row_label(label, 14);
         lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
 
         marker = make_label(row_box,
                             selected ? LV_SYMBOL_PLAY : "",
                             &lv_font_montserrat_8,
                             COLOR_WHITE, selected ? 205 : 75);
-        lv_obj_set_pos(marker, 128, 8);
+        crazypod_ui_widget_align_row_label(marker, 128);
         crazypod_menu_list_bind_row(row, row_box, label, marker);
     }
 
     context->make_panel(
         context->parent, CRAZYPOD_GLASS_SLOT_SEARCH_RESULTS,
         170, 91, 136, 104, 12);
-    snprintf(text, sizeof(text), "%d match%s",
+    snprintf(text, sizeof(text), CP_FMT("%d match%s"),
              result_count, result_count == 1 ? "" : "es");
     label = make_label(context->parent,
                        context->query[0] != '\0'
-                           ? text : "Live results",
+                           ? text : CP_TR("Live results"),
                        &lv_font_montserrat_10,
                        COLOR_WHITE,
                        context->query[0] != '\0' ? 205 : 105);
@@ -161,7 +162,7 @@ void crazypod_search_screen_render(
 
     if(context->query[0] == '\0') {
         label = make_label(context->parent,
-                           "Choose a letter, then press Select.",
+                           CP_TR("Choose a letter, then press Select."),
                            &lv_font_montserrat_8,
                            COLOR_WHITE, 100);
         lv_obj_set_pos(label, 182, 125);
@@ -171,7 +172,7 @@ void crazypod_search_screen_render(
     }
     else if(result_count <= 0) {
         label = make_label(context->parent,
-                           "No title, artist or album matched.",
+                           CP_TR("No title, artist or album matched."),
                            &lv_font_montserrat_8,
                            COLOR_WHITE, 105);
         lv_obj_set_pos(label, 182, 125);
@@ -207,14 +208,14 @@ void crazypod_search_screen_render(
     }
 
     label = make_label(context->parent,
-                       "Wheel Choose  Select Action",
+                       CP_TR("Wheel Choose  Select Action"),
                        &lv_font_montserrat_8,
                        COLOR_WHITE, 125);
     lv_obj_set_pos(label, 174, 202);
     lv_obj_set_width(label, 128);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     label = make_label(context->parent,
-                       "Choose View Results to listen",
+                       CP_TR("Choose View Results to listen"),
                        &lv_font_montserrat_8,
                        COLOR_WHITE, 95);
     lv_obj_set_pos(label, 174, 216);

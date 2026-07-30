@@ -29,9 +29,11 @@ protocol, and non-`ipod6g` targets.
 - Fast-wheel section jumps after a short input burst, with a 760ms letter HUD.
 - Shared overflow marquee for Home, Now Playing, and selected list rows.
 - Progress seek surface with five-second wheel steps.
-- Direct wheel volume control on the main Now Playing screen without a volume
-  modal.
+- Direct wheel volume control on the main Now Playing screen with a temporary
+  18px-wide vertical level HUD at the left edge.
 - Queue dismissal after selecting and starting a queued track.
+- Unified 16×16 action-icon containers with optical centering for playback,
+  favorite, shuffle, repeat, repeat-one, lyrics, queue status, and progress.
 - Artwork-derived primary, secondary, and highlight waveform colors.
 - Embedded 90ms `Sharp_Pop` sample for manual track changes. It mixes through
   the beep channel without pausing or resetting music playback.
@@ -54,8 +56,25 @@ protocol, and non-`ipod6g` targets.
   artwork.
 - PLAY hold opens the Shut Down / Restart menu after three seconds without
   also toggling playback.
+- Lock-screen unlock now requires a 0.5-second Select hold. Early release
+  cancels progress; the shackle lifts, rotates, and rebounds before dismissal.
 - Default icon scale increased from 100% to 120% for new state and built-in
   presets.
+
+### Localization
+
+- Nine runtime languages: English, Simplified Chinese, Traditional Chinese,
+  Japanese, Korean, German, French, Spanish, and Brazilian Portuguese.
+- Settings → Language applies immediately and persists through state version
+  10. State versions 1–9 migrate to English.
+- The generated catalog contains 856 firmware keys. Calculator and Pomodoro
+  use 27 additional translated strings and follow the system language.
+- Strict localization audits reject missing keys, placeholder mismatches,
+  unresolved markers, and untagged text in common UI sinks.
+- Generated 8, 10, 12, 14, and 16px fonts cover all 1,344 currently required
+  non-whitespace characters. Native language names are part of the manifest.
+  The current artifacts share SC glyph shapes rather than regional Han forms.
+- The non-LVGL LCD path now decodes UTF-8.
 
 ### Architecture
 
@@ -93,6 +112,8 @@ protocol, and non-`ipod6g` targets.
 - The music-library cache format is version 3 so collation order and section
   jumps use the same key.
 - Settings, More, and other short menus share the corrected row-window logic.
+- Main-menu rows, markers, search results, and choice overlays share one
+  inline vertical-centering rule instead of unrelated hard-coded offsets.
 - `Gigass/CrazyPod` is an independent GitHub repository. `origin` points to it;
   the local `upstream` remote remains fetch-only.
 
@@ -110,24 +131,29 @@ protocol, and non-`ipod6g` targets.
 - Empty-page content being rendered under or over inconsistent inline notices.
 - Repeated USB entry invalidating completed artwork work after firmware-only
   updates.
+- The Language popup dropping `简` from `简体中文`; native language names are
+  now included in font collection and all five artifacts were regenerated.
+- Menu icons and labels appearing 1–2px low because their baselines and icon
+  centers were calculated independently.
 
 ## Validation
 
 - Simulator build and pixel-level short/long marquee checks pass for the
   current working tree.
 - UI, Mini App, EPUB, and architecture host gates pass.
+- The strict localization audit reports 0 errors and 0 warnings; all five font
+  sizes pass complete-manifest coverage.
 - The current working tree builds and packages for `ipod6g`; its ZIP contains
   324 entries and passes `unzip -tq`.
 - The latest recorded installed firmware has SHA-256
-  `1b939f9266c89aac4d13635a3da5755189d59e7a9d6b956328fd655fb3c0440b`.
-- All 301 package files matched after device copy, and the iPod was safely
-  ejected. The two marquee source files remain uncommitted.
+  `6e087dc7202a8fce085c7a78be45ad01ece66b33bc4710bc20f06b54f6f62b9d`.
+- All 324 package entries were verified, the FAT32 check passed, user media
+  and state were retained, and the iPod was safely ejected. No bootloader
+  change was made.
 - Full release-grade physical regression remains incomplete.
 
 ## Not implemented
 
-- Nine-language localization. The firmware UI remains English-only and has no
-  language selector, translated string table, font subsets, or state migration.
 - 3.5mm headset remote control. The target does not yet initialize the Mikey
   remote controller or normalize its multimedia events for CrazyPod.
 - Native Mini App sandboxing, general permissions, direct filesystem access,
@@ -136,7 +162,8 @@ protocol, and non-`ipod6g` targets.
 
 ## Upgrade notes
 
-- CrazyPod persistent state remains version 9.
+- CrazyPod persistent state upgrades to version 10 to store the selected
+  language. Versions 1–9 migrate with English selected.
 - The music-library cache upgrades to version 3 and may rescan once.
 - Artwork uses CV8. The first run of the new cache format prepares each unique
   album once; later runs resume or preserve unchanged entries.

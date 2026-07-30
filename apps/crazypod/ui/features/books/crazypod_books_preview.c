@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -79,7 +81,7 @@ static void render_books_menu_stage(
         lv_obj_t *left_page;
         lv_obj_t *right_page;
         *selected_book = book;
-        *detail = "Resume saved position";
+        *detail = CP_TR("Resume saved position");
         crazypod_preview_make_plinth(
             parent, 184, 155, 112, 0xAA8B61, 0x2A1B12);
         stage = make_box(parent, 185, 71, 110, 77, 5,
@@ -128,7 +130,7 @@ static void render_books_menu_stage(
     if(logical == 0) {
         int recent_count = crazypod_books_recent_count();
         *detail = recent_count > 0
-            ? "Latest reading activity" : "No recent reading";
+            ? CP_TR("Latest reading activity") : CP_TR("No recent reading");
         crazypod_preview_make_plinth(
             parent, 181, 152, 118, 0xB38A5E, 0x2C1C12);
         for(i = 2; i >= 0; --i) {
@@ -152,7 +154,7 @@ static void render_books_menu_stage(
 
     if(logical == 1) {
         *detail = count > 0
-            ? "Browse the local library" : "Import EPUB, TXT or MD";
+            ? CP_TR("Browse the local library") : CP_TR("Import EPUB, TXT or MD");
         make_box(parent, 183, 70, 114, 83, 4,
                  0x261A12, 82);
         stage = crazypod_preview_make_plinth(
@@ -180,7 +182,7 @@ static void render_books_menu_stage(
     if(logical == 2) {
         int favorite_count = crazypod_books_favorite_count();
         *detail = favorite_count > 0
-            ? "Your favorite books" : "No favorites yet";
+            ? CP_TR("Your favorite books") : CP_TR("No favorites yet");
         if(favorite_count > 0) {
             const struct crazypod_book *book =
                 crazypod_book_get(
@@ -237,7 +239,7 @@ static void render_books_menu_stage(
 
     if(logical == 3) {
         char value[16];
-        *detail = "Library and progress totals";
+        *detail = CP_TR("Library and progress totals");
         stage = make_box(parent, 184, 61, 112, 94, 10,
                          0x15110C, 232);
         lv_obj_set_style_border_width(stage, 1, 0);
@@ -250,7 +252,7 @@ static void render_books_menu_stage(
         crazypod_preview_add_fastener(stage, 102, 5, 0xA89265);
         make_box(stage, 55, 13, 1, 48, 0,
                  0xD4B46A, 55);
-        snprintf(value, sizeof(value), "%d", count);
+        snprintf(value, sizeof(value), CP_FMT("%d"), count);
         label = make_label(stage, value,
                            &lv_font_montserrat_24,
                            0xF6D58C, LV_OPA_COVER);
@@ -258,14 +260,14 @@ static void render_books_menu_stage(
         lv_obj_set_style_text_align(
             label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_pos(label, 4, 14);
-        label = make_label(stage, "BOOKS",
+        label = make_label(stage, CP_TR("BOOKS"),
                            &lv_font_montserrat_8,
                            COLOR_WHITE, 110);
         lv_obj_set_width(label, 52);
         lv_obj_set_style_text_align(
             label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_pos(label, 4, 44);
-        snprintf(value, sizeof(value), "%d",
+        snprintf(value, sizeof(value), CP_FMT("%d"),
                  crazypod_books_favorite_count());
         label = make_label(stage, value,
                            &lv_font_montserrat_24,
@@ -274,7 +276,7 @@ static void render_books_menu_stage(
         lv_obj_set_style_text_align(
             label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_pos(label, 56, 14);
-        label = make_label(stage, "FAVORITES",
+        label = make_label(stage, CP_TR("FAVORITES"),
                            &lv_font_montserrat_8,
                            COLOR_WHITE, 110);
         lv_obj_set_width(label, 52);
@@ -297,7 +299,7 @@ static void render_books_menu_stage(
         return;
     }
 
-    *detail = "Font, size and page theme";
+    *detail = CP_TR("Font, size and page theme");
     stage = make_box(parent, 193, 57, 94, 101, 6,
                      0xF4E9CF, LV_OPA_COVER);
     lv_obj_set_style_border_width(stage, 1, 0);
@@ -308,7 +310,7 @@ static void render_books_menu_stage(
         stage, 94, 101, 0xFFFFFF, 0x95815F);
     make_box(stage, 7, 7, 80, 4, 2,
              0xB89B68, 95);
-    label = make_label(stage, "Aa",
+    label = make_label(stage, CP_TR("Aa"),
                        &lv_font_montserrat_24,
                        0x4A3524, LV_OPA_COVER);
     lv_obj_set_pos(label, 31, 17);
@@ -353,7 +355,7 @@ static void render_books_settings_stage(
                            &lv_font_montserrat_24,
                            COLOR_WHITE, 235);
         lv_obj_center(label);
-        *detail = "Scan Books folders again";
+        *detail = CP_TR("Scan Books folders again");
         return;
     }
 
@@ -370,7 +372,7 @@ static void render_books_settings_stage(
             page, lv_color_hex(0xD5BB84), 0);
         lv_obj_set_style_border_opa(page, 135, 0);
         label = make_label(
-            page, "Aa",
+            page, CP_TR("Aa"),
             crazypod_books_font_size() == 0
                 ? &lv_font_montserrat_16
                 : &lv_font_montserrat_24,
@@ -396,8 +398,8 @@ static void render_books_settings_stage(
         }
     }
     *detail = selected == 0
-        ? "Choose size in a focused popup"
-        : "Choose a page theme in a popup";
+        ? CP_TR("Choose size in a focused popup")
+        : CP_TR("Choose a page theme in a popup");
 }
 
 void crazypod_books_preview_render(
@@ -436,15 +438,15 @@ void crazypod_books_preview_render(
             uint32_t total = book->content_size > 0
                 ? book->content_size : book->size;
             snprintf(detail_text, sizeof(detail_text),
-                     "%lu%% read%s",
+                     CP_FMT("%lu%% read%s"),
                      (unsigned long)(
                          book->progress * 100u / total),
-                     book->favorite ? " · Favorite" : "");
+                     book->favorite ? CP_FMT(" · Favorite") : "");
             detail = detail_text;
         }
         else {
             snprintf(detail_text, sizeof(detail_text),
-                     "%d book%s", crazypod_books_count(),
+                     CP_FMT("%d book%s"), crazypod_books_count(),
                      crazypod_books_count() == 1 ? "" : "s");
             detail = detail_text;
         }
@@ -469,28 +471,28 @@ void crazypod_books_preview_render(
                 COLOR_WHITE, LV_OPA_COVER);
             lv_obj_center(label);
             detail = state->selected == 0
-                ? "Open at saved position"
+                ? CP_TR("Open at saved position")
                 : state->selected == 1
-                    ? "Open the saved bookmark"
+                    ? CP_TR("Open the saved bookmark")
                     : state->selected == 2
-                        ? "Browse EPUB chapters"
+                        ? CP_TR("Browse EPUB chapters")
                         : state->selected == 3
-                            ? "Change favorite status"
+                            ? CP_TR("Change favorite status")
                             : state->selected == 4
-                                ? "View file information"
-                                : "Delete this local file";
+                                ? CP_TR("View file information")
+                                : CP_TR("Delete this local file");
         }
         else if(state->route == BOOKS_ROUTE_CHAPTERS) {
             snprintf(detail_text, sizeof(detail_text),
-                     "Chapter %d of %d",
+                     CP_FMT("Chapter %d of %d"),
                      state->selected + 1,
                      crazypod_book_chapter_count(state->group));
             detail = detail_text;
         }
         else if(state->route == BOOKS_ROUTE_BOOKMARKS)
-            detail = "Jump to the saved page";
+            detail = CP_TR("Jump to the saved page");
         else if(state->route == BOOKS_ROUTE_DELETE_CONFIRM)
-            detail = "Hold center to delete permanently";
+            detail = CP_TR("Hold center to delete permanently");
     }
 
     if(state->route != BOOKS_ROUTE_MENU && book != NULL &&
@@ -506,7 +508,7 @@ void crazypod_books_preview_render(
 
     text_panel = crazypod_preview_make_text_panel(parent, 172, 50);
     label = make_label(text_panel,
-                       title != NULL ? title : "Books",
+                       title != NULL ? title : CP_TR("Books"),
                        metadata_font,
                        COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(label, 126);

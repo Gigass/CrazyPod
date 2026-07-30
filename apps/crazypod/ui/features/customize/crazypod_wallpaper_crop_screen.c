@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -56,44 +58,44 @@ static const char *instruction_text(
     const struct crazypod_wallpaper_crop_model *model)
 {
     if(model->phase == CRAZYPOD_WALLPAPER_CROP_APPLYING)
-        return "Applying wallpaper...";
+        return CP_TR("Applying wallpaper...");
     if(model->phase == CRAZYPOD_WALLPAPER_CROP_APPLIED) {
         if(model->target == CRAZYPOD_APPEARANCE_HOME_BACKGROUND)
-            return "Applied to Home";
+            return CP_TR("Applied to Home");
         if(model->target == CRAZYPOD_APPEARANCE_MENU_BACKGROUND)
-            return "Applied to Menu";
-        return "Applied to Lock Screen";
+            return CP_TR("Applied to Menu");
+        return CP_TR("Applied to Lock Screen");
     }
     if(model->phase == CRAZYPOD_WALLPAPER_CROP_ERROR) {
         if(model->error_loading)
-            return "Picture is still loading";
+            return CP_TR("Picture is still loading");
         switch(model->apply_result) {
         case CRAZYPOD_WALLPAPER_APPLY_INVALID_SOURCE:
-            return "Invalid crop area";
+            return CP_TR("Invalid crop area");
         case CRAZYPOD_WALLPAPER_APPLY_WORKSPACE_FAILED:
-            return "Not enough image workspace";
+            return CP_TR("Not enough image workspace");
         case CRAZYPOD_WALLPAPER_APPLY_DECODE_FAILED:
-            return "Could not decode full picture";
+            return CP_TR("Could not decode full picture");
         case CRAZYPOD_WALLPAPER_APPLY_CACHE_OPEN_FAILED:
-            return "Could not open wallpaper cache";
+            return CP_TR("Could not open wallpaper cache");
         case CRAZYPOD_WALLPAPER_APPLY_CACHE_WRITE_FAILED:
-            return "Could not write wallpaper cache";
+            return CP_TR("Could not write wallpaper cache");
         case CRAZYPOD_WALLPAPER_APPLY_CACHE_PUBLISH_FAILED:
-            return "Could not publish wallpaper cache";
+            return CP_TR("Could not publish wallpaper cache");
         case CRAZYPOD_WALLPAPER_APPLY_SETTINGS_FAILED:
-            return "Could not save wallpaper setting";
+            return CP_TR("Could not save wallpaper setting");
         case CRAZYPOD_WALLPAPER_APPLY_ACTIVATE_FAILED:
-            return "Could not activate wallpaper";
+            return CP_TR("Could not activate wallpaper");
         default:
-            return "Could not apply wallpaper";
+            return CP_TR("Could not apply wallpaper");
         }
     }
     if(model->menu_armed)
-        return "Release MENU to Cancel";
+        return CP_TR("Release MENU to Cancel");
     if(model->play_armed)
-        return "Release PLAY to Reset";
-    return "SELECT Apply  \xe2\x80\xa2  Wheel Zoom  "
-           "\xe2\x80\xa2  Hold MENU Cancel";
+        return CP_TR("Release PLAY to Reset");
+    return CP_TR("SELECT Apply  \xe2\x80\xa2  Wheel Zoom  "
+                 "\xe2\x80\xa2  Hold MENU Cancel");
 }
 
 void crazypod_wallpaper_crop_screen_render(
@@ -200,10 +202,10 @@ void crazypod_wallpaper_crop_screen_render(
         lv_obj_set_pos(label, 148, 55);
         if(progress < 0)
             snprintf(loading_text, sizeof(loading_text),
-                     "Could not load picture");
+                     CP_FMT("Could not load picture"));
         else
             snprintf(loading_text, sizeof(loading_text),
-                     "Loading picture  %d%%",
+                     CP_FMT("Loading picture  %d%%"),
                      progress > 100 ? 100 : progress);
         view->progress_label = crazypod_ui_widget_label(
             viewport, loading_text, &lv_font_montserrat_10,
@@ -230,16 +232,16 @@ void crazypod_wallpaper_crop_screen_render(
             6, 5, LCD_WIDTH - 12, 34, 10);
         label = crazypod_ui_widget_label(
             hint,
-            "Click Arrows: Move  \xe2\x80\xa2  Rotate: Zoom  "
-            "\xe2\x80\xa2  SELECT: Apply",
+            CP_TR("Click Arrows: Move  \xe2\x80\xa2  Rotate: Zoom  "
+                  "\xe2\x80\xa2  SELECT: Apply"),
             &lv_font_montserrat_8, white_color, 230);
         lv_obj_set_width(label, LCD_WIDTH - 24);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_pos(label, 6, 4);
         label = crazypod_ui_widget_label(
             hint,
-            "Hold MENU 0.5s: Cancel  \xe2\x80\xa2  "
-            "Hold PLAY 0.5s: Reset",
+            CP_TR("Hold MENU 0.5s: Cancel  \xe2\x80\xa2  "
+                  "Hold PLAY 0.5s: Reset"),
             &lv_font_montserrat_8, 0xFFD60A, 235);
         lv_obj_set_width(label, LCD_WIDTH - 24);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
@@ -258,7 +260,7 @@ void crazypod_wallpaper_crop_screen_render(
         if(fill_width > 200)
             fill_width = 200;
         snprintf(progress_text, sizeof(progress_text),
-                 "Applying wallpaper  %d%%", model->apply_progress);
+                 CP_FMT("Applying wallpaper  %d%%"), model->apply_progress);
         view->progress_label = crazypod_ui_widget_label(
             panel, progress_text, &lv_font_montserrat_10,
             white_color, 230);
@@ -284,7 +286,7 @@ void crazypod_wallpaper_crop_screen_render(
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
     {
         char zoom[20];
-        snprintf(zoom, sizeof(zoom), "%d.%dx",
+        snprintf(zoom, sizeof(zoom), CP_FMT("%d.%dx"),
                  model->zoom_percent / 100,
                  model->zoom_percent % 100 / 10);
         label = crazypod_ui_widget_label(
@@ -322,7 +324,7 @@ void crazypod_wallpaper_crop_screen_update_progress(
     if(!crazypod_wallpaper_crop_screen_progress_ready())
         return;
     lv_obj_set_width(crop_view.progress_fill, fill_width);
-    lv_label_set_text(crop_view.progress_label, text);
+    CP_LV_LABEL_SET_TEXT(crop_view.progress_label, text);
 }
 
 void crazypod_wallpaper_crop_screen_set_progress_error(bool error)

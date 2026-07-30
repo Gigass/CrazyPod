@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -63,20 +65,20 @@ static int event_count(const struct route_state *state)
 static const char *editor_title(int index)
 {
     static const char *const characters[36] = {
-        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
-        "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
-        "U", "V", "W", "X", "Y", "Z",
+        CP_TR("A"), CP_TR("B"), CP_TR("C"), CP_TR("D"), CP_TR("E"), CP_TR("F"), CP_TR("G"), CP_TR("H"), CP_TR("I"), CP_TR("J"),
+        CP_TR("K"), CP_TR("L"), CP_TR("M"), CP_TR("N"), CP_TR("O"), CP_TR("P"), CP_TR("Q"), CP_TR("R"), CP_TR("S"), CP_TR("T"),
+        CP_TR("U"), CP_TR("V"), CP_TR("W"), "X", CP_TR("Y"), CP_TR("Z"),
         "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
     };
 
     if(index >= 0 && index < 36)
         return characters[index];
     if(index == 36)
-        return "Space";
+        return CP_TR("Space");
     if(index == 37)
-        return "Backspace";
+        return CP_TR("Backspace");
     if(index == 38)
-        return "Done";
+        return CP_TR("Done");
     return "";
 }
 
@@ -132,51 +134,51 @@ const char *crazypod_organizer_feature_title(
     switch(state->route) {
     case CLOCK_ROUTE_MENU:
     case CLOCK_ROUTE_VIEW:
-        return "CLOCK";
+        return CP_TR("CLOCK");
     case CLOCK_ROUTE_SLEEP_TIMER:
-        return "SLEEP TIMER";
+        return CP_TR("SLEEP TIMER");
     case STOPWATCH_ROUTE_VIEW:
-        return "STOPWATCH";
+        return CP_TR("STOPWATCH");
     case WORKOUT_ROUTE_MENU:
-        return "WORKOUTS";
+        return CP_TR("WORKOUTS");
     case WORKOUT_ROUTE_TYPES:
-        return "CHOOSE WORKOUT";
+        return CP_TR("CHOOSE WORKOUT");
     case WORKOUT_ROUTE_READY:
     case WORKOUT_ROUTE_ACTIVE:
     case WORKOUT_ROUTE_SUMMARY:
     case WORKOUT_ROUTE_DETAIL:
-        return "WORKOUT";
+        return CP_TR("WORKOUT");
     case WORKOUT_ROUTE_FINISH_CONFIRM:
-        return "END WORKOUT";
+        return CP_TR("END WORKOUT");
     case WORKOUT_ROUTE_HISTORY:
-        return "HISTORY";
+        return CP_TR("HISTORY");
     case WORKOUT_ROUTE_DELETE_CONFIRM:
-        return "DELETE WORKOUT";
+        return CP_TR("DELETE WORKOUT");
     case CALENDAR_ROUTE_MENU:
-        return "CALENDAR";
+        return CP_TR("CALENDAR");
     case CALENDAR_ROUTE_TODAY:
-        return "TODAY";
+        return CP_TR("TODAY");
     case CALENDAR_ROUTE_UPCOMING:
-        return "UPCOMING";
+        return CP_TR("UPCOMING");
     case CALENDAR_ROUTE_MONTH:
-        return "MONTH";
+        return CP_TR("MONTH");
     case CALENDAR_ROUTE_DAY_EVENTS:
-        return "EVENTS";
+        return CP_TR("EVENTS");
     case CALENDAR_ROUTE_EDITOR:
         return crazypod_calendar_controller_editor().id != 0
-            ? "EDIT EVENT" : "ADD EVENT";
+            ? CP_TR("EDIT EVENT") : CP_TR("ADD EVENT");
     case CALENDAR_ROUTE_TITLE_EDITOR:
-        return "EVENT TITLE";
+        return CP_TR("EVENT TITLE");
     case CALENDAR_ROUTE_DETAIL:
-        return "EVENT";
+        return CP_TR("EVENT");
     case CALENDAR_ROUTE_ACTIONS:
-        return "EVENT ACTIONS";
+        return CP_TR("EVENT ACTIONS");
     case CALENDAR_ROUTE_DELETE_CONFIRM:
-        return "DELETE EVENT";
+        return CP_TR("DELETE EVENT");
     case CONTACTS_ROUTE_LIST:
-        return "CONTACTS";
+        return CP_TR("CONTACTS");
     case CONTACTS_ROUTE_DETAIL:
-        return "CONTACT";
+        return CP_TR("CONTACT");
     default:
         return "";
     }
@@ -189,31 +191,31 @@ bool crazypod_organizer_feature_item_title(
 {
     switch(state->route) {
     case CLOCK_ROUTE_MENU:
-        *title = index == 0 ? "Local Time" :
-            index == 1 ? "Sleep Timer" :
-            index == 2 ? "Stopwatch" : "";
+        *title = index == 0 ? CP_TR("Local Time") :
+            index == 1 ? CP_TR("Sleep Timer") :
+            index == 2 ? CP_TR("Stopwatch") : "";
         return true;
     case CLOCK_ROUTE_SLEEP_TIMER:
         if(get_sleep_timer_active())
-            *title = index == 0 ? "Cancel Timer" :
-                index == 1 ? "End Now" : "";
+            *title = index == 0 ? CP_TR("Cancel Timer") :
+                index == 1 ? CP_TR("End Now") : "";
         else {
             static const char *const durations[] = {
-                "15 Minutes", "30 Minutes", "45 Minutes", "60 Minutes"
+                CP_TR("15 Minutes"), CP_TR("30 Minutes"), CP_TR("45 Minutes"), CP_TR("60 Minutes")
             };
 
             *title = index >= 0 && index < 4 ? durations[index] : "";
         }
         return true;
     case CLOCK_ROUTE_VIEW:
-        *title = "Current Time";
+        *title = CP_TR("Current Time");
         return true;
     case STOPWATCH_ROUTE_VIEW:
-        *title = stopwatch_running ? "Pause" : "Start";
+        *title = stopwatch_running ? CP_TR("Pause") : CP_TR("Start");
         return true;
     case WORKOUT_ROUTE_MENU: {
         static const char *const titles[] = {
-            "Start Workout", "History", "Summary"
+            CP_TR("Start Workout"), CP_TR("History"), CP_TR("Summary")
         };
 
         *title = index >= 0 && index < 3 ? titles[index] : "";
@@ -223,13 +225,13 @@ bool crazypod_organizer_feature_item_title(
         *title = crazypod_workout_activity_title(index);
         return true;
     case WORKOUT_ROUTE_READY:
-        *title = "Start";
+        *title = CP_TR("Start");
         return true;
     case WORKOUT_ROUTE_ACTIVE:
-        *title = workout_running ? "Pause" : "Resume";
+        *title = workout_running ? CP_TR("Pause") : CP_TR("Resume");
         return true;
     case WORKOUT_ROUTE_FINISH_CONFIRM:
-        *title = "Hold Center to Save";
+        *title = CP_TR("Hold Center to Save");
         return true;
     case WORKOUT_ROUTE_HISTORY: {
         const struct crazypod_workout *workout =
@@ -240,19 +242,19 @@ bool crazypod_organizer_feature_item_title(
         return true;
     }
     case WORKOUT_ROUTE_SUMMARY:
-        *title = "Workout Summary";
+        *title = CP_TR("Workout Summary");
         return true;
     case WORKOUT_ROUTE_DETAIL:
-        *title = "Workout Details";
+        *title = CP_TR("Workout Details");
         return true;
     case WORKOUT_ROUTE_DELETE_CONFIRM:
-        *title = "Hold Center to Delete";
+        *title = CP_TR("Hold Center to Delete");
         return true;
     case CALENDAR_ROUTE_MENU:
-        *title = index == 0 ? "Today" :
-            index == 1 ? "Upcoming" :
-            index == 2 ? "Month" :
-            index == 3 ? "Add Event" : "";
+        *title = index == 0 ? CP_TR("Today") :
+            index == 1 ? CP_TR("Upcoming") :
+            index == 2 ? CP_TR("Month") :
+            index == 3 ? CP_TR("Add Event") : "";
         return true;
     case CALENDAR_ROUTE_TODAY:
     case CALENDAR_ROUTE_UPCOMING:
@@ -261,7 +263,7 @@ bool crazypod_organizer_feature_item_title(
         const struct crazypod_calendar_event *event;
 
         if(index == count)
-            *title = "Add Event";
+            *title = CP_TR("Add Event");
         else {
             event = crazypod_calendar_event_get(
                 event_index(state, index));
@@ -270,7 +272,7 @@ bool crazypod_organizer_feature_item_title(
         return true;
     }
     case CALENDAR_ROUTE_MONTH:
-        *title = "Month";
+        *title = CP_TR("Month");
         return true;
     case CALENDAR_ROUTE_EDITOR: {
         static char text[128];
@@ -279,24 +281,24 @@ bool crazypod_organizer_feature_item_title(
             crazypod_calendar_controller_editor();
 
         if(index == 0)
-            snprintf(text, sizeof(text), "Title: %s",
+            snprintf(text, sizeof(text), CP_FMT("Title: %s"),
                      editor.summary[0] != '\0'
-                        ? editor.summary : "Untitled");
+                        ? editor.summary : CP_FMT("Untitled"));
         else if(index == 1)
-            snprintf(text, sizeof(text), "Date: %04d-%02d-%02d",
+            snprintf(text, sizeof(text), CP_FMT("Date: %04d-%02d-%02d"),
                      editor.date / 10000,
                      editor.date / 100 % 100,
                      editor.date % 100);
         else if(index == 2) {
             crazypod_ui_calendar_format_time(
                 time, sizeof(time), editor.minutes);
-            snprintf(text, sizeof(text), "Time: %s",
-                     time[0] != '\0' ? time : "All Day");
+            snprintf(text, sizeof(text), CP_FMT("Time: %s"),
+                     time[0] != '\0' ? time : CP_FMT("All Day"));
         }
         else if(index == 3)
             snprintf(text, sizeof(text), "%s",
-                     editor.error == 1 ? "Title Required" :
-                     editor.error == 2 ? "Storage Error" : "Save Event");
+                     editor.error == 1 ? CP_FMT("Title Required") :
+                     editor.error == 2 ? CP_FMT("Storage Error") : CP_FMT("Save Event"));
         else
             text[0] = '\0';
         *title = text;
@@ -306,14 +308,14 @@ bool crazypod_organizer_feature_item_title(
         *title = editor_title(index);
         return true;
     case CALENDAR_ROUTE_DETAIL:
-        *title = "Event Details";
+        *title = CP_TR("Event Details");
         return true;
     case CALENDAR_ROUTE_ACTIONS:
-        *title = index == 0 ? "Edit" :
-            index == 1 ? "Delete" : "";
+        *title = index == 0 ? CP_TR("Edit") :
+            index == 1 ? CP_TR("Delete") : "";
         return true;
     case CALENDAR_ROUTE_DELETE_CONFIRM:
-        *title = "Hold Center to Delete";
+        *title = CP_TR("Hold Center to Delete");
         return true;
     case CONTACTS_ROUTE_LIST: {
         const struct crazypod_contact *contact =
@@ -323,7 +325,7 @@ bool crazypod_organizer_feature_item_title(
         return true;
     }
     case CONTACTS_ROUTE_DETAIL:
-        *title = "Contact Details";
+        *title = CP_TR("Contact Details");
         return true;
     default:
         return false;

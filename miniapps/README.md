@@ -29,7 +29,8 @@ key; Play activates equals; Menu returns to the Mini Apps list.
 
 The engine supports standard four-function chaining, contextual percent,
 repeat equals, sign, decimal entry, backspace, clear/all-clear, divide-by-zero
-handling, range errors, and recovery after an error.
+handling, range errors, and recovery after an error. Error text follows the
+current CrazyPod language.
 
 ### Pomodoro
 
@@ -49,7 +50,8 @@ time, configuration, deadline, and alarm token are persisted.
 In Setup, wheel movement selects one row at a time. Select enters or leaves
 numeric editing, where wheel acceleration may change a value by multiple
 steps. Play saves the configuration. Menu leaves editing first, then closes
-Setup.
+Setup. Labels, phases, actions, and status messages follow the current
+CrazyPod language.
 
 ## Installation lifecycle
 
@@ -157,13 +159,14 @@ Apps select appearance-aware color and font tokens rather than creating LVGL
 objects or using firmware UI internals directly.
 
 The host API provides clock access, atomic per-app state, four persistent alarm
-slots, alarm acknowledgement, system status, date/time/duration formatting,
-short host-rendered toasts, and number formatting. The host persists UI delivery
-separately from the current alarm, so acknowledging an expired timer cannot
-consume an alert before the shell receives it, and a new timer can start while
-the prior alert is pending. The shell clears the delivery record only after
-starting the first alert sound. It does not expose direct audio control, so a
-Pomodoro alarm can coexist with music playback.
+slots, alarm acknowledgement, system status including the current language,
+date/time/duration formatting, short host-rendered toasts, and number
+formatting. The host persists UI delivery separately from the current alarm,
+so acknowledging an expired timer cannot consume an alert before the shell
+receives it, and a new timer can start while the prior alert is pending. The
+shell clears the delivery record only after starting the first alert sound. It
+does not expose direct audio control, so a Pomodoro alarm can coexist with
+music playback.
 
 ABI 1 revision 3 keeps the original host table as an immutable prefix. The
 loader accepts older ABI 1 packages whose required host-table size is no larger
@@ -180,6 +183,11 @@ The current capability bits cover:
 - asynchronous host-owned text, choice, and confirmation surfaces;
 - bounded resource lookup/read and one RGB565 bitmap command per scene;
 - a copied, read-only Now Playing snapshot.
+
+`cp_system_info.language` uses `enum cp_language`. Calculator and Pomodoro use
+the generated `sdk/crazypod_miniapp_l10n.h` table, which currently contains 27
+strings across the same nine languages as the firmware. Third-party packages
+own their translations; the host does not translate arbitrary app text.
 
 Modal UI requests are asynchronous. An app submits a nonzero request ID, then
 calls `ui_poll_result()` from `tick()` or `event()`. Only one request or

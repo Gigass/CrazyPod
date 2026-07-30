@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define CP_MINIAPP_ABI_VERSION 1u
-#define CP_MINIAPP_SDK_REVISION 3u
+#define CP_MINIAPP_SDK_REVISION 4u
 #define CP_MINIAPP_BINARY_MAGIC 0x43504d41ul /* CPMA */
 #define CP_MINIAPP_MAX_COMMANDS 64
 #define CP_MINIAPP_TEXT_SIZE 48
@@ -45,6 +45,19 @@ enum cp_system_flag {
     CP_SYSTEM_REDUCE_MOTION = 1u << 6
 };
 
+enum cp_language {
+    CP_LANGUAGE_ENGLISH = 0,
+    CP_LANGUAGE_CHINESE_SIMPLIFIED,
+    CP_LANGUAGE_CHINESE_TRADITIONAL,
+    CP_LANGUAGE_JAPANESE,
+    CP_LANGUAGE_KOREAN,
+    CP_LANGUAGE_GERMAN,
+    CP_LANGUAGE_FRENCH,
+    CP_LANGUAGE_SPANISH,
+    CP_LANGUAGE_PORTUGUESE_BRAZIL,
+    CP_LANGUAGE_COUNT
+};
+
 enum cp_datetime_format {
     CP_DATETIME_DATE = 0,
     CP_DATETIME_TIME,
@@ -56,7 +69,7 @@ struct cp_system_info {
     uint32_t flags;
     int16_t battery_percent;
     int16_t battery_minutes;
-    uint32_t reserved;
+    uint32_t language;
 };
 
 enum cp_ui_result_status {

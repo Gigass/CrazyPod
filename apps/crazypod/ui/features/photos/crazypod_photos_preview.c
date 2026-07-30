@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -136,7 +138,7 @@ void crazypod_videos_preview_render(
     int count = crazypod_video_count();
     int index = count > 0 ? state->selected : -1;
     const char *name =
-        index >= 0 ? crazypod_video_name(index) : "No Videos";
+        index >= 0 ? crazypod_video_name(index) : CP_TR("No Videos");
     uint32_t resume = index >= 0
         ? crazypod_video_resume_seconds(index) : 0;
     uint32_t duration = index >= 0
@@ -151,11 +153,11 @@ void crazypod_videos_preview_render(
     render_video_card(context, index, 173, 48, 134, 102);
     format_media_duration(time, sizeof(time), duration);
     if(resume > 0)
-        snprintf(detail, sizeof(detail), "Resume %lu:%02lu  ·  %s",
+        snprintf(detail, sizeof(detail), CP_FMT("Resume %lu:%02lu  ·  %s"),
                  (unsigned long)(resume / 60u),
                  (unsigned long)(resume % 60u), time);
     else
-        snprintf(detail, sizeof(detail), "%s  ·  MPEG", time);
+        snprintf(detail, sizeof(detail), CP_FMT("%s  ·  MPEG"), time);
     text_panel = crazypod_preview_make_text_panel(
         context->parent, 160, 52);
     label = make_label(
@@ -319,9 +321,11 @@ void crazypod_photos_preview_render(
             0, 280, 18, -5, 214, 95);
     }
 
-    snprintf(detail, sizeof(detail), "%d %s%s",
-             count, state->selected == 1 ? "video" : "photo",
-             count == 1 ? "" : "s");
+    snprintf(detail, sizeof(detail),
+             state->selected == 1
+                 ? (count == 1 ? CP_FMT("%d video") : CP_FMT("%d videos"))
+                 : (count == 1 ? CP_FMT("%d photo") : CP_FMT("%d photos")),
+             count);
     text_panel = crazypod_preview_make_text_panel(parent, 166, 52);
     label = make_label(
         text_panel, detail, &lv_font_montserrat_10,
@@ -331,9 +335,9 @@ void crazypod_photos_preview_render(
     lv_obj_set_pos(label, 7, 6);
     label = make_label(
         text_panel,
-        state->selected == 0 ? "All pictures in /Pictures"
-        : state->selected == 1 ? "Converted MPEG files in /Videos"
-                               : "Saved favorites",
+        state->selected == 0 ? CP_TR("All pictures in /Pictures")
+        : state->selected == 1 ? CP_TR("Converted MPEG files in /Videos")
+                               : CP_TR("Saved favorites"),
         &lv_font_montserrat_8, COLOR_WHITE, 100);
     lv_obj_set_width(label, 132);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);

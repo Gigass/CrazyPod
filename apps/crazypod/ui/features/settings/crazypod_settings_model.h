@@ -4,6 +4,7 @@
 #include "config.h"
 
 enum settings_item {
+    SETTINGS_ITEM_LANGUAGE,
     SETTINGS_ITEM_EQ_ENABLED,
     SETTINGS_ITEM_BASS,
     SETTINGS_ITEM_TREBLE,

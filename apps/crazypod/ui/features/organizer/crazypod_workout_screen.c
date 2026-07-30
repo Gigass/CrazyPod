@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -40,19 +42,19 @@ void crazypod_workout_screen_render_ready(
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(label, 18, 20);
     label = crazypod_ui_widget_label(
-        panel, "READY", &lv_font_montserrat_24,
+        panel, CP_TR("READY"), &lv_font_montserrat_24,
         0xA8F12D, LV_OPA_COVER);
     lv_obj_set_width(label, 248);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(label, 18, 57);
     label = crazypod_ui_widget_label(
-        panel, "TIME ONLY\nNo motion, distance, or calorie estimates",
+        panel, CP_TR("TIME ONLY\nNo motion, distance, or calorie estimates"),
         &lv_font_montserrat_10, CRAZYPOD_WORKOUT_WHITE, 145);
     lv_obj_set_width(label, 248);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(label, 18, 96);
     label = crazypod_ui_widget_label(
-        panel, "CENTER  START", &lv_font_montserrat_10, 0xA8F12D, 230);
+        panel, CP_TR("CENTER  START"), &lv_font_montserrat_10, 0xA8F12D, 230);
     lv_obj_set_width(label, 248);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(label, 18, 140);
@@ -75,7 +77,7 @@ void crazypod_workout_screen_render_active(
         ring, lv_color_hex(running ? 0xA8F12D : 0xFFB340), 0);
     lv_obj_set_style_border_opa(ring, 235, 0);
     label = crazypod_ui_widget_label(
-        ring, running ? LV_SYMBOL_PLAY : "II",
+        ring, running ? LV_SYMBOL_PLAY : CP_TR("II"),
         &lv_font_montserrat_24,
         running ? 0xA8F12D : 0xFFB340, LV_OPA_COVER);
     lv_obj_center(label);
@@ -92,13 +94,13 @@ void crazypod_workout_screen_render_active(
         content, 174, 108, 126, 1, 0,
         CRAZYPOD_WORKOUT_WHITE, 90);
     label = crazypod_ui_widget_label(
-        content, running ? "RUNNING" : "PAUSED",
+        content, running ? CP_TR("RUNNING") : CP_TR("PAUSED"),
         &lv_font_montserrat_10,
         running ? 0xA8F12D : 0xFFB340, 235);
     lv_obj_set_pos(label, 174, 119);
     label = crazypod_ui_widget_label(
         content,
-        "CENTER  PAUSE / RESUME\nPLAY  FINISH\nTIME-ONLY LOG",
+        CP_TR("CENTER  PAUSE / RESUME\nPLAY  FINISH\nTIME-ONLY LOG"),
         &lv_font_montserrat_8, CRAZYPOD_WORKOUT_WHITE, 125);
     lv_obj_set_pos(label, 174, 145);
 }
@@ -120,8 +122,10 @@ void crazypod_workout_screen_render_summary(lv_obj_t *content)
     panel = crazypod_ui_widget_box(
         content, 18, 52, 284, 150, 14, 0x111512, 238);
     snprintf(text, sizeof(text),
-             "WORKOUT SUMMARY\n\n%d saved workouts\n%lu total minutes\n\n"
-             "Metrics: elapsed time only\nNo sensor data is fabricated.",
+             CP_FMT("WORKOUT SUMMARY\n\n%d saved workouts\n"
+                    "%lu total minutes\n\n"
+                    "Metrics: elapsed time only\n"
+                    "No sensor data is fabricated."),
              crazypod_workouts_count(),
              (unsigned long)(total_seconds / 60u));
     label = crazypod_ui_widget_label(
@@ -146,11 +150,12 @@ void crazypod_workout_screen_render_detail(
         workout != NULL ? workout->duration_seconds : 0);
     panel = crazypod_ui_widget_box(
         content, 18, 52, 284, 150, 14, 0x111512, 238);
-    snprintf(text, sizeof(text), "%s\n\n%04d-%02d-%02d\n%s\n\n"
-             "Time-only workout\nCenter: Delete",
+    snprintf(text, sizeof(text),
+             CP_FMT("%s\n\n%04d-%02d-%02d\n%s\n\n"
+                    "Time-only workout\nCenter: Delete"),
              workout != NULL
                  ? crazypod_workout_activity_title(workout->activity)
-                 : "Missing Workout",
+                 : CP_FMT("Missing Workout"),
              workout != NULL ? (int)(workout->date / 10000) : 0,
              workout != NULL ? (int)(workout->date / 100 % 100) : 0,
              workout != NULL ? (int)(workout->date % 100) : 0,

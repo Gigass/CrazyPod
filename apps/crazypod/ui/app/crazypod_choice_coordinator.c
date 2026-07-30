@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <string.h>
@@ -87,7 +89,7 @@ static const char *choice_title(
     (void)context;
     switch(kind) {
     case CRAZYPOD_CHOICE_ICON_THEME:
-        return "ICON THEME";
+        return CP_TR("ICON THEME");
     case CRAZYPOD_CHOICE_APPEARANCE:
         return crazypod_customize_feature_field_title(id);
     case CRAZYPOD_CHOICE_BACKGROUND:
@@ -95,9 +97,9 @@ static const char *choice_title(
     case CRAZYPOD_CHOICE_SETTING:
         return crazypod_settings_feature_choice_item_title(id);
     case CRAZYPOD_CHOICE_BOOK_FONT_SIZE:
-        return "TEXT SIZE";
+        return CP_TR("TEXT SIZE");
     case CRAZYPOD_CHOICE_BOOK_THEME:
-        return "PAGE THEME";
+        return CP_TR("PAGE THEME");
     default:
         return "";
     }
@@ -119,23 +121,23 @@ static const char *item_title(
     case CRAZYPOD_CHOICE_BACKGROUND:
         if(index == 0)
             return id == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
-                ? "Follow Home" : "Default";
+                ? CP_TR("Follow Home") : CP_TR("Default");
         return index <= CRAZYPOD_APPEARANCE_COLOR_COUNT
             ? crazypod_appearance_color_name(index - 1)
-            : "Choose Picture";
+            : CP_TR("Choose Picture");
     case CRAZYPOD_CHOICE_SETTING:
         return crazypod_settings_feature_choice_title(id, index);
     case CRAZYPOD_CHOICE_BOOK_FONT_SIZE: {
         static const char *const sizes[] = {
-            "Small  ·  12 pt", "Medium  ·  14 pt",
-            "Large  ·  16 pt"
+            CP_TR("Small  ·  12 pt"), CP_TR("Medium  ·  14 pt"),
+            CP_TR("Large  ·  16 pt")
         };
 
         return index >= 0 && index < 3 ? sizes[index] : "";
     }
     case CRAZYPOD_CHOICE_BOOK_THEME: {
         static const char *const themes[] = {
-            "Parchment", "Light", "Mint", "Dark"
+            CP_TR("Parchment"), CP_TR("Light"), CP_TR("Mint"), CP_TR("Dark")
         };
 
         return index >= 0 && index < 4 ? themes[index] : "";

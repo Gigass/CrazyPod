@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -91,28 +93,28 @@ void crazypod_notes_preview_render(
         note = crazypod_note_find((uint32_t)state->group);
     if(state->route == NOTES_ROUTE_SEARCH) {
         title = crazypod_notes_controller_query()[0] != '\0'
-            ? crazypod_notes_controller_query() : "Search Notes";
+            ? crazypod_notes_controller_query() : CP_TR("Search Notes");
         snprintf(search_detail, sizeof(search_detail),
-                 "%d matching note%s",
+                 CP_FMT("%d matching note%s"),
                  crazypod_notes_search_count(crazypod_notes_controller_query()),
                  crazypod_notes_search_count(crazypod_notes_controller_query()) == 1
                     ? "" : "s");
         detail = search_detail;
     }
     else if(note != NULL)
-        detail = note->pinned ? "Pinned note" :
-                 note->deleted ? "Recently deleted" : "Saved note";
+        detail = note->pinned ? CP_TR("Pinned note") :
+                 note->deleted ? CP_TR("Recently deleted") : CP_TR("Saved note");
     else if(state->route == NOTES_ROUTE_MENU && state->selected == 0)
-        detail = "Write with the click wheel";
+        detail = CP_TR("Write with the click wheel");
     else if(state->route == NOTES_ROUTE_MENU &&
             crazypod_notes_controller_draft_available() && state->selected == 1)
-        detail = "Resume unsaved changes";
+        detail = CP_TR("Resume unsaved changes");
     else if(is_search)
-        detail = "Search title and body";
+        detail = CP_TR("Search title and body");
     else if(is_deleted)
-        detail = "Restore or erase notes";
+        detail = CP_TR("Restore or erase notes");
     else if(state->route == NOTES_ROUTE_MENU)
-        detail = "Saved note";
+        detail = CP_TR("Saved note");
 
     crazypod_preview_make_plinth(
         parent, 187, 156, 108, 0xAEB7BA, 0x252A2C);
@@ -317,7 +319,7 @@ void crazypod_notes_preview_render(
     }
 
     text_panel = crazypod_preview_make_text_panel(parent, 168, 52);
-    label = make_label(text_panel, title != NULL ? title : "Notes",
+    label = make_label(text_panel, title != NULL ? title : CP_TR("Notes"),
                        metadata_font,
                        COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(label, 126);

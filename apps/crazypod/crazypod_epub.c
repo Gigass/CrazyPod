@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -182,7 +184,7 @@ static void chapter_title_from_href(char *title, size_t size,
             title[i] = ' ';
     }
     if(title[0] == '\0')
-        snprintf(title, size, "Chapter");
+        snprintf(title, size, CP_FMT("Chapter"));
 }
 
 static bool element_text(const char *xml, const char *local_name,
@@ -656,7 +658,7 @@ bool crazypod_epub_prepare(const char *epub_path,
     off_t size;
     bool success = false;
 
-    report_prepare_progress(5, "Checking book cache");
+    report_prepare_progress(5, CP_TR("Checking book cache"));
     crazypod_epub_cache_ensure_directory();
     crazypod_epub_cache_paths(epub_path, &paths);
     snprintf(text_path, text_path_size, "%s", paths.text);
@@ -671,19 +673,19 @@ bool crazypod_epub_prepare(const char *epub_path,
                  "%s", cache_book.cover_path);
         if(text_size != NULL)
             *text_size = cache_book.text_size;
-        report_prepare_progress(100, "Book ready");
+        report_prepare_progress(100, CP_TR("Book ready"));
         return true;
     }
 
-    report_prepare_progress(12, "Clearing temporary files");
+    report_prepare_progress(12, CP_TR("Clearing temporary files"));
     crazypod_epub_extraction_remove_tree(paths.extract_root);
-    report_prepare_progress(15, "Opening EPUB package");
+    report_prepare_progress(15, CP_TR("Opening EPUB package"));
     mkdir(paths.extract_root);
     if(!crazypod_epub_extraction_entry(
            epub_path, paths.extract_root,
            "META-INF/container.xml"))
         goto done;
-    report_prepare_progress(28, "Reading package metadata");
+    report_prepare_progress(28, CP_TR("Reading package metadata"));
     if(!parse_container(paths.extract_root, opf_path, sizeof(opf_path)) ||
        !crazypod_epub_extraction_archive_name(
            opf_entry, sizeof(opf_entry),
@@ -691,14 +693,14 @@ bool crazypod_epub_prepare(const char *epub_path,
        !crazypod_epub_extraction_entry(
            epub_path, paths.extract_root, opf_entry))
         goto done;
-    report_prepare_progress(45, "Extracting reading order");
+    report_prepare_progress(45, CP_TR("Extracting reading order"));
     if(!prepare_epub_resources(
            epub_path, paths.extract_root, opf_path))
         goto done;
-    report_prepare_progress(72, "Building readable text");
+    report_prepare_progress(72, CP_TR("Building readable text"));
     if(!build_epub_text(paths.extract_root, opf_path, paths.temporary))
         goto done;
-    report_prepare_progress(88, "Saving reading cache");
+    report_prepare_progress(88, CP_TR("Saving reading cache"));
     fd = open(paths.temporary, O_RDONLY);
     if(fd < 0)
         goto done;
@@ -737,14 +739,14 @@ bool crazypod_epub_prepare(const char *epub_path,
 done:
     report_prepare_progress(
         94,
-        success ? "Cleaning temporary files"
-                : "Cleaning failed import");
+        success ? CP_TR("Cleaning temporary files")
+                : CP_TR("Cleaning failed import"));
     remove(paths.temporary);
     crazypod_epub_extraction_remove_tree(paths.extract_root);
     report_prepare_progress(
         100,
-        success ? "Book cache ready"
-                : "Could not prepare book");
+        success ? CP_TR("Book cache ready")
+                : CP_TR("Could not prepare book"));
     return success;
 }
 

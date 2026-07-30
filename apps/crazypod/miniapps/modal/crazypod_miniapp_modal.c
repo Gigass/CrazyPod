@@ -1,3 +1,5 @@
+#include "../../crazypod_l10n.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -212,7 +214,7 @@ int crazypod_miniapp_modal_cancel(uint32_t request_id)
 bool crazypod_miniapp_modal_event(const struct cp_input_event *event)
 {
     static const char characters[] =
-        " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:+-*/()=%!?_";
+        CP_TR(" ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:+-*/()=%!?_");
     int direction = 0;
 
     if(modal.type == MODAL_NONE)
@@ -365,9 +367,9 @@ void crazypod_miniapp_modal_render(struct cp_scene *scene)
                  (unsigned)modal.max_bytes);
         text(scene, counter, 220, 151, 58,
              CP_FONT_CAPTION, CP_ALIGN_RIGHT, false);
-        text(scene, "SELECT ADD  PLAY DELETE", 34, 184, 252,
+        text(scene, CP_TR("SELECT ADD  PLAY DELETE"), 34, 184, 252,
              CP_FONT_CAPTION, CP_ALIGN_CENTER, false);
-        text(scene, "RIGHT DONE  MENU CANCEL", 34, 204, 252,
+        text(scene, CP_TR("RIGHT DONE  MENU CANCEL"), 34, 204, 252,
              CP_FONT_CAPTION, CP_ALIGN_CENTER, false);
     }
     else if(modal.type == MODAL_CHOICE) {
@@ -407,7 +409,7 @@ void crazypod_miniapp_modal_render(struct cp_scene *scene)
                 modal.selected == 1 ? CP_COLOR_ACCENT : CP_COLOR_SURFACE;
             confirm->radius = 8;
         }
-        text(scene, "Cancel", 34, 176, 116,
+        text(scene, CP_TR("Cancel"), 34, 176, 116,
              CP_FONT_LABEL, CP_ALIGN_CENTER, modal.selected == 0);
         text(scene, modal.confirm_label, 170, 176, 116,
              CP_FONT_LABEL, CP_ALIGN_CENTER, modal.selected == 1);

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <string.h>
@@ -78,7 +80,7 @@ void crazypod_extras_preview_render(
         crazypod_preview_make_text_panel(parent, 168, 52);
     label = make_label(
         text_panel,
-        app != NULL ? app->name : "More Features",
+        app != NULL ? app->name : CP_TR("More Features"),
         metadata_font, COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(label, 126);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
@@ -87,8 +89,8 @@ void crazypod_extras_preview_render(
     label = make_label(
         text_panel,
         app != NULL
-            ? "Hidden from Main Menu"
-            : "No hidden applications",
+            ? CP_TR("Hidden from Main Menu")
+            : CP_TR("No hidden applications"),
         &lv_font_montserrat_8, COLOR_WHITE, 135);
     lv_obj_set_width(label, 126);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);

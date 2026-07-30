@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -81,7 +83,7 @@ static void apply_progress(int progress, void *user_data)
         fill_width = 2;
     snprintf(
         text, sizeof(text),
-        "Applying wallpaper  %d%%", progress);
+        CP_FMT("Applying wallpaper  %d%%"), progress);
     crazypod_wallpaper_crop_screen_update_progress(
         fill_width, text);
     lv_refr_now(NULL);
@@ -174,7 +176,7 @@ static void update_loading_progress(void)
        !crazypod_wallpaper_crop_screen_progress_ready())
         return;
     if(progress < 0) {
-        snprintf(text, sizeof(text), "Could not load picture");
+        snprintf(text, sizeof(text), CP_FMT("Could not load picture"));
         fill_width = 200;
         crazypod_wallpaper_crop_screen_set_progress_error(true);
     }
@@ -183,7 +185,7 @@ static void update_loading_progress(void)
             progress = 100;
         snprintf(
             text, sizeof(text),
-            "Loading picture  %d%%", progress);
+            CP_FMT("Loading picture  %d%%"), progress);
         fill_width = progress * 2;
         if(fill_width < 2)
             fill_width = 2;

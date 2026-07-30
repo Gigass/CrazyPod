@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -20,9 +22,9 @@
 #define EDITOR_CHARACTER_COUNT 36
 
 static const char *const editor_characters[EDITOR_CHARACTER_COUNT] = {
-    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
-    "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
-    "U", "V", "W", "X", "Y", "Z",
+    CP_TR("A"), CP_TR("B"), CP_TR("C"), CP_TR("D"), CP_TR("E"), CP_TR("F"), CP_TR("G"), CP_TR("H"), CP_TR("I"), CP_TR("J"),
+    CP_TR("K"), CP_TR("L"), CP_TR("M"), CP_TR("N"), CP_TR("O"), CP_TR("P"), CP_TR("Q"), CP_TR("R"), CP_TR("S"), CP_TR("T"),
+    CP_TR("U"), CP_TR("V"), CP_TR("W"), "X", CP_TR("Y"), CP_TR("Z"),
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
 };
 
@@ -67,11 +69,11 @@ static const char *editor_title(int index)
     if(index >= 0 && index < EDITOR_CHARACTER_COUNT)
         return editor_characters[index];
     if(index == EDITOR_CHARACTER_COUNT)
-        return "Space";
+        return CP_TR("Space");
     if(index == EDITOR_CHARACTER_COUNT + 1)
-        return "Delete";
+        return CP_TR("Delete");
     if(index == EDITOR_CHARACTER_COUNT + 2)
-        return "View Results";
+        return CP_TR("View Results");
     return "";
 }
 
@@ -117,38 +119,38 @@ const char *crazypod_music_feature_title(
 {
     switch(state->route) {
     case MUSIC_ROUTE_MENU:
-        return "MUSIC";
+        return CP_TR("MUSIC");
     case MUSIC_ROUTE_ALL:
-        return "ALL MUSIC";
+        return CP_TR("ALL MUSIC");
     case MUSIC_ROUTE_PLAYLISTS:
-        return "PLAYLISTS";
+        return CP_TR("PLAYLISTS");
     case MUSIC_ROUTE_PLAYLIST_SONGS: {
         const struct crazypod_playlist *playlist =
             crazypod_music_playlist(state->group);
 
-        return playlist != NULL ? playlist->name : "PLAYLIST";
+        return playlist != NULL ? playlist->name : CP_TR("PLAYLIST");
     }
     case MUSIC_ROUTE_ARTISTS:
-        return "ARTISTS";
+        return CP_TR("ARTISTS");
     case MUSIC_ROUTE_ARTIST_SONGS:
         return crazypod_music_artist(state->group);
     case MUSIC_ROUTE_ALBUMS:
     case MUSIC_ROUTE_ALBUM_FLOW:
-        return "ALBUMS";
+        return CP_TR("ALBUMS");
     case MUSIC_ROUTE_ALBUM_SONGS: {
         const struct crazypod_album *album =
             crazypod_music_album(state->group);
 
-        return album != NULL ? album->title : "ALBUM";
+        return album != NULL ? album->title : CP_TR("ALBUM");
     }
     case MUSIC_ROUTE_SONGS:
-        return "SONGS";
+        return CP_TR("SONGS");
     case MUSIC_ROUTE_SEARCH:
-        return "SEARCH";
+        return CP_TR("SEARCH");
     case MUSIC_ROUTE_SEARCH_RESULTS:
-        return "RESULTS";
+        return CP_TR("RESULTS");
     case PODCASTS_ROUTE_MENU:
-        return "PODCASTS";
+        return CP_TR("PODCASTS");
     default:
         return "";
     }
@@ -163,8 +165,8 @@ bool crazypod_music_feature_item_title(
     switch(state->route) {
     case MUSIC_ROUTE_MENU: {
         static const char *const titles[] = {
-            "Now Playing", "Album Flow", "All Music", "Playlists",
-            "Artists", "Albums", "Songs", "Search"
+            CP_TR("Now Playing"), CP_TR("Album Flow"), CP_TR("All Music"), CP_TR("Playlists"),
+            CP_TR("Artists"), CP_TR("Albums"), CP_TR("Songs"), CP_TR("Search")
         };
 
         *title = index >= 0 && index < 8 ? titles[index] : "";
@@ -206,7 +208,7 @@ bool crazypod_music_feature_item_title(
             }
         }
         snprintf(album_label, sizeof(album_label),
-                 duplicate_title ? "%s · %s" : "%s",
+                 duplicate_title ? CP_FMT("%s · %s") : "%s",
                  duplicate_title ? album->artist : album->title,
                  album->title);
         *title = album_label;

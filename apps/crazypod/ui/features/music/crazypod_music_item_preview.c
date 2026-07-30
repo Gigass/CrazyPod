@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -169,7 +171,7 @@ void crazypod_music_item_preview_render(
         title = make_label(text_panel, artist != NULL ? artist : "",
                            metadata_font,
                            COLOR_WHITE, LV_OPA_COVER);
-        snprintf(text, sizeof(text), "%d songs", count);
+        snprintf(text, sizeof(text), CP_FMT("%d songs"), count);
         detail = make_label(text_panel, text, &lv_font_montserrat_8,
                             COLOR_WHITE, 130);
     }
@@ -196,7 +198,7 @@ void crazypod_music_item_preview_render(
                            playlist != NULL ? playlist->name : "",
                            metadata_font,
                            COLOR_WHITE, LV_OPA_COVER);
-        snprintf(text, sizeof(text), "%d songs",
+        snprintf(text, sizeof(text), CP_FMT("%d songs"),
                  playlist != NULL ? playlist->track_count : 0);
         detail = make_label(text_panel, text, &lv_font_montserrat_8,
                             COLOR_WHITE, 130);
@@ -206,7 +208,7 @@ void crazypod_music_item_preview_render(
         create_artwork(parent, track, 204, 72, 72,
                        CRAZYPOD_PREVIEW_ARTWORK_SLOT);
         title = make_label(text_panel,
-                           track != NULL ? track->title : "No Track",
+                           track != NULL ? track->title : CP_TR("No Track"),
                            metadata_font,
                            COLOR_WHITE, LV_OPA_COVER);
         detail = make_label(text_panel,

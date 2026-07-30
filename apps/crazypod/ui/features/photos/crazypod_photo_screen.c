@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -63,8 +65,8 @@ void crazypod_photo_screen_render_favorite_status(
         label = crazypod_ui_widget_label(
             panel,
             crazypod_photo_is_favorite(photo_index)
-                ? "Hold to Remove Favorite"
-                : "Hold to Add Favorite",
+                ? CP_TR("Hold to Remove Favorite")
+                : CP_TR("Hold to Add Favorite"),
             &lv_font_montserrat_8, white_color, 225);
         lv_obj_set_pos(label, 35, 5);
         track = crazypod_ui_widget_box(
@@ -78,10 +80,10 @@ void crazypod_photo_screen_render_favorite_status(
     }
     else {
         const char *message = model->favorite_feedback_error
-            ? "Favorite Save Failed"
+            ? CP_TR("Favorite Save Failed")
             : model->favorite_feedback_added
-                ? "Saved to Favorites"
-                : "Removed from Favorites";
+                ? CP_TR("Saved to Favorites")
+                : CP_TR("Removed from Favorites");
 
         label = crazypod_ui_widget_label(
             panel, message, &lv_font_montserrat_10,
@@ -153,10 +155,10 @@ static void render_empty(
     crazypod_empty_state_render(
         parent, LV_SYMBOL_IMAGE,
         mode == CRAZYPOD_PHOTO_GRID_FAVORITES
-            ? "No Favorites" : "No Pictures",
+            ? CP_TR("No Favorites") : CP_TR("No Pictures"),
         mode == CRAZYPOD_PHOTO_GRID_FAVORITES
-            ? "Hold Select on a photo to save it here."
-            : "Add JPG, JPEG or BMP files to /Pictures.");
+            ? CP_TR("Hold Select on a photo to save it here.")
+            : CP_TR("Add JPG, JPEG or BMP files to /Pictures."));
 }
 
 void crazypod_photo_screen_render_grid(
@@ -242,7 +244,7 @@ void crazypod_photo_screen_render_grid(
         }
     }
     snprintf(
-        position, sizeof(position), "%d / %d  %s",
+        position, sizeof(position), CP_FMT("%d / %d  %s"),
         selected + 1, count,
         crazypod_photo_name(
             crazypod_photo_screen_grid_index(mode, selected)));
@@ -287,7 +289,7 @@ void crazypod_photo_screen_render_detail(
             white_color, 130);
         lv_obj_set_pos(label, 148, 89);
         label = crazypod_ui_widget_label(
-            viewport, "Loading photo", &lv_font_montserrat_10,
+            viewport, CP_TR("Loading photo"), &lv_font_montserrat_10,
             white_color, 160);
         lv_obj_set_width(label, 200);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
@@ -305,11 +307,11 @@ void crazypod_photo_screen_render_detail(
     lv_obj_set_pos(label, info_x + 12, info_y + 11);
     if(model->zoom_percent > 100) {
         int tenths = (model->zoom_percent + 5) / 10;
-        snprintf(zoom_label, sizeof(zoom_label), "%d.%dx",
+        snprintf(zoom_label, sizeof(zoom_label), CP_FMT("%d.%dx"),
                  tenths / 10, tenths % 10);
     }
     else
-        snprintf(zoom_label, sizeof(zoom_label), "FIT");
+        snprintf(zoom_label, sizeof(zoom_label), CP_FMT("FIT"));
     if(crazypod_photo_is_favorite(photo_index))
         crazypod_ui_widget_pixel_heart(
             viewport, info_x + 216, info_y + 13, 1,

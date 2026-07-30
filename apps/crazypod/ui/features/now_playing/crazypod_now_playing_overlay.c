@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -27,6 +29,15 @@
 #define CRAZYPOD_NOW_POPUP_Y 32
 #define CRAZYPOD_NOW_POPUP_WIDTH 250
 #define CRAZYPOD_NOW_POPUP_HEIGHT 176
+#define NOW_VOLUME_HUD_X 0
+#define NOW_VOLUME_HUD_WIDTH 18
+#define NOW_VOLUME_HUD_HEIGHT 104
+#define NOW_VOLUME_TRACK_X 6
+#define NOW_VOLUME_TRACK_Y 10
+#define NOW_VOLUME_TRACK_WIDTH 6
+#define NOW_VOLUME_TRACK_HEIGHT 84
+#define NOW_VOLUME_HUD_TICKS \
+    ((HZ * 6 / 5) > 0 ? (HZ * 6 / 5) : 1)
 #define CRAZYPOD_METADATA_FONT (&lv_font_source_han_sans_sc_14_cjk)
 
 enum now_playing_action {
@@ -39,6 +50,7 @@ enum now_playing_action {
 };
 
 struct now_queue_popup_view {
+    lv_obj_t *mode_icon;
     lv_obj_t *mode;
     lv_obj_t *count;
     lv_obj_t *empty;
@@ -65,10 +77,17 @@ struct now_progress_popup_view {
     lv_obj_t *icon;
 };
 
+struct now_volume_hud_view {
+    lv_obj_t *root;
+    lv_obj_t *fill;
+    lv_obj_t *thumb;
+};
+
 static struct crazypod_now_playing_overlay_host overlay_host;
 static struct now_queue_popup_view now_queue_view;
 static struct now_actions_popup_view now_actions_view;
 static struct now_progress_popup_view now_progress_view;
+static struct now_volume_hud_view now_volume_view;
 static enum crazypod_now_playing_overlay now_overlay;
 static int now_action_selected;
 static int now_queue_selected;
@@ -80,6 +99,8 @@ static bool now_favorite_save_failed;
 static uint32_t now_progress_elapsed_ms;
 static uint32_t now_progress_length_ms;
 static long now_progress_follow_after;
+static long now_volume_hide_after;
+static bool now_volume_fading;
 
 static const struct crazypod_track *current_track(void)
 {
@@ -119,6 +140,18 @@ static void clear_now_overlay_objects(void)
     memset(&now_progress_view, 0, sizeof(now_progress_view));
 }
 
+static void destroy_now_volume_hud(void)
+{
+    if(now_volume_view.root != NULL &&
+       lv_obj_is_valid(now_volume_view.root)) {
+        lv_anim_delete(now_volume_view.root, NULL);
+        lv_obj_delete(now_volume_view.root);
+    }
+    memset(&now_volume_view, 0, sizeof(now_volume_view));
+    now_volume_hide_after = 0;
+    now_volume_fading = false;
+}
+
 static void now_popup_y_anim(void *target, int32_t value)
 {
     lv_obj_set_y(target, value);
@@ -127,6 +160,170 @@ static void now_popup_y_anim(void *target, int32_t value)
 static void now_popup_opa_anim(void *target, int32_t value)
 {
     lv_obj_set_style_opa(target, (lv_opa_t)value, 0);
+}
+
+static void now_volume_x_anim(void *target, int32_t value)
+{
+    lv_obj_set_x(target, value);
+}
+
+static void now_volume_delete_completed(lv_anim_t *animation)
+{
+    lv_obj_t *root = animation->var;
+
+    if(root != now_volume_view.root || !lv_obj_is_valid(root))
+        return;
+    lv_obj_delete(root);
+    memset(&now_volume_view, 0, sizeof(now_volume_view));
+    now_volume_hide_after = 0;
+    now_volume_fading = false;
+}
+
+static void animate_now_volume_hud_in(void)
+{
+    lv_anim_t animation;
+
+    lv_obj_set_x(now_volume_view.root, -NOW_VOLUME_HUD_WIDTH);
+    lv_obj_set_style_opa(now_volume_view.root, LV_OPA_TRANSP, 0);
+
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, now_volume_view.root);
+    lv_anim_set_exec_cb(&animation, now_volume_x_anim);
+    lv_anim_set_values(
+        &animation, -NOW_VOLUME_HUD_WIDTH, NOW_VOLUME_HUD_X);
+    lv_anim_set_duration(&animation, 130);
+    lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+    lv_anim_start(&animation);
+
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, now_volume_view.root);
+    lv_anim_set_exec_cb(&animation, now_popup_opa_anim);
+    lv_anim_set_values(&animation, LV_OPA_TRANSP, LV_OPA_COVER);
+    lv_anim_set_duration(&animation, 100);
+    lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+    lv_anim_start(&animation);
+}
+
+static void create_now_volume_hud(void)
+{
+    lv_obj_t *track;
+
+    now_volume_view.root = crazypod_ui_widget_box(
+        overlay_host.parent,
+        NOW_VOLUME_HUD_X,
+        (LCD_HEIGHT - NOW_VOLUME_HUD_HEIGHT) / 2,
+        NOW_VOLUME_HUD_WIDTH, NOW_VOLUME_HUD_HEIGHT,
+        NOW_VOLUME_HUD_WIDTH / 2, 0x050912, 188);
+    lv_obj_remove_flag(
+        now_volume_view.root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_border_width(now_volume_view.root, 1, 0);
+    lv_obj_set_style_border_color(
+        now_volume_view.root, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(now_volume_view.root, 42, 0);
+    lv_obj_set_style_shadow_width(now_volume_view.root, 10, 0);
+    lv_obj_set_style_shadow_color(
+        now_volume_view.root, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_shadow_opa(now_volume_view.root, 96, 0);
+    track = crazypod_ui_widget_box(
+        now_volume_view.root,
+        NOW_VOLUME_TRACK_X, NOW_VOLUME_TRACK_Y,
+        NOW_VOLUME_TRACK_WIDTH, NOW_VOLUME_TRACK_HEIGHT,
+        LV_RADIUS_CIRCLE, COLOR_WHITE, 46);
+    lv_obj_remove_flag(track, LV_OBJ_FLAG_CLICKABLE);
+    now_volume_view.fill = crazypod_ui_widget_box(
+        now_volume_view.root,
+        NOW_VOLUME_TRACK_X, NOW_VOLUME_TRACK_Y,
+        NOW_VOLUME_TRACK_WIDTH, NOW_VOLUME_TRACK_HEIGHT,
+        LV_RADIUS_CIRCLE, COLOR_CYAN, 232);
+    lv_obj_remove_flag(
+        now_volume_view.fill, LV_OBJ_FLAG_CLICKABLE);
+    now_volume_view.thumb = crazypod_ui_widget_box(
+        now_volume_view.root,
+        NOW_VOLUME_TRACK_X - 2, NOW_VOLUME_TRACK_Y - 5,
+        NOW_VOLUME_TRACK_WIDTH + 4, NOW_VOLUME_TRACK_WIDTH + 4,
+        LV_RADIUS_CIRCLE, COLOR_WHITE, LV_OPA_COVER);
+    lv_obj_remove_flag(
+        now_volume_view.thumb, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_shadow_width(now_volume_view.thumb, 6, 0);
+    lv_obj_set_style_shadow_color(
+        now_volume_view.thumb, lv_color_hex(COLOR_CYAN), 0);
+    lv_obj_set_style_shadow_opa(now_volume_view.thumb, 92, 0);
+    animate_now_volume_hud_in();
+}
+
+static void refresh_now_volume_hud(int volume)
+{
+    int minimum = sound_min(SOUND_VOLUME);
+    int maximum = sound_max(SOUND_VOLUME);
+    int range = maximum - minimum;
+    int fill_height;
+    int thumb_y;
+
+    if(overlay_host.parent == NULL || range <= 0)
+        return;
+    if(now_volume_view.root == NULL ||
+       !lv_obj_is_valid(now_volume_view.root)) {
+        memset(&now_volume_view, 0, sizeof(now_volume_view));
+        create_now_volume_hud();
+    }
+    else if(now_volume_fading) {
+        lv_anim_delete(now_volume_view.root, now_popup_opa_anim);
+        lv_obj_set_style_opa(
+            now_volume_view.root, LV_OPA_COVER, 0);
+        now_volume_fading = false;
+    }
+
+    fill_height =
+        (volume - minimum) * NOW_VOLUME_TRACK_HEIGHT / range;
+    if(fill_height < 0)
+        fill_height = 0;
+    if(fill_height > NOW_VOLUME_TRACK_HEIGHT)
+        fill_height = NOW_VOLUME_TRACK_HEIGHT;
+    if(fill_height == 0) {
+        lv_obj_add_flag(
+            now_volume_view.fill, LV_OBJ_FLAG_HIDDEN);
+    }
+    else {
+        lv_obj_remove_flag(
+            now_volume_view.fill, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(
+            now_volume_view.fill,
+            NOW_VOLUME_TRACK_X,
+            NOW_VOLUME_TRACK_Y +
+                NOW_VOLUME_TRACK_HEIGHT - fill_height);
+        lv_obj_set_size(
+            now_volume_view.fill,
+            NOW_VOLUME_TRACK_WIDTH, fill_height);
+    }
+    thumb_y = NOW_VOLUME_TRACK_Y +
+        NOW_VOLUME_TRACK_HEIGHT - fill_height -
+        (NOW_VOLUME_TRACK_WIDTH + 4) / 2;
+    lv_obj_set_y(now_volume_view.thumb, thumb_y);
+    lv_obj_move_foreground(now_volume_view.root);
+    lv_obj_invalidate(now_volume_view.root);
+    now_volume_hide_after = current_tick + NOW_VOLUME_HUD_TICKS;
+}
+
+static void begin_now_volume_hud_fade(void)
+{
+    lv_anim_t animation;
+
+    if(now_volume_view.root == NULL ||
+       !lv_obj_is_valid(now_volume_view.root)) {
+        memset(&now_volume_view, 0, sizeof(now_volume_view));
+        return;
+    }
+    now_volume_fading = true;
+    lv_anim_delete(now_volume_view.root, now_popup_opa_anim);
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, now_volume_view.root);
+    lv_anim_set_exec_cb(&animation, now_popup_opa_anim);
+    lv_anim_set_values(&animation, LV_OPA_COVER, LV_OPA_TRANSP);
+    lv_anim_set_duration(&animation, 140);
+    lv_anim_set_path_cb(&animation, lv_anim_path_ease_in);
+    lv_anim_set_completed_cb(
+        &animation, now_volume_delete_completed);
+    lv_anim_start(&animation);
 }
 
 static void animate_now_popup(lv_obj_t *panel, int target_y)
@@ -155,6 +352,7 @@ static void animate_now_popup(lv_obj_t *panel, int target_y)
 
 static void begin_now_overlay(enum crazypod_now_playing_overlay overlay)
 {
+    destroy_now_volume_hud();
     if(now_overlay_root != NULL)
         lv_obj_delete(now_overlay_root);
     clear_now_overlay_objects();
@@ -168,23 +366,23 @@ static void begin_now_overlay(enum crazypod_now_playing_overlay overlay)
 static const char *now_playback_mode_label(void)
 {
     if(crazypod_queue_repeat() == REPEAT_ONE)
-        return "REPEAT 1";
+        return CP_TR("REPEAT 1");
     if(crazypod_queue_repeat() == REPEAT_ALL)
-        return "REPEAT";
+        return CP_TR("REPEAT");
     if(crazypod_queue_shuffle())
-        return "SHUFFLE";
-    return "ORDERED";
+        return CP_TR("SHUFFLE");
+    return CP_TR("ORDERED");
 }
 
-static const char *now_playback_mode_icon(void)
+static enum crazypod_ui_icon now_playback_mode_icon(void)
 {
     if(crazypod_queue_repeat() == REPEAT_ONE)
-        return "1";
+        return CRAZYPOD_UI_ICON_REPEAT_ONE;
     if(crazypod_queue_repeat() == REPEAT_ALL)
-        return LV_SYMBOL_LOOP;
+        return CRAZYPOD_UI_ICON_REPEAT;
     if(crazypod_queue_shuffle())
-        return LV_SYMBOL_SHUFFLE;
-    return LV_SYMBOL_PLAY;
+        return CRAZYPOD_UI_ICON_SHUFFLE;
+    return CRAZYPOD_UI_ICON_PLAY;
 }
 
 static bool current_track_is_favorite(void)
@@ -198,24 +396,14 @@ static bool current_track_is_favorite(void)
 static void refresh_now_favorite_icon(bool selected, bool favorite)
 {
     lv_obj_t *icon = now_actions_view.cell_icons[0];
-    uint32_t child_count;
-    uint32_t child_index;
 
     if(icon == NULL)
         return;
     lv_obj_set_style_opa(
         icon,
         selected ? LV_OPA_COVER : favorite ? 235 : 124, 0);
-    child_count = lv_obj_get_child_count(icon);
-    for(child_index = 0;
-        child_index < child_count;
-        ++child_index) {
-        lv_obj_set_style_bg_color(
-            lv_obj_get_child(icon, (int32_t)child_index),
-            lv_color_hex(
-                favorite ? COLOR_FAVORITE : COLOR_WHITE),
-            0);
-    }
+    crazypod_ui_widget_icon_set_color(
+        icon, favorite ? COLOR_FAVORITE : COLOR_WHITE);
 }
 
 static void refresh_now_actions_popup(void)
@@ -270,40 +458,37 @@ static void refresh_now_actions_popup(void)
         if(i == 0)
             refresh_now_favorite_icon(selected, favorite);
         else
-            lv_obj_set_style_text_opa(
+            lv_obj_set_style_opa(
                 now_actions_view.cell_icons[i],
                 selected ? 245 : 124, 0);
         lv_obj_set_style_text_opa(
             now_actions_view.cell_labels[i], selected ? 230 : 120, 0);
     }
 
-    lv_label_set_text(now_actions_view.cell_icons[1],
-                      now_playback_mode_icon());
-    lv_label_set_text(now_actions_view.cell_icons[2],
-                      LV_SYMBOL_FILE);
-    lv_label_set_text(now_actions_view.cell_icons[3],
-                      LV_SYMBOL_BARS);
+    crazypod_ui_widget_icon_set(
+        now_actions_view.cell_icons[1],
+        now_playback_mode_icon());
     if(now_action_selected == NOW_ACTION_QUEUE) {
         snprintf(detail, sizeof(detail),
-                 "Scroll browse  Center play  Menu exits");
+                 CP_FMT("Scroll browse  Center play  Menu exits"));
     }
     else if(now_action_selected == NOW_ACTION_FAVORITE) {
         const struct crazypod_track *track = current_track();
 
         if(now_favorite_save_failed)
             snprintf(detail, sizeof(detail),
-                     "Could not update My Favorites");
+                     CP_FMT("Could not update My Favorites"));
         else if(track == NULL)
             snprintf(detail, sizeof(detail),
-                     "No track available");
+                     CP_FMT("No track available"));
         else
             snprintf(detail, sizeof(detail),
                      favorite
-                         ? "Saved to My Favorites  Center removes"
-                         : "Center adds to My Favorites");
+                         ? CP_FMT("Saved to My Favorites  Center removes")
+                         : CP_FMT("Center adds to My Favorites"));
     }
     else if(now_action_selected == NOW_ACTION_PLAYBACK) {
-        snprintf(detail, sizeof(detail), "Center cycles mode  %s",
+        snprintf(detail, sizeof(detail), CP_FMT("Center cycles mode  %s"),
                  now_playback_mode_label());
     }
     else if(now_action_selected == NOW_ACTION_LYRICS) {
@@ -311,18 +496,19 @@ static void refresh_now_actions_popup(void)
         bool available = track != NULL &&
                          crazypod_lyrics_load(track->path);
         snprintf(detail, sizeof(detail), "%s  %s",
-                 now_lyrics_mode ? "Lyrics visible" : "Lyrics hidden",
-                 available ? "Local LRC" : "No local LRC");
+                 now_lyrics_mode ? CP_FMT("Lyrics visible") : CP_FMT("Lyrics hidden"),
+                 available ? CP_FMT("Local LRC") : CP_FMT("No local LRC"));
     }
     else
         snprintf(detail, sizeof(detail),
-                 "Center adjusts track progress");
-    lv_label_set_text(now_actions_view.detail, detail);
+                 CP_FMT("Center adjusts track progress"));
+    CP_LV_LABEL_SET_TEXT(now_actions_view.detail, detail);
 }
 
 static void show_now_actions_popup(void)
 {
     lv_obj_t *title;
+    lv_obj_t *chevron_box;
     lv_obj_t *chevron;
     int i;
 
@@ -334,7 +520,7 @@ static void show_now_actions_popup(void)
         now_action_selected = NOW_ACTION_QUEUE;
 
     now_overlay_panel = make_now_glass_panel(35, 43, 250, 154);
-    title = crazypod_ui_widget_label(now_overlay_panel, "ACTIONS",
+    title = crazypod_ui_widget_label(now_overlay_panel, CP_TR("ACTIONS"),
                        &lv_font_montserrat_10,
                        COLOR_WHITE, 92);
     lv_obj_set_width(title, 250);
@@ -347,56 +533,43 @@ static void show_now_actions_popup(void)
     now_actions_view.queue_icon = crazypod_ui_widget_box(
         now_actions_view.queue_row, 10, 7, 23, 23,
         LV_RADIUS_CIRCLE, COLOR_WHITE, 20);
-    title = crazypod_ui_widget_label(now_actions_view.queue_icon, LV_SYMBOL_LIST,
-                       &lv_font_montserrat_10,
-                       COLOR_DETAIL, 220);
-    lv_obj_center(title);
+    crazypod_ui_widget_icon(
+        now_actions_view.queue_icon, 4, 4,
+        CRAZYPOD_UI_ICON_LIST, COLOR_DETAIL, 220);
     now_actions_view.queue_label = crazypod_ui_widget_label(
-        now_actions_view.queue_row, "View Playback Queue",
+        now_actions_view.queue_row, CP_TR("View Playback Queue"),
         &lv_font_montserrat_10, COLOR_WHITE, 215);
     lv_obj_set_pos(now_actions_view.queue_label, 42, 11);
-    chevron = crazypod_ui_widget_label(now_actions_view.queue_row, LV_SYMBOL_RIGHT,
-                         &lv_font_montserrat_8,
-                         COLOR_WHITE, 110);
-    lv_obj_set_pos(chevron, 207, 14);
+    chevron_box = crazypod_ui_widget_box(
+        now_actions_view.queue_row, 201, 10, 16, 16, 0,
+        COLOR_WHITE, LV_OPA_TRANSP);
+    chevron = crazypod_ui_widget_label(
+        chevron_box, LV_SYMBOL_RIGHT,
+        &lv_font_montserrat_8, COLOR_WHITE, 110);
+    lv_obj_center(chevron);
 
     for(i = 0; i < NOW_ACTION_CELL_COUNT; ++i) {
         static const int x_positions[NOW_ACTION_CELL_COUNT] = {
             16, 71, 126, 181
         };
         static const char *const labels[NOW_ACTION_CELL_COUNT] = {
-            "Favorite", "Playback", "Lyrics", "Progress"
+            CP_TR("Favorite"), CP_TR("Playback"), CP_TR("Lyrics"), CP_TR("Progress")
         };
-        static const char *const icons[NOW_ACTION_CELL_COUNT] = {
-            "", LV_SYMBOL_PLAY, LV_SYMBOL_FILE, LV_SYMBOL_BARS
+        static const enum crazypod_ui_icon icons[NOW_ACTION_CELL_COUNT] = {
+            CRAZYPOD_UI_ICON_HEART,
+            CRAZYPOD_UI_ICON_PLAY,
+            CRAZYPOD_UI_ICON_FILE,
+            CRAZYPOD_UI_ICON_BARS
         };
         int x = x_positions[i];
 
         now_actions_view.cells[i] = crazypod_ui_widget_box(
             now_overlay_panel, x, 75, 48, 52, 14,
             COLOR_WHITE, 10);
-        if(i == 0) {
-            now_actions_view.cell_icons[i] =
-                crazypod_ui_widget_box(
-                    now_actions_view.cells[i],
-                    0, 8, 48, 14, 0,
-                    COLOR_WHITE, LV_OPA_TRANSP);
-            crazypod_ui_widget_pixel_heart(
-                now_actions_view.cell_icons[i],
-                16, 1, 2, COLOR_WHITE, LV_OPA_COVER);
-        }
-        else {
-            now_actions_view.cell_icons[i] =
-                crazypod_ui_widget_label(
-                    now_actions_view.cells[i], icons[i],
-                    &lv_font_montserrat_12,
-                    COLOR_WHITE, 124);
-            lv_obj_set_width(now_actions_view.cell_icons[i], 48);
-            lv_obj_set_style_text_align(
-                now_actions_view.cell_icons[i],
-                LV_TEXT_ALIGN_CENTER, 0);
-            lv_obj_set_pos(now_actions_view.cell_icons[i], 0, 8);
-        }
+        now_actions_view.cell_icons[i] =
+            crazypod_ui_widget_icon(
+                now_actions_view.cells[i], 16, 7,
+                icons[i], COLOR_WHITE, 124);
         now_actions_view.cell_labels[i] = crazypod_ui_widget_label(
             now_actions_view.cells[i], labels[i],
             &lv_font_montserrat_8,
@@ -425,7 +598,6 @@ static void refresh_now_queue_popup(void)
     int current = crazypod_queue_index();
     int start;
     char text[32];
-    char mode[32];
     int row;
 
     if(now_queue_view.count == NULL)
@@ -439,12 +611,13 @@ static void refresh_now_queue_popup(void)
             now_queue_selected = count - 1;
     }
 
-    snprintf(mode, sizeof(mode), "%s  %s",
-             now_playback_mode_icon(), now_playback_mode_label());
-    lv_label_set_text(now_queue_view.mode, mode);
-    snprintf(text, sizeof(text), count > 0 ? "%d/%d" : "0/0",
+    crazypod_ui_widget_icon_set(
+        now_queue_view.mode_icon, now_playback_mode_icon());
+    CP_LV_LABEL_SET_TEXT(
+        now_queue_view.mode, now_playback_mode_label());
+    snprintf(text, sizeof(text), count > 0 ? CP_FMT("%d/%d") : "0/0",
              count > 0 ? now_queue_selected + 1 : 0, count);
-    lv_label_set_text(now_queue_view.count, text);
+    CP_LV_LABEL_SET_TEXT(now_queue_view.count, text);
     if(count > 0)
         lv_obj_add_flag(now_queue_view.empty, LV_OBJ_FLAG_HIDDEN);
     else
@@ -471,11 +644,11 @@ static void refresh_now_queue_popup(void)
                            LV_OBJ_FLAG_HIDDEN);
         path = crazypod_queue_path(index);
         track = crazypod_music_track(crazypod_music_find_track(path));
-        lv_label_set_text(now_queue_view.titles[row],
-                          track != NULL ? track->title : "Unavailable");
-        lv_label_set_text(now_queue_view.artists[row],
-                          track != NULL ? track->artist : "Local Music");
-        lv_label_set_text(
+        CP_LV_LABEL_SET_TEXT(now_queue_view.titles[row],
+                          track != NULL ? track->title : CP_TR("Unavailable"));
+        CP_LV_LABEL_SET_TEXT(now_queue_view.artists[row],
+                          track != NULL ? track->artist : CP_TR("Local Music"));
+        CP_LV_LABEL_SET_TEXT(
             now_queue_view.icons[row],
             current_row
                 ? ((audio_status() & AUDIO_STATUS_PAUSE)
@@ -500,7 +673,6 @@ static void refresh_now_queue_popup(void)
 
 static void show_now_queue_popup(void)
 {
-    lv_obj_t *source_icon;
     lv_obj_t *source_title;
     int row;
 
@@ -517,11 +689,14 @@ static void show_now_queue_popup(void)
     now_overlay_panel = make_now_glass_panel(
         CRAZYPOD_NOW_POPUP_X, CRAZYPOD_NOW_POPUP_Y,
         CRAZYPOD_NOW_POPUP_WIDTH, CRAZYPOD_NOW_POPUP_HEIGHT);
+    now_queue_view.mode_icon = crazypod_ui_widget_icon(
+        now_overlay_panel, 14, 8,
+        now_playback_mode_icon(), COLOR_WHITE, LV_OPA_COVER);
     now_queue_view.mode = crazypod_ui_widget_label(
         now_overlay_panel, "",
         &lv_font_montserrat_10,
         COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_pos(now_queue_view.mode, 14, 12);
+    lv_obj_set_pos(now_queue_view.mode, 36, 12);
     now_queue_view.count = crazypod_ui_widget_label(
         now_overlay_panel, "0/0",
         &lv_font_montserrat_8,
@@ -531,16 +706,15 @@ static void show_now_queue_popup(void)
         now_queue_view.count, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_pos(now_queue_view.count, 182, 14);
 
-    source_icon = crazypod_ui_widget_label(now_overlay_panel, LV_SYMBOL_AUDIO,
-                             &lv_font_montserrat_10,
-                             COLOR_WHITE, 225);
-    lv_obj_set_pos(source_icon, 14, 35);
-    source_title = crazypod_ui_widget_label(now_overlay_panel, "Local Queue",
+    crazypod_ui_widget_icon(
+        now_overlay_panel, 12, 32,
+        CRAZYPOD_UI_ICON_AUDIO, COLOR_WHITE, 225);
+    source_title = crazypod_ui_widget_label(now_overlay_panel, CP_TR("Local Queue"),
                               &lv_font_montserrat_8,
                               COLOR_WHITE, 220);
     lv_obj_set_pos(source_title, 34, 36);
     now_queue_view.empty = crazypod_ui_widget_label(
-        now_overlay_panel, "No Queue",
+        now_overlay_panel, CP_TR("No Queue"),
         CRAZYPOD_METADATA_FONT,
         COLOR_WHITE, 225);
     lv_obj_set_width(now_queue_view.empty, 222);
@@ -557,10 +731,10 @@ static void show_now_queue_popup(void)
             now_queue_view.rows[row], LV_SYMBOL_BULLET,
             &lv_font_montserrat_10,
             COLOR_WHITE, 75);
-        lv_obj_set_width(now_queue_view.icons[row], 18);
+        lv_obj_set_size(now_queue_view.icons[row], 18, 12);
         lv_obj_set_style_text_align(
             now_queue_view.icons[row], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(now_queue_view.icons[row], 7, 11);
+        lv_obj_set_pos(now_queue_view.icons[row], 7, 10);
         now_queue_view.titles[row] = crazypod_ui_widget_label(
             now_queue_view.rows[row], "",
             CRAZYPOD_METADATA_FONT,
@@ -628,8 +802,8 @@ static void refresh_now_progress_popup(void)
         now_progress_elapsed_ms, elapsed, sizeof(elapsed));
     format_now_progress_time(
         now_progress_length_ms, duration, sizeof(duration));
-    lv_label_set_text(now_progress_view.elapsed, elapsed);
-    lv_label_set_text(now_progress_view.duration, duration);
+    CP_LV_LABEL_SET_TEXT(now_progress_view.elapsed, elapsed);
+    CP_LV_LABEL_SET_TEXT(now_progress_view.duration, duration);
 }
 
 static void show_now_progress_popup(void)
@@ -644,17 +818,15 @@ static void show_now_progress_popup(void)
     sync_now_progress_from_playback();
     now_progress_follow_after = 0;
     now_overlay_panel = make_now_glass_panel(35, 65, 250, 110);
-    title = crazypod_ui_widget_label(now_overlay_panel, "PROGRESS",
+    title = crazypod_ui_widget_label(now_overlay_panel, CP_TR("PROGRESS"),
                        &lv_font_montserrat_10,
                        COLOR_WHITE, 100);
     lv_obj_set_width(title, 250);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(title, 0, 14);
-    now_progress_view.icon = crazypod_ui_widget_label(
-        now_overlay_panel, LV_SYMBOL_BARS,
-        &lv_font_montserrat_16,
-        COLOR_CYAN, LV_OPA_COVER);
-    lv_obj_set_pos(now_progress_view.icon, 23, 47);
+    now_progress_view.icon = crazypod_ui_widget_icon(
+        now_overlay_panel, 22, 47,
+        CRAZYPOD_UI_ICON_BARS, COLOR_CYAN, LV_OPA_COVER);
     track = crazypod_ui_widget_box(
         now_overlay_panel, 53, 50, 180, 10,
         LV_RADIUS_CIRCLE, COLOR_WHITE, 48);
@@ -680,7 +852,7 @@ static void show_now_progress_popup(void)
         now_progress_view.duration, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_pos(now_progress_view.duration, 148, 70);
     instruction = crazypod_ui_widget_label(
-        now_overlay_panel, "Scroll seeks 5s  Menu exits",
+        now_overlay_panel, CP_TR("Scroll seeks 5s  Menu exits"),
         &lv_font_montserrat_8,
         COLOR_WHITE, 145);
     lv_obj_set_width(instruction, 250);
@@ -725,6 +897,7 @@ void crazypod_now_playing_overlay_configure(
 
 void crazypod_now_playing_overlay_reset(void)
 {
+    destroy_now_volume_hud();
     now_overlay = CRAZYPOD_NOW_OVERLAY_NONE;
     clear_now_overlay_objects();
 }
@@ -840,6 +1013,8 @@ void crazypod_now_playing_adjust_volume(int direction)
 {
     int volume = global_status.volume + direction * 2;
 
+    if(direction == 0)
+        return;
     if(volume < sound_min(SOUND_VOLUME))
         volume = sound_min(SOUND_VOLUME);
     if(volume > sound_max(SOUND_VOLUME))
@@ -849,6 +1024,7 @@ void crazypod_now_playing_adjust_volume(int direction)
         global_status.volume = volume;
         crazypod_state_mark_dirty();
     }
+    refresh_now_volume_hud(volume);
 }
 
 static void adjust_now_progress(int direction)
@@ -928,6 +1104,10 @@ void crazypod_now_playing_overlay_refresh_after_playback(void)
 
 void crazypod_now_playing_overlay_refresh_tick(void)
 {
+    if(now_volume_view.root != NULL &&
+       !now_volume_fading &&
+       !TIME_BEFORE(current_tick, now_volume_hide_after))
+        begin_now_volume_hud_fade();
     if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE &&
        now_queue_generation_seen != crazypod_queue_generation())
         refresh_now_queue_popup();

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdbool.h>
@@ -21,12 +23,12 @@ static int sound_wave_taper_width;
 
 static const char *const sound_wave_style_names[
     CRAZYPOD_SOUND_WAVE_STYLE_COUNT] = {
-    "Torrent",
-    "Radial Spectrum",
-    "Liquid Ribbon",
-    "Vinyl Groove",
-    "Mini LED Meter",
-    "Particle Pulse",
+    CP_TR("Torrent"),
+    CP_TR("Radial Spectrum"),
+    CP_TR("Liquid Ribbon"),
+    CP_TR("Vinyl Groove"),
+    CP_TR("Mini LED Meter"),
+    CP_TR("Particle Pulse"),
 };
 
 static int clamp_int(int value, int minimum, int maximum)

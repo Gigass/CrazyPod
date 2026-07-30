@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdbool.h>
@@ -101,11 +103,11 @@ void crazypod_status_bars_update(void)
             continue;
         if(bar->rendered_minute != minute) {
             if(!time_formatted) {
-                snprintf(time_text, sizeof(time_text), "%02d:%02d",
+                snprintf(time_text, sizeof(time_text), CP_FMT("%02d:%02d"),
                          now->tm_hour, now->tm_min);
                 time_formatted = true;
             }
-            lv_label_set_text(bar->time, time_text);
+            CP_LV_LABEL_SET_TEXT(bar->time, time_text);
             bar->rendered_minute = minute;
         }
         if(bar->rendered_battery_width != battery_width) {

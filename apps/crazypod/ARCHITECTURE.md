@@ -30,7 +30,8 @@ crazypod/
 ├── photos/              photo catalog, cache and viewport infrastructure
 ├── video/               video catalog and poster infrastructure
 ├── wallpaper/           wallpaper cache, crop and storage infrastructure
-└── platform/            display and firmware-facing adapters
+├── platform/            display and firmware-facing adapters
+└── crazypod_l10n.*      generated-table lookup and current language
 ```
 
 There are exactly nine UI feature owners. Wallpaper crop belongs to
@@ -55,6 +56,8 @@ removed.
 - Shell must not depend on a concrete feature.
 - Presentation must not read route-specific or persistent business state.
 - Platform must not contain routes or LVGL page logic.
+- Localization owns language selection and string lookup, not page state or
+  feature behavior.
 - Mutable cross-directory `extern` variables are forbidden.
 
 ## Dependency direction
@@ -64,6 +67,7 @@ app → shell
 app → navigation → feature facade
 feature → domain API
 feature → presentation
+feature / shell → localization
 shell → navigation
 platform ← app / domain adapters
 ```
@@ -109,7 +113,8 @@ Every migration stage must pass:
 3. UI host tests.
 4. Miniapp host tests.
 5. EPUB host tests.
-6. `git diff --check`.
+6. Strict localization audit.
+7. `git diff --check`.
 
 The migration preserves behavior. UI redesign, storage-format migration, and
 domain-rule changes are separate work.
@@ -135,5 +140,6 @@ sh tests/check-crazypod-ui-architecture.sh
 sh tests/run-crazypod-ui-host-tests.sh
 sh tests/run-miniapp-host-tests.sh
 sh tests/run-epub-host-tests.sh
+python3 tools/check-crazypod-l10n.py --strict-bare
 git diff --check
 ```

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include "../../../crazypod_books.h"
@@ -67,33 +69,33 @@ const char *crazypod_books_feature_title(
 {
     switch(state->route) {
     case BOOKS_ROUTE_MENU:
-        return "BOOKS";
+        return CP_TR("BOOKS");
     case BOOKS_ROUTE_RECENTS:
-        return "RECENTS";
+        return CP_TR("RECENTS");
     case BOOKS_ROUTE_LIBRARY:
-        return "BOOKS";
+        return CP_TR("BOOKS");
     case BOOKS_ROUTE_FAVORITES:
-        return "FAVORITES";
+        return CP_TR("FAVORITES");
     case BOOKS_ROUTE_READER: {
         const struct crazypod_book *book =
             crazypod_book_get(state->group);
 
-        return book != NULL ? book->title : "BOOK";
+        return book != NULL ? book->title : CP_TR("BOOK");
     }
     case BOOKS_ROUTE_ACTIONS:
-        return "BOOK ACTIONS";
+        return CP_TR("BOOK ACTIONS");
     case BOOKS_ROUTE_CHAPTERS:
-        return "CHAPTERS";
+        return CP_TR("CHAPTERS");
     case BOOKS_ROUTE_BOOKMARKS:
-        return "BOOKMARKS";
+        return CP_TR("BOOKMARKS");
     case BOOKS_ROUTE_DELETE_CONFIRM:
-        return "DELETE BOOK";
+        return CP_TR("DELETE BOOK");
     case BOOKS_ROUTE_STATS:
-        return "READING STATS";
+        return CP_TR("READING STATS");
     case BOOKS_ROUTE_READING_SETTINGS:
-        return "READING";
+        return CP_TR("READING");
     case BOOKS_ROUTE_INFO:
-        return "BOOK INFO";
+        return CP_TR("BOOK INFO");
     default:
         return "";
     }
@@ -118,13 +120,13 @@ bool crazypod_books_feature_item_title(
     switch(state->route) {
     case BOOKS_ROUTE_MENU: {
         static const char *const titles[] = {
-            "Recents", "Books", "Favorites", "Stats", "Reading"
+            CP_TR("Recents"), CP_TR("Books"), CP_TR("Favorites"), CP_TR("Stats"), CP_TR("Reading")
         };
         bool can_continue = has_continue();
         int logical;
 
         if(can_continue && index == 0)
-            *title = "Continue";
+            *title = CP_TR("Continue");
         else {
             logical = index - (can_continue ? 1 : 0);
             *title = logical >= 0 && logical < 5
@@ -145,14 +147,14 @@ bool crazypod_books_feature_item_title(
         const struct crazypod_book *book =
             crazypod_book_get(state->group);
 
-        *title = index == 0 ? "Read" :
-            index == 1 ? "Bookmarks" :
-            index == 2 ? "Chapters" :
+        *title = index == 0 ? CP_TR("Read") :
+            index == 1 ? CP_TR("Bookmarks") :
+            index == 2 ? CP_TR("Chapters") :
             index == 3
                 ? (book != NULL && book->favorite
-                    ? "Remove Favorite" : "Favorite") :
-            index == 4 ? "Info" :
-            index == 5 ? "Delete" : "";
+                    ? CP_TR("Remove Favorite") : CP_TR("Favorite")) :
+            index == 4 ? CP_TR("Info") :
+            index == 5 ? CP_TR("Delete") : "";
         return true;
     }
     case BOOKS_ROUTE_CHAPTERS: {
@@ -166,39 +168,39 @@ bool crazypod_books_feature_item_title(
         return true;
     }
     case BOOKS_ROUTE_BOOKMARKS:
-        *title = "Saved Page";
+        *title = CP_TR("Saved Page");
         return true;
     case BOOKS_ROUTE_DELETE_CONFIRM:
-        *title = "Hold Center to Delete";
+        *title = CP_TR("Hold Center to Delete");
         return true;
     case BOOKS_ROUTE_READING_SETTINGS:
         if(index == 0) {
             static const char *const sizes[] = {
-                "Text Size: Small", "Text Size: Medium",
-                "Text Size: Large"
+                CP_TR("Text Size: Small"), CP_TR("Text Size: Medium"),
+                CP_TR("Text Size: Large")
             };
 
             *title = sizes[crazypod_books_font_size()];
         }
         else if(index == 1) {
             static const char *const themes[] = {
-                "Page: Parchment", "Page: Light",
-                "Page: Mint", "Page: Dark"
+                CP_TR("Page: Parchment"), CP_TR("Page: Light"),
+                CP_TR("Page: Mint"), CP_TR("Page: Dark")
             };
 
             *title = themes[crazypod_books_theme()];
         }
         else
-            *title = index == 2 ? "Import / Rescan" : "";
+            *title = index == 2 ? CP_TR("Import / Rescan") : "";
         return true;
     case BOOKS_ROUTE_STATS:
-        *title = "Library Summary";
+        *title = CP_TR("Library Summary");
         return true;
     case BOOKS_ROUTE_INFO:
-        *title = "Book Details";
+        *title = CP_TR("Book Details");
         return true;
     case BOOKS_ROUTE_READER:
-        *title = "Reader";
+        *title = CP_TR("Reader");
         return true;
     default:
         return false;

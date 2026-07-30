@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #include <stdio.h>
 
 #include "lvgl.h"
@@ -37,7 +39,7 @@ void crazypod_books_screen_render_reader(
     label = crazypod_ui_widget_label(
         page,
         page_text[0] != '\0'
-            ? page_text : "This book could not be decoded.",
+            ? page_text : CP_TR("This book could not be decoded."),
         reader_font, ink_color,
         LV_OPA_COVER);
     lv_obj_set_pos(label, 14, 42);
@@ -97,15 +99,15 @@ void crazypod_books_screen_render_stats(lv_obj_t *content)
     lv_obj_t *panel;
     char text[160];
 
-    label = crazypod_ui_widget_label(content, "READING STATS",
+    label = crazypod_ui_widget_label(content, CP_TR("READING STATS"),
                        &lv_font_montserrat_16,
                        CRAZYPOD_BOOKS_WHITE, LV_OPA_COVER);
     lv_obj_set_pos(label, 14, 43);
     panel = crazypod_ui_widget_box(content, 14, 74, 292, 126, 10,
                      CRAZYPOD_BOOKS_PANEL, 220);
     snprintf(text, sizeof(text),
-             "%d books\n%d recently opened\n%d favorites\n\n"
-             "Progress is stored on this iPod.",
+             CP_FMT("%d books\n%d recently opened\n%d favorites\n\n"
+                    "Progress is stored on this iPod."),
              crazypod_books_count(),
              crazypod_books_recent_count(),
              crazypod_books_favorite_count());
@@ -127,21 +129,21 @@ void crazypod_books_screen_render_info(lv_obj_t *content,
     crazypod_book_probe(book_index);
     book = crazypod_book_get(book_index);
     format = book == NULL ? "" :
-        book->format == CRAZYPOD_BOOK_TXT ? "TXT" :
-        book->format == CRAZYPOD_BOOK_MARKDOWN ? "Markdown" : "EPUB";
+        book->format == CRAZYPOD_BOOK_TXT ? CP_TR("TXT") :
+        book->format == CRAZYPOD_BOOK_MARKDOWN ? CP_TR("Markdown") : CP_TR("EPUB");
 
-    label = crazypod_ui_widget_label(content, "BOOK INFO",
+    label = crazypod_ui_widget_label(content, CP_TR("BOOK INFO"),
                        &lv_font_montserrat_16,
                        CRAZYPOD_BOOKS_WHITE, LV_OPA_COVER);
     lv_obj_set_pos(label, 14, 43);
     panel = crazypod_ui_widget_box(content, 14, 74, 292, 132, 10,
                      CRAZYPOD_BOOKS_PANEL, 220);
     snprintf(text, sizeof(text),
-             "%.60s\n%s%.60s%s\n%.8s · %lu KB\n\n%.80s",
-             book != NULL ? book->title : "Missing Book",
-             book != NULL && book->author[0] != '\0' ? "by " : "",
+             CP_FMT("%.60s\n%s%.60s%s\n%.8s · %lu KB\n\n%.80s"),
+             book != NULL ? book->title : CP_FMT("Missing Book"),
+             book != NULL && book->author[0] != '\0' ? CP_FMT("by ") : "",
              book != NULL ? book->author : "",
-             book != NULL && book->author[0] != '\0' ? "" : "Unknown author",
+             book != NULL && book->author[0] != '\0' ? "" : CP_FMT("Unknown author"),
              format,
              (unsigned long)(book != NULL ? book->size / 1024u : 0),
              book != NULL ? book->path : "");

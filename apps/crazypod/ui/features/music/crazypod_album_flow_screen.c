@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -33,13 +35,13 @@ static void set_metadata(int album_index)
         crazypod_music_album(album_index);
     char position[32];
 
-    lv_label_set_text(
+    CP_LV_LABEL_SET_TEXT(
         album_title, album != NULL ? album->title : "");
-    lv_label_set_text(
+    CP_LV_LABEL_SET_TEXT(
         album_artist, album != NULL ? album->artist : "");
-    snprintf(position, sizeof(position), "%d / %d",
+    snprintf(position, sizeof(position), CP_FMT("%d / %d"),
              album_index + 1, crazypod_music_album_count());
-    lv_label_set_text(album_position, position);
+    CP_LV_LABEL_SET_TEXT(album_position, position);
     displayed_album = album_index;
 }
 
@@ -61,8 +63,8 @@ void crazypod_album_flow_screen_render(
     lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
     if(count <= 0) {
         crazypod_empty_state_render(
-            parent, LV_SYMBOL_AUDIO, "No Albums",
-            "Add local music and rescan.");
+            parent, LV_SYMBOL_AUDIO, CP_TR("No Albums"),
+            CP_TR("Add local music and rescan."));
         return;
     }
 

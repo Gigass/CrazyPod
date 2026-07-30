@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <ctype.h>
@@ -33,7 +35,7 @@
     CRAZYPOD_STATE_DIRECTORY "/favorites.m3u8"
 #define CRAZYPOD_FAVORITES_TEMP \
     CRAZYPOD_STATE_DIRECTORY "/favorites.tmp"
-#define CRAZYPOD_FAVORITES_NAME "My Favorites"
+#define CRAZYPOD_FAVORITES_NAME CP_TR("My Favorites")
 #define CRAZYPOD_MUSIC_CACHE_MAGIC 0x43504d4cu
 #define CRAZYPOD_MUSIC_CACHE_VERSION 3u
 
@@ -617,12 +619,12 @@ static void add_track(const char *path, off_t source_size,
     else
         title_from_path(track->title, sizeof(track->title), path);
     copy_text(track->artist, sizeof(track->artist), metadata.artist,
-              "Unknown Artist");
+              CP_TR("Unknown Artist"));
     copy_text(track->album, sizeof(track->album), metadata.album,
-              "Unknown Album");
+              CP_TR("Unknown Album"));
     copy_text(track->album_artist, sizeof(track->album_artist),
               metadata.albumartist,
-              track->artist[0] != '\0' ? track->artist : "Unknown Artist");
+              track->artist[0] != '\0' ? track->artist : CP_TR("Unknown Artist"));
     track->duration_ms = metadata.length;
     track->source_size = source_size > 0
         ? (uint32_t)source_size : 0;
@@ -810,7 +812,7 @@ static void build_groups(void)
                         track->artist) != 0) {
             copy_text(artists[artist_count],
                       sizeof(artists[artist_count]),
-                      track->artist, "Unknown Artist");
+                      track->artist, CP_TR("Unknown Artist"));
             artist_first_tracks[artist_count] = (uint16_t)i;
             artist_track_counts[artist_count] = 0;
             ++artist_count;
@@ -831,9 +833,9 @@ static void build_groups(void)
                         track->album_artist) != 0) {
             album = &albums[album_count++];
             copy_text(album->title, sizeof(album->title),
-                      track->album, "Unknown Album");
+                      track->album, CP_TR("Unknown Album"));
             copy_text(album->artist, sizeof(album->artist),
-                      track->album_artist, "Unknown Artist");
+                      track->album_artist, CP_TR("Unknown Artist"));
             album->first_track = (uint16_t)i;
             album->track_count = 0;
         }

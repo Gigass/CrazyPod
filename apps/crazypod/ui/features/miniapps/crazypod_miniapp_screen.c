@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -277,7 +279,7 @@ void crazypod_miniapp_screen_render(lv_obj_t *parent, uint32_t accent)
             parent, 10, 40, 300, 188, 12, COLOR_PANEL, LV_OPA_COVER);
         {
             lv_obj_t *label = crazypod_ui_widget_label(
-                parent, "APP RENDER ERROR", &lv_font_montserrat_12,
+                parent, CP_TR("APP RENDER ERROR"), &lv_font_montserrat_12,
                 0xFF453A, LV_OPA_COVER);
             lv_obj_set_pos(label, 30, 126);
             lv_obj_set_width(label, 260);

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <string.h>
@@ -22,9 +24,9 @@ static unsigned photo_generation_seen;
 static unsigned photo_view_generation_seen;
 
 static const char *const editor_characters[EDITOR_CHARACTER_COUNT] = {
-    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
-    "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
-    "U", "V", "W", "X", "Y", "Z",
+    CP_TR("A"), CP_TR("B"), CP_TR("C"), CP_TR("D"), CP_TR("E"), CP_TR("F"), CP_TR("G"), CP_TR("H"), CP_TR("I"), CP_TR("J"),
+    CP_TR("K"), CP_TR("L"), CP_TR("M"), CP_TR("N"), CP_TR("O"), CP_TR("P"), CP_TR("Q"), CP_TR("R"), CP_TR("S"), CP_TR("T"),
+    CP_TR("U"), CP_TR("V"), CP_TR("W"), "X", CP_TR("Y"), CP_TR("Z"),
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
 };
 
@@ -33,11 +35,11 @@ static const char *editor_title(int index)
     if(index >= 0 && index < EDITOR_CHARACTER_COUNT)
         return editor_characters[index];
     if(index == EDITOR_CHARACTER_COUNT)
-        return "Space";
+        return CP_TR("Space");
     if(index == EDITOR_CHARACTER_COUNT + 1)
-        return "Backspace";
+        return CP_TR("Backspace");
     if(index == EDITOR_CHARACTER_COUNT + 2)
-        return "Save Name";
+        return CP_TR("Save Name");
     return "";
 }
 
@@ -88,49 +90,49 @@ const char *crazypod_customize_feature_title(
 {
     switch(state->route) {
     case DIY_ROUTE_MENU:
-        return "CUSTOMIZE";
+        return CP_TR("CUSTOMIZE");
     case DIY_ROUTE_PRESETS:
-        return "PRESETS";
+        return CP_TR("PRESETS");
     case DIY_ROUTE_PRESET_LIBRARY:
-        return "SAVED";
+        return CP_TR("SAVED");
     case DIY_ROUTE_PRESET_ACTIONS: {
         const struct crazypod_preset *preset =
             crazypod_preset_get(state->group);
 
-        return preset != NULL ? preset->name : "PRESET";
+        return preset != NULL ? preset->name : CP_TR("PRESET");
     }
     case DIY_ROUTE_PRESET_EDIT:
-        return "EDIT";
+        return CP_TR("EDIT");
     case DIY_ROUTE_PRESET_RENAME:
-        return "RENAME";
+        return CP_TR("RENAME");
     case DIY_ROUTE_ICONS:
-        return "ICONS";
+        return CP_TR("ICONS");
     case DIY_ROUTE_DETAILS:
-        return "DETAILS";
+        return CP_TR("DETAILS");
     case DIY_ROUTE_CHOICES:
         return crazypod_customize_field_title(
             (enum crazypod_appearance_field)state->group);
     case DIY_ROUTE_BACKGROUNDS:
-        return "BACKGROUNDS";
+        return CP_TR("BACKGROUNDS");
     case DIY_ROUTE_BACKGROUND_CHOICES:
         return crazypod_customize_background_title(
             (enum crazypod_appearance_field)state->group);
     case DIY_ROUTE_WALLPAPER_FILES:
         if(state->group == CRAZYPOD_APPEARANCE_MENU_BACKGROUND)
-            return "MENU PICTURE";
+            return CP_TR("MENU PICTURE");
         if(state->group == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND)
-            return "LOCK PICTURE";
-        return "HOME PICTURE";
+            return CP_TR("LOCK PICTURE");
+        return CP_TR("HOME PICTURE");
     case DIY_ROUTE_WALLPAPER_CROP:
         if(crazypod_wallpaper_crop_controller_model()->target ==
            CRAZYPOD_APPEARANCE_MENU_BACKGROUND)
-            return "CROP MENU";
+            return CP_TR("CROP MENU");
         if(crazypod_wallpaper_crop_controller_model()->target ==
            CRAZYPOD_APPEARANCE_LOCK_BACKGROUND)
-            return "CROP LOCK";
-        return "CROP HOME";
+            return CP_TR("CROP LOCK");
+        return CP_TR("CROP HOME");
     case DIY_ROUTE_LAYOUT:
-        return "LAYOUT";
+        return CP_TR("LAYOUT");
     default:
         return "";
     }
@@ -186,9 +188,9 @@ bool crazypod_customize_feature_item_title(
             ? crazypod_customize_menu_titles[index] : "";
         return true;
     case DIY_ROUTE_PRESETS:
-        *title = index == 0 ? "Save" :
-            index == 1 ? "Saved" :
-            index == 2 ? "Import" : "";
+        *title = index == 0 ? CP_TR("Save") :
+            index == 1 ? CP_TR("Saved") :
+            index == 2 ? CP_TR("Import") : "";
         return true;
     case DIY_ROUTE_PRESET_LIBRARY: {
         const struct crazypod_preset *preset =
@@ -202,8 +204,8 @@ bool crazypod_customize_feature_item_title(
             crazypod_preset_get(state->group);
 
         if(preset != NULL && preset->builtin)
-            *title = index == 0 ? "Apply" :
-                index == 1 ? "Export" : "";
+            *title = index == 0 ? CP_TR("Apply") :
+                index == 1 ? CP_TR("Export") : "";
         else
             *title = index >= 0 &&
                 index < CRAZYPOD_CUSTOMIZE_PRESET_ACTION_COUNT
@@ -242,12 +244,12 @@ bool crazypod_customize_feature_item_title(
         if(index == 0)
             *title = state->group ==
                 CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
-                    ? "Follow Home" : "Default";
+                    ? CP_TR("Follow Home") : CP_TR("Default");
         else if(index <= CRAZYPOD_APPEARANCE_COLOR_COUNT)
             *title = crazypod_appearance_color_name(index - 1);
         else
             *title = index == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1
-                ? "Choose Picture" : "";
+                ? CP_TR("Choose Picture") : "";
         return true;
     case DIY_ROUTE_WALLPAPER_FILES:
         *title = crazypod_photo_name(index);

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -143,24 +145,24 @@ const char *crazypod_eq_studio_mode_title(
     enum crazypod_eq_studio_mode mode)
 {
     switch(mode) {
-    case CRAZYPOD_EQ_STUDIO_CUTOFF: return "Freq";
-    case CRAZYPOD_EQ_STUDIO_Q: return "Q";
-    case CRAZYPOD_EQ_STUDIO_PRECUT: return "Precut";
-    default: return "Gain";
+    case CRAZYPOD_EQ_STUDIO_CUTOFF: return CP_TR("Freq");
+    case CRAZYPOD_EQ_STUDIO_Q: return CP_TR("Q");
+    case CRAZYPOD_EQ_STUDIO_PRECUT: return CP_TR("Precut");
+    default: return CP_TR("Gain");
     }
 }
 
 const char *crazypod_eq_studio_band_role(int band)
 {
     if(band <= 1)
-        return "Sub Bass";
+        return CP_TR("Sub Bass");
     if(band <= 3)
-        return "Low Mid";
+        return CP_TR("Low Mid");
     if(band <= 5)
-        return "Presence";
+        return CP_TR("Presence");
     if(band <= 7)
-        return "Air Detail";
-    return "Top End";
+        return CP_TR("Air Detail");
+    return CP_TR("Top End");
 }
 
 void crazypod_eq_studio_format_db(
@@ -168,7 +170,7 @@ void crazypod_eq_studio_format_db(
 {
     int absolute = value < 0 ? -value : value;
 
-    snprintf(buffer, size, "%c%d.%d dB",
+    snprintf(buffer, size, CP_FMT("%c%d.%d dB"),
              value < 0 ? '-' : '+',
              absolute / 10, absolute % 10);
 }
@@ -176,7 +178,7 @@ void crazypod_eq_studio_format_db(
 void crazypod_eq_studio_format_precut(
     char *buffer, size_t size, int value)
 {
-    snprintf(buffer, size, value == 0 ? "0.0 dB" : "-%d.%d dB",
+    snprintf(buffer, size, value == 0 ? CP_FMT("0.0 dB") : CP_FMT("-%d.%d dB"),
              value / 10, value % 10);
 }
 
@@ -184,18 +186,18 @@ void crazypod_eq_studio_format_frequency(
     char *buffer, size_t size, int value)
 {
     if(value >= 1000 && value % 1000 == 0)
-        snprintf(buffer, size, "%dkHz", value / 1000);
+        snprintf(buffer, size, CP_FMT("%dkHz"), value / 1000);
     else if(value >= 1000)
-        snprintf(buffer, size, "%d.%dkHz", value / 1000,
+        snprintf(buffer, size, CP_FMT("%d.%dkHz"), value / 1000,
                  (value % 1000) / 100);
     else
-        snprintf(buffer, size, "%dHz", value);
+        snprintf(buffer, size, CP_FMT("%dHz"), value);
 }
 
 void crazypod_eq_studio_format_q(
     char *buffer, size_t size, int value)
 {
-    snprintf(buffer, size, "%d.%d Q", value / 10, value % 10);
+    snprintf(buffer, size, CP_FMT("%d.%d Q"), value / 10, value % 10);
 }
 
 #endif

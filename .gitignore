@@ -352,7 +352,6 @@ __pycache__
 
 # Internal workflow, audit, and planning docs kept local for release branches
 /AmazonQ.MD
-/AGENTS.md
 /CLAUDE.md
 /MASTER.md
 /DESIGN_SYSTEM.md

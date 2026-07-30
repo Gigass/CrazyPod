@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdint.h>

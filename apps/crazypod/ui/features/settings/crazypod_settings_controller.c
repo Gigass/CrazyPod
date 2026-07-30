@@ -42,6 +42,11 @@ struct crazypod_settings_command crazypod_settings_activate(
         return command(CRAZYPOD_SETTINGS_COMMAND_NONE);
 
     if(state->route == SETTINGS_ROUTE_MENU) {
+        if(state->selected == CRAZYPOD_SETTINGS_MENU_COUNT - 1) {
+            result = command(CRAZYPOD_SETTINGS_COMMAND_SHOW_CHOICES);
+            result.item = SETTINGS_ITEM_LANGUAGE;
+            return result;
+        }
         result = command(CRAZYPOD_SETTINGS_COMMAND_PUSH_ROUTE);
         result.route = settings_group_route(state->selected);
         if(result.route == SETTINGS_ROUTE_MENU)

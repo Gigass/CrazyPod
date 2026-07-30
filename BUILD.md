@@ -63,7 +63,8 @@ CRAZYPOD_SIM_DUMP=1 CRAZYPOD_SIM_SCREEN=clock \
 ```
 
 Supported routes are `home`, `power`, `more`, `more-second`,
-`settings-main-menu`, `settings-reduce-motion`, `notes`, `note-compose`,
+`settings-main-menu`, `settings-language`, `settings-reduce-motion`, `notes`,
+`note-compose`,
 `notes-new`, `notes-draft`, `notes-item`, `notes-search`,
 `notes-deleted`, `books`, `books-reading`, `book-reader`,
 `book-reader-next`, `clock`, `stopwatch`, `workouts`, `workout-ready`,
@@ -74,6 +75,9 @@ variants also support `music-0` through `music-7`, `media-0` through
 `videos-N` for a list frame and `play-video-N` for a playback smoke test.
 Numeric indices are clamped to the current route. Routes that depend on
 content use files from the simulated disk.
+
+Set `CRAZYPOD_SIM_LANGUAGE` to `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `de`,
+`fr`, `es`, or `pt-BR` to capture the same route in a specific language.
 
 ## Hardware
 
@@ -94,6 +98,7 @@ sh tests/check-crazypod-ui-architecture.sh
 sh tests/run-crazypod-ui-host-tests.sh
 sh tests/run-miniapp-host-tests.sh
 sh tests/run-epub-host-tests.sh
+python3 tools/check-crazypod-l10n.py --strict-bare
 git diff --check
 ```
 
@@ -105,6 +110,26 @@ feature-private includes outside their owner.
 For a user-visible change, also run the simulator and exercise the affected
 route. For LCD, storage, USB, power, audio, or native Mini App changes, an ARM
 build proves compilation only; record physical iPod results separately.
+
+## Localization
+
+English source keys and locale resources live under `localization/crazypod`.
+After changing them, regenerate both firmware and Mini App lookup tables, then
+run the strict audit:
+
+```sh
+python3 tools/generate-crazypod-l10n.py
+python3 tools/check-crazypod-l10n.py --strict-bare
+```
+
+The generator rejects missing keys and mismatched format placeholders. The
+audit also rejects untagged user-facing strings in common UI sinks.
+
+Localized fonts are committed build inputs at 8, 10, 12, 14, and 16px. Font
+regeneration requires `lv_font_conv` 1.5.3 plus a distributable CJK source
+font. Follow [tools/CRAZYPOD_FONTS.md](tools/CRAZYPOD_FONTS.md) and include
+`apps/crazypod/crazypod_l10n.c` when collecting characters; it contains native
+language names that are not present as translation values.
 
 ## Bootloader
 

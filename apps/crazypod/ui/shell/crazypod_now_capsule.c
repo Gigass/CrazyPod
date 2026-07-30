@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -241,7 +243,7 @@ void crazypod_now_capsule_create(
     lv_obj_center(capsule.artwork_symbol);
 
     capsule.track = crazypod_ui_widget_label(
-        capsule.root, "No Track", metadata_font,
+        capsule.root, CP_TR("No Track"), metadata_font,
         COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_pos(capsule.track, 70, 7);
     lv_obj_set_size(capsule.track, 171, 17);
@@ -249,7 +251,7 @@ void crazypod_now_capsule_create(
         capsule.track, LV_TEXT_ALIGN_CENTER, 0);
     crazypod_marquee_configure(capsule.track, false);
     capsule.artist = crazypod_ui_widget_label(
-        capsule.root, "Local Music", metadata_font,
+        capsule.root, CP_TR("Local Music"), metadata_font,
         COLOR_WHITE, 190);
     lv_obj_set_pos(capsule.artist, 70, 25);
     lv_obj_set_size(capsule.artist, 171, 17);
@@ -388,9 +390,9 @@ void crazypod_now_capsule_update(
 {
     int width = 6;
     const char *track_text =
-        track != NULL ? track->title : "No Track";
+        track != NULL ? track->title : CP_TR("No Track");
     const char *artist_text =
-        track != NULL ? track->artist : "Local Music";
+        track != NULL ? track->artist : CP_TR("Local Music");
 
     if(strcmp(capsule.track_text, track_text) != 0) {
         snprintf(

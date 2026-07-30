@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stddef.h>
@@ -281,7 +283,7 @@ static void load_local_events(void)
         copy_text(event->time, sizeof(event->time), stored->time);
         copy_text(event->summary, sizeof(event->summary),
                   stored->summary[0] != '\0'
-                      ? stored->summary : "Calendar Event");
+                      ? stored->summary : CP_TR("Calendar Event"));
         event->editable = true;
         if(event->id >= next_event_id)
             next_event_id = event->id + 1;
@@ -354,7 +356,7 @@ static void parse_vcard(const char *path)
             if(current.name[0] == '\0')
                 copy_text(current.name, sizeof(current.name),
                           current.phone[0] != '\0'
-                              ? current.phone : "Unnamed Contact");
+                              ? current.phone : CP_TR("Unnamed Contact"));
             contacts[contact_count++] = current;
             active = false;
         }
@@ -419,7 +421,7 @@ static void parse_ics(const char *path)
             if(valid_date(current.date)) {
                 if(current.summary[0] == '\0')
                     copy_text(current.summary, sizeof(current.summary),
-                              "Calendar Event");
+                              CP_TR("Calendar Event"));
                 current.id = 0;
                 current.editable = false;
                 events[event_count++] = current;

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <string.h>
@@ -85,7 +87,7 @@ void crazypod_marquee_set_text(
         text = "";
     changed = strcmp(lv_label_get_text(label), text) != 0;
     if(changed)
-        lv_label_set_text(label, text);
+        CP_LV_LABEL_SET_TEXT(label, text);
     crazypod_marquee_configure(label, active);
     if(changed)
         lv_label_set_long_mode(label, marquee_mode(label, active));

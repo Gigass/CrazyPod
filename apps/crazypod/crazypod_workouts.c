@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stddef.h>
@@ -32,11 +34,11 @@ struct workouts_disk {
 static struct workouts_disk persisted;
 
 static const char *const activity_titles[] = {
-    "Run", "Walk", "Cycling", "Hiking", "Stairs",
-    "Elliptical", "Rowing", "HIIT", "Functional Strength",
-    "Strength", "Core", "Yoga", "Pilates", "Flexibility",
-    "Dance", "Tennis", "Basketball", "Soccer",
-    "Cross Training", "Cooldown"
+    CP_TR("Run"), CP_TR("Walk"), CP_TR("Cycling"), CP_TR("Hiking"), CP_TR("Stairs"),
+    CP_TR("Elliptical"), CP_TR("Rowing"), CP_TR("HIIT"), CP_TR("Functional Strength"),
+    CP_TR("Strength"), CP_TR("Core"), CP_TR("Yoga"), CP_TR("Pilates"), CP_TR("Flexibility"),
+    CP_TR("Dance"), CP_TR("Tennis"), CP_TR("Basketball"), CP_TR("Soccer"),
+    CP_TR("Cross Training"), CP_TR("Cooldown")
 };
 
 static uint32_t workouts_checksum(const struct workouts_disk *state)
@@ -133,7 +135,7 @@ const struct crazypod_workout *crazypod_workout_get(int index)
 const char *crazypod_workout_activity_title(int activity)
 {
     if(activity < 0 || activity >= CRAZYPOD_WORKOUT_ACTIVITY_COUNT)
-        return "Workout";
+        return CP_TR("Workout");
     return activity_titles[activity];
 }
 

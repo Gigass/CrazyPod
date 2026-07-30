@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <string.h>
@@ -82,7 +84,7 @@ static void refresh_prompt(void)
             prompt.rows[index], lv_color_hex(COLOR_WHITE), 0);
         lv_obj_set_style_border_opa(
             prompt.rows[index], selected ? 72 : 0, 0);
-        lv_label_set_text(
+        CP_LV_LABEL_SET_TEXT(
             prompt.markers[index],
             selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET);
         lv_obj_set_style_text_opa(
@@ -110,9 +112,9 @@ void crazypod_power_prompt_dismiss(void)
 
 void crazypod_power_prompt_show(void)
 {
-    static const char *const titles[] = { "Shut Down", "Restart" };
+    static const char *const titles[] = { CP_TR("Shut Down"), CP_TR("Restart") };
     static const char *const hints[] = {
-        "Turn CrazyPod off", "Restart CrazyPod"
+        CP_TR("Turn CrazyPod off"), CP_TR("Restart CrazyPod")
     };
     static const char *const symbols[] = {
         LV_SYMBOL_POWER, LV_SYMBOL_REFRESH
@@ -134,13 +136,13 @@ void crazypod_power_prompt_show(void)
     prompt.panel = prompt.callbacks.create_panel(
         prompt.root, 35, 55, 250, 132);
     title = make_label(
-        prompt.panel, "POWER", &lv_font_montserrat_10,
+        prompt.panel, CP_TR("POWER"), &lv_font_montserrat_10,
         COLOR_WHITE, 110);
     lv_obj_set_width(title, 250);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(title, 0, 14);
     detail = make_label(
-        prompt.panel, "Choose Action", &lv_font_montserrat_12,
+        prompt.panel, CP_TR("Choose Action"), &lv_font_montserrat_12,
         COLOR_WHITE, 235);
     lv_obj_set_width(detail, 250);
     lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);

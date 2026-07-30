@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -24,8 +26,8 @@
 #define CRAZYPOD_MENU_ARTWORK_PRIORITY 20
 
 static const char *music_menu_titles[] = {
-    "Now Playing", "Album Flow", "All Music", "Playlists",
-    "Artists", "Albums", "Songs", "Search"
+    CP_TR("Now Playing"), CP_TR("Album Flow"), CP_TR("All Music"), CP_TR("Playlists"),
+    CP_TR("Artists"), CP_TR("Albums"), CP_TR("Songs"), CP_TR("Search")
 };
 static bool defer_media;
 
@@ -65,10 +67,10 @@ static lv_obj_t *make_procedural_record_sleeve(
 {
     const char *primary_key =
         track != NULL && track->album[0] != '\0'
-            ? track->album : "CrazyPod";
+            ? track->album : CP_TR("CrazyPod");
     const char *secondary_key =
         track != NULL && track->artist[0] != '\0'
-            ? track->artist : "Local Music";
+            ? track->artist : CP_TR("Local Music");
     uint32_t primary = artwork_color(primary_key, seed);
     uint32_t secondary = artwork_color(secondary_key, seed + 11);
     lv_obj_t *sleeve = crazypod_ui_widget_box(
@@ -180,7 +182,7 @@ static lv_obj_t *make_music_initial_cover(
 {
     const char *primary_key =
         track != NULL && track->title[0] != '\0'
-            ? track->title : "Local Music";
+            ? track->title : CP_TR("Local Music");
     const char *secondary_key =
         track != NULL && track->artist[0] != '\0'
             ? track->artist : primary_key;
@@ -368,7 +370,7 @@ void crazypod_music_root_preview_render(
         crazypod_ui_widget_box(stage, 16, 7, 96, 3, 1,
                  0xD5DEE1, 72);
         title = crazypod_ui_widget_label(
-            stage, "A  /  Z", &lv_font_montserrat_8,
+            stage, CP_TR("A  /  Z"), &lv_font_montserrat_8,
             0xD9E3E6, 125);
         lv_obj_set_width(title, 64);
         lv_obj_set_style_text_align(
@@ -443,7 +445,7 @@ void crazypod_music_root_preview_render(
         crazypod_preview_add_fastener(stage, 102, 5, 0xB9A982);
         crazypod_ui_widget_box(stage, 13, 11, 86, 15, 2, 0xE8E0CA, 215);
         title = crazypod_ui_widget_label(
-            stage, "PLAYLIST / A",
+            stage, CP_TR("PLAYLIST / A"),
             &lv_font_montserrat_8, 0x443A2E, 155);
         lv_obj_set_pos(title, 25, 14);
         part = crazypod_ui_widget_box(stage, 15, 32, 82, 36, 4,
@@ -670,12 +672,14 @@ void crazypod_music_root_preview_render(
                  current_track()->artist);
     else if(selected == 7)
         snprintf(count_text, sizeof(count_text),
-                 "%d local tracks", count);
+                 CP_FMT("%d local tracks"), count);
     else
-        snprintf(count_text, sizeof(count_text), "%d %s", count,
-                 selected == 3 ? "playlists" :
-                 selected == 4 ? "artists" :
-                 selected == 5 || selected == 1 ? "albums" : "songs");
+        snprintf(count_text, sizeof(count_text),
+                 selected == 3 ? CP_FMT("%d playlists") :
+                 selected == 4 ? CP_FMT("%d artists") :
+                 selected == 5 || selected == 1
+                     ? CP_FMT("%d albums") : CP_FMT("%d songs"),
+                 count);
     detail = crazypod_ui_widget_label(text_panel, count_text,
                         &lv_font_montserrat_8,
                         COLOR_WHITE, 125);

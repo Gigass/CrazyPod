@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #if defined(IPOD_6G) && defined(HAVE_USB_POWER) && !defined(USB_NONE)
 
 #include <string.h>
@@ -101,7 +103,7 @@ static void refresh_prompt(void)
             prompt.rows[index], lv_color_hex(COLOR_WHITE), 0);
         lv_obj_set_style_border_opa(
             prompt.rows[index], selected ? 72 : 0, 0);
-        lv_label_set_text(
+        CP_LV_LABEL_SET_TEXT(
             prompt.markers[index],
             selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET);
         lv_obj_set_style_text_opa(
@@ -143,9 +145,9 @@ static void apply_charge_mode(void)
 
 void crazypod_usb_prompt_show(unsigned request)
 {
-    static const char *const titles[] = { "Charge", "Data" };
+    static const char *const titles[] = { CP_TR("Charge"), CP_TR("Data") };
     static const char *const hints[] = {
-        "Keep CrazyPod running", "Mount disk on computer"
+        CP_TR("Keep CrazyPod running"), CP_TR("Mount disk on computer")
     };
     static const char *const symbols[] = {
         LV_SYMBOL_CHARGE, LV_SYMBOL_DOWNLOAD
@@ -173,13 +175,13 @@ void crazypod_usb_prompt_show(unsigned request)
     prompt.panel = prompt.callbacks.create_panel(
         prompt.root, 35, 55, 250, 132);
     title = make_label(
-        prompt.panel, "USB CONNECTED", &lv_font_montserrat_10,
+        prompt.panel, CP_TR("USB CONNECTED"), &lv_font_montserrat_10,
         COLOR_WHITE, 110);
     lv_obj_set_width(title, 250);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(title, 0, 14);
     detail = make_label(
-        prompt.panel, "Choose Mode", &lv_font_montserrat_12,
+        prompt.panel, CP_TR("Choose Mode"), &lv_font_montserrat_12,
         COLOR_WHITE, 235);
     lv_obj_set_width(detail, 250);
     lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
@@ -250,14 +252,14 @@ static void show_data_blocker(void)
     lv_obj_set_pos(label, 0, 39);
 
     label = make_label(
-        prompt.root, "USB DATA MODE", &lv_font_montserrat_16,
+        prompt.root, CP_TR("USB DATA MODE"), &lv_font_montserrat_16,
         COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_size(label, LCD_WIDTH, 20);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(label, 0, 81);
 
     label = make_label(
-        prompt.root, "Computer storage connection is active",
+        prompt.root, CP_TR("Computer storage connection is active"),
         &lv_font_montserrat_10, COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_size(label, LCD_WIDTH, 16);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
@@ -268,14 +270,14 @@ static void show_data_blocker(void)
         COLOR_WHITE, LV_OPA_COVER);
 
     label = make_label(
-        prompt.root, "Eject CrazyPod before unplugging the cable",
+        prompt.root, CP_TR("Eject CrazyPod before unplugging the cable"),
         &lv_font_montserrat_10, COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_size(label, LCD_WIDTH, 16);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(label, 0, 153);
 
     label = make_label(
-        prompt.root, "Controls are disabled while USB is connected",
+        prompt.root, CP_TR("Controls are disabled while USB is connected"),
         &lv_font_montserrat_8, COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_size(label, LCD_WIDTH, 14);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -70,8 +72,8 @@ static void preview_model_build(
         model->swatch_color =
             app != NULL ? app->color : input->primary_color;
         snprintf(model->detail_buffer, sizeof(model->detail_buffer),
-                 "%s · Position %d",
-                 crazypod_apps_is_enabled(id) ? "Visible" : "In More",
+                 CP_FMT("%s · Position %d"),
+                 crazypod_apps_is_enabled(id) ? CP_FMT("Visible") : CP_FMT("In More"),
                  state->selected + 1);
         model->detail = model->detail_buffer;
         return;
@@ -85,8 +87,8 @@ static void preview_model_build(
         model->swatch_color =
             app != NULL ? app->color : input->primary_color;
         model->detail = action == 0
-            ? "Changes More Features"
-            : "Changes launcher position";
+            ? CP_TR("Changes More Features")
+            : CP_TR("Changes launcher position");
         return;
     }
 

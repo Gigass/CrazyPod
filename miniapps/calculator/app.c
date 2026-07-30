@@ -1,5 +1,6 @@
 #include "engine.h"
 #include "../sdk/crazypod_miniapp.h"
+#include "../sdk/crazypod_miniapp_l10n.h"
 
 #define CALCULATOR_PANEL_X 10
 #define CALCULATOR_PANEL_Y 40
@@ -16,6 +17,7 @@
 static const struct cp_host_api *calculator_host;
 static struct cp_calculator calculator;
 static int calculator_focus;
+static uint32_t calculator_language;
 
 static size_t local_text_length(const char *text)
 {
@@ -57,7 +59,8 @@ static void format_value(double value, char *buffer, size_t capacity)
 static void format_current_value(char *buffer, size_t capacity)
 {
     if(calculator.error != CP_CALCULATOR_ERROR_NONE) {
-        cp_text_copy(buffer, capacity, "Error");
+        cp_text_copy(buffer, capacity,
+                     cp_l10n_text(calculator_language, "Error"));
     } else if(calculator.entering) {
         cp_text_copy(buffer, capacity,
                      cp_calculator_entry_text(&calculator));
@@ -72,11 +75,15 @@ static void format_expression(char *buffer, size_t capacity)
 
     cp_text_copy(buffer, capacity, "");
     if(calculator.error == CP_CALCULATOR_ERROR_DIVIDE_BY_ZERO) {
-        cp_text_copy(buffer, capacity, "Cannot divide by zero");
+        cp_text_copy(buffer, capacity,
+                     cp_l10n_text(calculator_language,
+                                  "Cannot divide by zero"));
         return;
     }
     if(calculator.error == CP_CALCULATOR_ERROR_RANGE) {
-        cp_text_copy(buffer, capacity, "Result out of range");
+        cp_text_copy(buffer, capacity,
+                     cp_l10n_text(calculator_language,
+                                  "Result out of range"));
         return;
     }
 
@@ -349,6 +356,8 @@ static const struct cp_miniapp_ops calculator_ops = {
 const struct cp_miniapp_ops *
 cp_miniapp_entry(const struct cp_host_api *host)
 {
+    struct cp_system_info info;
+
     if(host == NULL ||
        host->abi_version != CP_MINIAPP_ABI_VERSION ||
        host->struct_size < sizeof(struct cp_host_api) ||
@@ -356,6 +365,12 @@ cp_miniapp_entry(const struct cp_host_api *host)
         return NULL;
 
     calculator_host = host;
+    calculator_language = CP_LANGUAGE_ENGLISH;
+    if(CP_HOST_HAS(host, CP_CAP_SYSTEM_INFO, system_info)) {
+        info.struct_size = sizeof(info);
+        if(host->system_info(&info) == 0 && info.language < CP_LANGUAGE_COUNT)
+            calculator_language = info.language;
+    }
     return &calculator_ops;
 }
 

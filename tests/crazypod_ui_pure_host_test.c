@@ -12,6 +12,11 @@
 #include "navigation/crazypod_navigation_command.h"
 #include "navigation/crazypod_route_registry.h"
 
+const char *crazypod_l10n_text(const char *text)
+{
+    return text != NULL && text[0] == '\x1f' ? text + 1 : text;
+}
+
 static void test_calendar(void)
 {
     char time[6];

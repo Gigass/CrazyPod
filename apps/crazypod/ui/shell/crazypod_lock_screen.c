@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -22,15 +24,9 @@
 
 #define COLOR_WHITE 0xFFFFFF
 #define COLOR_CYAN 0x26CFF5
-#define UNLOCK_WHEEL_STEPS 19
-#define UNLOCK_WHEEL_IDLE_TICKS \
-    ((HZ * 9 / 10) > 0 ? (HZ * 9 / 10) : 1)
-#define UNLOCK_WHEEL_DECAY_TICKS \
-    ((HZ * 3 / 5) > 0 ? (HZ * 3 / 5) : 1)
-#define UNLOCK_DIRECTION_HINT_TICKS \
-    ((HZ * 6 / 5) > 0 ? (HZ * 6 / 5) : 1)
-#define UNLOCK_OPEN_TICKS ((HZ / 4) > 0 ? (HZ / 4) : 1)
-#define UNLOCK_INPUT_GUARD_TICKS ((HZ / 4) > 0 ? (HZ / 4) : 1)
+#define UNLOCK_HOLD_TICKS ((HZ / 2) > 0 ? (HZ / 2) : 1)
+#define UNLOCK_OPEN_TICKS \
+    ((HZ * 9 / 20) > 0 ? (HZ * 9 / 20) : 1)
 
 struct lock_screen_state {
     lv_obj_t *root;
@@ -39,6 +35,8 @@ struct lock_screen_state {
     lv_obj_t *date_label;
     lv_obj_t *hint_label;
     lv_obj_t *progress_surface;
+    lv_obj_t *halo;
+    lv_obj_t *icon;
     lv_obj_t *icon_shackle;
     lv_obj_t *icon_body;
     struct crazypod_lock_screen_callbacks callbacks;
@@ -48,13 +46,9 @@ struct lock_screen_state {
     bool wait_for_wake_release;
     bool release_guard;
     bool opening;
-    bool wrong_direction;
-    long release_guard_until;
+    bool unlock_pressed;
     long opening_start;
-    long wrong_direction_until;
-    long wheel_last_input_tick;
-    int wheel_steps;
-    int wheel_decay_start_steps;
+    long unlock_press_start;
     int progress_percent;
 };
 
@@ -76,15 +70,39 @@ static lv_obj_t *make_label(
         parent, text, font, color, opacity);
 }
 
+static int clamp_progress(int value)
+{
+    if(value < 0)
+        return 0;
+    if(value > 1024)
+        return 1024;
+    return value;
+}
+
+static int ease_out(int progress)
+{
+    int inverse = 1024 - clamp_progress(progress);
+
+    return 1024 - inverse * inverse / 1024;
+}
+
+static int smooth_step(int progress)
+{
+    int clamped = clamp_progress(progress);
+    int squared = clamped * clamped / 1024;
+
+    return squared * (3072 - 2 * clamped) / 1024;
+}
+
 void crazypod_lock_screen_refresh_clock(void)
 {
     static const char *const days[] = {
-        "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY",
-        "THURSDAY", "FRIDAY", "SATURDAY"
+        CP_TR("SUNDAY"), CP_TR("MONDAY"), CP_TR("TUESDAY"), CP_TR("WEDNESDAY"),
+        CP_TR("THURSDAY"), CP_TR("FRIDAY"), CP_TR("SATURDAY")
     };
     static const char *const months[] = {
-        "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-        "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
+        CP_TR("JAN"), CP_TR("FEB"), CP_TR("MAR"), CP_TR("APR"), CP_TR("MAY"), CP_TR("JUN"),
+        CP_TR("JUL"), CP_TR("AUG"), CP_TR("SEP"), CP_TR("OCT"), CP_TR("NOV"), CP_TR("DEC")
     };
     struct tm *now;
     char time_text[8];
@@ -100,14 +118,15 @@ void crazypod_lock_screen_refresh_clock(void)
         ? now->tm_wday : 0;
     month = now->tm_mon >= 0 && now->tm_mon < 12
         ? now->tm_mon : 0;
-    snprintf(time_text, sizeof(time_text), "%02d:%02d",
+    snprintf(time_text, sizeof(time_text), CP_FMT("%02d:%02d"),
              now->tm_hour, now->tm_min);
     snprintf(date_text, sizeof(date_text), "%s  \xE2\x80\xA2  %s %d",
-             days[weekday], months[month], now->tm_mday);
+             crazypod_l10n_text(days[weekday]),
+             crazypod_l10n_text(months[month]), now->tm_mday);
     if(strcmp(lv_label_get_text(lock_state.time_label), time_text) != 0)
-        lv_label_set_text(lock_state.time_label, time_text);
+        CP_LV_LABEL_SET_TEXT(lock_state.time_label, time_text);
     if(strcmp(lv_label_get_text(lock_state.date_label), date_text) != 0)
-        lv_label_set_text(lock_state.date_label, date_text);
+        CP_LV_LABEL_SET_TEXT(lock_state.date_label, date_text);
 }
 
 void crazypod_lock_screen_refresh_appearance(void)
@@ -188,8 +207,7 @@ static void draw_progress_event(lv_event_t *event)
     arc.width = lock_state.opening ? 4 : 3;
     arc.color = lv_color_hex(
         lock_state.opening ? 0xB8FFE2 :
-        lock_state.wrong_direction ? 0xFFB36B :
-        progress >= 72 ? 0xFF739E : COLOR_CYAN);
+        progress >= 72 ? 0x76F5C3 : COLOR_CYAN);
     arc.opa = lock_state.opening ? 255 : 235;
     lv_draw_arc(layer, &arc);
     if(lock_state.opening) {
@@ -207,43 +225,44 @@ static void refresh_progress(void)
     if(lock_state.hint_label == NULL)
         return;
     if(lock_state.opening)
-        lv_label_set_text(lock_state.hint_label, "UNLOCKED");
-    else if(lock_state.wrong_direction)
-        lv_label_set_text(lock_state.hint_label, "TURN CLOCKWISE");
-    else if(lock_state.progress_percent > 0)
-        lv_label_set_text(
-            lock_state.hint_label, "KEEP TURNING CLOCKWISE");
+        CP_LV_LABEL_SET_TEXT(lock_state.hint_label, CP_TR("UNLOCKED"));
     else
-        lv_label_set_text(
-            lock_state.hint_label, "TURN CLOCKWISE TO UNLOCK");
+        CP_LV_LABEL_SET_TEXT(
+            lock_state.hint_label, CP_TR("Hold Center to Unlock"));
     if(!lock_state.opening && lock_state.icon_shackle != NULL) {
-        int lift = lock_state.progress_percent * 2 / 100;
-        lv_obj_set_pos(lock_state.icon_shackle, 12, 3 - lift);
+        lv_obj_set_pos(lock_state.icon_shackle, 12, 3);
         lv_obj_set_style_transform_rotation(
             lock_state.icon_shackle, 0, 0);
     }
-    if(!lock_state.opening && lock_state.icon_body != NULL)
+    if(!lock_state.opening && lock_state.icon != NULL)
+        lv_obj_set_style_transform_scale(
+            lock_state.icon,
+            256 - lock_state.progress_percent * 8 / 100, 0);
+    if(!lock_state.opening && lock_state.icon_body != NULL) {
         lv_obj_set_style_bg_color(
             lock_state.icon_body,
-            lv_color_hex(lock_state.wrong_direction
-                ? 0xFFE1C7
-                : lock_state.progress_percent >= 72
-                    ? 0xFFE2EC : 0xDDF9FF),
+            lv_color_hex(lock_state.progress_percent >= 72
+                ? 0xD5FFED : 0xDDF9FF),
             0);
+    }
 }
 
-static void reset_wheel(void)
+static void reset_unlock(void)
 {
     lock_state.opening = false;
-    lock_state.wrong_direction = false;
-    lock_state.wheel_steps = 0;
-    lock_state.wheel_decay_start_steps = 0;
-    lock_state.wheel_last_input_tick = 0;
+    lock_state.unlock_pressed = false;
+    lock_state.unlock_press_start = 0;
     lock_state.progress_percent = 0;
     if(lock_state.icon_shackle != NULL) {
         lv_obj_set_pos(lock_state.icon_shackle, 12, 3);
         lv_obj_set_style_transform_rotation(
             lock_state.icon_shackle, 0, 0);
+    }
+    if(lock_state.icon != NULL)
+        lv_obj_set_style_transform_scale(lock_state.icon, 256, 0);
+    if(lock_state.halo != NULL) {
+        lv_obj_set_style_transform_scale(lock_state.halo, 256, 0);
+        lv_obj_set_style_opa(lock_state.halo, LV_OPA_COVER, 0);
     }
     if(lock_state.icon_body != NULL)
         lv_obj_set_style_bg_color(
@@ -262,7 +281,7 @@ void crazypod_lock_screen_show(bool turn_display_off)
     crazypod_coverflow_set_input_suspended(true);
     lock_state.release_guard = false;
     lock_state.wait_for_wake_release = turn_display_off;
-    reset_wheel();
+    reset_unlock();
     crazypod_lock_screen_refresh_appearance();
     crazypod_lock_screen_refresh_clock();
     lv_obj_remove_flag(lock_state.root, LV_OBJ_FLAG_HIDDEN);
@@ -278,14 +297,11 @@ static void finish_unlock(void)
 {
     lock_state.locked = false;
     lock_state.opening = false;
-    lock_state.wrong_direction = false;
-    lock_state.wheel_steps = 0;
-    lock_state.wheel_decay_start_steps = 0;
-    lock_state.wheel_last_input_tick = 0;
+    lock_state.unlock_pressed = false;
+    lock_state.unlock_press_start = 0;
     lock_state.progress_percent = 0;
-    lock_state.release_guard = true;
-    lock_state.release_guard_until =
-        current_tick + UNLOCK_INPUT_GUARD_TICKS;
+    lock_state.release_guard =
+        (button_status() & BUTTON_SELECT) != 0;
     lock_state.wait_for_wake_release = false;
     crazypod_coverflow_set_input_suspended(false);
     lv_obj_add_flag(lock_state.root, LV_OBJ_FLAG_HIDDEN);
@@ -316,7 +332,7 @@ void crazypod_lock_screen_process(void)
         if(!lock_state.locked)
             crazypod_lock_screen_show(false);
         else
-            reset_wheel();
+            reset_unlock();
         /*
          * If the display already woke before this UI turn, consume the
          * triggering press on the lock screen instead of letting Home act
@@ -328,131 +344,128 @@ void crazypod_lock_screen_process(void)
             lock_state.locked) {
         lock_state.wait_for_wake_release =
             button_status() != BUTTON_NONE;
-        reset_wheel();
+        reset_unlock();
         crazypod_lock_screen_refresh_clock();
     }
     lock_state.backlight_was_on = backlight_is_on;
     if(!lock_state.locked)
         return;
-    if(lock_state.wrong_direction &&
-       !TIME_BEFORE(current_tick, lock_state.wrong_direction_until)) {
-        lock_state.wrong_direction = false;
-        refresh_progress();
-    }
-    if(!lock_state.opening && lock_state.wheel_steps > 0 &&
-       lock_state.wheel_last_input_tick != 0) {
-        long idle = current_tick - lock_state.wheel_last_input_tick;
-        if(idle > UNLOCK_WHEEL_IDLE_TICKS) {
-            long decay = idle - UNLOCK_WHEEL_IDLE_TICKS;
-            int steps = decay >= UNLOCK_WHEEL_DECAY_TICKS
-                ? 0
-                : (int)(lock_state.wheel_decay_start_steps *
-                    (UNLOCK_WHEEL_DECAY_TICKS - decay) /
-                    UNLOCK_WHEEL_DECAY_TICKS);
-            if(steps != lock_state.wheel_steps) {
-                lock_state.wheel_steps = steps;
-                lock_state.progress_percent =
-                    steps * 100 / UNLOCK_WHEEL_STEPS;
-                refresh_progress();
-            }
+
+    if(lock_state.unlock_pressed && !lock_state.opening) {
+        long elapsed = current_tick - lock_state.unlock_press_start;
+        int progress;
+
+        if((button_status() & BUTTON_SELECT) == 0) {
+            reset_unlock();
+            return;
+        }
+        if(elapsed < 0)
+            elapsed = 0;
+        progress = elapsed >= UNLOCK_HOLD_TICKS
+            ? 100 : (int)(elapsed * 100 / UNLOCK_HOLD_TICKS);
+        if(progress != lock_state.progress_percent) {
+            lock_state.progress_percent = progress;
+            refresh_progress();
+        }
+        if(elapsed >= UNLOCK_HOLD_TICKS) {
+            lock_state.unlock_pressed = false;
+            lock_state.opening = true;
+            lock_state.opening_start = current_tick;
+            lock_state.progress_percent = 100;
+            if(lock_state.icon_body != NULL)
+                lv_obj_set_style_bg_color(
+                    lock_state.icon_body, lv_color_hex(0xB8FFE2), 0);
+            refresh_progress();
         }
     }
     if(lock_state.opening) {
         long elapsed = current_tick - lock_state.opening_start;
-        int shift;
+        int raw;
+        int lift;
+        int turn;
+        int settle;
+        int angle;
+        int scale;
+
         if(elapsed < 0)
             elapsed = 0;
-        shift = (int)(elapsed * 5 / UNLOCK_OPEN_TICKS);
-        if(shift > 5)
-            shift = 5;
+        raw = clamp_progress(
+            (int)(elapsed * 1024 / UNLOCK_OPEN_TICKS));
+        lift = ease_out(clamp_progress(raw * 5 / 2));
+        turn = ease_out(clamp_progress((raw - 154) * 5 / 3));
+        settle = smooth_step(clamp_progress((raw - 717) * 10 / 3));
+        angle = -300 * turn / 1024 + 40 * settle / 1024;
         if(lock_state.icon_shackle != NULL) {
             lv_obj_set_pos(
-                lock_state.icon_shackle, 12 + shift, 1 - shift);
+                lock_state.icon_shackle,
+                12 + 3 * turn / 1024,
+                3 - 8 * lift / 1024 + settle / 1024);
             lv_obj_set_style_transform_rotation(
-                lock_state.icon_shackle, shift * 30, 0);
+                lock_state.icon_shackle, angle, 0);
+        }
+        if(raw < 410)
+            scale = 248 + raw * 22 / 410;
+        else
+            scale = 270 - (raw - 410) * 14 / 614;
+        if(lock_state.icon != NULL)
+            lv_obj_set_style_transform_scale(
+                lock_state.icon, scale, 0);
+        if(lock_state.halo != NULL) {
+            lv_obj_set_style_transform_scale(
+                lock_state.halo, 256 + 24 * turn / 1024, 0);
+            lv_obj_set_style_opa(
+                lock_state.halo,
+                (lv_opa_t)(255 - 95 * settle / 1024), 0);
         }
         if(elapsed >= UNLOCK_OPEN_TICKS)
             finish_unlock();
     }
 }
 
-static int wheel_event_steps(intptr_t data)
-{
-    int steps = ((unsigned int)data >> 24) & 0x7f;
-    if(steps < 1)
-        steps = 1;
-    if(steps > UNLOCK_WHEEL_STEPS)
-        steps = UNLOCK_WHEEL_STEPS;
-    return steps;
-}
-
 bool crazypod_lock_screen_handle_button(long button, intptr_t data)
 {
     long base;
     bool release;
-    bool scroll;
+
+    (void)data;
 
     if(lock_state.release_guard) {
         base = button & BUTTON_MAIN;
-        if(TIME_BEFORE(current_tick, lock_state.release_guard_until) &&
-           (base == BUTTON_SCROLL_FWD || base == BUTTON_SCROLL_BACK))
+        if(base == BUTTON_SELECT) {
+            if((button & BUTTON_REL) != 0)
+                lock_state.release_guard = false;
             return true;
-        lock_state.release_guard = false;
+        }
     }
     if(!lock_state.locked)
         return false;
     release = (button & BUTTON_REL) != 0;
     base = button & BUTTON_MAIN;
-    scroll = base == BUTTON_SCROLL_FWD || base == BUTTON_SCROLL_BACK;
     if(release) {
+        if(base == BUTTON_SELECT && lock_state.unlock_pressed)
+            reset_unlock();
         lock_state.wait_for_wake_release = false;
         return true;
     }
     backlight_on();
     if(!lock_state.backlight_was_on) {
         lock_state.backlight_was_on = true;
-        lock_state.wait_for_wake_release = !scroll;
-        reset_wheel();
+        lock_state.wait_for_wake_release = true;
+        reset_unlock();
         crazypod_lock_screen_refresh_clock();
         return true;
     }
     if(lock_state.wait_for_wake_release) {
-        if(scroll)
-            lock_state.wait_for_wake_release = false;
-        else
-            return true;
-    }
-    if(lock_state.opening || !scroll)
         return true;
-    if(lock_state.callbacks.play_wheel_feedback != NULL)
-        lock_state.callbacks.play_wheel_feedback(button);
-    if(base == BUTTON_SCROLL_FWD) {
-        lock_state.wrong_direction = false;
-        lock_state.wheel_steps += wheel_event_steps(data);
-        if(lock_state.wheel_steps > UNLOCK_WHEEL_STEPS)
-            lock_state.wheel_steps = UNLOCK_WHEEL_STEPS;
     }
-    else {
-        lock_state.wrong_direction = true;
-        lock_state.wrong_direction_until =
-            current_tick + UNLOCK_DIRECTION_HINT_TICKS;
-        lock_state.wheel_steps -= wheel_event_steps(data);
-        if(lock_state.wheel_steps < 0)
-            lock_state.wheel_steps = 0;
+    if(lock_state.opening || base != BUTTON_SELECT)
+        return true;
+    if(!lock_state.unlock_pressed) {
+        lock_state.unlock_pressed = true;
+        lock_state.unlock_press_start = current_tick;
+        lock_state.progress_percent = 0;
+        refresh_progress();
     }
-    lock_state.wheel_decay_start_steps = lock_state.wheel_steps;
-    lock_state.wheel_last_input_tick = current_tick;
-    lock_state.progress_percent =
-        lock_state.wheel_steps * 100 / UNLOCK_WHEEL_STEPS;
-    if(lock_state.wheel_steps >= UNLOCK_WHEEL_STEPS) {
-        lock_state.opening = true;
-        lock_state.opening_start = current_tick;
-        lock_state.progress_percent = 100;
-        if(lock_state.icon_body != NULL)
-            lv_obj_set_style_bg_color(
-                lock_state.icon_body, lv_color_hex(0xB8FFE2), 0);
-    }
-    refresh_progress();
     return true;
 }
 
@@ -506,16 +519,29 @@ lv_obj_t *crazypod_lock_screen_create(
     halo = make_box(
         lock_state.progress_surface, 10, 10, 52, 52,
         LV_RADIUS_CIRCLE, COLOR_CYAN, 12);
+    lock_state.halo = halo;
+    lv_obj_set_style_transform_pivot_x(halo, 26, 0);
+    lv_obj_set_style_transform_pivot_y(halo, 26, 0);
     lv_obj_set_style_shadow_width(halo, 12, 0);
     lv_obj_set_style_shadow_color(halo, lv_color_hex(COLOR_CYAN), 0);
     lv_obj_set_style_shadow_opa(halo, 38, 0);
     icon = lv_obj_create(lock_state.progress_surface);
+    lock_state.icon = icon;
     crazypod_ui_widget_make_plain(icon);
     lv_obj_set_pos(icon, 14, 12);
     lv_obj_set_size(icon, 44, 48);
+    lv_obj_set_style_transform_pivot_x(icon, 22, 0);
+    lv_obj_set_style_transform_pivot_y(icon, 24, 0);
     lock_state.icon_shackle = make_box(
         icon, 12, 3, 20, 23, 10, COLOR_WHITE, LV_OPA_TRANSP);
+    lv_obj_set_style_transform_pivot_x(
+        lock_state.icon_shackle, 17, 0);
+    lv_obj_set_style_transform_pivot_y(
+        lock_state.icon_shackle, 20, 0);
     lv_obj_set_style_border_width(lock_state.icon_shackle, 3, 0);
+    lv_obj_set_style_border_side(
+        lock_state.icon_shackle,
+        LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_RIGHT, 0);
     lv_obj_set_style_border_color(
         lock_state.icon_shackle, lv_color_hex(0xDDF9FF), 0);
     lv_obj_set_style_border_opa(
@@ -527,7 +553,7 @@ lv_obj_t *crazypod_lock_screen_create(
         LV_RADIUS_CIRCLE, 0x0A1620, 225);
     make_box(keyhole, 2, 4, 1, 6, 0, 0x0A1620, LV_OPA_COVER);
     lock_state.hint_label = make_label(
-        lock_state.root, "TURN CLOCKWISE TO UNLOCK",
+        lock_state.root, CP_TR("Hold Center to Unlock"),
         &lv_font_montserrat_8, COLOR_WHITE, 135);
     lv_obj_set_width(lock_state.hint_label, LCD_WIDTH);
     lv_obj_set_style_text_align(
@@ -537,7 +563,7 @@ lv_obj_t *crazypod_lock_screen_create(
 
     crazypod_lock_screen_refresh_appearance();
     crazypod_lock_screen_refresh_clock();
-    reset_wheel();
+    reset_unlock();
     lv_obj_add_flag(lock_state.root, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_background(lock_state.root);
     return lock_state.root;
@@ -550,10 +576,7 @@ bool crazypod_lock_screen_is_locked(void)
 
 bool crazypod_lock_screen_motion_active(void)
 {
-    return lock_state.opening ||
-           lock_state.wrong_direction ||
-           (lock_state.wheel_steps > 0 &&
-            lock_state.wheel_last_input_tick != 0);
+    return lock_state.opening || lock_state.unlock_pressed;
 }
 
 void crazypod_lock_screen_initialize_backlight_state(void)

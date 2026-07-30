@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <string.h>
@@ -45,7 +47,7 @@ static void update_selection_chrome(void)
     int i;
 
     if(title != NULL && selected != NULL)
-        lv_label_set_text(title, selected->name);
+        CP_LV_LABEL_SET_TEXT(title, selected->name);
     for(i = 0; i < CRAZYPOD_APP_COUNT; ++i) {
         int width = i == selected_app ? 14 : 5;
 

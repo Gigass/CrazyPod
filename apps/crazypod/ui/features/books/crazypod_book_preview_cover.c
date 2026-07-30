@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdint.h>
@@ -109,7 +111,7 @@ lv_obj_t *crazypod_book_preview_cover_create(
         label = make_label(
             cover,
             book != NULL && book->title[0] != '\0'
-                ? book->title : "BOOK",
+                ? book->title : CP_TR("BOOK"),
             &lv_font_montserrat_8,
             0xF7E7BE, 205);
         lv_obj_set_pos(label, spine_width + 7, height / 2 - 4);

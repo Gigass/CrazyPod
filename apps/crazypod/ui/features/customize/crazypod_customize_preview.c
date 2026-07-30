@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -45,7 +47,7 @@ static const char *current_value(const struct route_state *state)
 
     if(state->route == DIY_ROUTE_ICONS)
         return state->selected == appearance->icon_theme
-            ? "Current selection" : "Select to switch now";
+            ? CP_TR("Current selection") : CP_TR("Select to switch now");
     if(state->route == DIY_ROUTE_DETAILS) {
         field = crazypod_customize_detail_fields[state->selected];
         current = crazypod_customize_field_value(field);
@@ -55,7 +57,7 @@ static const char *current_value(const struct route_state *state)
         static char radius_text[16];
 
         field = crazypod_customize_layout_fields[state->selected];
-        snprintf(radius_text, sizeof(radius_text), "%d px",
+        snprintf(radius_text, sizeof(radius_text), CP_FMT("%d px"),
                  crazypod_customize_field_value(field));
         return radius_text;
     }
@@ -65,7 +67,7 @@ static const char *current_value(const struct route_state *state)
         value = crazypod_customize_choice_value(
             field, state->selected);
         return value == current
-            ? "Current selection" : "Select to apply";
+            ? CP_TR("Current selection") : CP_TR("Select to apply");
     }
     if(state->route == DIY_ROUTE_BACKGROUNDS) {
         enum crazypod_appearance_field background =
@@ -79,7 +81,7 @@ static const char *current_value(const struct route_state *state)
             return basename(path);
         return color == 0
             ? background == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
-                ? "Follow Home" : "Default"
+                ? CP_TR("Follow Home") : CP_TR("Default")
             : crazypod_appearance_color_name(color - 1);
     }
     if(state->route == DIY_ROUTE_BACKGROUND_CHOICES) {
@@ -91,9 +93,9 @@ static const char *current_value(const struct route_state *state)
 
         if(state->selected == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1)
             return path[0] != '\0'
-                ? basename(path) : "Open /Pictures";
+                ? basename(path) : CP_TR("Open /Pictures");
         return path[0] == '\0' && state->selected == color
-            ? "Current selection" : "Select to apply";
+            ? CP_TR("Current selection") : CP_TR("Select to apply");
     }
     if(state->route == DIY_ROUTE_WALLPAPER_FILES) {
         const char *current_path =
@@ -104,7 +106,7 @@ static const char *current_value(const struct route_state *state)
         return strcmp(
                    current_path,
                    crazypod_photo_path(state->selected)) == 0
-            ? "Current picture" : "Select to crop";
+            ? CP_TR("Current picture") : CP_TR("Select to crop");
     }
     return "";
 }
@@ -126,20 +128,20 @@ static void preview_model_build(
     if(state->route == DIY_ROUTE_MENU) {
         model->symbol = crazypod_customize_menu_symbols[state->selected];
         model->detail =
-            state->selected == 0 ? "Save and reuse appearances" :
-            state->selected == 1 ? "16 complete icon themes" :
-            state->selected == 2 ? "Wave, size, glow and colors" :
-            state->selected == 3 ? "Home, menu and lock pictures" :
-                                   "Screen corner radius";
+            state->selected == 0 ? CP_TR("Save and reuse appearances") :
+            state->selected == 1 ? CP_TR("16 complete icon themes") :
+            state->selected == 2 ? CP_TR("Wave, size, glow and colors") :
+            state->selected == 3 ? CP_TR("Home, menu and lock pictures") :
+                                   CP_TR("Screen corner radius");
     }
     else if(state->route == DIY_ROUTE_PRESETS) {
         model->symbol = state->selected == 0 ? LV_SYMBOL_SAVE :
             state->selected == 1 ? LV_SYMBOL_COPY : LV_SYMBOL_DOWNLOAD;
         model->detail = state->selected == 0
-            ? "Store the complete current appearance"
+            ? CP_TR("Store the complete current appearance")
             : state->selected == 1
-                ? "Apply, export or edit saved appearances"
-                : "Copy import.upodtheme to /.crazypod";
+                ? CP_TR("Apply, export or edit saved appearances")
+                : CP_TR("Copy import.upodtheme to /.crazypod");
     }
     else if(state->route == DIY_ROUTE_PRESET_LIBRARY) {
         const struct crazypod_preset *preset =
@@ -147,14 +149,14 @@ static void preview_model_build(
 
         model->symbol = LV_SYMBOL_COPY;
         model->detail = preset != NULL && preset->builtin
-            ? "Built-in appearance" : "User appearance";
+            ? CP_TR("Built-in appearance") : CP_TR("User appearance");
     }
     else if(state->route == DIY_ROUTE_PRESET_ACTIONS ||
             state->route == DIY_ROUTE_PRESET_EDIT) {
         const struct crazypod_preset *preset =
             crazypod_preset_get(state->group);
 
-        model->title = preset != NULL ? preset->name : "Preset";
+        model->title = preset != NULL ? preset->name : CP_TR("Preset");
         model->symbol = state->route == DIY_ROUTE_PRESET_ACTIONS
             ? LV_SYMBOL_SAVE : LV_SYMBOL_EDIT;
         model->detail = route_title != NULL ? route_title : "";
@@ -162,8 +164,8 @@ static void preview_model_build(
     else if(state->route == DIY_ROUTE_PRESET_RENAME) {
         model->title =
             editor_value != NULL && editor_value[0] != '\0'
-                ? editor_value : "New name";
-        model->detail = "Wheel selects characters; center adds.";
+                ? editor_value : CP_TR("New name");
+        model->detail = CP_TR("Wheel selects characters; center adds.");
         model->symbol = LV_SYMBOL_KEYBOARD;
         model->editor = true;
     }
@@ -230,7 +232,7 @@ static void render_editor(
         COLOR_WHITE, 225);
     lv_obj_set_pos(label, 10, 9);
     label = crazypod_ui_widget_label(
-        card, value != NULL && value[0] != '\0' ? value : "New name",
+        card, value != NULL && value[0] != '\0' ? value : CP_TR("New name"),
         &lv_font_montserrat_12, COLOR_WHITE,
         value != NULL && value[0] != '\0' ? 255 : 130);
     lv_obj_set_pos(label, 10, 35);
@@ -239,7 +241,7 @@ static void render_editor(
 
     card = crazypod_preview_make_text_panel(parent, 154, 46);
     label = crazypod_ui_widget_label(
-        card, "Wheel selects characters; center adds.",
+        card, CP_TR("Wheel selects characters; center adds."),
         &lv_font_montserrat_8, COLOR_WHITE, 125);
     lv_obj_set_pos(label, 11, 8);
     lv_obj_set_width(label, 118);

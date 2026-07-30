@@ -329,6 +329,10 @@ LV_FONT_DECLARE(lv_font_source_han_sans_sc_14_cjk)
 LV_FONT_DECLARE(lv_font_source_han_sans_sc_16_cjk)
 #endif
 
+LV_FONT_DECLARE(lv_font_crazypod_i18n_8)
+LV_FONT_DECLARE(lv_font_crazypod_i18n_10)
+LV_FONT_DECLARE(lv_font_crazypod_i18n_12)
+
 #if LV_FONT_UNSCII_8
 LV_FONT_DECLARE(lv_font_unscii_8)
 #endif

@@ -1,12 +1,28 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
+
+#include <string.h>
 
 #include "../../../crazypod_miniapps.h"
 #include "crazypod_miniapp_input.h"
 #include "crazypod_miniapp_runtime_controller.h"
 #include "crazypod_miniapp_screen.h"
 #include "crazypod_miniapps_feature.h"
+
+static const char *localized_miniapp_name(
+    const struct crazypod_miniapp_metadata *metadata)
+{
+    if(metadata == NULL)
+        return NULL;
+    if(strcmp(metadata->id, "calculator") == 0)
+        return CP_TR("Calculator");
+    if(strcmp(metadata->id, "pomodoro") == 0)
+        return "Pomodoro";
+    return metadata->name;
+}
 
 int crazypod_miniapps_feature_item_count(
     const struct route_state *state)
@@ -23,9 +39,11 @@ const char *crazypod_miniapps_feature_title(
         const struct crazypod_miniapp_metadata *metadata =
             crazypod_miniapps_metadata(state->group);
 
-        return metadata != NULL ? metadata->name : "MINI APP";
+        const char *name = localized_miniapp_name(metadata);
+
+        return name != NULL ? name : CP_TR("MINI APP");
     }
-    return "MINI APPS";
+    return CP_TR("MINI APPS");
 }
 
 bool crazypod_miniapps_feature_item_title(
@@ -38,8 +56,8 @@ bool crazypod_miniapps_feature_item_title(
                 ? state->group : index);
 
     *title = metadata != NULL
-        ? metadata->name
-        : state->route == MINIAPP_ROUTE_VIEW ? "Mini App" : "";
+        ? localized_miniapp_name(metadata)
+        : state->route == MINIAPP_ROUTE_VIEW ? CP_TR("Mini App") : "";
     return state->route == UTILITIES_ROUTE_MENU ||
         state->route == MINIAPP_ROUTE_VIEW;
 }

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -56,18 +58,18 @@ static void refresh(void)
     if(view.selected >= view.count)
         view.selected = view.count - 1;
 
-    lv_label_set_text(
+    CP_LV_LABEL_SET_TEXT(
         view.title,
         view.callbacks.title(
             view.kind, view.id, view.callbacks.context));
-    lv_label_set_text(
+    CP_LV_LABEL_SET_TEXT(
         view.value,
         view.callbacks.item_title(
             view.kind, view.id, view.selected,
             view.callbacks.context));
-    snprintf(counter, sizeof(counter), "%d/%d",
+    snprintf(counter, sizeof(counter), CP_FMT("%d/%d"),
              view.selected + 1, view.count);
-    lv_label_set_text(view.counter, counter);
+    CP_LV_LABEL_SET_TEXT(view.counter, counter);
 
     if(view.count <= CHOICE_ROWS)
         start = 0;
@@ -93,12 +95,12 @@ static void refresh(void)
         current = index == view.callbacks.current_index(
             view.kind, view.id, view.callbacks.context);
         lv_obj_remove_flag(view.rows[row], LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(
+        CP_LV_LABEL_SET_TEXT(
             view.labels[row],
             view.callbacks.item_title(
                 view.kind, view.id, index,
                 view.callbacks.context));
-        lv_label_set_text(
+        CP_LV_LABEL_SET_TEXT(
             view.markers[row],
             current ? LV_SYMBOL_OK :
             selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET);
@@ -235,9 +237,8 @@ void crazypod_choice_overlay_show(
         view.labels[row] = crazypod_ui_widget_label(
             view.rows[row], "", metadata_font,
             COLOR_WHITE, 180);
-        lv_obj_set_pos(view.labels[row], 30, 3);
         lv_obj_set_width(view.labels[row], 146);
-        lv_obj_set_height(view.labels[row], 15);
+        crazypod_ui_widget_align_row_label(view.labels[row], 30);
         lv_label_set_long_mode(
             view.labels[row], LV_LABEL_LONG_MODE_DOTS);
         view.markers[row] = crazypod_ui_widget_label(
@@ -246,7 +247,7 @@ void crazypod_choice_overlay_show(
         lv_obj_set_width(view.markers[row], 24);
         lv_obj_set_style_text_align(
             view.markers[row], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(view.markers[row], 184, 6);
+        crazypod_ui_widget_align_row_label(view.markers[row], 184);
     }
 
     track = crazypod_ui_widget_box(

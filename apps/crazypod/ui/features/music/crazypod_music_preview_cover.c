@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdint.h>
@@ -62,10 +64,10 @@ lv_obj_t *crazypod_music_preview_sleeve_create(
 {
     const char *primary_key =
         track != NULL && track->album[0] != '\0'
-            ? track->album : "CrazyPod";
+            ? track->album : CP_TR("CrazyPod");
     const char *secondary_key =
         track != NULL && track->artist[0] != '\0'
-            ? track->artist : "Local Music";
+            ? track->artist : CP_TR("Local Music");
     uint32_t primary = artwork_color(primary_key, seed);
     uint32_t secondary = artwork_color(secondary_key, seed + 11);
     lv_obj_t *sleeve = make_box(
@@ -181,7 +183,7 @@ lv_obj_t *crazypod_music_preview_initial_cover_create(
 {
     const char *primary_key =
         track != NULL && track->title[0] != '\0'
-            ? track->title : "Local Music";
+            ? track->title : CP_TR("Local Music");
     const char *secondary_key =
         track != NULL && track->artist[0] != '\0'
             ? track->artist : primary_key;

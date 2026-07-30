@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include "crazypod_alpha_jump_hud.h"
@@ -68,7 +70,7 @@ void crazypod_alpha_jump_hud_show(
     create_hud();
     if(hud.root == NULL)
         return;
-    lv_label_set_text(hud.label, text);
+    CP_LV_LABEL_SET_TEXT(hud.label, text);
     lv_obj_center(hud.label);
     lv_obj_move_foreground(hud.root);
     hud.deadline = now +

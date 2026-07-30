@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -74,15 +76,15 @@ struct appearance_disk_v1 {
 static struct crazypod_appearance appearance;
 
 static const char *const theme_names[CRAZYPOD_ICON_THEME_COUNT] = {
-    "Basic", "Cel Frame", "Anime Pop", "Mecha Spec",
-    "Toy", "Y2K", "Flat", "Skeuo",
-    "Lucid Pop", "Noize Bloom", "Soft Skeuo", "Acrylic",
-    "Ink", "Sticker", "Sticker 2", "Voxel"
+    CP_TR("Basic"), CP_TR("Cel Frame"), CP_TR("Anime Pop"), CP_TR("Mecha Spec"),
+    CP_TR("Toy"), CP_TR("Y2K"), CP_TR("Flat"), CP_TR("Skeuo"),
+    CP_TR("Lucid Pop"), CP_TR("Noize Bloom"), CP_TR("Soft Skeuo"), CP_TR("Acrylic"),
+    CP_TR("Ink"), CP_TR("Sticker"), CP_TR("Sticker 2"), CP_TR("Voxel")
 };
 
 static const char *const color_names[CRAZYPOD_APPEARANCE_COLOR_COUNT] = {
-    "Charcoal", "Rose", "Violet", "Cyan",
-    "Amber", "Emerald", "Blue", "White"
+    CP_TR("Charcoal"), CP_TR("Rose"), CP_TR("Violet"), CP_TR("Cyan"),
+    CP_TR("Amber"), CP_TR("Emerald"), CP_TR("Blue"), CP_TR("White")
 };
 
 static const uint32_t colors[CRAZYPOD_APPEARANCE_COLOR_COUNT] = {
@@ -371,7 +373,7 @@ const char *crazypod_icon_theme_name(int theme)
 const char *crazypod_appearance_color_name(int color)
 {
     return color >= 0 && color < CRAZYPOD_APPEARANCE_COLOR_COUNT
-        ? color_names[color] : "Default";
+        ? color_names[color] : CP_TR("Default");
 }
 
 uint32_t crazypod_appearance_color(int color)

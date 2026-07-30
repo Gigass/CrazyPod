@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -44,7 +46,7 @@ void crazypod_eq_studio_screen_render(
 {
     static const char *const fixed_labels[EQ_NUM_BANDS] = {
         "32", "64", "125", "250", "500",
-        "1k", "2k", "4k", "8k", "16k"
+        CP_TR("1k"), CP_TR("2k"), CP_TR("4k"), CP_TR("8k"), CP_TR("16k")
     };
     const struct eq_band_setting *current =
         &model->bands[model->band];
@@ -64,18 +66,18 @@ void crazypod_eq_studio_screen_render(
     crazypod_ui_widget_box(
         parent, 0, 29, LCD_WIDTH, 35, 0, 0x101017, 235);
     label = crazypod_ui_widget_label(
-        parent, "EQ Studio", metadata_font, WHITE, 245);
+        parent, CP_TR("EQ Studio"), metadata_font, WHITE, 245);
     lv_obj_set_pos(label, 14, 39);
     lv_obj_set_width(label, 120);
     label = crazypod_ui_widget_label(
-        parent, model->enabled ? "On" : "Bypass",
+        parent, model->enabled ? CP_TR("On") : CP_TR("Bypass"),
         &lv_font_montserrat_10,
         model->enabled ? GREEN : MUTED, 240);
     lv_obj_set_width(label, 60);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_pos(label, 190, 41);
     label = crazypod_ui_widget_label(
-        parent, model->editing ? "EDIT" : "BROWSE",
+        parent, model->editing ? CP_TR("EDIT") : CP_TR("BROWSE"),
         &lv_font_montserrat_8, WHITE, 125);
     lv_obj_set_width(label, 54);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
@@ -102,7 +104,7 @@ void crazypod_eq_studio_screen_render(
             max_gain = model->bands[index].gain;
     }
     clipping_risk = max_gain > 0 && max_gain > model->precut;
-    snprintf(text, sizeof(text), "Precut %s", precut_text);
+    snprintf(text, sizeof(text), CP_FMT("Precut %s"), precut_text);
     label = crazypod_ui_widget_label(
         parent, text, &lv_font_montserrat_8,
         clipping_risk ? AMBER : WHITE,
@@ -118,7 +120,7 @@ void crazypod_eq_studio_screen_render(
     crazypod_ui_widget_box(
         parent, 14, 163, 292, 1, 0, WHITE, 18);
     label = crazypod_ui_widget_label(
-        parent, "0 dB", &lv_font_montserrat_8, WHITE, 95);
+        parent, CP_TR("0 dB"), &lv_font_montserrat_8, WHITE, 95);
     lv_obj_set_pos(label, 16, 113);
 
     for(index = 0; index < EQ_NUM_BANDS; ++index) {
@@ -177,31 +179,31 @@ void crazypod_eq_studio_screen_render(
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     label = crazypod_ui_widget_label(
         parent,
-        model->editing ? "Wheel adjusts" : "Wheel selects",
+        model->editing ? CP_TR("Wheel adjusts") : CP_TR("Wheel selects"),
         &lv_font_montserrat_8, WHITE, 115);
     lv_obj_set_pos(label, 205, 190);
     lv_obj_set_width(label, 98);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
 
-    chip(parent, 14, "Gain",
+    chip(parent, 14, CP_TR("Gain"),
          model->mode == CRAZYPOD_EQ_STUDIO_GAIN, primary_color);
-    chip(parent, 80, "Freq",
+    chip(parent, 80, CP_TR("Freq"),
          model->mode == CRAZYPOD_EQ_STUDIO_CUTOFF, primary_color);
-    chip(parent, 146, "Q",
+    chip(parent, 146, CP_TR("Q"),
          model->mode == CRAZYPOD_EQ_STUDIO_Q, primary_color);
-    chip(parent, 212, "Precut",
+    chip(parent, 212, CP_TR("Precut"),
          model->mode == CRAZYPOD_EQ_STUDIO_PRECUT, primary_color);
 
     crazypod_ui_widget_box(
         parent, 0, 218, LCD_WIDTH, 22, 0, 0x050508, 245);
     label = crazypod_ui_widget_label(
-        parent, "Menu Done", &lv_font_montserrat_8, WHITE, 125);
+        parent, CP_TR("Menu Done"), &lv_font_montserrat_8, WHITE, 125);
     lv_obj_set_pos(label, 14, 225);
     label = crazypod_ui_widget_label(
-        parent, "Select Edit", &lv_font_montserrat_8, WHITE, 165);
+        parent, CP_TR("Select Edit"), &lv_font_montserrat_8, WHITE, 165);
     lv_obj_set_pos(label, 113, 225);
     label = crazypod_ui_widget_label(
-        parent, model->editing ? "Play Mode" : "Play A/B",
+        parent, model->editing ? CP_TR("Play Mode") : CP_TR("Play A/B"),
         &lv_font_montserrat_8, WHITE, 125);
     lv_obj_set_width(label, 82);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);

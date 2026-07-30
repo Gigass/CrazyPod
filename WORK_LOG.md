@@ -1,5 +1,60 @@
 # WORK_LOG.md
 
+Entries are point-in-time records. Use the newest entry and
+[PROJECT_STATUS.md](PROJECT_STATUS.md) for current status; older open items may
+have been completed later.
+
+## 2026-07-30 (Nine-language runtime and interaction polish)
+
+Goal: reconcile the CrazyPod tasks completed after the 01:25 documentation
+sync with the current source, artifacts, and device-copy records.
+
+Changed:
+
+- implemented English, Simplified Chinese, Traditional Chinese, Japanese,
+  Korean, German, French, Spanish, and Brazilian Portuguese runtime
+  localization
+- added a persistent Settings language selector, upgraded CrazyPod state from
+  version 9 to 10, and defaulted version 1–9 migrations to English
+- generated 856 firmware translation entries and 27 Calculator/Pomodoro
+  entries; added strict missing-key, placeholder, marker, and bare-string gates
+- regenerated the 8, 10, 12, 14, and 16px font subsets after adding native
+  language names to the manifest; this fixed `简体中文` rendering as `体中文`
+- added UTF-8 decoding to the non-LVGL LCD text path
+- replaced wheel-distance unlock with a 0.5-second Select hold, early-release
+  cancellation, an opening-shackle animation, and residual-input protection
+- added a temporary left-edge Now Playing volume HUD and normalized the optical
+  size and centering of playback, favorite, shuffle, repeat, lyrics, progress,
+  and queue icons
+- unified menu icon/text vertical centering and removed fixed text clipping
+  from search and choice overlays
+- synchronized product, build, contribution, architecture, Mini App,
+  localization-font, status, release, and work-log documentation
+
+Verified:
+
+- strict localization audit: 0 errors and 0 warnings
+- all five generated font sizes cover the complete 1,344-character manifest
+- simulator, UI host, Mini App, EPUB, architecture, ARM, stack-alignment, and
+  packaging checks passed in the recorded implementation tasks
+- `CrazyPod-6G.zip` contains 324 entries and passes `unzip -tq`
+- latest installed `rockbox.ipod` SHA-256:
+  `6e087dc7202a8fce085c7a78be45ad01ece66b33bc4710bc20f06b54f6f62b9d`
+- the device copy retained music, `iPod_Control`, and `.crazypod`, passed the
+  FAT32 check, and was safely ejected without changing the bootloader
+
+Still open:
+
+- review and commit the broad localization and UI working tree in coherent
+  changes
+- run a complete physical nine-language, unlock-hold, volume-HUD, and icon
+  alignment regression matrix
+- complete diagnosis of intermittent white block flicker seen in both CrazyPod
+  and the stock firmware; no hardware root cause is confirmed
+- implement the Mikey headset-remote driver and CrazyPod remote input mapping
+- resolve branch cleanup around `origin/dev`, `stablerelease1`, and the three
+  `release`-only commits
+
 ## 2026-07-30 (Architecture, interaction, music, and documentation sync)
 
 Goal: record the implemented work from 2026-07-29 through 2026-07-30 and align

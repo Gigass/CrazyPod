@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -88,7 +90,7 @@ void crazypod_now_screen_render(
     lv_obj_t *shade;
     lv_obj_t *title;
     lv_obj_t *artist;
-    lv_obj_t *mode;
+    enum crazypod_ui_icon mode_icon;
 
     memset(view, 0, sizeof(*view));
     rendered_track_path[0] = '\0';
@@ -173,7 +175,7 @@ void crazypod_now_screen_render(
             (void)metadata_shade;
             title = make_label(
                 context->parent,
-                track != NULL ? track->title : "No Track",
+                track != NULL ? track->title : CP_TR("No Track"),
                 context->metadata_font,
                 COLOR_WHITE, LV_OPA_COVER);
             lv_obj_set_size(title, 96, 17);
@@ -183,7 +185,7 @@ void crazypod_now_screen_render(
             lv_obj_set_pos(title, 24, 120);
             artist = make_label(
                 context->parent,
-                track != NULL ? track->artist : "Local Music",
+                track != NULL ? track->artist : CP_TR("Local Music"),
                 context->metadata_font,
                 COLOR_WHITE, 180);
             lv_obj_set_size(artist, 96, 17);
@@ -225,7 +227,7 @@ void crazypod_now_screen_render(
 
             title = make_label(
                 context->parent,
-                track != NULL ? track->title : "No Track",
+                track != NULL ? track->title : CP_TR("No Track"),
                 context->metadata_font,
                 content_color, LV_OPA_COVER);
             lv_obj_set_size(title, 158, 18);
@@ -236,7 +238,7 @@ void crazypod_now_screen_render(
 
             artist = make_label(
                 context->parent,
-                track != NULL ? track->artist : "Local Music",
+                track != NULL ? track->artist : CP_TR("Local Music"),
                 context->metadata_font,
                 content_color, 220);
             lv_obj_set_size(artist, 158, 18);
@@ -257,24 +259,24 @@ void crazypod_now_screen_render(
             crazypod_marquee_configure(album, true);
             lv_obj_set_pos(album, 144, 119);
 
-            crazypod_ui_widget_pixel_heart(
-                context->parent, 190, 145, 2,
+            crazypod_ui_widget_icon(
+                context->parent, 190, 143,
+                CRAZYPOD_UI_ICON_HEART,
                 favorite ? COLOR_FAVORITE : content_color,
                 favorite ? LV_OPA_COVER : 120);
-            mode = make_label(
-                context->parent,
-                crazypod_queue_repeat() == REPEAT_ONE ? "1" :
-                crazypod_queue_repeat() == REPEAT_ALL ? LV_SYMBOL_LOOP :
-                crazypod_queue_shuffle() ? LV_SYMBOL_SHUFFLE :
-                LV_SYMBOL_PLAY,
-                &lv_font_montserrat_12,
+            if(crazypod_queue_repeat() == REPEAT_ONE)
+                mode_icon = CRAZYPOD_UI_ICON_REPEAT_ONE;
+            else if(crazypod_queue_repeat() == REPEAT_ALL)
+                mode_icon = CRAZYPOD_UI_ICON_REPEAT;
+            else if(crazypod_queue_shuffle())
+                mode_icon = CRAZYPOD_UI_ICON_SHUFFLE;
+            else
+                mode_icon = CRAZYPOD_UI_ICON_PLAY;
+            crazypod_ui_widget_icon(
+                context->parent, 215, 143, mode_icon,
                 crazypod_queue_repeat() != REPEAT_OFF ||
                 crazypod_queue_shuffle() ? COLOR_CYAN : content_color,
                 220);
-            lv_obj_set_width(mode, 24);
-            lv_obj_set_style_text_align(
-                mode, LV_TEXT_ALIGN_CENTER, 0);
-            lv_obj_set_pos(mode, 211, 143);
         }
     }
 
@@ -354,7 +356,7 @@ static void set_label_text_if_changed(
 {
     if(label != NULL && text != NULL &&
        strcmp(lv_label_get_text(label), text) != 0)
-        lv_label_set_text(label, text);
+        CP_LV_LABEL_SET_TEXT(label, text);
 }
 
 static void format_time_ms(
@@ -395,8 +397,8 @@ void crazypod_now_screen_update_playback(
         format_time_ms(elapsed_ms, elapsed, sizeof(elapsed));
         format_time_ms(left, remaining + 1, sizeof(remaining) - 1);
         remaining[0] = '-';
-        lv_label_set_text(now_view.elapsed, elapsed);
-        lv_label_set_text(now_view.remaining, remaining);
+        CP_LV_LABEL_SET_TEXT(now_view.elapsed, elapsed);
+        CP_LV_LABEL_SET_TEXT(now_view.remaining, remaining);
     }
 }
 

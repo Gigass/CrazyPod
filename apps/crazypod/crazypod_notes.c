@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -436,7 +438,7 @@ uint32_t crazypod_note_duplicate(uint32_t id)
     if(source == NULL ||
        !crazypod_note_read_body(id, body_work, sizeof(body_work)))
         return 0;
-    snprintf(title, sizeof(title), "%.89s Copy", source->title);
+    snprintf(title, sizeof(title), CP_FMT("%.89s Copy"), source->title);
     duplicate = crazypod_note_save(0, title, body_work);
     if(duplicate != 0 && source->pinned)
         crazypod_note_set_pinned(duplicate, true);

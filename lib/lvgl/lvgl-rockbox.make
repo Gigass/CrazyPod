@@ -14,6 +14,9 @@ LVGL_SRC := \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_8.c \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_10.c \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_12.c \
+	$(LVGL_DIR)/src/font/lv_font_crazypod_i18n_8.c \
+	$(LVGL_DIR)/src/font/lv_font_crazypod_i18n_10.c \
+	$(LVGL_DIR)/src/font/lv_font_crazypod_i18n_12.c \
 	$(LVGL_DIR)/src/font/lv_font_source_han_sans_sc_14_cjk.c \
 	$(LVGL_DIR)/src/font/lv_font_source_han_sans_sc_16_cjk.c \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_16.c \

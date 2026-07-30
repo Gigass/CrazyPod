@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include "../../crazypod_apps.h"
@@ -125,7 +127,7 @@ const char *crazypod_route_query_title(
 
     if(feature == NULL)
         return crazypod_route_registry_is_shell(state->route)
-            ? "MORE FEATURES" : "";
+            ? CP_TR("MORE FEATURES") : "";
 
     switch(feature->id) {
     case CRAZYPOD_FEATURE_MUSIC:

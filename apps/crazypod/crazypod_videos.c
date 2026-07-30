@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #define CRAZYPOD_VIDEO_CORE 1
@@ -492,7 +494,7 @@ enum crazypod_video_result crazypod_video_play(int index)
     clock_check_tick =
         current_tick + CRAZYPOD_VIDEO_CLOCK_CHECK_SECONDS * HZ;
     draw_video_controls(
-        video, false, resume > 0 ? "RESUMED" : NULL);
+        video, false, resume > 0 ? CP_TR("RESUMED") : NULL);
 
     for(;;) {
         int status = stream_status();
@@ -511,7 +513,7 @@ enum crazypod_video_result crazypod_video_play(int index)
         if(!TIME_BEFORE(current_tick, last_draw_tick + HZ / 4)) {
             draw_video_controls(
                 video, paused,
-                clock_stalled ? "CLOCK STALLED" : NULL);
+                clock_stalled ? CP_TR("CLOCK STALLED") : NULL);
             last_draw_tick = current_tick;
         }
 #ifdef SIMULATOR
@@ -568,14 +570,14 @@ enum crazypod_video_result crazypod_video_play(int index)
             clock_stalled = false;
             draw_video_controls(video, paused,
                                 base == BUTTON_RIGHT
-                                    ? "FORWARD 10 SEC"
-                                    : "BACK 10 SEC");
+                                    ? CP_TR("FORWARD 10 SEC")
+                                    : CP_TR("BACK 10 SEC"));
         }
         else if(base == BUTTON_SCROLL_FWD ||
                 base == BUTTON_SCROLL_BACK) {
             adjust_video_volume(
                 base == BUTTON_SCROLL_FWD ? 1 : -1);
-            draw_video_controls(video, paused, "VOLUME");
+            draw_video_controls(video, paused, CP_TR("VOLUME"));
         }
     }
 
@@ -628,17 +630,17 @@ const char *crazypod_video_result_message(
     case CRAZYPOD_VIDEO_OK:
         return "";
     case CRAZYPOD_VIDEO_INVALID_FILE:
-        return "Video is no longer available";
+        return CP_TR("Video is no longer available");
     case CRAZYPOD_VIDEO_NO_MEMORY:
-        return "Not enough memory to play this video";
+        return CP_TR("Not enough memory to play this video");
     case CRAZYPOD_VIDEO_UNSUPPORTED:
-        return "Convert this video to MPEG-1 or MPEG-2";
+        return CP_TR("Convert this video to MPEG-1 or MPEG-2");
     case CRAZYPOD_VIDEO_OPEN_FAILED:
-        return "Could not open this video";
+        return CP_TR("Could not open this video");
     case CRAZYPOD_VIDEO_ENGINE_FAILED:
     default:
         return video_engine_message[0] != '\0'
-            ? video_engine_message : "Video playback failed";
+            ? video_engine_message : CP_TR("Video playback failed");
     }
 }
 

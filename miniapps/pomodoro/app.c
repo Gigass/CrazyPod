@@ -1,5 +1,6 @@
 #include "engine.h"
 #include "../sdk/crazypod_miniapp.h"
+#include "../sdk/crazypod_miniapp_l10n.h"
 
 #define POMODORO_SETUP_ITEM_COUNT 5u
 
@@ -21,6 +22,12 @@ static bool pomodoro_setup_editing;
 static bool pomodoro_storage_error;
 static bool pomodoro_alarm_error;
 static uint32_t pomodoro_last_render_remaining;
+static uint32_t pomodoro_language;
+
+static const char *tr(const char *source)
+{
+    return cp_l10n_text(pomodoro_language, source);
+}
 
 static void append_character(char *buffer, size_t capacity, size_t *length,
                              char character)
@@ -91,7 +98,7 @@ static void format_round(const struct pomodoro_model *model,
         return;
     buffer[0] = '\0';
     append_unsigned(buffer, capacity, &length, pomodoro_round_number(model));
-    append_text(buffer, capacity, &length, " OF ");
+    append_text(buffer, capacity, &length, tr(" OF "));
     append_unsigned(buffer, capacity, &length, model->config.rounds);
 }
 
@@ -106,7 +113,8 @@ static void format_setting(uint16_t value, bool minutes, bool editing,
     if(editing)
         append_text(buffer, capacity, &length, "< ");
     append_unsigned(buffer, capacity, &length, value);
-    append_text(buffer, capacity, &length, minutes ? " MIN" : " ROUNDS");
+    append_text(buffer, capacity, &length,
+                tr(minutes ? " MIN" : " ROUNDS"));
     if(editing)
         append_text(buffer, capacity, &length, " >");
 }
@@ -114,30 +122,30 @@ static void format_setting(uint16_t value, bool minutes, bool editing,
 static const char *phase_name(enum pomodoro_phase phase)
 {
     if(phase == POMODORO_PHASE_SHORT_BREAK)
-        return "SHORT BREAK";
+        return tr("SHORT BREAK");
     if(phase == POMODORO_PHASE_LONG_BREAK)
-        return "LONG BREAK";
-    return "FOCUS";
+        return tr("LONG BREAK");
+    return tr("FOCUS");
 }
 
 static const char *short_phase_name(enum pomodoro_phase phase)
 {
     if(phase == POMODORO_PHASE_SHORT_BREAK)
-        return "SHORT";
+        return tr("SHORT");
     if(phase == POMODORO_PHASE_LONG_BREAK)
-        return "LONG";
-    return "FOCUS";
+        return tr("LONG");
+    return tr("FOCUS");
 }
 
 static const char *state_name(enum pomodoro_run_state state)
 {
     if(state == POMODORO_RUNNING)
-        return "RUNNING";
+        return tr("RUNNING");
     if(state == POMODORO_PAUSED)
-        return "PAUSED";
+        return tr("PAUSED");
     if(state == POMODORO_COMPLETE)
-        return "COMPLETE";
-    return "READY";
+        return tr("COMPLETE");
+    return tr("READY");
 }
 
 static enum cp_color_token phase_color(enum pomodoro_phase phase)
@@ -202,18 +210,18 @@ static const char *timer_action_name(unsigned index)
         (enum pomodoro_run_state)pomodoro_app_model.run_state;
 
     if(state == POMODORO_READY)
-        return index == 0 ? "START" : "SETUP";
+        return tr(index == 0 ? "START" : "SETUP");
     if(state == POMODORO_RUNNING) {
         if(index == 0)
-            return "PAUSE";
-        return index == 1 ? "SKIP" : "RESET";
+            return tr("PAUSE");
+        return tr(index == 1 ? "SKIP" : "RESET");
     }
     if(state == POMODORO_PAUSED) {
         if(index == 0)
-            return "RESUME";
-        return index == 1 ? "SKIP" : "RESET";
+            return tr("RESUME");
+        return tr(index == 1 ? "SKIP" : "RESET");
     }
-    return index == 0 ? "NEXT" : "RESET";
+    return tr(index == 0 ? "NEXT" : "RESET");
 }
 
 static void render_action(struct cp_scene *scene, int y, unsigned index)
@@ -297,7 +305,8 @@ static void render_timer(struct cp_scene *scene)
              state_name((enum pomodoro_run_state)
                         pomodoro_app_model.run_state));
     text[0] = '\0';
-    append_text(text, sizeof(text), &length, "NEXT ");
+    append_text(text, sizeof(text), &length, tr("NEXT"));
+    append_text(text, sizeof(text), &length, " ");
     append_text(text, sizeof(text), &length,
                 short_phase_name(pomodoro_next_phase(&pomodoro_app_model)));
     add_text(scene, 188, 107, 104, 14, CP_FONT_CAPTION, CP_ALIGN_LEFT,
@@ -307,8 +316,8 @@ static void render_timer(struct cp_scene *scene)
         add_text(scene, 22, 207, 152, 14, CP_FONT_CAPTION, CP_ALIGN_CENTER,
                  CP_COLOR_ERROR,
                  pomodoro_alarm_error
-                     ? "TIMER NOT STARTED"
-                     : "CHANGES NOT SAVED");
+                     ? tr("TIMER NOT STARTED")
+                     : tr("CHANGES NOT SAVED"));
     }
 
     if(pomodoro_action_index >= action_count)
@@ -320,14 +329,14 @@ static void render_timer(struct cp_scene *scene)
 static const char *setup_label(unsigned index)
 {
     if(index == POMODORO_SETUP_FOCUS)
-        return "FOCUS";
+        return tr("FOCUS");
     if(index == POMODORO_SETUP_SHORT)
-        return "SHORT BREAK";
+        return tr("SHORT BREAK");
     if(index == POMODORO_SETUP_LONG)
-        return "LONG BREAK";
+        return tr("LONG BREAK");
     if(index == POMODORO_SETUP_ROUNDS)
-        return "ROUNDS";
-    return "DONE";
+        return tr("ROUNDS");
+    return tr("DONE");
 }
 
 static uint16_t setup_value(unsigned index)
@@ -464,7 +473,7 @@ static bool commit_setup(void)
     pomodoro_action_index = 0;
     persist_model();
     if(CP_HOST_HAS(pomodoro_host, CP_CAP_UI_TOAST, ui_toast))
-        (void)pomodoro_host->ui_toast("Settings saved", 1500);
+        (void)pomodoro_host->ui_toast(tr("Settings saved"), 1500);
     return true;
 }
 
@@ -748,6 +757,8 @@ static const struct cp_miniapp_ops pomodoro_ops = {
 const struct cp_miniapp_ops *
 cp_miniapp_entry(const struct cp_host_api *host)
 {
+    struct cp_system_info info;
+
     if(host == NULL ||
        host->abi_version != CP_MINIAPP_ABI_VERSION ||
        host->struct_size < sizeof(*host) ||
@@ -761,6 +772,12 @@ cp_miniapp_entry(const struct cp_host_api *host)
        host->alarm_acknowledge == NULL)
         return NULL;
     pomodoro_host = host;
+    pomodoro_language = CP_LANGUAGE_ENGLISH;
+    if(CP_HOST_HAS(host, CP_CAP_SYSTEM_INFO, system_info)) {
+        info.struct_size = sizeof(info);
+        if(host->system_info(&info) == 0 && info.language < CP_LANGUAGE_COUNT)
+            pomodoro_language = info.language;
+    }
     return &pomodoro_ops;
 }
 

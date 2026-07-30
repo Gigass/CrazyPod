@@ -720,10 +720,15 @@ if(CP_HOST_HAS(host, CP_CAP_SYSTEM_INFO, system_info)) {
     };
 
     if(host->system_info(&info) == 0) {
-        /* battery_percent、充电、USB、播放和 Reduce Motion 状态 */
+        /* battery_percent、充电、USB、播放、Reduce Motion 和 language */
     }
 }
 ```
+
+`info.language` 使用 `enum cp_language`，可让应用跟随 CrazyPod 当前的九国语言。
+固件只向应用报告语言，不会自动翻译应用字符串。内置 Calculator 和 Pomodoro
+使用生成的 `sdk/crazypod_miniapp_l10n.h`；第三方应用必须维护自己的翻译表。
+宿主文本输入仍只支持可打印 ASCII，不是多语言输入法。
 
 可选宿主能力还包括：
 

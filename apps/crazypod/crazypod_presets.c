@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdint.h>
@@ -251,10 +253,10 @@ static void seed_builtins(void)
     };
 
     memset(presets, 0, sizeof(presets));
-    snprintf(presets[0].name, sizeof(presets[0].name), "Classic");
+    snprintf(presets[0].name, sizeof(presets[0].name), CP_FMT("Classic"));
     presets[0].appearance = classic;
     presets[0].builtin = true;
-    snprintf(presets[1].name, sizeof(presets[1].name), "Black Red");
+    snprintf(presets[1].name, sizeof(presets[1].name), CP_FMT("Black Red"));
     presets[1].appearance = black_red;
     presets[1].builtin = true;
     preset_count = CRAZYPOD_BUILTIN_PRESET_COUNT;
@@ -411,7 +413,7 @@ int crazypod_preset_save_current(void)
     preset = &presets[preset_count];
     memset(preset, 0, sizeof(*preset));
     number = preset_count - CRAZYPOD_BUILTIN_PRESET_COUNT + 1;
-    snprintf(preset->name, sizeof(preset->name), "Appearance %d", number);
+    snprintf(preset->name, sizeof(preset->name), CP_FMT("Appearance %d"), number);
     preset->appearance = *crazypod_appearance_get();
     preset->builtin = false;
     ++preset_count;
@@ -430,7 +432,7 @@ int crazypod_preset_duplicate(int index)
     target = &presets[preset_count];
     memset(target, 0, sizeof(*target));
     number = preset_count - CRAZYPOD_BUILTIN_PRESET_COUNT + 1;
-    snprintf(target->name, sizeof(target->name), "Appearance %d", number);
+    snprintf(target->name, sizeof(target->name), CP_FMT("Appearance %d"), number);
     target->appearance = source->appearance;
     target->builtin = false;
     ++preset_count;
@@ -508,7 +510,7 @@ bool crazypod_preset_export(int index)
 
     mkdir(PRESET_DIRECTORY);
     mkdir(THEME_EXPORT_DIRECTORY);
-    snprintf(path, sizeof(path), "%s/%s.upodtheme",
+    snprintf(path, sizeof(path), CP_FMT("%s/%s.upodtheme"),
              THEME_EXPORT_DIRECTORY, filename);
     fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)

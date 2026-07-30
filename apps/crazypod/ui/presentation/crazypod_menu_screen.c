@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include "lvgl.h"
@@ -112,77 +114,77 @@ void crazypod_menu_screen_render(
     if(count <= 0) {
         if(state->route == DIY_ROUTE_WALLPAPER_FILES)
             crazypod_empty_state_render(
-                context->parent, LV_SYMBOL_IMAGE, "No Pictures",
-                "Add JPG or BMP files to /Pictures.");
+                context->parent, LV_SYMBOL_IMAGE, CP_TR("No Pictures"),
+                CP_TR("Add JPG or BMP files to /Pictures."));
         else if(state->route == PHOTOS_ROUTE_LIBRARY)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_IMAGE,
-                "No Pictures",
-                "Add JPG, JPEG or BMP files to /Pictures.");
+                CP_TR("No Pictures"),
+                CP_TR("Add JPG, JPEG or BMP files to /Pictures."));
         else if(state->route == PHOTOS_ROUTE_VIDEOS)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_PLAY,
-                "No Videos",
-                "Convert MPG or MPEG files into /Videos.");
+                CP_TR("No Videos"),
+                CP_TR("Convert MPG or MPEG files into /Videos."));
         else if(state->route == PHOTOS_ROUTE_FAVORITES)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_IMAGE,
-                "No Favorites",
-                               "Hold Select on a photo to save it here.");
+                CP_TR("No Favorites"),
+                               CP_TR("Hold Select on a photo to save it here."));
         else if(state->route == EXTRAS_ROUTE_MENU)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_DIRECTORY,
-                "Nothing Hidden",
-                "Hide apps in Settings > Main Menu.");
+                CP_TR("Nothing Hidden"),
+                CP_TR("Hide apps in Settings > Main Menu."));
         else if(state->route == UTILITIES_ROUTE_MENU)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
-                "No Mini Apps",
-                "Copy a signed CPK to /MiniApps/Install.");
+                CP_TR("No Mini Apps"),
+                CP_TR("Copy a signed CPK to /MiniApps/Install."));
         else if(state->route == NOTES_ROUTE_DELETED)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_EDIT,
-                "Deleted Is Empty",
-                "Deleted notes can be restored from here.");
+                CP_TR("Deleted Is Empty"),
+                CP_TR("Deleted notes can be restored from here."));
         else if(state->route == BOOKS_ROUTE_LIBRARY)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
-                "No Books",
-                "Add EPUB, TXT or Markdown files to /Books.");
+                CP_TR("No Books"),
+                CP_TR("Add EPUB, TXT or Markdown files to /Books."));
         else if(state->route == BOOKS_ROUTE_RECENTS)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
-                "No Recent Books",
-                "Open a book to add it here.");
+                CP_TR("No Recent Books"),
+                CP_TR("Open a book to add it here."));
         else if(state->route == BOOKS_ROUTE_FAVORITES)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
-                "No Favorites",
-                "Favorite a book from Book Actions.");
+                CP_TR("No Favorites"),
+                CP_TR("Favorite a book from Book Actions."));
         else if(state->route == BOOKS_ROUTE_BOOKMARKS)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
-                "No Bookmark",
-                "Press PLAY while reading to save this page.");
+                CP_TR("No Bookmark"),
+                CP_TR("Press PLAY while reading to save this page."));
         else if(state->route == PODCASTS_ROUTE_MENU)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_AUDIO,
-                "No Podcasts",
-                "Add audio files under /Podcasts and rescan.");
+                CP_TR("No Podcasts"),
+                CP_TR("Add audio files under /Podcasts and rescan."));
         else if(state->route == CONTACTS_ROUTE_LIST)
             crazypod_empty_state_render(context->parent,
                 NULL,
-                "No Contacts",
-                "Add VCF files to /Contacts.");
+                CP_TR("No Contacts"),
+                CP_TR("Add VCF files to /Contacts."));
         else if(state->route == WORKOUT_ROUTE_HISTORY)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_PLAY,
-                "No Workouts",
-                "Start a time-only workout first.");
+                CP_TR("No Workouts"),
+                CP_TR("Start a time-only workout first."));
         else
             crazypod_empty_state_render(
-                context->parent, LV_SYMBOL_AUDIO, "Nothing Here",
-                "Add local music and rescan.");
+                context->parent, LV_SYMBOL_AUDIO, CP_TR("Nothing Here"),
+                CP_TR("Add local music and rescan."));
         return;
     }
 
@@ -240,11 +242,12 @@ void crazypod_menu_screen_render(
                 : state->route == UTILITIES_ROUTE_MENU
                     ? miniapp_symbol(index)
                     : crazypod_customize_feature_menu_symbol(index);
-            lv_obj_t *circle = make_box(row_box, 6, 2, 21, 21,
+            lv_obj_t *circle = make_box(row_box, 0, 0, 21, 21,
                                         LV_RADIUS_CIRCLE, COLOR_WHITE,
                                         selected ? 45 : 18);
             lv_obj_t *icon;
 
+            lv_obj_align(circle, LV_ALIGN_LEFT_MID, 6, 0);
             if(state->route == PHOTOS_ROUTE_MENU && index == 2) {
                 icon = make_box(circle, 0, 0, 8, 6, 0,
                                 COLOR_WHITE, LV_OPA_TRANSP);
@@ -272,10 +275,8 @@ void crazypod_menu_screen_render(
             title = "";
         label = make_label(row_box, title, context->metadata_font,
                            COLOR_WHITE, selected ? 255 : 195);
-        lv_obj_set_pos(label, text_x, 4);
         lv_obj_set_width(label, text_width);
-        lv_obj_set_height(
-            label, lv_font_get_line_height(context->metadata_font));
+        crazypod_ui_widget_align_row_label(label, text_x);
         crazypod_marquee_configure(label, selected);
 
         marker = make_label(row_box,
@@ -284,7 +285,7 @@ void crazypod_menu_screen_render(
                             selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET,
                             &lv_font_montserrat_8,
                             COLOR_WHITE, selected ? 205 : 90);
-        lv_obj_set_pos(marker, 128, 8);
+        crazypod_ui_widget_align_row_label(marker, 128);
         crazypod_menu_list_bind_row(row, row_box, label, marker);
     }
 

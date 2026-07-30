@@ -5,7 +5,7 @@
 
 #include "../../navigation/crazypod_ui_routes.h"
 
-#define CRAZYPOD_SETTINGS_MENU_COUNT 6
+#define CRAZYPOD_SETTINGS_MENU_COUNT 7
 
 extern const char *const crazypod_settings_menu_titles[
     CRAZYPOD_SETTINGS_MENU_COUNT];

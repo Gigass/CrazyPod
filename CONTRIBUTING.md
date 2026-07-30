@@ -12,8 +12,10 @@ inside that product boundary unless a proposal explicitly expands it.
 4. For Mini App changes, read
    [miniapps/README.md](miniapps/README.md) and the
    [Chinese tutorial](miniapps/TUTORIAL.zh-CN.md).
-5. Create a focused branch from the current default branch.
-6. Check `git status` before editing. Do not overwrite unrelated local work.
+5. For user-facing text or font changes, read
+   [tools/CRAZYPOD_FONTS.md](tools/CRAZYPOD_FONTS.md).
+6. Create a focused branch from the current default branch.
+7. Check `git status` before editing. Do not overwrite unrelated local work.
 
 ## Source boundaries
 
@@ -25,6 +27,9 @@ inside that product boundary unless a proposal explicitly expands it.
   Presentation, Platform, or the composition root.
 - Keep Mini App ABI fields append-only. Preserve the ABI 1 host-table prefix
   and gate optional tail functions with size and capability checks.
+- Wrap translatable CrazyPod UI text with `CP_TR()` and update all eight
+  non-English locale files. Keep the nine native language names in the font
+  character manifest.
 - Do not reintroduce the Rockbox WPS, skin, theme, plugin, or recording UI into
   the CrazyPod product package.
 - Do not commit build directories, device backups, caches, or `.DS_Store`
@@ -44,12 +49,18 @@ sh tests/check-crazypod-ui-architecture.sh
 sh tests/run-crazypod-ui-host-tests.sh
 sh tests/run-miniapp-host-tests.sh
 sh tests/run-epub-host-tests.sh
+python3 tools/check-crazypod-l10n.py --strict-bare
 git diff --check
 ```
 
 Run only the relevant host suites while iterating, but run every applicable
 suite before submission. Documentation-only changes still require link and
 Markdown checks.
+
+For localization changes, regenerate `crazypod_l10n_data.inc` and
+`miniapps/sdk/crazypod_miniapp_l10n.h`, run the strict localization audit, and
+verify every committed localized font size covers the collected character
+manifest. A successful translation audit does not prove font coverage.
 
 For interface changes, launch the simulator and verify click-wheel navigation,
 Select, Menu, Left, Right, and Play. For hardware-specific changes, state

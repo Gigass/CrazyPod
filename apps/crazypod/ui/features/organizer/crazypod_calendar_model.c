@@ -1,3 +1,5 @@
+#include "../../../crazypod_l10n.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -69,6 +71,6 @@ void crazypod_ui_calendar_format_time(char *buffer, size_t size,
     if(minutes < 0)
         buffer[0] = '\0';
     else
-        snprintf(buffer, size, "%02d:%02d",
+        snprintf(buffer, size, CP_FMT("%02d:%02d"),
                  minutes / 60, minutes % 60);
 }

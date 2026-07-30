@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include "../../../crazypod_apps.h"
@@ -38,27 +40,27 @@ const char *crazypod_settings_feature_title(
 {
     switch(state->route) {
     case SETTINGS_ROUTE_MENU:
-        return "SETTINGS";
+        return CP_TR("SETTINGS");
     case SETTINGS_ROUTE_SOUND:
-        return "SOUND";
+        return CP_TR("SOUND");
     case SETTINGS_ROUTE_EQ_STUDIO:
-        return "EQ STUDIO";
+        return CP_TR("EQ STUDIO");
     case SETTINGS_ROUTE_DISPLAY:
-        return "DISPLAY";
+        return CP_TR("DISPLAY");
     case SETTINGS_ROUTE_PLAYBACK:
-        return "PLAYBACK";
+        return CP_TR("PLAYBACK");
     case SETTINGS_ROUTE_POWER:
-        return "POWER";
+        return CP_TR("POWER");
     case SETTINGS_ROUTE_CONTROLS:
-        return "CONTROLS";
+        return CP_TR("CONTROLS");
     case SETTINGS_ROUTE_MAIN_MENU:
-        return "MAIN MENU";
+        return CP_TR("MAIN MENU");
     case SETTINGS_ROUTE_MAIN_MENU_ACTIONS: {
         const struct crazypod_app_descriptor *app =
             crazypod_app_catalog_find(
                 (enum crazypod_app_id)state->group);
 
-        return app != NULL ? app->name : "MAIN MENU";
+        return app != NULL ? app->name : CP_TR("MAIN MENU");
     }
     default:
         return "";
@@ -95,18 +97,18 @@ bool crazypod_settings_feature_item_title(
 
         if(index == 0 && !fixed)
             *title = crazypod_apps_is_enabled(
-                (enum crazypod_app_id)state->group) ? "Hide" : "Show";
+                (enum crazypod_app_id)state->group) ? CP_TR("Hide") : CP_TR("Show");
         else {
             index += fixed ? 1 : 0;
-            *title = index == 1 ? "Up" :
-                index == 2 ? "Down" : "";
+            *title = index == 1 ? CP_TR("Up") :
+                index == 2 ? CP_TR("Down") : "";
         }
         return true;
     }
     case SETTINGS_ROUTE_EQ_STUDIO: {
         static const char *const labels[] = {
-            "32Hz", "64Hz", "125Hz", "250Hz", "500Hz",
-            "1kHz", "2kHz", "4kHz", "8kHz", "16kHz"
+            CP_TR("32Hz"), CP_TR("64Hz"), CP_TR("125Hz"), CP_TR("250Hz"), CP_TR("500Hz"),
+            CP_TR("1kHz"), CP_TR("2kHz"), CP_TR("4kHz"), CP_TR("8kHz"), CP_TR("16kHz")
         };
 
         *title = index >= 0 && index < 10 ? labels[index] : "";

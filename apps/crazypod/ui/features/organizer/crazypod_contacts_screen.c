@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #include <string.h>
 
 #include "lvgl.h"
@@ -58,7 +60,7 @@ void crazypod_contacts_screen_render(lv_obj_t *content, int contact_index)
     lv_obj_center(label);
     label = crazypod_ui_widget_label(
         card,
-        contact != NULL ? contact->name : "Missing Contact",
+        contact != NULL ? contact->name : CP_TR("Missing Contact"),
         CRAZYPOD_CONTACT_FONT, CRAZYPOD_CONTACT_WHITE, LV_OPA_COVER);
     lv_obj_set_width(label, 156);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
@@ -77,7 +79,7 @@ void crazypod_contacts_screen_render(lv_obj_t *content, int contact_index)
     label = crazypod_ui_widget_label(
         row,
         contact != NULL && contact->phone[0] != '\0'
-            ? contact->phone : "No phone number",
+            ? contact->phone : CP_TR("No phone number"),
         &lv_font_montserrat_10, CRAZYPOD_CONTACT_WHITE,
         contact != NULL && contact->phone[0] != '\0'
             ? 225 : 105);
@@ -98,7 +100,7 @@ void crazypod_contacts_screen_render(lv_obj_t *content, int contact_index)
     label = crazypod_ui_widget_label(
         row,
         contact != NULL && contact->email[0] != '\0'
-            ? contact->email : "No email address",
+            ? contact->email : CP_TR("No email address"),
         &lv_font_montserrat_10, CRAZYPOD_CONTACT_WHITE,
         contact != NULL && contact->email[0] != '\0'
             ? 190 : 90);

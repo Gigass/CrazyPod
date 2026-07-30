@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -10,7 +12,7 @@
 #include "crazypod_customize_catalog.h"
 
 const char *const crazypod_customize_menu_titles[] = {
-    "Presets", "Icons", "Details", "Backgrounds", "Layout"
+    CP_TR("Presets"), CP_TR("Icons"), CP_TR("Details"), CP_TR("Backgrounds"), CP_TR("Layout")
 };
 
 const char *const crazypod_customize_menu_symbols[] = {
@@ -19,16 +21,16 @@ const char *const crazypod_customize_menu_symbols[] = {
 };
 
 const char *const crazypod_customize_preset_actions[] = {
-    "Apply", "Export", "Edit"
+    CP_TR("Apply"), CP_TR("Export"), CP_TR("Edit")
 };
 
 const char *const crazypod_customize_preset_edit_actions[] = {
-    "Rename", "Update from Current", "Delete"
+    CP_TR("Rename"), CP_TR("Update from Current"), CP_TR("Delete")
 };
 
 const char *const crazypod_customize_detail_titles[] = {
-    "Icon Size", "Wave Style", "Glow", "Highlight",
-    "Primary", "Secondary"
+    CP_TR("Icon Size"), CP_TR("Wave Style"), CP_TR("Glow"), CP_TR("Highlight"),
+    CP_TR("Primary"), CP_TR("Secondary")
 };
 
 const enum crazypod_appearance_field
@@ -42,7 +44,7 @@ crazypod_customize_detail_fields[] = {
 };
 
 const char *const crazypod_customize_layout_titles[] = {
-    "Screen Top", "Screen Bottom"
+    CP_TR("Screen Top"), CP_TR("Screen Bottom")
 };
 
 const enum crazypod_appearance_field
@@ -56,7 +58,7 @@ const int crazypod_customize_radius_values[] = {
 };
 
 const char *const crazypod_customize_background_titles[] = {
-    "Home", "Menu", "Lock Screen"
+    CP_TR("Home"), CP_TR("Menu"), CP_TR("Lock Screen")
 };
 
 enum crazypod_appearance_field
@@ -73,10 +75,10 @@ const char *crazypod_customize_background_title(
     enum crazypod_appearance_field field)
 {
     if(field == CRAZYPOD_APPEARANCE_MENU_BACKGROUND)
-        return "MENU";
+        return CP_TR("MENU");
     if(field == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND)
-        return "LOCK SCREEN";
-    return "HOME";
+        return CP_TR("LOCK SCREEN");
+    return CP_TR("HOME");
 }
 
 const char *crazypod_customize_background_wallpaper(
@@ -192,10 +194,10 @@ const char *crazypod_customize_choice_title(
         "80%", "90%", "100%", "110%", "120%"
     };
     static const char *const glows[] = {
-        "Off", "Low", "Medium", "High"
+        CP_TR("Off"), CP_TR("Low"), CP_TR("Medium"), CP_TR("High")
     };
     static const char *const highlights[] = {
-        "Solid", "Gradient"
+        CP_TR("Solid"), CP_TR("Gradient")
     };
 
     switch(field) {
@@ -212,7 +214,7 @@ const char *crazypod_customize_choice_title(
         return crazypod_appearance_color_name(index);
     case CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS:
     case CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS:
-        snprintf(radius_text, sizeof(radius_text), "%d px",
+        snprintf(radius_text, sizeof(radius_text), CP_FMT("%d px"),
                  crazypod_customize_choice_value(field, index));
         return radius_text;
     default:
@@ -224,15 +226,15 @@ const char *crazypod_customize_field_title(
     enum crazypod_appearance_field field)
 {
     switch(field) {
-    case CRAZYPOD_APPEARANCE_ICON_SCALE: return "ICON SIZE";
-    case CRAZYPOD_APPEARANCE_SOUND_WAVE_STYLE: return "WAVE STYLE";
-    case CRAZYPOD_APPEARANCE_GLOW: return "GLOW";
-    case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE: return "HIGHLIGHT";
-    case CRAZYPOD_APPEARANCE_PRIMARY: return "PRIMARY";
-    case CRAZYPOD_APPEARANCE_SECONDARY: return "SECONDARY";
-    case CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS: return "SCREEN TOP";
-    case CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS: return "SCREEN BOTTOM";
-    default: return "OPTIONS";
+    case CRAZYPOD_APPEARANCE_ICON_SCALE: return CP_TR("ICON SIZE");
+    case CRAZYPOD_APPEARANCE_SOUND_WAVE_STYLE: return CP_TR("WAVE STYLE");
+    case CRAZYPOD_APPEARANCE_GLOW: return CP_TR("GLOW");
+    case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE: return CP_TR("HIGHLIGHT");
+    case CRAZYPOD_APPEARANCE_PRIMARY: return CP_TR("PRIMARY");
+    case CRAZYPOD_APPEARANCE_SECONDARY: return CP_TR("SECONDARY");
+    case CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS: return CP_TR("SCREEN TOP");
+    case CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS: return CP_TR("SCREEN BOTTOM");
+    default: return CP_TR("OPTIONS");
     }
 }
 

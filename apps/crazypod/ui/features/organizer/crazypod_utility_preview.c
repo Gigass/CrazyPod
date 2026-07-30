@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -99,7 +101,7 @@ void crazypod_utility_preview_render(
         }
         if(miniapp_error < 0) {
             snprintf(detail_text, sizeof(detail_text),
-                     "Package error %d", miniapp_error);
+                     CP_FMT("Package error %d"), miniapp_error);
             detail = detail_text;
         }
     }
@@ -109,15 +111,15 @@ void crazypod_utility_preview_render(
                  LV_SYMBOL_LIST;
         color = 0xA8F12D;
         detail = state->selected == 0
-            ? "Choose a time-only workout"
+            ? CP_TR("Choose a time-only workout")
             : state->selected == 1
-                ? "Saved workout history"
-                : "Elapsed-time totals";
+                ? CP_TR("Saved workout history")
+                : CP_TR("Elapsed-time totals");
     }
     else if(state->route == WORKOUT_ROUTE_TYPES) {
         symbol = LV_SYMBOL_PLAY;
         color = 0xA8F12D;
-        detail = "Manual elapsed-time tracking";
+        detail = CP_TR("Manual elapsed-time tracking");
     }
     else if(state->route == WORKOUT_ROUTE_HISTORY) {
         const struct crazypod_workout *workout =
@@ -126,7 +128,7 @@ void crazypod_utility_preview_render(
         color = 0xA8F12D;
         if(workout != NULL) {
             snprintf(detail_text, sizeof(detail_text),
-                     "%04d-%02d-%02d · %lu min",
+                     CP_FMT("%04d-%02d-%02d · %lu min"),
                      (int)(workout->date / 10000),
                      (int)(workout->date / 100 % 100),
                      (int)(workout->date % 100),
@@ -134,15 +136,15 @@ void crazypod_utility_preview_render(
             detail = detail_text;
         }
         else
-            detail = "No saved workouts";
+            detail = CP_TR("No saved workouts");
     }
     else if(state->route == WORKOUT_ROUTE_FINISH_CONFIRM ||
             state->route == WORKOUT_ROUTE_DELETE_CONFIRM) {
         symbol = LV_SYMBOL_TRASH;
         color = 0xFF453A;
         detail = state->route == WORKOUT_ROUTE_FINISH_CONFIRM
-            ? "Hold center to save elapsed time"
-            : "Hold center to delete permanently";
+            ? CP_TR("Hold center to save elapsed time")
+            : CP_TR("Hold center to delete permanently");
     }
     else if(state->route == CLOCK_ROUTE_MENU) {
         static const char *const symbols[] = {
@@ -151,11 +153,11 @@ void crazypod_utility_preview_render(
         symbol = symbols[state->selected];
         color = state->selected == 0 ? 0xF26D5B :
                 state->selected == 1 ? 0x7B61FF : 0xFFB340;
-        detail = state->selected == 0 ? "Device local time" :
+        detail = state->selected == 0 ? CP_TR("Device local time") :
                  state->selected == 1
                     ? (get_sleep_timer_active()
-                        ? "Timer is running" : "Power off after playback")
-                    : "Precise elapsed time";
+                        ? CP_TR("Timer is running") : CP_TR("Power off after playback"))
+                    : CP_TR("Precise elapsed time");
     }
     else if(state->route == CLOCK_ROUTE_SLEEP_TIMER) {
         symbol = LV_SYMBOL_POWER;
@@ -163,12 +165,12 @@ void crazypod_utility_preview_render(
         if(get_sleep_timer_active()) {
             int remaining = get_sleep_timer();
             snprintf(detail_text, sizeof(detail_text),
-                     "%d:%02d remaining",
+                     CP_FMT("%d:%02d remaining"),
                      remaining / 60, remaining % 60);
             detail = detail_text;
         }
         else
-            detail = "Select a shutdown delay";
+            detail = CP_TR("Select a shutdown delay");
     }
     else if(state->route == CALENDAR_ROUTE_MENU) {
         static const char *const symbols[] = {
@@ -176,10 +178,10 @@ void crazypod_utility_preview_render(
             LV_SYMBOL_LIST, LV_SYMBOL_EDIT
         };
         static const char *const details[] = {
-            "Events on the current date",
-            "Future calendar events",
-            "Browse the month grid",
-            "Create a local event"
+            CP_TR("Events on the current date"),
+            CP_TR("Future calendar events"),
+            CP_TR("Browse the month grid"),
+            CP_TR("Create a local event")
         };
         symbol = symbols[state->selected];
         color = 0xFF453A;
@@ -198,17 +200,17 @@ void crazypod_utility_preview_render(
         color = 0xFF453A;
         if(event != NULL) {
             snprintf(detail_text, sizeof(detail_text),
-                     "%d · %s", event->date,
-                     event->time[0] != '\0' ? event->time : "All day");
+                     CP_FMT("%d · %s"), event->date,
+                     event->time[0] != '\0' ? event->time : CP_FMT("All day"));
             detail = detail_text;
         }
         else
-            detail = "Create an event on this iPod";
+            detail = CP_TR("Create an event on this iPod");
 
         {
             struct tm *now = get_time();
             static const char *const weekday[] = {
-                "S", "M", "T", "W", "T", "F", "S"
+                CP_TR("S"), CP_TR("M"), CP_TR("T"), CP_TR("W"), CP_TR("T"), CP_TR("F"), CP_TR("S")
             };
             int first_day =
                 (now->tm_wday - ((now->tm_mday - 1) % 7) + 7) % 7;
@@ -221,7 +223,7 @@ void crazypod_utility_preview_render(
                               0xF4F0E8, LV_OPA_COVER);
             make_box(swatch, 0, 0, 100, 20, 10,
                      color, LV_OPA_COVER);
-            snprintf(month, sizeof(month), "%d / %d",
+            snprintf(month, sizeof(month), CP_FMT("%d / %d"),
                      now->tm_mon + 1, now->tm_year + 1900);
             label = make_label(swatch, month, &lv_font_montserrat_8,
                                COLOR_WHITE, LV_OPA_COVER);
@@ -245,7 +247,7 @@ void crazypod_utility_preview_render(
                 if(day == now->tm_mday)
                     make_box(swatch, x + 1, y - 1, 11, 10,
                              LV_RADIUS_CIRCLE, color, LV_OPA_COVER);
-                snprintf(day_text, sizeof(day_text), "%d", day);
+                snprintf(day_text, sizeof(day_text), CP_FMT("%d"), day);
                 label = make_label(
                     swatch, day_text, &lv_font_montserrat_8,
                     day == now->tm_mday ? COLOR_WHITE : 0x252525,
@@ -263,16 +265,16 @@ void crazypod_utility_preview_render(
         symbol = state->selected == 3
             ? LV_SYMBOL_SAVE : LV_SYMBOL_EDIT;
         color = 0xFF453A;
-        detail = state->selected == 0 ? "Edit the event title" :
+        detail = state->selected == 0 ? CP_TR("Edit the event title") :
                  state->selected == 1
-                    ? "Center next day · Left previous"
+                    ? CP_TR("Center next day · Left previous")
                     : state->selected == 2
-                        ? "Center later · Left earlier"
+                        ? CP_TR("Center later · Left earlier")
                         : editor.error == 1
-                            ? "Enter a title before saving"
+                            ? CP_TR("Enter a title before saving")
                             : editor.error == 2
-                                ? "Could not write calendar.bin"
-                                : "Write event to local storage";
+                                ? CP_TR("Could not write calendar.bin")
+                                : CP_TR("Write event to local storage");
     }
     else if(state->route == CALENDAR_ROUTE_ACTIONS ||
             state->route == CALENDAR_ROUTE_DELETE_CONFIRM) {
@@ -281,10 +283,10 @@ void crazypod_utility_preview_render(
             ? LV_SYMBOL_TRASH : LV_SYMBOL_EDIT;
         color = 0xFF453A;
         detail = state->route == CALENDAR_ROUTE_DELETE_CONFIRM
-            ? "Hold center to delete permanently"
+            ? CP_TR("Hold center to delete permanently")
             : state->selected == 0
-                ? "Change this local event"
-                : "Open delete confirmation";
+                ? CP_TR("Change this local event")
+                : CP_TR("Open delete confirmation");
     }
     else if(state->route == CONTACTS_ROUTE_LIST) {
         const struct crazypod_contact *contact =
@@ -292,7 +294,7 @@ void crazypod_utility_preview_render(
         symbol = LV_SYMBOL_HOME;
         color = 0x4F9BFF;
         detail = contact != NULL && contact->phone[0] != '\0'
-            ? contact->phone : "Imported contact";
+            ? contact->phone : CP_TR("Imported contact");
     }
 
     if(state->route != CALENDAR_ROUTE_TODAY &&

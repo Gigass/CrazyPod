@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdint.h>
@@ -70,12 +72,12 @@ void crazypod_clock_screen_render(
     const struct crazypod_clock_screen_time *time)
 {
     static const char *const weekdays[] = {
-        "Sunday", "Monday", "Tuesday", "Wednesday",
-        "Thursday", "Friday", "Saturday"
+        CP_TR("Sunday"), CP_TR("Monday"), CP_TR("Tuesday"), CP_TR("Wednesday"),
+        CP_TR("Thursday"), CP_TR("Friday"), CP_TR("Saturday")
     };
     static const char *const months[] = {
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
+        CP_TR("January"), CP_TR("February"), CP_TR("March"), CP_TR("April"), CP_TR("May"), CP_TR("June"),
+        CP_TR("July"), CP_TR("August"), CP_TR("September"), CP_TR("October"), CP_TR("November"), CP_TR("December")
     };
     lv_obj_t *panel;
     lv_obj_t *label;
@@ -94,11 +96,11 @@ void crazypod_clock_screen_render(
         time->second_tenths, 0xFFFFFF, 0x0E0E0E);
 
     label = crazypod_ui_widget_label(
-        panel, "LOCAL TIME", &lv_font_montserrat_8,
+        panel, CP_TR("LOCAL TIME"), &lv_font_montserrat_8,
         0x5C5C5C, LV_OPA_COVER);
     lv_obj_set_style_text_letter_space(label, 2, 0);
     lv_obj_set_pos(label, 170, 34);
-    snprintf(text, sizeof(text), "%02d:%02d:%02d",
+    snprintf(text, sizeof(text), CP_FMT("%02d:%02d:%02d"),
              time->hour, time->minute, time->second);
     label = crazypod_ui_widget_label(
         panel, text, &lv_font_montserrat_24,
@@ -114,7 +116,7 @@ void crazypod_clock_screen_render(
         0x5C5C5C, LV_OPA_COVER);
     lv_obj_set_pos(label, 170, 97);
     label = crazypod_ui_widget_label(
-        panel, "DEVICE TIME", &lv_font_montserrat_8, 0x949494, 230);
+        panel, CP_TR("DEVICE TIME"), &lv_font_montserrat_8, 0x949494, 230);
     lv_obj_set_style_text_letter_space(label, 1, 0);
     lv_obj_set_pos(label, 170, 132);
 }
@@ -124,7 +126,7 @@ void crazypod_stopwatch_screen_render(
     const struct crazypod_stopwatch_screen_model *model)
 {
     static const char *const style_names[] = {
-        "CLASSIC SILVER", "OBSIDIAN GOLD", "CHAMPAGNE GOLD"
+        CP_TR("CLASSIC SILVER"), CP_TR("OBSIDIAN GOLD"), CP_TR("CHAMPAGNE GOLD")
     };
     static const uint32_t canvas_colors[] = {
         0xF9F9F7, 0xF2F2F2, 0xFFFFFF
@@ -169,7 +171,7 @@ void crazypod_stopwatch_screen_render(
     lv_obj_set_pos(label, 8, 168);
 
     label = crazypod_ui_widget_label(
-        panel, "CHRONOGRAPH", &lv_font_montserrat_8,
+        panel, CP_TR("CHRONOGRAPH"), &lv_font_montserrat_8,
         ink_colors[style], 110);
     lv_obj_set_style_text_letter_space(label, 2, 0);
     lv_obj_set_pos(label, 166, 22);
@@ -180,11 +182,11 @@ void crazypod_stopwatch_screen_render(
         ink_colors[style], LV_OPA_COVER);
     lv_obj_set_pos(label, 166, 39);
     label = crazypod_ui_widget_label(
-        panel, model->running ? "RUNNING" : "PAUSED",
+        panel, model->running ? CP_TR("RUNNING") : CP_TR("PAUSED"),
         &lv_font_montserrat_8, ink_colors[style], 225);
     lv_obj_set_pos(label, 166, 69);
     if(model->lap_count > 0) {
-        snprintf(text, sizeof(text), "%d LAPS", model->lap_count);
+        snprintf(text, sizeof(text), CP_FMT("%d LAPS"), model->lap_count);
         label = crazypod_ui_widget_label(
             panel, text, &lv_font_montserrat_8,
             ink_colors[style], 140);
@@ -195,7 +197,7 @@ void crazypod_stopwatch_screen_render(
     first_lap = model->lap_count > 4 ? model->lap_count - 4 : 0;
     if(model->lap_count > 0) {
         label = crazypod_ui_widget_label(
-            panel, "LAP       TOTAL", &lv_font_montserrat_8,
+            panel, CP_TR("LAP       TOTAL"), &lv_font_montserrat_8,
             ink_colors[style], 105);
         lv_obj_set_pos(label, 168, 90);
     }
@@ -203,7 +205,7 @@ void crazypod_stopwatch_screen_render(
         unsigned lap_hundredths =
             (unsigned)(model->laps[lap] * 100 /
                        model->ticks_per_second);
-        snprintf(text, sizeof(text), "%02d     %02u:%02u.%02u",
+        snprintf(text, sizeof(text), CP_FMT("%02d     %02u:%02u.%02u"),
                  lap + 1, lap_hundredths / 6000,
                  lap_hundredths / 100 % 60,
                  lap_hundredths % 100);
@@ -215,15 +217,15 @@ void crazypod_stopwatch_screen_render(
     if(model->lap_count == 0) {
         label = crazypod_ui_widget_label(
             panel,
-            "CENTER  START / PAUSE\nRIGHT   RECORD LAP\nLEFT    RESET",
+            CP_TR("CENTER  START / PAUSE\nRIGHT   RECORD LAP\nLEFT    RESET"),
             &lv_font_montserrat_8, ink_colors[style], 150);
         lv_obj_set_pos(label, 166, 101);
     }
     label = crazypod_ui_widget_label(
         panel,
         model->reset_armed
-            ? "Press LEFT again to reset"
-            : "Wheel changes style before first lap",
+            ? CP_TR("Press LEFT again to reset")
+            : CP_TR("Wheel changes style before first lap"),
         &lv_font_montserrat_8, 0x949494, 210);
     lv_obj_set_width(label, 136);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);

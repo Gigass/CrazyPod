@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -49,21 +51,21 @@ static void render_loading(void)
     title = crazypod_ui_widget_label(
         library.host.parent,
         library.artwork_cache_failed
-            ? "Artwork Cache Failed"
+            ? CP_TR("Artwork Cache Failed")
             : library.scan_start_failed
-                ? "Library Scan Failed"
+                ? CP_TR("Library Scan Failed")
                 : library.artwork_preparing
-                    ? "Preparing Album Artwork"
+                    ? CP_TR("Preparing Album Artwork")
                     : crazypod_music_catalog_validation() ==
                         CRAZYPOD_MUSIC_VALIDATION_RUNNING
-                        ? "Checking Music Library"
-                        : "Building Music Library",
+                        ? CP_TR("Checking Music Library")
+                        : CP_TR("Building Music Library"),
         &lv_font_montserrat_12, COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(title, 260);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(title, 30, 132);
     if(library.artwork_preparing) {
-        snprintf(detail, sizeof(detail), "%d / %d albums",
+        snprintf(detail, sizeof(detail), CP_FMT("%d / %d albums"),
                  crazypod_artwork_library_prime_completed(),
                  crazypod_artwork_library_prime_total());
     }
@@ -71,13 +73,13 @@ static void render_loading(void)
         snprintf(
             detail, sizeof(detail), "%s",
             library.artwork_cache_failed
-                ? "Could not commit the album artwork cache"
+                ? CP_FMT("Could not commit the album artwork cache")
                 : library.scan_start_failed
-                    ? "No background thread was available"
+                    ? CP_FMT("No background thread was available")
                     : crazypod_music_catalog_validation() ==
                         CRAZYPOD_MUSIC_VALIDATION_RUNNING
-                        ? "Checking local file names, sizes and dates"
-                        : "Reading local files and metadata");
+                        ? CP_FMT("Checking local file names, sizes and dates")
+                        : CP_FMT("Reading local files and metadata"));
     }
     detail_label = crazypod_ui_widget_label(
         library.host.parent, detail, &lv_font_montserrat_8,
@@ -269,10 +271,10 @@ bool crazypod_music_library_update(void)
         if(library.loading_detail != NULL) {
             char progress[48];
 
-            snprintf(progress, sizeof(progress), "%d / %d albums",
+            snprintf(progress, sizeof(progress), CP_FMT("%d / %d albums"),
                      crazypod_artwork_library_prime_completed(),
                      crazypod_artwork_library_prime_total());
-            lv_label_set_text(library.loading_detail, progress);
+            CP_LV_LABEL_SET_TEXT(library.loading_detail, progress);
         }
         if(crazypod_artwork_library_prime_failed()) {
             library.artwork_preparing = false;

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include "../../../crazypod_notes.h"
@@ -16,9 +18,9 @@
 #define EDITOR_CHARACTER_COUNT 36
 
 static const char *const editor_characters[EDITOR_CHARACTER_COUNT] = {
-    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
-    "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
-    "U", "V", "W", "X", "Y", "Z",
+    CP_TR("A"), CP_TR("B"), CP_TR("C"), CP_TR("D"), CP_TR("E"), CP_TR("F"), CP_TR("G"), CP_TR("H"), CP_TR("I"), CP_TR("J"),
+    CP_TR("K"), CP_TR("L"), CP_TR("M"), CP_TR("N"), CP_TR("O"), CP_TR("P"), CP_TR("Q"), CP_TR("R"), CP_TR("S"), CP_TR("T"),
+    CP_TR("U"), CP_TR("V"), CP_TR("W"), "X", CP_TR("Y"), CP_TR("Z"),
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
 };
 
@@ -37,9 +39,9 @@ static const char *editor_title(int index, const char *final_action)
     if(index >= 0 && index < EDITOR_CHARACTER_COUNT)
         return editor_characters[index];
     if(index == EDITOR_CHARACTER_COUNT)
-        return "Space";
+        return CP_TR("Space");
     if(index == EDITOR_CHARACTER_COUNT + 1)
-        return "Backspace";
+        return CP_TR("Backspace");
     if(index == EDITOR_CHARACTER_COUNT + 2)
         return final_action;
     return "";
@@ -88,36 +90,36 @@ const char *crazypod_notes_feature_title(
 {
     switch(state->route) {
     case NOTES_ROUTE_MENU:
-        return "NOTES";
+        return CP_TR("NOTES");
     case NOTES_ROUTE_COMPOSER:
         return crazypod_notes_controller_body_active()
-            ? "EDIT BODY" : "EDIT TITLE";
+            ? CP_TR("EDIT BODY") : CP_TR("EDIT TITLE");
     case NOTES_ROUTE_EXIT_ACTIONS:
-        return "UNSAVED NOTE";
+        return CP_TR("UNSAVED NOTE");
     case NOTES_ROUTE_DISCARD_CONFIRM:
-        return "DISCARD DRAFT";
+        return CP_TR("DISCARD DRAFT");
     case NOTES_ROUTE_SEARCH:
-        return "SEARCH NOTES";
+        return CP_TR("SEARCH NOTES");
     case NOTES_ROUTE_SEARCH_RESULTS:
-        return "RESULTS";
+        return CP_TR("RESULTS");
     case NOTES_ROUTE_READER: {
         const struct crazypod_note *note =
             crazypod_note_find((uint32_t)state->group);
 
-        return note != NULL ? note->title : "NOTE";
+        return note != NULL ? note->title : CP_TR("NOTE");
     }
     case NOTES_ROUTE_ACTIONS:
-        return "NOTE ACTIONS";
+        return CP_TR("NOTE ACTIONS");
     case NOTES_ROUTE_DELETED:
-        return "DELETED";
+        return CP_TR("DELETED");
     case NOTES_ROUTE_DELETED_ACTIONS:
-        return "DELETED NOTE";
+        return CP_TR("DELETED NOTE");
     case NOTES_ROUTE_DELETE_CONFIRM:
-        return "DELETE NOTE";
+        return CP_TR("DELETE NOTE");
     case NOTES_ROUTE_PERMANENT_CONFIRM:
-        return "ERASE NOTE";
+        return CP_TR("ERASE NOTE");
     case NOTES_ROUTE_EMPTY_TRASH_CONFIRM:
-        return "EMPTY DELETED";
+        return CP_TR("EMPTY DELETED");
     default:
         return "";
     }
@@ -134,14 +136,14 @@ bool crazypod_notes_feature_item_title(
         int note_index;
 
         if(index == 0)
-            *title = "New Note";
+            *title = CP_TR("New Note");
         else if(crazypod_notes_controller_draft_available() &&
                 index == 1)
-            *title = "Continue Draft";
+            *title = CP_TR("Continue Draft");
         else if(index == deleted_index - 1)
-            *title = "Search";
+            *title = CP_TR("Search");
         else if(index == deleted_index)
-            *title = "Deleted";
+            *title = CP_TR("Deleted");
         else {
             note_index = index - home_note_start();
             note = note_index >= 0
@@ -151,18 +153,18 @@ bool crazypod_notes_feature_item_title(
         return true;
     }
     case NOTES_ROUTE_COMPOSER:
-        *title = editor_title(index, "Save Note");
+        *title = editor_title(index, CP_TR("Save Note"));
         return true;
     case NOTES_ROUTE_EXIT_ACTIONS:
-        *title = index == 0 ? "Save" :
-            index == 1 ? "Keep" :
-            index == 2 ? "Discard" : "";
+        *title = index == 0 ? CP_TR("Save") :
+            index == 1 ? CP_TR("Keep") :
+            index == 2 ? CP_TR("Discard") : "";
         return true;
     case NOTES_ROUTE_DISCARD_CONFIRM:
-        *title = "Hold Center to Discard";
+        *title = CP_TR("Hold Center to Discard");
         return true;
     case NOTES_ROUTE_SEARCH:
-        *title = editor_title(index, "View Results");
+        *title = editor_title(index, CP_TR("View Results"));
         return true;
     case NOTES_ROUTE_SEARCH_RESULTS: {
         const struct crazypod_note *note =
@@ -177,16 +179,16 @@ bool crazypod_notes_feature_item_title(
             crazypod_note_find((uint32_t)state->group);
 
         if(index == 0)
-            *title = note != NULL && note->pinned ? "Unpin" : "Pin";
+            *title = note != NULL && note->pinned ? CP_TR("Unpin") : CP_TR("Pin");
         else
-            *title = index == 1 ? "Edit" :
-                index == 2 ? "Duplicate" :
-                index == 3 ? "Delete" : "";
+            *title = index == 1 ? CP_TR("Edit") :
+                index == 2 ? CP_TR("Duplicate") :
+                index == 3 ? CP_TR("Delete") : "";
         return true;
     }
     case NOTES_ROUTE_DELETED:
         if(index == crazypod_notes_count(true))
-            *title = "Empty Deleted";
+            *title = CP_TR("Empty Deleted");
         else {
             const struct crazypod_note *note =
                 crazypod_note_get(true, index);
@@ -195,20 +197,20 @@ bool crazypod_notes_feature_item_title(
         }
         return true;
     case NOTES_ROUTE_DELETED_ACTIONS:
-        *title = index == 0 ? "Restore" :
-            index == 1 ? "Erase Forever" : "";
+        *title = index == 0 ? CP_TR("Restore") :
+            index == 1 ? CP_TR("Erase Forever") : "";
         return true;
     case NOTES_ROUTE_DELETE_CONFIRM:
-        *title = "Hold Center to Delete";
+        *title = CP_TR("Hold Center to Delete");
         return true;
     case NOTES_ROUTE_PERMANENT_CONFIRM:
-        *title = "Hold Center to Erase";
+        *title = CP_TR("Hold Center to Erase");
         return true;
     case NOTES_ROUTE_EMPTY_TRASH_CONFIRM:
-        *title = "Hold Center to Empty";
+        *title = CP_TR("Hold Center to Empty");
         return true;
     case NOTES_ROUTE_READER:
-        *title = "Reader";
+        *title = CP_TR("Reader");
         return true;
     default:
         return false;

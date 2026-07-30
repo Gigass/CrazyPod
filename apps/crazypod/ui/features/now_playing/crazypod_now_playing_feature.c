@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -52,7 +54,7 @@ const char *crazypod_now_playing_feature_title(
     const struct route_state *state)
 {
     return state->route == MUSIC_ROUTE_QUEUE
-        ? "UP NEXT" : "NOW PLAYING";
+        ? CP_TR("UP NEXT") : CP_TR("NOW PLAYING");
 }
 
 bool crazypod_now_playing_feature_item_title(
@@ -63,7 +65,7 @@ bool crazypod_now_playing_feature_item_title(
     const struct crazypod_track *track;
 
     if(state->route == MUSIC_ROUTE_NOW_PLAYING) {
-        *title = "Now Playing";
+        *title = CP_TR("Now Playing");
         return true;
     }
     if(state->route != MUSIC_ROUTE_QUEUE)

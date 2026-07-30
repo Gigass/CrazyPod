@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include "../../../crazypod_photos.h"
@@ -39,15 +41,15 @@ const char *crazypod_photos_feature_title(
 {
     switch(state->route) {
     case PHOTOS_ROUTE_MENU:
-        return "MEDIA";
+        return CP_TR("MEDIA");
     case PHOTOS_ROUTE_LIBRARY:
-        return "PHOTOS";
+        return CP_TR("PHOTOS");
     case PHOTOS_ROUTE_VIDEOS:
-        return "VIDEOS";
+        return CP_TR("VIDEOS");
     case PHOTOS_ROUTE_FAVORITES:
-        return "FAVORITES";
+        return CP_TR("FAVORITES");
     case PHOTOS_ROUTE_DETAIL:
-        return "PHOTO";
+        return CP_TR("PHOTO");
     default:
         return "";
     }
@@ -60,7 +62,7 @@ bool crazypod_photos_feature_item_title(
     switch(state->route) {
     case PHOTOS_ROUTE_MENU: {
         static const char *const titles[] = {
-            "Photos", "Videos", "Favorites"
+            CP_TR("Photos"), CP_TR("Videos"), CP_TR("Favorites")
         };
 
         *title = index >= 0 && index < 3 ? titles[index] : "";
@@ -77,7 +79,7 @@ bool crazypod_photos_feature_item_title(
             crazypod_photo_favorite_index(index));
         return true;
     case PHOTOS_ROUTE_DETAIL:
-        *title = index == 0 ? "Fit" : "2x";
+        *title = index == 0 ? CP_TR("Fit") : "2x";
         return true;
     default:
         return false;

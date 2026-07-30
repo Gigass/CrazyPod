@@ -83,6 +83,7 @@ crazypod/crazypod_book_cover.c
 crazypod/crazypod_organizer.c
 crazypod/crazypod_workouts.c
 crazypod/crazypod_state.c
+crazypod/crazypod_l10n.c
 crazypod/crazypod_appearance.c
 crazypod/crazypod_presets.c
 crazypod/crazypod_icons.c

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #include <stdio.h>
 
 #include "lvgl.h"
@@ -47,17 +49,17 @@ void crazypod_notes_screen_render_composer(
 
     label = crazypod_ui_widget_label(
         paper,
-        (*model->editor).source_id == 0 ? "NEW NOTE" : "EDIT NOTE",
+        (*model->editor).source_id == 0 ? CP_TR("NEW NOTE") : CP_TR("EDIT NOTE"),
         &lv_font_montserrat_8, 0x7F2D23, LV_OPA_COVER);
     lv_obj_set_pos(label, 48, 13);
     label = crazypod_ui_widget_label(
-        paper, model->dirty ? "Unsaved" : "Saved",
+        paper, model->dirty ? CP_TR("Unsaved") : CP_TR("Saved"),
         &lv_font_montserrat_8, 0x6E5B42, 220);
     lv_obj_set_width(label, 88);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_set_pos(label, 192, 13);
 
-    label = crazypod_ui_widget_label(paper, "TITLE", &lv_font_montserrat_8,
+    label = crazypod_ui_widget_label(paper, CP_TR("TITLE"), &lv_font_montserrat_8,
                        model->body_active ? 0x8C7958 : 0x94291F,
                        230);
     lv_obj_set_pos(label, 48, 31);
@@ -65,7 +67,7 @@ void crazypod_notes_screen_render_composer(
         paper,
         model->body_active
             ? ((*model->editor).title[0] != '\0'
-                ? (*model->editor).title : "Untitled")
+                ? (*model->editor).title : CP_TR("Untitled"))
             : crazypod_ui_text_with_cursor(
                 (*model->editor).title, model->title_cursor,
                 title_display, sizeof(title_display)),
@@ -78,7 +80,7 @@ void crazypod_notes_screen_render_composer(
              model->body_active ? 0x8C7958 : 0xBC4034,
              model->body_active ? 55 : 145);
 
-    label = crazypod_ui_widget_label(paper, "BODY", &lv_font_montserrat_8,
+    label = crazypod_ui_widget_label(paper, CP_TR("BODY"), &lv_font_montserrat_8,
                        model->body_active ? 0x94291F : 0x8C7958,
                        230);
     lv_obj_set_pos(label, 48, 72);
@@ -86,7 +88,7 @@ void crazypod_notes_screen_render_composer(
         paper,
         !model->body_active
             ? ((*model->editor).body[0] != '\0'
-                ? (*model->editor).body : "Empty body")
+                ? (*model->editor).body : CP_TR("Empty body"))
             : crazypod_ui_text_with_cursor(
                 (*model->editor).body, model->body_cursor,
                 body_display, sizeof(body_display)),
@@ -110,7 +112,7 @@ void crazypod_notes_screen_render_composer(
     lv_obj_set_pos(label, 4, 4);
     label = crazypod_ui_widget_label(
         key,
-        "Wheel choose  ·  Center type  ·  PLAY field",
+        CP_TR("Wheel choose  ·  Center type  ·  PLAY field"),
         &lv_font_montserrat_8, CRAZYPOD_NOTES_WHITE, 155);
     lv_obj_set_width(label, 164);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
@@ -134,7 +136,7 @@ void crazypod_notes_screen_render_reader(
     if(first > maximum)
         first = maximum;
     label = crazypod_ui_widget_label(content,
-                       note != NULL ? note->title : "Missing Note",
+                       note != NULL ? note->title : CP_TR("Missing Note"),
                        CRAZYPOD_NOTES_FONT, CRAZYPOD_NOTES_WHITE, LV_OPA_COVER);
     lv_obj_set_pos(label, 14, 42);
     lv_obj_set_width(label, 250);
@@ -153,7 +155,7 @@ void crazypod_notes_screen_render_reader(
     crazypod_ui_text_note_window(body, first,
                             window, sizeof(window));
     label = crazypod_ui_widget_label(paper,
-                       window[0] != '\0' ? window : "This note is empty.",
+                       window[0] != '\0' ? window : CP_TR("This note is empty."),
                        CRAZYPOD_NOTES_FONT, 0x302A22,
                        window[0] != '\0' ? 255 : 125);
     lv_obj_set_pos(label, 9, 7);
@@ -161,7 +163,7 @@ void crazypod_notes_screen_render_reader(
     lv_obj_set_height(label, 126);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_CLIP);
 
-    snprintf(progress, sizeof(progress), "%d / %d  ·  Center: Actions",
+    snprintf(progress, sizeof(progress), CP_FMT("%d / %d  ·  Center: Actions"),
              first + 1, lines);
     label = crazypod_ui_widget_label(content, progress, &lv_font_montserrat_8,
                        CRAZYPOD_NOTES_WHITE, 125);

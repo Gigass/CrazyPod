@@ -21,6 +21,7 @@
 #include "crazypod_audio_shims.h"
 #include "crazypod_apps.h"
 #include "crazypod_checksum.h"
+#include "crazypod_l10n.h"
 #include "crazypod_playlist.h"
 #include "crazypod_state.h"
 
@@ -30,7 +31,7 @@
 #define QUEUE_PATH STATE_DIRECTORY "/queue.m3u8"
 #define QUEUE_TEMP_PATH STATE_DIRECTORY "/queue.tmp"
 #define STATE_MAGIC 0x43505354u
-#define STATE_VERSION 9u
+#define STATE_VERSION 10u
 #define STATE_SAVE_INTERVAL (30 * HZ)
 #define STATE_SAVE_RETRY_INTERVAL (30 * HZ)
 #define STATE_SAVE_MAX_RETRY_SHIFT 3
@@ -287,6 +288,43 @@ struct crazypod_state_disk_v8 {
     uint32_t checksum;
 };
 
+struct crazypod_state_disk_v9 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t usb_charging;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t menu_count;
+    uint32_t menu_enabled_mask;
+    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    int32_t reduce_motion;
+    int32_t storage_mode;
+    uint32_t checksum;
+};
+
 struct crazypod_state_disk {
     uint32_t magic;
     uint32_t version;
@@ -321,6 +359,7 @@ struct crazypod_state_disk {
     uint8_t menu_order[CRAZYPOD_APP_COUNT];
     int32_t reduce_motion;
     int32_t storage_mode;
+    int32_t language;
     uint32_t checksum;
 };
 
@@ -427,6 +466,13 @@ static uint32_t state_v8_checksum(const struct crazypod_state_disk_v8 *state)
         offsetof(struct crazypod_state_disk_v8, checksum));
 }
 
+static uint32_t state_v9_checksum(const struct crazypod_state_disk_v9 *state)
+{
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v9, checksum));
+}
+
 static bool read_exact(int fd, void *buffer, size_t size)
 {
     unsigned char *bytes = buffer;
@@ -506,6 +552,22 @@ static bool load_header(struct crazypod_state_disk *state)
        header[2] == sizeof(*state)) {
         valid = read_exact(fd, state, sizeof(*state)) &&
                 state->checksum == state_checksum(state);
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 9u &&
+            header[2] == sizeof(struct crazypod_state_disk_v9)) {
+        struct crazypod_state_disk_v9 state_v9;
+
+        valid = read_exact(fd, &state_v9, sizeof(state_v9)) &&
+                state_v9.checksum == state_v9_checksum(&state_v9);
+        if(valid) {
+            memcpy(state, &state_v9,
+                   offsetof(struct crazypod_state_disk_v9, checksum));
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+            state->language = CRAZYPOD_LANGUAGE_ENGLISH;
+        }
     }
     else if(header[0] == STATE_MAGIC &&
             header[1] == 8u &&
@@ -863,6 +925,7 @@ void crazypod_state_load(void)
     state_save_failures = 0;
     state_dirty = false;
     reduce_motion = false;
+    crazypod_language_set(CRAZYPOD_LANGUAGE_ENGLISH);
     global_settings.storage_mode = 0;
     storage_set_storage_mode(global_settings.storage_mode);
 
@@ -871,6 +934,9 @@ void crazypod_state_load(void)
         return;
 
     reduce_motion = state.reduce_motion != 0;
+    crazypod_language_set(crazypod_language_valid(state.language)
+        ? (enum crazypod_language)state.language
+        : CRAZYPOD_LANGUAGE_ENGLISH);
     clamp_and_apply_settings(&state);
     if(state.menu_count > 0 &&
        state.menu_count <= CRAZYPOD_APP_COUNT)
@@ -1066,6 +1132,7 @@ void crazypod_state_save(bool force)
                          &state.menu_enabled_mask);
     state.reduce_motion = reduce_motion ? 1 : 0;
     state.storage_mode = global_settings.storage_mode;
+    state.language = crazypod_language_current();
     state.checksum = state_checksum(&state);
 
     fd = open(STATE_TEMP_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);

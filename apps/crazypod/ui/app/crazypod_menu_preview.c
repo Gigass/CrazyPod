@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include "settings.h"
@@ -189,8 +191,8 @@ void crazypod_menu_preview_render(
     crazypod_preview_motion_reset_root(preview.host.parent);
     if(state->route == MUSIC_ROUTE_SEARCH) {
         render_editor(
-            crazypod_music_search_query(), "Any track",
-            "Searches title, artist and album.");
+            crazypod_music_search_query(), CP_TR("Any track"),
+            CP_TR("Searches title, artist and album."));
     }
     else if(state->route == CALENDAR_ROUTE_TITLE_EDITOR) {
         static char cursor_text[98];
@@ -198,8 +200,8 @@ void crazypod_menu_preview_render(
         render_editor(
             crazypod_organizer_feature_editor_title(
                 cursor_text, sizeof(cursor_text)),
-            "Event title",
-            "Center inserts · Left/Right moves cursor.");
+            CP_TR("Event title"),
+            CP_TR("Center inserts · Left/Right moves cursor."));
     }
     else if(state->route == MUSIC_ROUTE_MENU) {
         crazypod_music_feature_render_root_preview(

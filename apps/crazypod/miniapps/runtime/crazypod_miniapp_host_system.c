@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -56,6 +58,7 @@ int crazypod_miniapp_host_system_info(struct cp_system_info *info)
         return CRAZYPOD_MINIAPP_ERROR_STATE;
     memset(info, 0, sizeof(*info));
     info->struct_size = sizeof(*info);
+    info->language = (uint32_t)crazypod_language_current();
     battery = battery_level();
     minutes = battery_time();
     info->battery_percent =
@@ -129,14 +132,14 @@ void crazypod_miniapp_host_format_datetime(
     if(value == NULL)
         return;
     if(format == CP_DATETIME_DATE)
-        snprintf(buffer, capacity, "%04d-%02d-%02d",
+        snprintf(buffer, capacity, CP_FMT("%04d-%02d-%02d"),
                  value->tm_year + 1900, value->tm_mon + 1,
                  value->tm_mday);
     else if(format == CP_DATETIME_TIME)
-        snprintf(buffer, capacity, "%02d:%02d",
+        snprintf(buffer, capacity, CP_FMT("%02d:%02d"),
                  value->tm_hour, value->tm_min);
     else
-        snprintf(buffer, capacity, "%04d-%02d-%02d %02d:%02d",
+        snprintf(buffer, capacity, CP_FMT("%04d-%02d-%02d %02d:%02d"),
                  value->tm_year + 1900, value->tm_mon + 1,
                  value->tm_mday, value->tm_hour, value->tm_min);
     buffer[capacity - 1] = '\0';

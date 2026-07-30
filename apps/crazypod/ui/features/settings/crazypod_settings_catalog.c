@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include "lvgl.h"
@@ -10,12 +12,14 @@
 #include "crazypod_settings_catalog.h"
 
 const char *const crazypod_settings_menu_titles[] = {
-    "Sound", "Display", "Playback", "Power", "Controls", "Main Menu"
+    CP_TR("Sound"), CP_TR("Display"), CP_TR("Playback"), CP_TR("Power"), CP_TR("Controls"), CP_TR("Main Menu"),
+    CP_TR("Language")
 };
 
 const char *const crazypod_settings_menu_symbols[] = {
     LV_SYMBOL_AUDIO, LV_SYMBOL_EYE_OPEN, LV_SYMBOL_PLAY,
-    LV_SYMBOL_POWER, LV_SYMBOL_SETTINGS, LV_SYMBOL_LIST
+    LV_SYMBOL_POWER, LV_SYMBOL_SETTINGS, LV_SYMBOL_LIST,
+    LV_SYMBOL_HOME
 };
 
 static const int sound_items[] = {

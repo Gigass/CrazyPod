@@ -1,6 +1,6 @@
 # CrazyPod project status
 
-Status date: 2026-07-30 01:25 CST
+Status date: 2026-07-30 09:38 CST
 
 This document separates implemented code from build results, device
 installation records, and design proposals. A task discussion is not evidence
@@ -17,16 +17,16 @@ separately.
 
 ### Conversation coverage
 
-The current Codex 50-task index exposes 21 CrazyPod tasks updated from
-2026-07-29 through 2026-07-30. This audit read those task records and checked
-their claims against the current Git tree, build artifacts, and working-tree
-diff. The index does not expose tasks that have fallen outside its current
-window, so this is an audit of the available recent history, not every
-CrazyPod task ever created.
+This audit re-read the CrazyPod tasks updated after the 01:25 documentation
+sync, including localization, lock-screen interaction, Now Playing controls,
+icon alignment, and the active display-flicker investigation. Claims were
+checked against the current source, generated artifacts, working-tree diff,
+and recorded device-copy results. The Codex index is a recent-history window,
+not a complete archive of every CrazyPod task.
 
 ## Recent progress: 2026-07-29 to 2026-07-30
 
-### Implemented and committed
+### Implemented in the current source
 
 - Split `crazypod_ui.c` from 18,456 lines into feature, shell, presentation,
   navigation, platform, EPUB, photo, video, wallpaper, and Mini App modules.
@@ -60,40 +60,50 @@ CrazyPod task ever created.
 - Added Latin/CJK collation, pinyin A-Z grouping, fast-wheel section jumps,
   a 760ms letter HUD, and shared marquee behavior for Home, Now Playing, and
   selected list rows.
+- Added nine-language runtime localization: English, Simplified Chinese,
+  Traditional Chinese, Japanese, Korean, German, French, Spanish, and Brazilian
+  Portuguese. Settings applies the language immediately and state version 10
+  persists it; older state versions migrate to English.
+- Added 856 firmware translation keys, 27 translated Calculator/Pomodoro
+  strings, strict missing-key and bare-string audits, UTF-8 LCD decoding, and
+  complete 8/10/12/14/16px font subsets.
+- Replaced the lock-screen wheel-distance gesture with a 0.5-second Select
+  hold. Early release cancels progress; the opening shackle animation and
+  post-animation input isolation were rebuilt.
+- Added the temporary 18px-wide left-edge volume HUD on Now Playing. Playback,
+  favorite, repeat, shuffle, lyrics, progress, and queue status icons now use
+  consistent optical centering, with repeat-one rendered as a combined symbol.
+- Unified menu-row icon and text vertical centering, and removed the fixed text
+  clipping heights from search and choice overlays.
 - Detached `Gigass/CrazyPod` from the upstream GitHub fork network. `origin`
   points to the independent repository, and `upstream` remains fetch-only
   because its push URL is `file:///dev/null`.
 
 ### In progress or not yet complete
 
-- Two uncommitted working-tree changes fix a marquee regression: short titles
-  remain still, long titles scroll horizontally, and list-row height follows
-  the font's 17px line height. Simulator pixel checks confirmed no movement for
-  short text and horizontal-only movement for long text. Host tests, Simulator,
-  ARM packaging, 301-file device verification, and safe eject all passed. The
-  code still needs a Git commit and post-boot physical interaction check.
-- Nine-language localization remains a design only. No `crazypod_l10n`
-  module, language setting, translated string table, font subset, or state
-  migration exists in source.
+- Localization and the recent interaction/presentation changes remain
+  uncommitted in a broad working tree. They need review and coherent commits;
+  the old description of only two uncommitted marquee files is no longer true.
 - 3.5mm headset remote support remains unimplemented. The current iPod 6G
   target lacks the Mikey remote driver, and CrazyPod's raw-button
   normalization would also need multimedia/remote event handling.
-- The requested branch set `main`, `dev`, and `stable` is not clean yet.
-  Local `DEV` remains uppercase; remote `DEV`, `stablerelease1`, and `release`
-  still exist. `release` contains three commits outside `main`, so deleting it
-  still requires explicit confirmation.
-- The current `DEV` branch is one commit ahead of `origin/DEV`. Commit
-  `96aa042d1f` removes the superseded Now Playing volume popup. The two
-  marquee files above are also uncommitted.
+- Local `main` and `stable`, plus `origin/main` and
+  `origin/stablerelease1`, point to `6c5f960bb7`. `origin/dev` is two commits
+  behind. `release` still has three commits outside `main`, so branch cleanup
+  remains unresolved.
+- Intermittent white block flicker has been reported in both CrazyPod and the
+  stock iPod firmware. Hardware diagnosis is active; no LCD, connector, power,
+  or mainboard root cause has been established.
 
 ## Validation snapshot
 
 | Level | Result |
 | --- | --- |
 | Source review | Recent Codex tasks, commits since 2026-07-29, current source, branch state, and working-tree diff inspected |
-| Simulator build | Current working tree passes the incremental simulator build; `build-sim/rockboxui` was produced at 2026-07-30 01:21 CST |
+| Simulator build | Current working tree passes the incremental simulator build; `build-sim/rockboxui` was produced at 2026-07-30 09:08 CST |
 | ARM build | Current working tree passes the `ipod6g` build, stack gate, package build, and ZIP integrity check |
 | UI and architecture tests | Current working tree passes UI host tests, Mini App host tests, EPUB host tests, the architecture gate, and `git diff --check` |
+| Localization | Strict audit reports 0 errors and 0 warnings; all five generated font sizes cover all 1,344 required non-whitespace characters |
 | Video simulator test | MPEG-2 video and MP2 audio open through the integrated engine; poster rendering, playback controls, and persisted resume at 0:06 pass |
 | Mini App host tests | SDK ABI-prefix, Calculator, Pomodoro, crypto, and host input-pacing tests pass, including revision 3 tail gating, fixed-layout bitmap commands, one visible focus step per frame, bounded backlog, direction reversal, and accelerated numeric editing |
 | ARM Mini App runtime | Calculator payload loaded at its real ARM address with dirty-then-cleared BSS renders `0` initially and after AC in instruction-level emulation |
@@ -101,30 +111,30 @@ CrazyPod task ever created.
 | Mini App launch path | Package verification is cached by app ID and version after startup/install/USB rescan; normal list entry and launch no longer repeat Ed25519, icon, binary, and resource hashing; FAT AppleDouble `._*.cpk` files are ignored before parsing |
 | Package test | `CrazyPod-6G.zip` passes `unzip -tq` |
 | Package contents | 324 ZIP entries, including 39 playback codecs, 256 app icons, and 2 signed Mini App packages |
-| Physical copy | Latest recorded device firmware is SHA-256 `1b939f9266c89aac4d13635a3da5755189d59e7a9d6b956328fd655fb3c0440b`; all 301 package files matched and the iPod was safely ejected |
+| Physical copy | Latest recorded device firmware is SHA-256 `6e087dc7202a8fce085c7a78be45ad01ece66b33bc4710bc20f06b54f6f62b9d`; 324 package entries were verified, the FAT32 check passed, user media and state were retained, and the iPod was safely ejected |
 | Full hardware regression | Incomplete |
 
 Artifact snapshot from this audit:
 
 ```text
 rockbox.ipod
-  size:    1,594,044 bytes
-  sha256:  1b939f9266c89aac4d13635a3da5755189d59e7a9d6b956328fd655fb3c0440b
+  size:    2,303,296 bytes
+  sha256:  6e087dc7202a8fce085c7a78be45ad01ece66b33bc4710bc20f06b54f6f62b9d
 
 CrazyPod-6G.zip
-  size:    9,739,910 bytes
-  sha256:  393b5cdf1e4b56257909f58ab0c105d45a349b1726c2781362496e84d48c177e
+  size:    10,149,192 bytes
+  sha256:  b11c07416b37913b04da4e0b4e35d7388bd3a724e2befe10080327dc2108a9b9
 
 build-sim/rockboxui
-  size:    4,120,184 bytes
-  sha256:  ad1a507174d3a20d9e10cc4832195940ad23f46a7cc8130f5b27ff696dbe0ca7
+  size:    4,885,928 bytes
+  sha256:  a945130c29b157717595b1d08401c24baab3dfe99bea74efc55f9c55eb8eec94
 ```
 
-All three artifacts include the current uncommitted marquee fixes. The latest
-recorded device copy matches the hardware artifact. Recent flash sessions also
-repaired isolated FAT orphan clusters only after backing up readable `.rockbox`
-and `.crazypod` data; later copies passed source/device hash checks and
-post-write FAT verification.
+These artifacts include the current localization, unlock, Now Playing, icon,
+and menu-alignment work. The latest recorded device copy matches the hardware
+artifact and was preceded by backup
+`device-backups/20260730-091352-before-menu-alignment`. No bootloader change
+was made.
 
 ## Implementation audit
 
@@ -135,14 +145,15 @@ post-write FAT verification.
 | Architecture | Feature-oriented UI modules, feature registry, active-feature dispatch, navigation commands, platform display facade, and an 800-line composition root guarded by structural tests |
 | Home | Native application carousel, continuous Q16 click-wheel motion, small-movement filtering, opaque themed icons, optimized waveform styles, and a wallpaper-aware frosted now-playing capsule |
 | Music library | Local metadata scan, artists, albums, songs, M3U/M3U8 playlists, persistent favorites, pinyin/Latin collation, A-Z fast jump, search, dynamic playback queue, and resumable CV8 album artwork preparation |
-| Now Playing | Atomic cover/background handoff, local synchronized LRC lyrics, queue, favorite control, shuffle/repeat, direct wheel volume, progress seeking, marquee text, artwork palette waveforms, and contrast-aware text |
+| Now Playing | Atomic cover/background handoff, local synchronized LRC lyrics, queue, favorite control, shuffle/repeat, direct wheel volume with a temporary left-edge HUD, progress seeking, marquee text, optically unified 16×16 action icons, artwork palette waveforms, and contrast-aware text |
 | Cover Flow | Native RGB565 renderer, 50fps frame clock, artwork caching and prefetch, subpixel edge coverage, C2-continuous Q16 pose curves, preserved release velocity, and projected snap physics |
 | Media | Photos, Videos, and Favorites routes; recursive `/Pictures` browsing; pre-transcoded MPEG-1/2 video playback from `/Videos`; cached photo thumbnails and video posters; play/pause, seek, volume, and resume |
 | Appearance | 16 icon themes, colors, glow, scale, wallpapers, independent screen radii, presets, and `.upodtheme` import/export |
-| Settings | Sound, EQ Studio, display, backlight, Reduce Motion, playback, power, sleep timer, USB charging, click feedback, and main-menu order |
+| Localization | Nine runtime languages, immediate Settings selector, 856 firmware keys, 27 built-in Mini App keys, persisted language, strict audits, UTF-8 LCD text, and five fully covered shared-SC font sizes; region-specific Han glyph shapes are not implemented |
+| Settings | Language, sound, EQ Studio, display, backlight, Reduce Motion, playback, power, sleep timer, USB charging, click feedback, and main-menu order |
 | Applications | Notes, Books, Podcasts, signed native Calculator and Pomodoro Mini Apps with ABI 1 revision 3 host dialogs, CPK2 resources, bitmap drawing, and read-only Now Playing metadata, Workouts, More Features, Settings, Shuffle, Lock, and Media |
 | Organizer | Local calendar events, ICS import, VCF contacts, clock, stopwatch, and sleep timer |
-| Lock screen | Immediate lock, automatic lock path, first-key wake isolation, custom wallpaper, DIY radii, large clock, and wheel-distance unlock |
+| Lock screen | Immediate lock, automatic lock path, first-key wake isolation, custom wallpaper, DIY radii, large clock, 0.5-second Center-button hold with early-release cancellation, and animated shackle opening |
 | USB and power | Charge/Data prompt, mass-storage mode, charge-only mode, corrected iPod 6G SUSP/HPWR charging control, and a three-second Play-hold Shut Down / Restart confirmation menu |
 | Boot | Optional silent bootloader surface, shared firmware handoff mark, and a 220ms desktop fade; the normal firmware archive does not contain the bootloader |
 | Menu previews | Interruptible two-layer first-level previews for Music, Media, Notes, and Books, with Reduce Motion and bounded media loading |
@@ -154,8 +165,13 @@ post-write FAT verification.
   physical click wheel.
 - The LCD scanline-synchronized full-frame path on each supported iPod 6G
   panel type. The current implementation targets the 8-bit panel command path.
-- Lock-screen wake, wheel unlock, decay, and residual-input isolation across
-  repeated sleep cycles, including the current 19-step threshold.
+- Lock-screen wake, 0.5-second Center hold, early-release cancellation, and
+  residual-input isolation across repeated sleep cycles.
+- Language changes, all nine language surfaces, all five font sizes, localized
+  Calculator/Pomodoro text, and long-string clipping on a physical iPod.
+  Simulator and ARM checks pass, but a complete device matrix is not recorded.
+- Now Playing volume-HUD timing and the optically normalized action icons on a
+  physical display.
 - The Play-hold power menu, restart path, and absence of the previously
   observed LCD white flash across repeated attempts.
 - Charge/Data selection on different hosts and cables.
@@ -182,9 +198,6 @@ post-write FAT verification.
 
 ### Design proposals only
 
-- Nine-language localization for English, Simplified Chinese, Traditional
-  Chinese, Japanese, Korean, German, French, Spanish, and Brazilian
-  Portuguese.
 - Mikey-based 3.5mm headset remote support and the required CrazyPod remote
   input normalization.
 - Lua or another sandboxed Mini Apps runtime.
@@ -216,8 +229,8 @@ camera and microphone. Workouts record elapsed time only.
 
 1. Run a clean, repeatable simulator and ARM build in CI.
 2. Complete a documented iPod 6G regression matrix.
-3. Commit the current marquee overflow fix and record a post-boot physical
-   interaction check.
+3. Review and commit the current localization and interaction working tree in
+   coherent changes, then record post-boot physical interaction checks.
 4. Test Home wheel dead-zone, motion, and snap behavior on a physical click
    wheel.
 5. Test USB Charge/Data, artwork-cache preservation, and charging behavior on

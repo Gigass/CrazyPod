@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdio.h>
@@ -60,7 +62,7 @@ static void render_loading(
 
     label = crazypod_ui_widget_label(
         workflow_host.parent,
-        title != NULL ? title : "Preparing Book",
+        title != NULL ? title : CP_TR("Preparing Book"),
         &lv_font_montserrat_16, ink_color, LV_OPA_COVER);
     lv_obj_set_width(label, 280);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
@@ -70,7 +72,7 @@ static void render_loading(
     label = crazypod_ui_widget_label(
         workflow_host.parent,
         book != NULL && book->title[0] != '\0'
-            ? book->title : "Reading local book data",
+            ? book->title : CP_TR("Reading local book data"),
         workflow_host.metadata_font, ink_color, 180);
     lv_obj_set_width(label, 260);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
@@ -84,7 +86,7 @@ static void render_loading(
         track, 0, 0, 2, 7,
         LV_RADIUS_CIRCLE, ink_color, 220);
     progress_label = crazypod_ui_widget_label(
-        workflow_host.parent, "Starting",
+        workflow_host.parent, CP_TR("Starting"),
         &lv_font_montserrat_10, ink_color, 190);
     lv_obj_set_width(progress_label, 220);
     lv_label_set_long_mode(
@@ -126,10 +128,10 @@ static void update_progress(
     if(width < 2)
         width = 2;
     lv_obj_set_width(progress_fill, width);
-    lv_label_set_text(
-        progress_label, stage != NULL ? stage : "Preparing");
-    snprintf(value, sizeof(value), "%d%%", percent);
-    lv_label_set_text(percent_label, value);
+    CP_LV_LABEL_SET_TEXT(
+        progress_label, stage != NULL ? stage : CP_TR("Preparing"));
+    snprintf(value, sizeof(value), CP_FMT("%d%%"), percent);
+    CP_LV_LABEL_SET_TEXT(percent_label, value);
     lv_refr_now(NULL);
     workflow_host.present();
 }
@@ -143,16 +145,16 @@ static void load_metadata(int start_percent, int end_percent)
     if(span < 0)
         span = 0;
     if(count <= 0) {
-        update_progress(end_percent, "Library is empty", NULL);
+        update_progress(end_percent, CP_TR("Library is empty"), NULL);
         return;
     }
     for(i = 0; i < count; ++i) {
         update_progress(
             start_percent + span * i / count,
-            "Reading book titles and covers", NULL);
+            CP_TR("Reading book titles and covers"), NULL);
         crazypod_book_probe(i);
     }
-    update_progress(end_percent, "Finalizing library", NULL);
+    update_progress(end_percent, CP_TR("Finalizing library"), NULL);
 }
 
 void crazypod_books_workflow_ensure_metadata(void)
@@ -162,15 +164,15 @@ void crazypod_books_workflow_ensure_metadata(void)
     if(metadata_ready && !scan_needed)
         return;
     render_loading(
-        NULL, "Loading Library",
-        "Reading final book titles and covers");
+        NULL, CP_TR("Loading Library"),
+        CP_TR("Reading final book titles and covers"));
     if(scan_needed) {
-        update_progress(6, "Scanning Books folder", NULL);
+        update_progress(6, CP_TR("Scanning Books folder"), NULL);
         crazypod_books_scan();
     }
     load_metadata(16, 96);
     metadata_ready = true;
-    update_progress(100, "Library ready", NULL);
+    update_progress(100, CP_TR("Library ready"), NULL);
 }
 
 void crazypod_books_workflow_apply_font_size(int value)
@@ -186,9 +188,9 @@ void crazypod_books_workflow_apply_font_size(int value)
     }
     if(needs_reflow) {
         render_loading(
-            book, "Reflowing Text",
-            "Keeping your current reading position");
-        update_progress(20, "Applying text size", NULL);
+            book, CP_TR("Reflowing Text"),
+            CP_TR("Keeping your current reading position"));
+        update_progress(20, CP_TR("Applying text size"), NULL);
     }
     crazypod_books_set_font_size(value);
     if(needs_reflow) {
@@ -196,12 +198,12 @@ void crazypod_books_workflow_apply_font_size(int value)
         int index = crazypod_book_session_index();
         uint32_t offset = crazypod_book_session_offset();
 
-        update_progress(62, "Rebuilding current page", NULL);
+        update_progress(62, CP_TR("Rebuilding current page"), NULL);
         crazypod_book_session_begin(index);
         loaded = crazypod_book_session_load(index, offset);
         update_progress(
-            100, loaded ? "Text ready"
-                        : "Could not reload page", NULL);
+            100, loaded ? CP_TR("Text ready")
+                        : CP_TR("Could not reload page"), NULL);
     }
     workflow_host.render_route(false);
 }
@@ -209,17 +211,17 @@ void crazypod_books_workflow_apply_font_size(int value)
 void crazypod_books_workflow_rescan(void)
 {
     render_loading(
-        NULL, "Scanning Books",
-        "Refreshing imported books and cover data");
+        NULL, CP_TR("Scanning Books"),
+        CP_TR("Refreshing imported books and cover data"));
     metadata_ready = false;
-    update_progress(12, "Resetting cover cache", NULL);
+    update_progress(12, CP_TR("Resetting cover cache"), NULL);
     crazypod_book_cover_reset();
-    update_progress(20, "Reading Books folders", NULL);
+    update_progress(20, CP_TR("Reading Books folders"), NULL);
     crazypod_books_scan();
     load_metadata(30, 94);
     metadata_ready = true;
     crazypod_book_session_reset();
-    update_progress(100, "Library ready", NULL);
+    update_progress(100, CP_TR("Library ready"), NULL);
     workflow_host.render_route(false);
 }
 
@@ -239,8 +241,8 @@ void crazypod_books_workflow_begin_reader(
         book->content_size == 0;
     if(show_progress)
         render_loading(
-            book, "Preparing Book",
-            "First open creates a local reading cache");
+            book, CP_TR("Preparing Book"),
+            CP_TR("First open creates a local reading cache"));
     ready = show_progress
         ? crazypod_book_prepare_with_progress(
               index, update_progress, NULL)
@@ -253,25 +255,25 @@ void crazypod_books_workflow_begin_reader(
     crazypod_book_session_begin(index);
     if(show_progress)
         update_progress(
-            94, ready ? "Loading first page"
-                      : "Preparing error details", NULL);
+            94, ready ? CP_TR("Loading first page")
+                      : CP_TR("Preparing error details"), NULL);
     if(ready)
         loaded = crazypod_book_session_load(index, offset);
     if(!loaded) {
         crazypod_book_session_set_error(
             book->format == CRAZYPOD_BOOK_EPUB
-                ? "This EPUB is damaged, encrypted, or unsupported."
-                : "Unable to open this book.");
+                ? CP_TR("This EPUB is damaged, encrypted, or unsupported.")
+                : CP_TR("Unable to open this book."));
     }
     else {
         if(show_progress)
-            update_progress(98, "Saving reading position", NULL);
+            update_progress(98, CP_TR("Saving reading position"), NULL);
         crazypod_book_set_progress(index, offset);
     }
     if(show_progress)
         update_progress(
-            100, loaded ? "Opening reader"
-                        : "Showing book error", NULL);
+            100, loaded ? CP_TR("Opening reader")
+                        : CP_TR("Showing book error"), NULL);
     workflow_host.push_reader(index);
 }
 

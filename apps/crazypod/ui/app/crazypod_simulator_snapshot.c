@@ -11,6 +11,7 @@
 
 #include "../../crazypod_books.h"
 #include "../../crazypod_frameclock.h"
+#include "../../crazypod_l10n.h"
 #include "../../crazypod_lcd.h"
 #include "../../crazypod_miniapps.h"
 #include "../../crazypod_music.h"
@@ -80,10 +81,25 @@ bool crazypod_simulator_snapshot_prepare(
     const struct crazypod_simulator_snapshot_host *host)
 {
     const char *screen = getenv("CRAZYPOD_SIM_SCREEN");
+    const char *language = getenv("CRAZYPOD_SIM_LANGUAGE");
     int preview_index;
+    int language_index;
 
     if(host == NULL || getenv("CRAZYPOD_SIM_DUMP") == NULL)
         return false;
+    if(language != NULL) {
+        for(language_index = 0;
+            language_index < CRAZYPOD_LANGUAGE_COUNT;
+            ++language_index) {
+            if(strcmp(language,
+                      crazypod_language_code(
+                          (enum crazypod_language)language_index)) == 0) {
+                crazypod_language_set(
+                    (enum crazypod_language)language_index);
+                break;
+            }
+        }
+    }
     if(screen == NULL || strcmp(screen, "home") == 0)
         return true;
     if(strcmp(screen, "power") == 0)
@@ -160,6 +176,11 @@ bool crazypod_simulator_snapshot_prepare(
     }
     else if(strcmp(screen, "settings-main-menu") == 0)
         host->open_root_route(SETTINGS_ROUTE_MAIN_MENU);
+    else if(strcmp(screen, "settings-language") == 0) {
+        host->open_root_route(SETTINGS_ROUTE_MENU);
+        select_bounded(host, item_count() - 1);
+        host->activate_selected();
+    }
     else if(strcmp(screen, "settings-reduce-motion") == 0) {
         host->open_root_route(SETTINGS_ROUTE_DISPLAY);
         select_bounded(host, item_count() - 1);

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <string.h>
@@ -109,7 +111,7 @@ void crazypod_menu_list_refresh_row(
             view.circles[row], selected ? 45 : 18, 0);
         if(view.icons[row] != NULL) {
             if(view.text_icons[row])
-                lv_label_set_text(
+                CP_LV_LABEL_SET_TEXT(
                     view.icons[row], icon_text != NULL ? icon_text : "");
             if(view.text_icons[row])
                 lv_obj_set_style_text_opa(view.icons[row], icon_opa, 0);
@@ -118,7 +120,7 @@ void crazypod_menu_list_refresh_row(
         }
     }
     if(view.markers[row] != NULL) {
-        lv_label_set_text(
+        CP_LV_LABEL_SET_TEXT(
             view.markers[row], marker_text != NULL ? marker_text : "");
         lv_obj_set_style_text_opa(view.markers[row], marker_opa, 0);
     }

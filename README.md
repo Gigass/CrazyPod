@@ -20,6 +20,7 @@ USB, and device drivers.
 | Device | iPod Classic 6G (`ipod6g`) only |
 | Display | 320×240 RGB565 |
 | Interface | LVGL 9.5.0; click-wheel navigation |
+| Languages | English, Simplified Chinese, Traditional Chinese, Japanese, Korean, German, French, Spanish, and Brazilian Portuguese |
 | Media | Local files only |
 | Connectivity | Selectable USB charge-only or mass-storage mode |
 | Network services | None |
@@ -73,13 +74,25 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
   a full-screen input block while Data mode is active, and a configurable
   16-application main menu.
 - **Lock screen:** immediate manual lock, wake-key isolation, a large clock,
-  configurable wallpaper and corner radii, and a clockwise 19-step
-  wheel-distance unlock with progress and decay.
+  configurable wallpaper and corner radii, and a 0.5-second Center-button hold
+  to unlock with progress feedback.
 - **Power menu:** holding Play for about three seconds opens a Shut Down /
   Restart confirmation surface without entering Rockbox's committed shutdown
   path first.
 - **Settings:** sound, EQ Studio, display and backlight, Reduce Motion,
-  playback, sleep timer, USB charging, click feedback, and main-menu order.
+  playback, sleep timer, USB charging, click feedback, language, and main-menu
+  order.
+
+### Localization
+
+- Settings → Language applies one of nine languages immediately and persists
+  it across restarts.
+- The firmware catalog contains 856 translated UI keys. Calculator and
+  Pomodoro share another 27 translated strings and follow the current system
+  language.
+- Generated 8, 10, 12, 14, and 16px font subsets cover the current CJK,
+  Hangul, and accented Latin catalog. The non-LVGL LCD text path also decodes
+  UTF-8.
 
 ### Mini Apps
 
@@ -207,16 +220,18 @@ to cancel.
 During video playback, Play toggles pause, Left/Right seek by 10 seconds, the
 wheel changes volume, and Menu exits while saving resume progress.
 
-On the main Now Playing screen, the wheel changes volume without opening a
-modal. In the action surface, choose Progress to seek in five-second steps;
-choosing a queue item starts that track and closes the queue. The Favorite
-action adds or removes the current track from `My Favorites`.
+On the main Now Playing screen, the wheel changes volume and shows a temporary
+vertical level bar at the left edge. In the action surface, choose Progress to
+seek in five-second steps; choosing a queue item starts that track and closes
+the queue. The Favorite action adds or removes the current track from
+`My Favorites`.
 
 ## Known limits
 
 - Only the iPod Classic 6G target is supported.
-- The firmware UI is currently English-only. Nine-language localization is
-  planned but has no runtime implementation or language setting.
+- The current localized font artifacts use one shared Noto Sans CJK SC subset.
+  Character coverage is complete for the catalog, but Japanese and Traditional
+  Chinese do not yet use region-specific Han glyph shapes.
 - 3.5mm headset remote buttons are not supported. The current target does not
   initialize the Mikey remote controller or route its events into CrazyPod.
 - Music, lyrics, books, photos, contacts, and calendars are local-only.
@@ -231,7 +246,8 @@ action adds or removes the current track from `My Favorites`.
 - Mini Apps accepts the restricted, signed native `.cpk` format documented in
   [miniapps/README.md](miniapps/README.md). Ed25519 signing verifies package
   origin and integrity; it is not a sandbox. An installed native Mini App runs
-  with firmware privileges.
+  with firmware privileges. Host text input remains printable ASCII and is not
+  a multilingual IME.
 - The repository's Mini App signing key is a public development key. Replace
   the trusted public key and keep the matching private key outside the
   repository before distributing production packages.
@@ -246,6 +262,8 @@ action adds or removes the current track from `My Favorites`.
 
 - `apps/crazypod/` contains the product UI, applications, playback bridge, and
   persistent state.
+- `localization/crazypod/` contains the source catalog and eight non-English
+  locale files.
 - [`apps/crazypod/ARCHITECTURE.md`](apps/crazypod/ARCHITECTURE.md) defines the
   feature, Shell, Navigation, Presentation, Platform, and composition-root
   boundaries enforced by the architecture test.

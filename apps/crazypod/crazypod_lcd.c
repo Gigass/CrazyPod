@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <stdint.h>
@@ -289,21 +291,88 @@ static void draw_glyph(const lv_font_t *font, uint32_t codepoint,
     }
 }
 
+static uint32_t next_utf8(const char **text)
+{
+    const unsigned char *cursor = (const unsigned char *)*text;
+    uint32_t codepoint;
+
+    if(cursor[0] < 0x80) {
+        *text += 1;
+        return cursor[0];
+    }
+    if((cursor[0] & 0xe0) == 0xc0 && (cursor[1] & 0xc0) == 0x80) {
+        codepoint = ((uint32_t)(cursor[0] & 0x1f) << 6) |
+            (uint32_t)(cursor[1] & 0x3f);
+        *text += 2;
+        return codepoint;
+    }
+    if((cursor[0] & 0xf0) == 0xe0 &&
+       (cursor[1] & 0xc0) == 0x80 && (cursor[2] & 0xc0) == 0x80) {
+        codepoint = ((uint32_t)(cursor[0] & 0x0f) << 12) |
+            ((uint32_t)(cursor[1] & 0x3f) << 6) |
+            (uint32_t)(cursor[2] & 0x3f);
+        *text += 3;
+        return codepoint;
+    }
+    if((cursor[0] & 0xf8) == 0xf0 &&
+       (cursor[1] & 0xc0) == 0x80 && (cursor[2] & 0xc0) == 0x80 &&
+       (cursor[3] & 0xc0) == 0x80) {
+        codepoint = ((uint32_t)(cursor[0] & 0x07) << 18) |
+            ((uint32_t)(cursor[1] & 0x3f) << 12) |
+            ((uint32_t)(cursor[2] & 0x3f) << 6) |
+            (uint32_t)(cursor[3] & 0x3f);
+        *text += 4;
+        return codepoint;
+    }
+    *text += 1;
+    return 0xfffd;
+}
+
+static bool contains_non_ascii(const char *text)
+{
+    while(text != NULL && *text != '\0') {
+        if((unsigned char)*text++ >= 0x80)
+            return true;
+    }
+    return false;
+}
+
+static const lv_font_t *lcd_localized_font(const lv_font_t *font,
+                                            const char *text)
+{
+    if(!contains_non_ascii(text))
+        return font;
+    if(font == &lv_font_montserrat_8)
+        return &lv_font_crazypod_i18n_8;
+    if(font == &lv_font_montserrat_10)
+        return &lv_font_crazypod_i18n_10;
+    if(font == &lv_font_montserrat_12)
+        return &lv_font_crazypod_i18n_12;
+    if(font == &lv_font_montserrat_16 || font == &lv_font_montserrat_24)
+        return &lv_font_source_han_sans_sc_16_cjk;
+    return font;
+}
+
 static void show_message(const char *title, const char *message,
                          fb_data background)
 {
     const lv_font_t *title_font = &lv_font_montserrat_12;
     const lv_font_t *body_font = &lv_font_montserrat_8;
     const fb_data foreground = LCD_RGBPACK(255, 255, 255);
-    const char *cursor = message;
+    const char *cursor;
     int x = 14;
     int y = 18;
 
+    title = crazypod_l10n_text(title);
+    message = crazypod_l10n_text(message);
+    title_font = lcd_localized_font(title_font, title);
+    body_font = lcd_localized_font(body_font, message);
+    cursor = message;
     fill_screen(background);
 
     while(*title != '\0') {
         lv_font_glyph_dsc_t glyph;
-        unsigned char codepoint = (unsigned char)*title++;
+        uint32_t codepoint = next_utf8(&title);
 
         if(lv_font_get_glyph_dsc(title_font, &glyph, codepoint, 0)) {
             draw_glyph(title_font, codepoint, x, y, foreground);
@@ -319,16 +388,17 @@ static void show_message(const char *title, const char *message,
 
         while(*cursor != '\0' && *cursor != '\n') {
             lv_font_glyph_dsc_t glyph;
-            unsigned char codepoint = (unsigned char)*cursor;
+            const char *next = cursor;
+            uint32_t codepoint = next_utf8(&next);
 
             if(!lv_font_get_glyph_dsc(body_font, &glyph, codepoint, 0)) {
-                ++cursor;
+                cursor = next;
                 continue;
             }
             if(line_width + glyph.adv_w > LCD_WIDTH - 14)
                 break;
             line_width += glyph.adv_w;
-            ++cursor;
+            cursor = next;
         }
 
         {
@@ -337,7 +407,7 @@ static void show_message(const char *title, const char *message,
 
             while(character < cursor) {
                 lv_font_glyph_dsc_t glyph;
-                unsigned char codepoint = (unsigned char)*character++;
+                uint32_t codepoint = next_utf8(&character);
 
                 if(lv_font_get_glyph_dsc(body_font, &glyph, codepoint, 0)) {
                     draw_glyph(body_font, codepoint, draw_x, y, foreground);
@@ -357,9 +427,11 @@ static void show_message(const char *title, const char *message,
 static int draw_text(const lv_font_t *font, const char *text,
                      int x, int y, int maximum_x, fb_data color)
 {
+    text = crazypod_l10n_text(text);
+    font = lcd_localized_font(font, text);
     while(text != NULL && *text != '\0' && x < maximum_x) {
         lv_font_glyph_dsc_t glyph;
-        unsigned char codepoint = (unsigned char)*text++;
+        uint32_t codepoint = next_utf8(&text);
 
         if(!lv_font_get_glyph_dsc(font, &glyph, codepoint, 0))
             continue;
@@ -409,7 +481,7 @@ void crazypod_lcd_draw_video_controls(
             LCD_RGBPACK(42, 46, 53);
 
     draw_text(&lv_font_montserrat_8,
-              paused ? "PAUSED" : "PLAYING",
+              paused ? CP_TR("PAUSED") : CP_TR("PLAYING"),
               8, 201, 62, paused ? muted : accent);
     if(message != NULL && message[0] != '\0')
         draw_text(&lv_font_montserrat_8, message,
@@ -440,11 +512,11 @@ void crazypod_lcd_draw_video_controls(
 
     format_video_time(elapsed, sizeof(elapsed), elapsed_seconds);
     format_video_time(duration, sizeof(duration), duration_seconds);
-    snprintf(volume_text, sizeof(volume_text), "VOL %d", volume);
+    snprintf(volume_text, sizeof(volume_text), CP_FMT("VOL %d"), volume);
     draw_text(&lv_font_montserrat_8, elapsed, 8, 225, 75, muted);
     draw_text(&lv_font_montserrat_8, duration, 78, 225, 152, muted);
     draw_text(&lv_font_montserrat_8,
-              "PLAY  -10s  +10s  MENU",
+              CP_TR("PLAY  -10s  +10s  MENU"),
               158, 225, 276, muted);
     draw_text(&lv_font_montserrat_8, volume_text,
               278, 225, 318, white);
@@ -453,7 +525,7 @@ void crazypod_lcd_draw_video_controls(
 
 void crazypod_lcd_show_panic(const char *message)
 {
-    show_message("CRAZYPOD PANIC", message,
+    show_message(CP_TR("CRAZYPOD PANIC"), message,
                  LCD_RGBPACK(132, 20, 35));
 }
 

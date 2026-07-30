@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "../../../crazypod_l10n.h"
+
 #ifdef IPOD_6G
 
 #include <string.h>
@@ -181,7 +183,7 @@ const char *crazypod_customize_overlay_title(
     enum crazypod_customize_overlay overlay, int field)
 {
     if(overlay == CRAZYPOD_CUSTOMIZE_OVERLAY_ICONS)
-        return "ICON THEME";
+        return CP_TR("ICON THEME");
     if(overlay == CRAZYPOD_CUSTOMIZE_OVERLAY_APPEARANCE)
         return crazypod_customize_field_title(
             (enum crazypod_appearance_field)field);
@@ -199,10 +201,10 @@ const char *crazypod_customize_overlay_item_title(
             (enum crazypod_appearance_field)field, index);
     if(index == 0)
         return field == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
-            ? "Follow Home" : "Default";
+            ? CP_TR("Follow Home") : CP_TR("Default");
     if(index <= CRAZYPOD_APPEARANCE_COLOR_COUNT)
         return crazypod_appearance_color_name(index - 1);
-    return "Choose Picture";
+    return CP_TR("Choose Picture");
 }
 
 bool crazypod_customize_overlay_item_color(

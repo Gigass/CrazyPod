@@ -14,6 +14,7 @@
 #include "lvgl.h"
 
 #include "../../../crazypod_audio_shims.h"
+#include "../../../crazypod_l10n.h"
 #include "../../../crazypod_playlist.h"
 #include "../../../crazypod_state.h"
 #include "crazypod_settings_model.h"
@@ -39,32 +40,33 @@ static const int setting_repeat_values[] = {
 const char *crazypod_ui_settings_item_title(int item)
 {
     switch(item) {
-    case SETTINGS_ITEM_EQ_ENABLED: return "Equalizer";
-    case SETTINGS_ITEM_BASS: return "Bass";
-    case SETTINGS_ITEM_TREBLE: return "Treble";
-    case SETTINGS_ITEM_BALANCE: return "Balance";
-    case SETTINGS_ITEM_BRIGHTNESS: return "Brightness";
-    case SETTINGS_ITEM_BACKLIGHT_TIMEOUT: return "Backlight";
-    case SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED: return "Charging Light";
-    case SETTINGS_ITEM_LCD_SLEEP: return "LCD Sleep";
-    case SETTINGS_ITEM_REDUCE_MOTION: return "Reduce Motion";
-    case SETTINGS_ITEM_SHUFFLE: return "Shuffle";
-    case SETTINGS_ITEM_REPEAT: return "Repeat";
-    case SETTINGS_ITEM_SLEEP_TIMER_DURATION: return "Sleep Timer";
-    case SETTINGS_ITEM_SLEEP_TIMER_STARTUP: return "Timer on Boot";
-    case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS: return "Key Reset Timer";
+    case SETTINGS_ITEM_LANGUAGE: return CP_TR("Language");
+    case SETTINGS_ITEM_EQ_ENABLED: return CP_TR("Equalizer");
+    case SETTINGS_ITEM_BASS: return CP_TR("Bass");
+    case SETTINGS_ITEM_TREBLE: return CP_TR("Treble");
+    case SETTINGS_ITEM_BALANCE: return CP_TR("Balance");
+    case SETTINGS_ITEM_BRIGHTNESS: return CP_TR("Brightness");
+    case SETTINGS_ITEM_BACKLIGHT_TIMEOUT: return CP_TR("Backlight");
+    case SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED: return CP_TR("Charging Light");
+    case SETTINGS_ITEM_LCD_SLEEP: return CP_TR("LCD Sleep");
+    case SETTINGS_ITEM_REDUCE_MOTION: return CP_TR("Reduce Motion");
+    case SETTINGS_ITEM_SHUFFLE: return CP_TR("Shuffle");
+    case SETTINGS_ITEM_REPEAT: return CP_TR("Repeat");
+    case SETTINGS_ITEM_SLEEP_TIMER_DURATION: return CP_TR("Sleep Timer");
+    case SETTINGS_ITEM_SLEEP_TIMER_STARTUP: return CP_TR("Timer on Boot");
+    case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS: return CP_TR("Key Reset Timer");
 #ifdef HAVE_USB_CHARGING_ENABLE
-    case SETTINGS_ITEM_USB_CHARGING: return "USB Charging";
+    case SETTINGS_ITEM_USB_CHARGING: return CP_TR("USB Charging");
 #endif
 #ifdef HAVE_DISK_STORAGE
-    case SETTINGS_ITEM_STORAGE_MODE: return "Storage Type";
+    case SETTINGS_ITEM_STORAGE_MODE: return CP_TR("Storage Type");
 #endif
-    case SETTINGS_ITEM_BEEP: return "System Beep";
-    case SETTINGS_ITEM_KEYCLICK: return "Keyclick";
+    case SETTINGS_ITEM_BEEP: return CP_TR("System Beep");
+    case SETTINGS_ITEM_KEYCLICK: return CP_TR("Keyclick");
 #ifdef HAVE_HARDWARE_CLICK
-    case SETTINGS_ITEM_SPEAKER_CLICK: return "Speaker Click";
+    case SETTINGS_ITEM_SPEAKER_CLICK: return CP_TR("Speaker Click");
 #endif
-    case SETTINGS_ITEM_KEYCLICK_REPEATS: return "Repeat Clicks";
+    case SETTINGS_ITEM_KEYCLICK_REPEATS: return CP_TR("Repeat Clicks");
     default: return "";
     }
 }
@@ -72,6 +74,8 @@ const char *crazypod_ui_settings_item_title(int item)
 const char *crazypod_ui_settings_item_symbol(int item)
 {
     switch(item) {
+    case SETTINGS_ITEM_LANGUAGE:
+        return LV_SYMBOL_HOME;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_BASS:
     case SETTINGS_ITEM_TREBLE:
@@ -106,19 +110,21 @@ const char *crazypod_ui_settings_item_symbol(int item)
 const char *crazypod_ui_settings_group_detail(int index)
 {
     switch(index) {
-    case 0: return "EQ, tone and balance";
-    case 1: return "Backlight, sleep and brightness";
-    case 2: return "Shuffle and repeat";
-    case 3: return "Charging, storage and sleep";
-    case 4: return "Beeps and wheel feedback";
-    case 5: return "Reorder or hide entries";
+    case 0: return CP_TR("EQ, tone and balance");
+    case 1: return CP_TR("Backlight, sleep and brightness");
+    case 2: return CP_TR("Shuffle and repeat");
+    case 3: return CP_TR("Charging, storage and sleep");
+    case 4: return CP_TR("Beeps and wheel feedback");
+    case 5: return CP_TR("Reorder or hide entries");
+    case 6:
+        return crazypod_language_native_name(crazypod_language_current());
     default: return "";
     }
 }
 
 static const char *format_bool_value(bool value)
 {
-    return value ? "On" : "Off";
+    return value ? CP_TR("On") : CP_TR("Off");
 }
 
 static const char *format_timeout_value(int value)
@@ -126,13 +132,13 @@ static const char *format_timeout_value(int value)
     static char text[20];
 
     if(value < 0)
-        return "Never";
+        return CP_TR("Never");
     if(value == 0)
-        return "Always";
+        return CP_TR("Always");
     if(value >= 60 && value % 60 == 0)
-        snprintf(text, sizeof(text), "%d min", value / 60);
+        snprintf(text, sizeof(text), CP_FMT("%d min"), value / 60);
     else
-        snprintf(text, sizeof(text), "%d sec", value);
+        snprintf(text, sizeof(text), CP_FMT("%d sec"), value);
     return text;
 }
 
@@ -141,11 +147,11 @@ static const char *format_sleep_timer_value(int value)
     static char text[20];
 
     if(value <= 0)
-        return "Off";
+        return CP_TR("Off");
     if(value >= 60 && value % 60 == 0)
-        snprintf(text, sizeof(text), "%d hr", value / 60);
+        snprintf(text, sizeof(text), CP_FMT("%d hr"), value / 60);
     else
-        snprintf(text, sizeof(text), "%d min", value);
+        snprintf(text, sizeof(text), CP_FMT("%d min"), value);
     return text;
 }
 
@@ -201,6 +207,8 @@ static int setting_sound_step(int setting)
 static int settings_item_current_value(int item)
 {
     switch(item) {
+    case SETTINGS_ITEM_LANGUAGE:
+        return crazypod_language_current();
     case SETTINGS_ITEM_EQ_ENABLED:
         return global_settings.eq_enabled ? 1 : 0;
     case SETTINGS_ITEM_BASS:
@@ -259,6 +267,8 @@ static int settings_item_current_value(int item)
 int crazypod_ui_settings_choice_count(int item)
 {
     switch(item) {
+    case SETTINGS_ITEM_LANGUAGE:
+        return CRAZYPOD_LANGUAGE_COUNT;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
@@ -320,6 +330,11 @@ int crazypod_ui_settings_choice_count(int item)
 static int settings_choice_value(int item, int index)
 {
     switch(item) {
+    case SETTINGS_ITEM_LANGUAGE:
+        if(index < 0)
+            return CRAZYPOD_LANGUAGE_ENGLISH;
+        return index < CRAZYPOD_LANGUAGE_COUNT
+            ? index : CRAZYPOD_LANGUAGE_COUNT - 1;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
@@ -396,6 +411,8 @@ int crazypod_ui_settings_choice_index(int item)
     int current = settings_item_current_value(item);
 
     switch(item) {
+    case SETTINGS_ITEM_LANGUAGE:
+        return current;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
@@ -477,19 +494,19 @@ int crazypod_ui_settings_choice_index(int item)
 static const char *settings_repeat_title(int value)
 {
     switch(value) {
-    case REPEAT_ALL: return "All";
-    case REPEAT_ONE: return "One";
-    default: return "Off";
+    case REPEAT_ALL: return CP_TR("All");
+    case REPEAT_ONE: return CP_TR("One");
+    default: return CP_TR("Off");
     }
 }
 
 static const char *settings_level_title(int value)
 {
     switch(value) {
-    case 1: return "Weak";
-    case 2: return "Moderate";
-    case 3: return "Strong";
-    default: return "Off";
+    case 1: return CP_TR("Weak");
+    case 2: return CP_TR("Moderate");
+    case 3: return CP_TR("Strong");
+    default: return CP_TR("Off");
     }
 }
 
@@ -498,11 +515,11 @@ static const char *settings_usb_charging_title(int value)
 {
     switch(value) {
     case USB_CHARGING_ENABLE:
-        return "On";
+        return CP_TR("On");
     case USB_CHARGING_FORCE:
-        return "Force";
+        return CP_TR("Force");
     default:
-        return "Off";
+        return CP_TR("Off");
     }
 }
 #endif
@@ -511,9 +528,9 @@ static const char *settings_usb_charging_title(int value)
 static const char *settings_storage_mode_title(int value)
 {
     switch(value) {
-    case 1: return "HDD";
-    case 2: return "SSD";
-    default: return "Auto";
+    case 1: return CP_TR("HDD");
+    case 2: return CP_TR("SSD");
+    default: return CP_TR("Auto");
     }
 }
 #endif
@@ -524,6 +541,9 @@ const char *crazypod_ui_settings_choice_title(int item, int index)
     int value = settings_choice_value(item, index);
 
     switch(item) {
+    case SETTINGS_ITEM_LANGUAGE:
+        return crazypod_language_native_name(
+            (enum crazypod_language)value);
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
@@ -536,19 +556,19 @@ const char *crazypod_ui_settings_choice_title(int item, int index)
         return format_bool_value(value != 0);
     case SETTINGS_ITEM_BASS:
     case SETTINGS_ITEM_TREBLE:
-        snprintf(text, sizeof(text), "%+d dB", value);
+        snprintf(text, sizeof(text), CP_FMT("%+d dB"), value);
         return text;
     case SETTINGS_ITEM_BALANCE:
         if(value < 0)
-            snprintf(text, sizeof(text), "Left %d%%", -value);
+            snprintf(text, sizeof(text), CP_FMT("Left %d%%"), -value);
         else if(value > 0)
-            snprintf(text, sizeof(text), "Right %d%%", value);
+            snprintf(text, sizeof(text), CP_FMT("Right %d%%"), value);
         else
-            snprintf(text, sizeof(text), "Center");
+            snprintf(text, sizeof(text), CP_FMT("Center"));
         return text;
 #ifdef HAVE_BACKLIGHT_BRIGHTNESS
     case SETTINGS_ITEM_BRIGHTNESS:
-        snprintf(text, sizeof(text), "%d", value);
+        snprintf(text, sizeof(text), CP_FMT("%d"), value);
         return text;
 #endif
     case SETTINGS_ITEM_BACKLIGHT_TIMEOUT:
@@ -582,7 +602,7 @@ const char *crazypod_ui_settings_item_value_label(int item)
 #ifdef HAVE_DISK_STORAGE
     if(item == SETTINGS_ITEM_STORAGE_MODE &&
        global_settings.storage_mode == 0)
-        return storage_get_ssd_mode() ? "Auto (SSD)" : "Auto (HDD)";
+        return storage_get_ssd_mode() ? CP_TR("Auto (SSD)") : CP_TR("Auto (HDD)");
 #endif
     return crazypod_ui_settings_choice_title(item, crazypod_ui_settings_choice_index(item));
 }
@@ -592,6 +612,9 @@ void crazypod_ui_settings_apply_choice(int item, int index)
     int value = settings_choice_value(item, index);
 
     switch(item) {
+    case SETTINGS_ITEM_LANGUAGE:
+        crazypod_language_set((enum crazypod_language)value);
+        break;
     case SETTINGS_ITEM_EQ_ENABLED:
         global_settings.eq_enabled = value != 0;
         crazypod_eq_settings_apply();
