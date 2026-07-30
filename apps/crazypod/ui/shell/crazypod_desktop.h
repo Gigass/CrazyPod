@@ -9,7 +9,6 @@ struct crazypod_desktop_host {
     void (*create_corner_masks)(lv_obj_t *screen, int index);
     void (*refresh_corner_masks)(void);
     void (*refresh_lock_appearance)(void);
-    void (*boost)(int ticks);
 };
 
 lv_obj_t *crazypod_desktop_create(

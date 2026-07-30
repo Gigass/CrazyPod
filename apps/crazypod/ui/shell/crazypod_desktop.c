@@ -6,8 +6,6 @@
 
 #include <string.h>
 
-#include "kernel.h"
-
 #include "../../crazypod_appearance.h"
 #include "../../crazypod_apps.h"
 #include "../../crazypod_icons.h"
@@ -62,11 +60,9 @@ static void update_selection_chrome(void)
     }
 }
 
-static void layout(bool animated)
+static void layout(void)
 {
     update_selection_chrome();
-    if(animated && desktop_host.boost != NULL)
-        desktop_host.boost(HZ / 20 > 0 ? HZ / 20 : 1);
     crazypod_desktop_native_invalidate(false);
 }
 
@@ -114,7 +110,7 @@ lv_obj_t *crazypod_desktop_create(
     crazypod_now_capsule_create(screen, metadata_font);
     selected_app = 0;
     crazypod_desktop_native_reset();
-    layout(false);
+    layout();
     if(desktop_host.create_corner_masks != NULL)
         desktop_host.create_corner_masks(screen, 0);
     return screen;
@@ -134,12 +130,13 @@ void crazypod_desktop_set_selected(int selected, bool animated)
 {
     int count = crazypod_apps_visible_count();
 
+    (void)animated;
     if(selected < 0)
         selected = 0;
     if(selected >= count)
         selected = count - 1;
     selected_app = selected;
-    layout(animated);
+    layout();
 }
 
 void crazypod_desktop_move_selection(int direction)
@@ -184,7 +181,7 @@ void crazypod_desktop_refresh_appearance(void)
     crazypod_now_capsule_refresh_material();
     crazypod_now_capsule_refresh_appearance();
     crazypod_desktop_native_invalidate(true);
-    layout(false);
+    layout();
     if(desktop_host.refresh_corner_masks != NULL)
         desktop_host.refresh_corner_masks();
     if(desktop_host.refresh_lock_appearance != NULL)

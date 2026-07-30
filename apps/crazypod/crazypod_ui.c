@@ -116,7 +116,6 @@
 #define CRAZYPOD_PREVIEW_SETTLE_TICKS \
     ((HZ * 120 / 1000) > 0 ? (HZ * 120 / 1000) : 1)
 #define CRAZYPOD_METADATA_FONT (&lv_font_source_han_sans_sc_14_cjk)
-#define CRAZYPOD_BOOT_FADE_DURATION_MS 220
 static bool cpu_is_boosted;
 static long boost_until;
 static struct crazypod_frameclock lvgl_clock;
@@ -611,7 +610,6 @@ void crazypod_ui_run(void)
             .create_corner_masks = crazypod_screen_corners_create,
             .refresh_corner_masks = crazypod_screen_corners_refresh,
             .refresh_lock_appearance = refresh_lock_appearance,
-            .boost = keep_cpu_boosted,
         };
         (void)crazypod_desktop_create(
             current_tick, CRAZYPOD_METADATA_FONT, &desktop_host);
@@ -629,9 +627,7 @@ void crazypod_ui_run(void)
     lv_refr_now(display);
     crazypod_present_tick();
     crazypod_now_capsule_refresh_material();
-    lv_screen_load_anim(
-        crazypod_desktop_screen(), LV_SCREEN_LOAD_ANIM_FADE_IN,
-                        CRAZYPOD_BOOT_FADE_DURATION_MS, 0, true);
+    lv_screen_load(crazypod_desktop_screen());
     lv_refr_now(display);
     crazypod_system_prompts_set_ui_ready();
     set_cpu_boost(true);
