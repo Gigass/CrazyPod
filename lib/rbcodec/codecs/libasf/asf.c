@@ -306,10 +306,8 @@ int asf_get_timestamp(int *duration)
     uint32_t padding_length;
     */
     uint32_t send_time;
-    static int packet_count = 0;
 
     uint32_t bytesread = 0;
-    packet_count++;
     if (ci->read_filebuf(&tmp8, 1) == 0) {
         DEBUGF("ASF ERROR (EOF?)\n");
         return ASF_ERROR_EOF;

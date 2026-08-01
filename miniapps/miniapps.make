@@ -1,23 +1,16 @@
-# CrazyPod native mini-app payloads. This is intentionally separate from
-# Rockbox's legacy plugin catalog, which remains disabled for iPod 6G.
+# CrazyPod AOT native miniapp payloads.  TypeScript/TSX is generated into C
+# before Make runs; both app.arm and app.dylib are linked from that same C.
 
 MINIAPP_ROOT := $(ROOTDIR)/miniapps
 MINIAPP_BUILD := $(BUILDDIR)/miniapps
-MINIAPP_SDK := $(MINIAPP_ROOT)/sdk/crazypod_miniapp.h
-MINIAPP_NAMES := calculator pomodoro game2048
+MINIAPP_SDK := $(MINIAPP_ROOT)/sdk/crazypod_miniapp_native.h
 MINIAPP_LINK_LDS := $(MINIAPP_BUILD)/miniapp.link
 MINIAPP_PLUGIN_LDS := $(APPSDIR)/plugins/plugin.lds
 MINIAPP_CONFIG := $(FIRMDIR)/export/config/$(MODELNAME).h
 
-MINIAPP_CALCULATOR_OBJ := \
-	$(MINIAPP_BUILD)/calculator/app.o \
-	$(MINIAPP_BUILD)/calculator/engine.o
-MINIAPP_POMODORO_OBJ := \
-	$(MINIAPP_BUILD)/pomodoro/app.o \
-	$(MINIAPP_BUILD)/pomodoro/engine.o
-MINIAPP_GAME2048_OBJ := \
-	$(MINIAPP_BUILD)/game2048/app.o \
-	$(MINIAPP_BUILD)/game2048/engine.o
+MINIAPP_NATIVE_APPS := native-reference capability-lab game2048
+MINIAPP_NATIVE_OBJS := $(foreach app,$(MINIAPP_NATIVE_APPS), \
+	$(MINIAPP_BUILD)/$(app)/app.o)
 MINIAPP_NATIVE_RUNTIME_OBJ := \
 	$(MINIAPP_BUILD)/sdk/crazypod_miniapp_runtime.o
 
@@ -27,28 +20,16 @@ MINIAPP_FLAGS := $(CFLAGS) -I$(MINIAPP_ROOT)/sdk \
 
 ifdef APP_TYPE
 MINIAPP_FLAGS += $(SHARED_CFLAGS)
-MINIAPP_PAYLOADS := \
-	$(MINIAPP_BUILD)/calculator/app.dylib \
-	$(MINIAPP_BUILD)/pomodoro/app.dylib \
-	$(MINIAPP_BUILD)/game2048/app.dylib
+MINIAPP_PAYLOADS := $(foreach app,$(MINIAPP_NATIVE_APPS), \
+	$(MINIAPP_BUILD)/$(app)/app.dylib)
 else
-MINIAPP_CALCULATOR_OBJ += $(MINIAPP_NATIVE_RUNTIME_OBJ)
-MINIAPP_POMODORO_OBJ += $(MINIAPP_NATIVE_RUNTIME_OBJ)
-MINIAPP_GAME2048_OBJ += $(MINIAPP_NATIVE_RUNTIME_OBJ)
-MINIAPP_PAYLOADS := \
-	$(MINIAPP_BUILD)/calculator/app.arm \
-	$(MINIAPP_BUILD)/pomodoro/app.arm \
-	$(MINIAPP_BUILD)/game2048/app.arm
+MINIAPP_PAYLOADS := $(foreach app,$(MINIAPP_NATIVE_APPS), \
+	$(MINIAPP_BUILD)/$(app)/app.arm)
 endif
 
-OTHER_SRC += \
-	$(MINIAPP_ROOT)/calculator/app.c \
-	$(MINIAPP_ROOT)/calculator/engine.c \
-	$(MINIAPP_ROOT)/pomodoro/app.c \
-	$(MINIAPP_ROOT)/pomodoro/engine.c \
-	$(MINIAPP_ROOT)/game2048/app.c \
-	$(MINIAPP_ROOT)/game2048/engine.c \
-	$(MINIAPP_ROOT)/sdk/crazypod_miniapp_runtime.c
+OTHER_SRC += $(foreach app,$(MINIAPP_NATIVE_APPS), \
+	$(MINIAPP_ROOT)/$(app)/generated/app.c)
+OTHER_SRC += $(MINIAPP_ROOT)/sdk/crazypod_miniapp_runtime.c
 
 ROCKS += $(MINIAPP_PAYLOADS)
 CLEANOBJS += $(MINIAPP_BUILD)
@@ -61,37 +42,34 @@ $(MINIAPP_BUILD)/%.o: $(MINIAPP_ROOT)/%.c $(MINIAPP_SDK)
 	$(call PRINTS,CC $(subst $(ROOTDIR)/,,$<))$(CC) \
 		-I$(dir $<) $(MINIAPP_FLAGS) -c $< -o $@
 
+$(MINIAPP_BUILD)/%/app.o: \
+	$(MINIAPP_ROOT)/%/generated/app.c $(MINIAPP_SDK)
+	$(SILENT)mkdir -p $(dir $@)
+	$(call PRINTS,CC miniapps/$*/generated/app.c)$(CC) \
+		-I$(dir $<) $(MINIAPP_FLAGS) -c $< -o $@
+
 ifndef APP_TYPE
 $(MINIAPP_LINK_LDS): $(MINIAPP_PLUGIN_LDS) $(MINIAPP_CONFIG)
 	$(call PRINTS,PP $(@F))
 	$(SILENT)mkdir -p $(dir $@)
 	$(call preprocess2file,$<,$@,-DLOADADDRESS=$(LOADADDRESS))
 
-define build_native_miniapp
-$(MINIAPP_BUILD)/$(1)/app.arm: $$(MINIAPP_$(2)_OBJ) $$(MINIAPP_LINK_LDS)
-	$$(call PRINTS,LD miniapps/$(1)/app.arm)$$(CC) $$(MINIAPP_FLAGS) \
-		-o $$(MINIAPP_BUILD)/$(1)/app.elf \
-		$$(filter %.o,$$^) -lgcc -T$$(MINIAPP_LINK_LDS) \
-		-Wl,--gc-sections -Wl,-Map,$$(MINIAPP_BUILD)/$(1)/app.map \
-		$$(GLOBAL_LDOPTS)
-	$$(SILENT)$$(OC) -O binary \
-		$$(MINIAPP_BUILD)/$(1)/app.elf $$@
-endef
-
-$(eval $(call build_native_miniapp,calculator,CALCULATOR))
-$(eval $(call build_native_miniapp,pomodoro,POMODORO))
-$(eval $(call build_native_miniapp,game2048,GAME2048))
+$(MINIAPP_BUILD)/%/app.arm: \
+	$(MINIAPP_BUILD)/%/app.o $(MINIAPP_NATIVE_RUNTIME_OBJ) $(MINIAPP_LINK_LDS)
+	$(call PRINTS,LD miniapps/$*/app.arm)$(CC) \
+		$(MINIAPP_FLAGS) -o $(MINIAPP_BUILD)/$*/app.elf \
+		$(filter %.o,$^) -lgcc -T$(MINIAPP_LINK_LDS) \
+		-Wl,--gc-sections \
+		-Wl,-Map,$(MINIAPP_BUILD)/$*/app.map \
+		$(GLOBAL_LDOPTS)
+	$(SILENT)$(OC) -O binary \
+		$(MINIAPP_BUILD)/$*/app.elf $@
 else
-define build_sim_miniapp
-$(MINIAPP_BUILD)/$(1)/app.dylib: $$(MINIAPP_$(2)_OBJ)
-	$$(call PRINTS,LD miniapps/$(1)/app.dylib)$$(CC) \
-		$$(MINIAPP_FLAGS) -o $$@ $$(filter %.o,$$^) \
-		-lgcc $$(SHARED_LDFLAGS) \
-		-Wl,$$(LDMAP_OPT),$$(MINIAPP_BUILD)/$(1)/app.map \
-		$$(GLOBAL_LDOPTS)
-endef
-
-$(eval $(call build_sim_miniapp,calculator,CALCULATOR))
-$(eval $(call build_sim_miniapp,pomodoro,POMODORO))
-$(eval $(call build_sim_miniapp,game2048,GAME2048))
+$(MINIAPP_BUILD)/%/app.dylib: \
+	$(MINIAPP_BUILD)/%/app.o
+	$(call PRINTS,LD miniapps/$*/app.dylib)$(CC) \
+		$(MINIAPP_FLAGS) -o $@ $(filter %.o,$^) \
+		-lgcc $(SHARED_LDFLAGS) \
+		-Wl,$(LDMAP_OPT),$(MINIAPP_BUILD)/$*/app.map \
+		$(GLOBAL_LDOPTS)
 endif

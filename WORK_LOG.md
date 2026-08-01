@@ -4,6 +4,198 @@ Entries are point-in-time records. Use the newest entry and
 [PROJECT_STATUS.md](PROJECT_STATUS.md) for current status; older open items may
 have been completed later.
 
+## 2026-07-31 (Mini App Native AOT phases 1–7)
+
+Goal: replace the device-side script runtime with React-style TSX compiled to
+native ARM while preserving host-owned LVGL and reproducing the 2048-to-Lab
+hang/latency path before optimizing it.
+
+Changed:
+
+- implemented CPK5, Native ABI 1 and direct Host UI calls
+- implemented the constrained React Profile TSX-to-C compiler and CLI
+- compiled the same generated C to simulator dylibs and hardware app.arm
+- migrated Native Reference, Capability Lab and 2048
+- added native focus/input routing and CRC-checked 2048 state
+- removed QuickJS, Solid, ABI3, CPK4 and UI command batching
+- changed AOT rendering from full-tree replacement to retained handles and
+  dynamic-property updates
+- rewrote host, simulator matrix and end-to-end reproduction tests
+
+Measured:
+
+- the full-tree renderer failed the five-cycle reproduction at p95 360ms,
+  maximum 390ms and heartbeat 310ms
+- retained handles reduced the measured movement path to p95 60ms and maximum
+  70ms; first dylib cold load remains about 290–300ms and is measured
+  separately
+
+Limit:
+
+- React Profile v1 is a documented subset, not arbitrary TypeScript-to-C;
+  2048 domain logic currently uses a build-time platform intrinsic
+- current physical-device validation must be rerun after the final ARM build
+
+## 2026-07-31 (Mini App fixed-arena transition fix)
+
+Goal: address the physical-device failure where Capability Lab does not open
+after 2048 has processed gameplay input.
+
+Changed:
+
+- allocate the same fixed 8 MiB immovable core arena for every QuickJS session
+  while continuing to enforce the 4–8 MiB manifest limit inside QuickJS; this
+  makes every close leave an arena-sized hole that the next application can
+  reuse instead of depending on a larger contiguous allocation after a smaller
+  session
+- reduce Capability Lab's logical heap from 8 MiB to 4 MiB and publish it as
+  `3.0.3`; measured Lab JS usage remains below 1 MiB
+- add a capped `/.crazypod/miniapp-runtime.log` recording every open/close
+  phase, result, logical heap, JS usage, Host usage and free core memory
+- replace the ineffective immediate-open/immediate-close transition test with
+  three cycles that enter 2048, execute 16 moves with animation/timer service,
+  close while a debounced state write is pending, then open and operate Lab
+
+Verified:
+
+- all 26 builder tests and the complete Mini App host test script pass
+- the native simulator transition test passes all three active cycles; each
+  2048 close returns JS, scheduled work, Host memory and scene content to zero
+  before Lab opens
+- incremental simulator and ARMv5 builds pass; the 324-entry release ZIP passes
+  `unzip -tq`
+- the Target 71 / 64 MiB FAT32 volume was backed up with 5,178 non-AppleDouble
+  files, checked before and after the write, updated with firmware hash
+  `096f7914...f767` and Lab 3.0.3 hash `13143c8d...728f`, read back
+  byte-for-byte and safely ejected
+- physical postboot reproduction remains unverified until the device boots and
+  the exact active 2048 → exit → Capability Lab sequence is repeated
+
+## 2026-07-31 (Mini App device performance hot-path fix)
+
+Goal: remove the real-device stalls observed while opening, using and switching
+between 2048 and Capability Lab.
+
+Changed:
+
+- boost the iPod CPU before synchronous QuickJS application bootstrap, direct
+  input callbacks and confirmed application close
+- index compiled CSS rules by the rightmost selector token and cache the
+  focusable-node list instead of scanning every rule and rebuilding the full
+  tree on each input event
+- debounce 2048 gameplay persistence so every move no longer performs a
+  synchronous temporary-file write, `fsync` and rename; application close still
+  commits the latest state
+- derive CPK filenames from each manifest version in both build scripts,
+  eliminating the duplicate version source that initially repackaged stale
+  `4.0.0`/`3.0.1` names
+- publish the fixes as 2048 `4.0.1` and Capability Lab `3.0.2`
+
+Verified:
+
+- focused builder runtime/CSS/build tests pass 11/11; Mini App C host tests and
+  the 798-line UI architecture gate pass
+- native simulator lifecycle/fault/import/migration tests pass, including the
+  2048-to-Lab transition, and the 29-process isolated scene matrix passes
+- ARMv5 firmware build and the 324-entry release ZIP pass; the ZIP contains
+  only the new reference-package versions
+- the connected Target 71 FAT32 volume was backed up, checked before and after
+  the write, updated by merge plus an atomic firmware replacement, read back
+  byte-for-byte and safely ejected
+- physical postboot responsiveness remains unverified until the device boots
+  and the exact 2048 → exit → Capability Lab sequence is repeated
+
+## 2026-07-31 (Mini App ABI 3 production candidate)
+
+Goal: replace the native/MicroQuickJS Mini App experiments with the locked
+ABI 3 design and exercise the full supported capability surface.
+
+Changed:
+
+- replaced ABI 1/2 and CPK2/3 with CPK4, QuickJS `2025-09-13`, compiled Solid
+  JSX/CSS, generation handles and host-owned LVGL 9.5 objects
+- added the complete UI, animation, Canvas, Tilemap, storage, files, player,
+  audio, device, alarm and notification SDK surface
+- added desktop PNG/GIF/Lottie/Tone conversion, strict TypeScript testing,
+  2048 and Capability Lab
+- removed the old crypto/signing key, native reference apps and stale
+  Calculator/Pomodoro localization path
+- documented the exact reliability boundary and kept SQLite, Chinese IME,
+  networking, browser DOM and 3D as explicit exclusions
+
+Verified:
+
+- 26/26 builder tests, Mini App/QuickJS/CPK4 C host tests, UI/EPUB/font host
+  suites, strict localization and architecture gates pass; the QuickJS test
+  executes the freestanding `sin`, `pow` and `hypot` path
+- simulator and ARMv5 builds pass; the release ZIP contains 324 entries and
+  passes `unzip -tq`
+- 2048 and all Capability Lab simulator actions execute; the alarm produces a
+  Host notification and the export payload matches byte-for-byte
+- native simulator fault tests reject stale handles, duplicate deletion,
+  parent cycles and stale parents; execution failure tears down the scene
+- ten Capability Lab open/Game/close cycles leave no timer, rAF, scene or
+  external Host memory; QuickJS version, source CRC, truncation and bytecode
+  corruption each force a successful cache rebuild
+- the simulator creates a user fixture, selects it through the native picker,
+  and asserts that the Capability Lab JavaScript import reads all 24 bytes
+- simulator-native fault injection proves the 500 ms watchdog, real QuickJS
+  OOM teardown and active FX/PCM panic cleanup
+- the real QuickJS 2048 startup migrates the previous ABI 2 CP24 save into a
+  CRC-validated ABI 3 JSON state without losing board, score or best score
+- Capability Lab exercises all supported input callbacks and runs a two-layer,
+  32-sprite Tilemap workload
+- Capability Lab 3.0.1 replaces the four grouped pages with a scrollable,
+  numbered 14-entry directory; UI controls, navigation/overlays, data/images,
+  Canvas, animation, Tilemap and every Host capability now have independent
+  pages
+- an automated 17-process simulator matrix validates the directory start and
+  end, every reference page, RGB565 screenshot structure, Host PASS logs,
+  exact export bytes and the visible alarm notification badge
+- DeviceInfo now reports bounded QuickJS usage/capacity, Host external buffers,
+  the 12 MiB session budget and Rockbox free memory; Capability Lab validates
+  and logs those values
+- added a target-validated device certification tool for read-only preflight,
+  opt-in atomic CPK staging and evidence collection without copying private
+  application data
+- validated a mounted iPod Classic 6G/Target 71, created a recoverable local
+  backup, deployed the exact firmware, 2048 and Capability Lab artifacts,
+  verified each deployed file byte-for-byte, collected preboot evidence and
+  safely ejected the device
+- moved the two incompatible ABI 2 CPKs out of the device install inbox into
+  the local recovery backup; a read-only FAT32 check found nine orphan
+  clusters and no repair was attempted
+- the first ABI 3 firmware deployment triggered Rockbox's native `Stkov`
+  guard before useful postboot evidence could be collected; inspection found
+  that the 256 KiB QuickJS C-stack allowance and ABI 3 UI still ran on the
+  iPod's 8 KiB main thread stack
+- moved the complete native CrazyPod UI, LVGL and Mini App runtime onto a
+  dedicated 384 KiB Rockbox thread while retaining the 256 KiB QuickJS limit
+  and at least 128 KiB for surrounding Host/LVGL calls; an architecture gate
+  now prevents those reviewed limits and the dedicated thread from drifting
+- rebuilt ARM and simulator targets, confirmed the ARM stack symbol is exactly
+  `0x60000` bytes, passed Mini App host and simulator fault tests, rebuilt the
+  324-entry release archive, backed up the failed binary, deployed the fixed
+  firmware byte-for-byte and safely ejected the iPod
+- inspected the postboot `package error -12` directly on the device: both CPKs
+  were fully published and had valid `app.qbc` caches, while `game2048` logged
+  `InternalError: interrupted` from selector matching during initial render
+- separated the initial module/Solid/CSS bootstrap watchdog (5 s) from normal
+  callback execution (500 ms), batched style invalidation at the end of the JS
+  task, and cached parsed class tokens instead of rebuilding them for every
+  selector check
+- rebuilt both reference packages and ARM/simulator binaries, passed all 25
+  builder tests, Mini App C host tests, architecture gate and native simulator
+  fault/import/migration tests, then staged the new firmware and both packages
+  byte-for-byte on the validated Target 71 device
+
+Not yet verified:
+
+- successful first boot after the native stack-isolation fix, CPK4 publication
+  and postboot logs on the deployed iPod
+- the physical performance, 100-cycle lifecycle, one-hour audio, eight-hour
+  graphics and real power-cut matrices remain `NOT RUN`
+
 ## 2026-07-30 (Nine-language runtime and interaction polish)
 
 Goal: reconcile the CrazyPod tasks completed after the 01:25 documentation

@@ -52,8 +52,8 @@ int main(void)
            (ssize_t)sizeof(container));
     close(fd);
 
-    metadata.package_format = 2;
-    strcpy(metadata.resources_path, path);
+    metadata.package_format = CP_NATIVE_PACKAGE_FORMAT;
+    strcpy(metadata.assets_path, path);
     fd = open(path, O_RDONLY);
     assert(fd >= 0);
     assert(crazypod_miniapp_resource_container_valid(
@@ -62,12 +62,35 @@ int main(void)
     assert(crazypod_miniapp_resource_stat(
         &metadata, "icon", &info) == CRAZYPOD_MINIAPP_OK);
     assert(info.width == 2 && info.height == 1 && info.size == 4);
+    assert(info.frame_count == 0 && info.frame_duration_ms == 0);
     assert(crazypod_miniapp_resource_read(
         &metadata, "icon", 0, result, sizeof(result)) == 4);
     assert(memcmp(result, payload, sizeof(result)) == 0);
     assert(crazypod_miniapp_resource_read(
         &metadata, "icon", 5, result, sizeof(result)) ==
         CRAZYPOD_MINIAPP_ERROR_LIMIT);
+
+    container[48] = CP_RESOURCE_SPRITE_SHEET;
+    container[49] = 1;
+    write_le16(container + 54, 75);
+    write_le32(container + 12,
+               ~crc_32r(container + 16, 52, 0xffffffffu));
+    fd = open(path, O_WRONLY | O_TRUNC);
+    assert(fd >= 0);
+    assert(write(fd, container, sizeof(container)) ==
+           (ssize_t)sizeof(container));
+    close(fd);
+    fd = open(path, O_RDONLY);
+    assert(fd >= 0);
+    assert(crazypod_miniapp_resource_container_valid(
+        fd, 0, sizeof(container)));
+    close(fd);
+    memset(&info, 0, sizeof(info));
+    info.struct_size = sizeof(info);
+    assert(crazypod_miniapp_resource_stat(
+        &metadata, "icon", &info) == CRAZYPOD_MINIAPP_OK);
+    assert(info.frame_count == 1 && info.frame_duration_ms == 75);
+
     container[71] ^= 1;
     fd = open(path, O_WRONLY | O_TRUNC);
     assert(fd >= 0);

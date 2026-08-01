@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include "../../miniapps/sdk/crazypod_miniapp.h"
+#include "../../miniapps/sdk/crazypod_miniapp_native.h"
 
 #define CRAZYPOD_MINIAPP_INPUT_CAPACITY 8
 

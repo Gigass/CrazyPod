@@ -25,5 +25,6 @@ crazypod_video_catalog_get(int index);
 bool crazypod_video_catalog_path_supported(const char *path);
 bool crazypod_video_catalog_update_playback(
     int index, uint32_t resume_ticks, uint32_t duration_ticks);
+bool crazypod_video_catalog_delete(int index);
 
 #endif

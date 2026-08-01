@@ -141,12 +141,79 @@ lv_obj_t *crazypod_photo_screen_render_image(
     display_height = descriptor->header.h * scale / LV_SCALE_NONE;
     image = lv_image_create(parent);
     lv_image_set_src(image, descriptor);
+    lv_image_set_pivot(image, 0, 0);
     lv_image_set_scale(image, scale);
     lv_obj_set_pos(
         image, x + (width - display_width) / 2,
         y + (height - display_height) / 2);
     lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
     return image;
+}
+
+void crazypod_photo_screen_render_delete_confirmation(
+    lv_obj_t *parent, const char *name,
+    const lv_image_dsc_t *descriptor, bool video,
+    uint32_t white_color, uint32_t muted_color)
+{
+    lv_obj_t *card;
+    lv_obj_t *label;
+
+    label = crazypod_ui_widget_label(
+        parent, CP_TR("Delete"),
+        &lv_font_montserrat_12, white_color, 170);
+    lv_obj_set_pos(label, 16, 41);
+    card = crazypod_ui_widget_box(
+        parent, 18, 64, 284, 94, 12,
+        0x111116, LV_OPA_COVER);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_border_color(
+        card, lv_color_hex(0xFF453A), 0);
+    lv_obj_set_style_border_opa(card, 125, 0);
+    {
+        lv_obj_t *media = crazypod_ui_widget_box(
+            card, 10, 10, 88, 74, 7,
+            0x050507, LV_OPA_COVER);
+
+        lv_obj_set_style_clip_corner(media, true, 0);
+        if(descriptor != NULL)
+            (void)crazypod_photo_screen_render_image(
+                media, descriptor, 0, 0, 88, 74);
+        else {
+            label = crazypod_ui_widget_label(
+                media, video ? LV_SYMBOL_PLAY : LV_SYMBOL_IMAGE,
+                &lv_font_montserrat_24,
+                white_color, 85);
+            lv_obj_center(label);
+        }
+    }
+    label = crazypod_ui_widget_label(
+        card, video ? CP_TR("Videos") : CP_TR("Photos"),
+        &lv_font_montserrat_8, muted_color, 180);
+    lv_obj_set_pos(label, 111, 11);
+    label = crazypod_ui_widget_label(
+        card, name != NULL ? name : "",
+        &lv_font_montserrat_10, white_color, LV_OPA_COVER);
+    lv_obj_set_width(label, 158);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_pos(label, 111, 31);
+    label = crazypod_ui_widget_label(
+        card, CP_TR("Hold center to delete permanently"),
+        &lv_font_montserrat_8, 0xFF6B63, 220);
+    lv_obj_set_width(label, 158);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_pos(label, 111, 55);
+    card = crazypod_ui_widget_box(
+        parent, 54, 174, 212, 38, 12,
+        0xFF453A, 210);
+    label = crazypod_ui_widget_label(
+        card, LV_SYMBOL_TRASH, &lv_font_montserrat_12,
+        white_color, LV_OPA_COVER);
+    lv_obj_set_pos(label, 13, 11);
+    label = crazypod_ui_widget_label(
+        card, CP_TR("Hold Center to Delete"),
+        &lv_font_montserrat_10,
+        white_color, LV_OPA_COVER);
+    lv_obj_set_pos(label, 40, 11);
 }
 
 static void render_empty(
@@ -226,7 +293,8 @@ void crazypod_photo_screen_render_grid(
                 WHITE, 65);
             lv_obj_center(refresh);
         }
-        if(crazypod_photo_is_favorite(photo_index))
+        if(mode != CRAZYPOD_PHOTO_GRID_DELETE &&
+           crazypod_photo_is_favorite(photo_index))
             crazypod_ui_widget_pixel_heart(
                 cell, 52, 5, 1, 0xFF375F, LV_OPA_COVER);
         {

@@ -1,0 +1,52 @@
+{
+  "volume": "/Volumes/CRAZYPOD",
+  "device": {
+    "Target": "ipod6g",
+    "Target id": "71",
+    "Target define": "-DIPOD_6G",
+    "Memory": "64",
+    "CPU": "arm",
+    "Manufacturer": "s5l8702",
+    "Version": "74de36a8c2M-260731",
+    "Binary": "rockbox.ipod",
+    "Binary size": "2316544",
+    "Voice format": "400",
+    "Actual size": "2316536",
+    "RAM usage": "18353240",
+    "Features": "accessory_supply:backlight_brightness:crossfade:headphone_detection:hold_button:hotkey:lcd_bitmap:lcd_non-mono:lcd_color:lcd_sleep:morse_input:pitchscreen:multivolume:quickscreen:rtc:swcodec:tagcache:tc_ramcache:charging:usb_charging_enable:wheel_acceleration:lineout_poweroff:large_plugin_buffer:albumart:disk_storage:scrollwheel:usb_power:usbstack:himem:hardware_click:play_frequency:clear_settings_on_hold:perceptual_volume:codec_aac_he",
+    "gcc": "arm-none-eabi-gcc (GCC) 16.1.0",
+    "ld": "GNU ld (GNU Binutils) 2.46.1",
+    "Host gcc": "Apple clang version 21.0.0 (clang-2100.3.20.102)",
+    "Host system": "Darwin"
+  },
+  "freeBytes": 143995404288,
+  "artifacts": {
+    "build-hw-ipod6g/CrazyPod-6G.zip": {
+      "bytes": 10199755,
+      "sha256": "eae2d4c663608b5041810aaf70dea6bafd1ebe5f31cae1710054f6d84577aa40"
+    },
+    "dist/miniapps/game2048-5.0.0.cpk": {
+      "bytes": 79419,
+      "sha256": "6fe8d880e7df65e58bf4549e1fd407cb8685168dc701ae8b5bfa3994ebb2ddbf"
+    },
+    "dist/miniapps/capability-lab-5.0.0.cpk": {
+      "bytes": 148307,
+      "sha256": "5a6056f8edd4c10ed4b641fc47d28065b9356f77b0c2cd2f43b13d1056a9fd22"
+    },
+    "dist/miniapps/native-reference-1.0.0.cpk": {
+      "bytes": 55141,
+      "sha256": "bad7cb140b1712ade30f27f086102a37e870effe10a86955db85350774033aa1"
+    }
+  },
+  "collectedAtUtc": "2026-08-01T03:46:32.296997+00:00",
+  "commit": "74de36a8c2748d6a03af209c723e0f0509e2f78b",
+  "logs": [
+    "device-logs/capability-lab.log"
+  ],
+  "reproFiles": [
+    "miniapp-repro/summary.json",
+    "miniapp-repro/environment.txt",
+    "miniapp-repro/trace.csv",
+    "miniapp-repro/frame-crc.csv"
+  ]
+}

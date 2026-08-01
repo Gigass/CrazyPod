@@ -1,26 +1,6 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.,:+-*/()=%!?_": {
-      "locations": [
-        "apps/crazypod/miniapps/modal/crazypod_miniapp_modal.c:215"
-      ]
-    },
-    " MIN": {
-      "locations": [
-        "miniapps/pomodoro/app.c:109"
-      ]
-    },
-    " OF ": {
-      "locations": [
-        "miniapps/pomodoro/app.c:94"
-      ]
-    },
-    " ROUNDS": {
-      "locations": [
-        "miniapps/pomodoro/app.c:109"
-      ]
-    },
     " · Favorite": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_preview.c:442"
@@ -63,11 +43,6 @@
       "locations": [
         "apps/crazypod/miniapps/runtime/crazypod_miniapp_host_system.c:132",
         "apps/crazypod/ui/features/organizer/crazypod_calendar_screen.c:190"
-      ]
-    },
-    "%04d-%02d-%02d %02d:%02d": {
-      "locations": [
-        "apps/crazypod/miniapps/runtime/crazypod_miniapp_host_system.c:139"
       ]
     },
     "%04d-%02d-%02d · %lu min": {
@@ -894,11 +869,6 @@
       ],
       "keepEnglish": true
     },
-    "CHANGES NOT SAVED": {
-      "locations": [
-        "miniapps/pomodoro/app.c:311"
-      ]
-    },
     "CHAPTERS": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:86"
@@ -928,11 +898,6 @@
     "CLOCK STALLED": {
       "locations": [
         "apps/crazypod/crazypod_videos.c:514"
-      ]
-    },
-    "COMPLETE": {
-      "locations": [
-        "miniapps/pomodoro/app.c:139"
       ]
     },
     "CONTACT": {
@@ -975,11 +940,6 @@
         "apps/crazypod/ui/features/customize/crazypod_customize_feature.c:91"
       ]
     },
-    "Calculator": {
-      "locations": [
-        "miniapps/calculator/app.c:340"
-      ]
-    },
     "Calendar": {
       "locations": [
         "apps/crazypod/ui/shell/crazypod_app_catalog.c"
@@ -999,11 +959,6 @@
     "Cancel Timer": {
       "locations": [
         "apps/crazypod/ui/features/organizer/crazypod_organizer_feature.c:198"
-      ]
-    },
-    "Cannot divide by zero": {
-      "locations": [
-        "miniapps/calculator/app.c:75"
       ]
     },
     "Cel Frame": {
@@ -1443,11 +1398,6 @@
         "apps/crazypod/ui/features/settings/crazypod_settings_feature.c:47"
       ]
     },
-    "DONE": {
-      "locations": [
-        "miniapps/pomodoro/app.c:330"
-      ]
-    },
     "Dance": {
       "locations": [
         "apps/crazypod/crazypod_workouts.c:38"
@@ -1491,6 +1441,11 @@
         "apps/crazypod/ui/features/music/crazypod_music_feature.c:72",
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:184",
         "apps/crazypod/ui/features/organizer/crazypod_organizer_feature.c:313"
+      ]
+    },
+    "Delete Failed": {
+      "locations": [
+        "apps/crazypod/ui/features/photos/crazypod_photos_feature.c:354"
       ]
     },
     "Delete this local file": {
@@ -1705,11 +1660,6 @@
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:199"
       ]
     },
-    "Error": {
-      "locations": [
-        "miniapps/calculator/app.c:60"
-      ]
-    },
     "Event Details": {
       "locations": [
         "apps/crazypod/ui/features/organizer/crazypod_organizer_feature.c:309"
@@ -1766,13 +1716,6 @@
     "FIT": {
       "locations": [
         "apps/crazypod/ui/features/photos/crazypod_photo_screen.c:312"
-      ]
-    },
-    "FOCUS": {
-      "locations": [
-        "miniapps/pomodoro/app.c:120",
-        "miniapps/pomodoro/app.c:129",
-        "miniapps/pomodoro/app.c:323"
       ]
     },
     "FORWARD 10 SEC": {
@@ -2265,17 +2208,6 @@
         "apps/crazypod/ui/features/customize/crazypod_customize_catalog.c:78"
       ]
     },
-    "LONG": {
-      "locations": [
-        "miniapps/pomodoro/app.c:128"
-      ]
-    },
-    "LONG BREAK": {
-      "locations": [
-        "miniapps/pomodoro/app.c:119",
-        "miniapps/pomodoro/app.c:327"
-      ]
-    },
     "Large  ·  16 pt": {
       "locations": [
         "apps/crazypod/ui/app/crazypod_choice_coordinator.c:131"
@@ -2655,11 +2587,6 @@
         "apps/crazypod/ui/features/notes/crazypod_notes_screen.c:50"
       ]
     },
-    "NEXT": {
-      "locations": [
-        "miniapps/pomodoro/app.c:216"
-      ]
-    },
     "NOTE": {
       "locations": [
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:107"
@@ -2979,11 +2906,6 @@
         "apps/crazypod/ui/app/crazypod_choice_coordinator.c:100"
       ]
     },
-    "PAUSE": {
-      "locations": [
-        "miniapps/pomodoro/app.c:208"
-      ]
-    },
     "PAUSED": {
       "locations": [
         "apps/crazypod/crazypod_lcd.c:412",
@@ -3295,37 +3217,15 @@
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:171"
       ]
     },
-    "RESET": {
-      "locations": [
-        "miniapps/pomodoro/app.c:209",
-        "miniapps/pomodoro/app.c:214",
-        "miniapps/pomodoro/app.c:216"
-      ]
-    },
     "RESULTS": {
       "locations": [
         "apps/crazypod/ui/features/music/crazypod_music_feature.c:149",
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:102"
       ]
     },
-    "RESUME": {
-      "locations": [
-        "miniapps/pomodoro/app.c:213"
-      ]
-    },
     "RESUMED": {
       "locations": [
         "apps/crazypod/crazypod_videos.c:495"
-      ]
-    },
-    "RIGHT DONE  MENU CANCEL": {
-      "locations": [
-        "apps/crazypod/miniapps/modal/crazypod_miniapp_modal.c:370"
-      ]
-    },
-    "ROUNDS": {
-      "locations": [
-        "miniapps/pomodoro/app.c:329"
       ]
     },
     "RUNNING": {
@@ -3482,11 +3382,6 @@
         "apps/crazypod/ui/features/notes/crazypod_notes_preview.c:113"
       ]
     },
-    "Result out of range": {
-      "locations": [
-        "miniapps/calculator/app.c:79"
-      ]
-    },
     "Resume": {
       "locations": [
         "apps/crazypod/ui/features/organizer/crazypod_organizer_feature.c:229"
@@ -3583,11 +3478,6 @@
         "apps/crazypod/ui/features/customize/crazypod_customize_catalog.c:232"
       ]
     },
-    "SELECT ADD  PLAY DELETE": {
-      "locations": [
-        "apps/crazypod/miniapps/modal/crazypod_miniapp_modal.c:368"
-      ]
-    },
     "SELECT Apply  •  Wheel Zoom  •  Hold MENU Cancel": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_wallpaper_crop_screen.c:97"
@@ -3603,31 +3493,9 @@
         "apps/crazypod/ui/features/settings/crazypod_settings_feature.c:41"
       ]
     },
-    "SETUP": {
-      "locations": [
-        "miniapps/pomodoro/app.c:205"
-      ]
-    },
-    "SHORT": {
-      "locations": [
-        "miniapps/pomodoro/app.c:126"
-      ]
-    },
-    "SHORT BREAK": {
-      "locations": [
-        "miniapps/pomodoro/app.c:117",
-        "miniapps/pomodoro/app.c:325"
-      ]
-    },
     "SHUFFLE": {
       "locations": [
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:175"
-      ]
-    },
-    "SKIP": {
-      "locations": [
-        "miniapps/pomodoro/app.c:209",
-        "miniapps/pomodoro/app.c:214"
       ]
     },
     "SLEEP TIMER": {
@@ -3650,11 +3518,6 @@
         "apps/crazypod/ui/features/settings/crazypod_settings_model.c:515"
       ],
       "keepEnglish": true
-    },
-    "START": {
-      "locations": [
-        "miniapps/pomodoro/app.c:205"
-      ]
     },
     "STOPWATCH": {
       "locations": [
@@ -3729,6 +3592,11 @@
         "apps/crazypod/ui/features/photos/crazypod_photo_screen.c:83"
       ]
     },
+    "Saved to Photos": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_screenshot_feedback.c"
+      ]
+    },
     "Saved to My Favorites  Center removes": {
       "locations": [
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:302"
@@ -3777,6 +3645,11 @@
     "Screen corner radius": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_customize_preview.c:133"
+      ]
+    },
+    "Screenshot failed": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_screenshot_feedback.c"
       ]
     },
     "Scroll browse  Center play  Menu exits": {
@@ -3851,11 +3724,6 @@
     "Settings": {
       "locations": [
         "apps/crazypod/ui/shell/crazypod_app_catalog.c"
-      ]
-    },
-    "Settings saved": {
-      "locations": [
-        "miniapps/pomodoro/app.c:467"
       ]
     },
     "Show": {
@@ -4066,11 +3934,6 @@
     "TIME ONLY\nNo motion, distance, or calorie estimates": {
       "locations": [
         "apps/crazypod/ui/features/organizer/crazypod_workout_screen.c:49"
-      ]
-    },
-    "TIMER NOT STARTED": {
-      "locations": [
-        "miniapps/pomodoro/app.c:310"
       ]
     },
     "TITLE": {
@@ -4563,66 +4426,6 @@
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_screen.c:142"
       ]
-    },
-    "2048 REACHED": {
-      "locations": [
-        "miniapps/game2048/app.c"
-      ],
-      "keepEnglish": true
-    },
-    "CENTER CHANGE": {
-      "locations": [
-        "miniapps/game2048/app.c"
-      ],
-      "keepEnglish": true
-    },
-    "CONFIRM": {
-      "locations": [
-        "miniapps/game2048/app.c"
-      ],
-      "keepEnglish": true
-    },
-    "FINAL BOARD": {
-      "locations": [
-        "miniapps/game2048/app.c"
-      ],
-      "keepEnglish": true
-    },
-    "GAME SAVED": {
-      "locations": [
-        "miniapps/game2048/app.c"
-      ],
-      "keepEnglish": true
-    },
-    "HOW TO PLAY": {
-      "locations": [
-        "miniapps/game2048/app.c"
-      ],
-      "keepEnglish": true
-    },
-    "JOIN THE TILES": {
-      "locations": [
-        "miniapps/game2048/app.c"
-      ],
-      "keepEnglish": true
-    },
-    "NO UNDO": {
-      "locations": [
-        "miniapps/game2048/app.c"
-      ],
-      "keepEnglish": true
-    },
-    "RECENT 10": {
-      "locations": [
-        "miniapps/game2048/app.c"
-      ],
-      "keepEnglish": true
-    },
-    "YOU WIN": {
-      "locations": [
-        "miniapps/game2048/app.c"
-      ],
-      "keepEnglish": true
     },
     "Language": {
       "locations": [

@@ -67,8 +67,7 @@ void crazypod_route_actions_push_selected(
     if(crazypod_route_registry_get(route) == NULL ||
        !crazypod_ui_routes_push(route, group, selected))
         return;
-    if(crazypod_menu_preview_is_music_route(route))
-        crazypod_menu_preview_prefetch(current_route());
+    crazypod_menu_preview_prefetch(current_route());
     host.render(true);
 }
 
@@ -82,6 +81,28 @@ void crazypod_route_actions_push(
 void crazypod_route_actions_request_now_playing(void)
 {
     crazypod_now_playing_request_open();
+}
+
+bool crazypod_route_actions_confirm_photos(
+    const struct route_state *state, long now,
+    long feedback_ticks)
+{
+    struct crazypod_photos_confirmation_result result =
+        crazypod_photos_feature_confirm(
+            state, now, feedback_ticks);
+
+    if(!result.handled)
+        return false;
+    if(result.deleted && crazypod_ui_routes_depth() > 1) {
+        struct route_state *parent;
+
+        crazypod_ui_routes_pop();
+        parent = current_route();
+        if(parent != NULL && parent->route == result.return_route)
+            parent->selected = result.selected;
+    }
+    host.render(result.deleted);
+    return true;
 }
 
 void crazypod_route_actions_pop(void)
@@ -428,6 +449,12 @@ static bool activate_domain(
             .render = host.render,
         };
 
+        /*
+         * Loading a native miniapp is synchronous. Boost before
+         * entering it so a user who paused on the list does not run the
+         * bootstrap watchdog at the iPod's idle clock.
+         */
+        host.boost(HZ / 2);
         return crazypod_miniapps_feature_activate(
             state, &actions);
     }
@@ -565,8 +592,7 @@ void crazypod_route_actions_move(int direction, long now)
     if(next == state->selected)
         return;
     state->selected = next;
-    if(crazypod_menu_preview_is_music_route(state->route))
-        crazypod_menu_preview_prefetch(state);
+    crazypod_menu_preview_prefetch(state);
     if(crazypod_menu_preview_is_skeuomorphic_route(
            state->route))
         crazypod_preview_motion_set_direction(direction);

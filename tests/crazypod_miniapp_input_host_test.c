@@ -9,7 +9,6 @@
 
 static bool app_open;
 static bool app_handles_event;
-static bool close_requested;
 static bool ui_refresh_requested;
 static int wake_count;
 static int boost_count;
@@ -31,14 +30,6 @@ bool crazypod_miniapps_event(const struct cp_input_event *event)
     ++event_count;
     last_event_type = (enum cp_input_type)event->type;
     return app_handles_event;
-}
-
-bool crazypod_miniapps_take_close_request(void)
-{
-    bool requested = close_requested;
-
-    close_requested = false;
-    return requested;
 }
 
 bool crazypod_miniapps_take_ui_refresh(void)
@@ -94,7 +85,6 @@ static void reset_test(void)
 {
     app_open = false;
     app_handles_event = false;
-    close_requested = false;
     ui_refresh_requested = false;
     wake_count = 0;
     boost_count = 0;
@@ -141,11 +131,12 @@ int main(void)
 
     app_open = true;
     app_handles_event = true;
+    ui_refresh_requested = true;
     assert(handle(&event, 10, &actions));
     assert(wake_count == 1);
     assert(event_count == 1);
     assert(reset_count == 1);
-    assert(render_count == 1);
+    assert(render_count == 0);
     assert(boost_count == 1);
 
     event = input_event(BUTTON_SCROLL_FWD);
@@ -178,7 +169,7 @@ int main(void)
     assert(handle(&event, 140, &actions));
     assert(event_count == 1);
     assert(last_event_type == CP_INPUT_MENU);
-    assert(render_count == 1);
+    assert(render_count == 0);
     assert(boost_count == 1);
     assert(close_count == 0);
 
@@ -219,6 +210,7 @@ int main(void)
     event = input_event(BUTTON_SELECT);
     assert(handle(&event, 370, &actions));
     assert(close_count == 1);
+    assert(boost_count == 4);
 
     reset_test();
     app_open = true;

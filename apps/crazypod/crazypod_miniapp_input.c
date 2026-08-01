@@ -1,3 +1,5 @@
+#include <stddef.h>
+
 #include "crazypod_miniapp_input.h"
 
 static bool wheel_type(uint8_t type)

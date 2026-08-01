@@ -377,7 +377,10 @@ __pycache__
 /scratch_*
 /tmp_*
 /docs/**/*.md
-!/docs/CRAZYPOD_MINIAPP_V2_ARCHITECTURE.zh-CN.md
+!/docs/CRAZYPOD_MINIAPP_NATIVE_AOT_ARCHITECTURE.zh-CN.md
+!/docs/CRAZYPOD_MINIAPP_NATIVE_AOT_DEVELOPMENT.zh-CN.md
+!/docs/CRAZYPOD_MINIAPP_NATIVE_AOT_VERIFICATION.zh-CN.md
+!/docs/CRAZYPOD_MINIAPP_CPK5_FORMAT.zh-CN.md
 /docs/**/*.txt
 /docs/**/*.html
 /apps/plugins/**/README.md
@@ -393,3 +396,4 @@ __pycache__
 /build-database/*.exe
 /build-database/obj-*
 /device-backups
+/miniapps/*/generated/

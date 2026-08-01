@@ -9,6 +9,8 @@ import sys
 root = Path("apps/crazypod")
 ui = root / "ui"
 main = root / "crazypod_ui.c"
+entry = root / "crazypod_main.c"
+limits = root / "crazypod_runtime_limits.h"
 errors = []
 
 for name in (
@@ -39,6 +41,18 @@ if re.search(
     main_text, re.MULTILINE,
 ):
     errors.append(f"{main} owns static LVGL object state")
+
+entry_text = entry.read_text()
+limits_text = limits.read_text()
+if "crazypod_ui_thread_stack[CRAZYPOD_UI_THREAD_STACK_SIZE]" \
+        not in entry_text:
+    errors.append(f"{entry} does not own a dedicated native UI stack")
+if "create_thread(" not in entry_text or \
+        '"crazypod_ui"' not in entry_text:
+    errors.append(f"{entry} does not launch the native UI thread")
+if "CRAZYPOD_UI_THREAD_STACK_SIZE (384u * 1024u)" \
+        not in limits_text:
+    errors.append("native UI stack is not the reviewed 384 KiB")
 
 features = ui / "features"
 feature_names = sorted(

@@ -49,7 +49,7 @@ trap cleanup EXIT HUP INT TERM
 ffmpeg -hide_banner -loglevel error -y \
     -i "$input" \
     -map 0:v:0 -map 0:a:0? \
-    -vf "scale=320:198:force_original_aspect_ratio=decrease,pad=320:240:(ow-iw)/2:0:black,setsar=1" \
+    -vf "scale=320:240:force_original_aspect_ratio=increase,crop=320:240,setsar=1" \
     -r 24 \
     -c:v mpeg2video -pix_fmt yuv420p -q:v 5 -g 12 -bf 2 \
     -c:a mp2 -b:a 128k -ar 44100 -ac 2 \
@@ -86,7 +86,7 @@ poster_time=$(awk -v value="$duration" \
 ffmpeg -hide_banner -loglevel error -y \
     -ss "$poster_time" -i "$input" \
     -frames:v 1 \
-    -vf "scale=128:96:force_original_aspect_ratio=decrease,pad=128:96:(ow-iw)/2:(oh-ih)/2:black" \
+    -vf "scale=128:96:force_original_aspect_ratio=increase,crop=128:96" \
     -c:v bmp -f image2 "$poster_temporary"
 
 [ -s "$poster_temporary" ] || {

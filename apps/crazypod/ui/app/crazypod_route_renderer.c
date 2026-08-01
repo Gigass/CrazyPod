@@ -294,37 +294,52 @@ void crazypod_route_renderer_render(
               state->route,
               CRAZYPOD_ROUTE_FLAG_DARK_STATUS)
             ? 0x0E0E0E : COLOR_WHITE;
+    lv_obj_t *content = crazypod_shell_product_content();
+
+    if(state->route == MINIAPP_ROUTE_VIEW &&
+       crazypod_miniapps_feature_surface_attached(content)) {
+        (void)crazypod_miniapps_feature_render(
+            state, content, primary_color());
+        lv_obj_invalidate(content);
+        crazypod_status_bar_set_palette(
+            1, foreground, background);
+        crazypod_status_bar_foreground(1);
+        crazypod_screen_corners_refresh();
+        return;
+    }
 
     reset_feature_surfaces();
-    lv_obj_clean(crazypod_shell_product_content());
-    lv_obj_set_pos(crazypod_shell_product_content(), 0, 0);
+    lv_obj_clean(content);
+    lv_obj_set_pos(content, 0, 0);
     lv_obj_set_style_bg_color(
-        crazypod_shell_product_content(),
+        content,
         lv_color_hex(background), 0);
     lv_obj_set_style_bg_opa(
-        crazypod_shell_product_content(), LV_OPA_COVER, 0);
+        content, LV_OPA_COVER, 0);
     crazypod_ui_widget_box(
-        crazypod_shell_product_content(),
+        content,
         0, 0, LCD_WIDTH, LCD_HEIGHT, 0,
         background, LV_OPA_COVER);
     menu_wallpaper = solid_black || book_reader || fullscreen
         ? NULL : crazypod_custom_menu_wallpaper();
     if(menu_wallpaper != NULL) {
         lv_obj_t *image =
-            lv_image_create(crazypod_shell_product_content());
+            lv_image_create(content);
 
         lv_image_set_src(image, menu_wallpaper);
         lv_obj_set_pos(image, 0, 0);
         lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
     }
     render_feature(state, now);
-    lv_obj_invalidate(crazypod_shell_product_content());
+    crazypod_photos_feature_render_feedback(
+        state, content, COLOR_WHITE, COLOR_MUTED, now);
+    lv_obj_invalidate(content);
     if(transition) {
-        lv_obj_set_x(crazypod_shell_product_content(), 0);
+        lv_obj_set_x(content, 0);
         lv_obj_set_style_opa(
-            crazypod_shell_product_content(),
+            content,
             LV_OPA_COVER, 0);
-        lv_obj_invalidate(crazypod_shell_product_content());
+        lv_obj_invalidate(content);
     }
     crazypod_status_bar_set_palette(
         1, foreground, background);

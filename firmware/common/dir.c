@@ -339,6 +339,8 @@ struct dirinfo dir_get_info(DIR *dirp, struct dirent *entry)
         .attribute = entry->info.attr,
         .size      = entry->info.size,
         .mtime     = dostime_mktime(entry->info.wrtdate, entry->info.wrttime),
+        .ctime     = dostime_mktime(entry->info.crtdate, entry->info.crttime),
+        .ctime_tenth = entry->info.crttimetenth,
     };
 
 file_error:

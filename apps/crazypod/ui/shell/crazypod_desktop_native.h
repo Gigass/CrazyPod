@@ -7,12 +7,14 @@
 
 #define CRAZYPOD_DESKTOP_NATIVE_TOP 40
 #define CRAZYPOD_DESKTOP_NATIVE_BOTTOM 143
+#define CRAZYPOD_DESKTOP_NATIVE_MAX_VISIBLE 5
 
 void crazypod_desktop_native_reset(void);
 void crazypod_desktop_native_invalidate(bool discard_backdrop);
+void crazypod_desktop_native_invalidate_icons(void);
 void crazypod_desktop_native_capture_flush(const lv_area_t *area);
 void crazypod_desktop_native_render(
-    int left_app_index, int center_app_index, int right_app_index,
-    int base_size, bool blocked);
+    const int *app_indices, const int *centers_x, int icon_count,
+    int icon_size, bool blocked);
 
 #endif

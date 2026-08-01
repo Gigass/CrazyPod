@@ -1,0 +1,10 @@
+target=ipod6g-hardware
+hz=100
+cycles=1
+scenario=game2048
+cpuBoostRequested=true
+cpuFrequencyNormalHz=54000000
+cpuFrequencyMaxHz=216000000
+movesPerCycle=32
+inputPath=button_queue
+displayCriterion=hardware-lcd-present-sequence

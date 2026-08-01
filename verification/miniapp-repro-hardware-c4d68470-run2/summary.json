@@ -1,0 +1,16 @@
+{
+  "status":"FAIL",
+  "reason":"game2048-exit-state",
+  "scenario":"full",
+  "phase":"game-exit-select",
+  "cycles":0,
+  "moveSamples":0,
+  "moveP95Ms":0,
+  "moveMaxMs":0,
+  "actionMaxMs":740,
+  "heartbeatMaxMs":760,
+  "buttonQueueMax":2,
+  "miniappQueueMax":0,
+  "violationCount":40,
+  "traceRecords":496
+}

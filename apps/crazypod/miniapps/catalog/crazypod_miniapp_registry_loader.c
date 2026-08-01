@@ -60,14 +60,17 @@ static int populate_paths(
 {
     if(!copy_text(metadata->install_path,
                   sizeof(metadata->install_path), directory) ||
-       !make_path(metadata->binary_path, sizeof(metadata->binary_path),
-                  directory, metadata->binary) ||
+       !make_path(metadata->profile_path,
+                  sizeof(metadata->profile_path),
+                  directory, "profile.bin") ||
+       !make_path(metadata->assets_path,
+                  sizeof(metadata->assets_path),
+                  directory, "assets.bin") ||
        !make_path(metadata->icon_path, sizeof(metadata->icon_path),
-                  directory, "icon.bmp") ||
-       (metadata->package_format == 2u &&
-        !make_path(metadata->resources_path,
-                   sizeof(metadata->resources_path),
-                   directory, "resources.bin")))
+                  directory, "icon.bin") ||
+       !make_path(metadata->binary_path,
+                  sizeof(metadata->binary_path),
+                  directory, metadata->entry))
         return CRAZYPOD_MINIAPP_ERROR_LIMIT;
     return CRAZYPOD_MINIAPP_OK;
 }
@@ -175,15 +178,6 @@ bool crazypod_miniapp_registry_package_matches(
     const char *id, const struct cpk_reader *reader,
     struct crazypod_miniapp_metadata *verified_metadata)
 {
-    static const char *const names[MINIAPP_CPK_MAX_ENTRIES] = {
-        "manifest.ini",
-#if CONFIG_BINFMT == BINFMT_ROCK
-        "app.arm",
-#else
-        "app.dylib",
-#endif
-        "icon.bmp", "signature.ed25519", "resources.bin",
-    };
     struct install_record record;
     char directory[MAX_PATH];
     char path[MAX_PATH];
@@ -194,10 +188,11 @@ bool crazypod_miniapp_registry_package_matches(
            directory, id, verified_metadata, &record))
         return false;
     for(index = 0; index < reader->entry_count; ++index) {
-        if((index < MINIAPP_CPK_V1_ENTRIES &&
-            (record.files[index].size != reader->entries[index].size ||
-             record.files[index].crc32 != reader->entries[index].crc32)) ||
-           !make_path(path, sizeof(path), directory, names[index]) ||
+        if(record.files[index].size != reader->entries[index].size ||
+           record.files[index].crc32 != reader->entries[index].crc32 ||
+           !make_path(
+               path, sizeof(path), directory,
+               reader->entries[index].name) ||
            !file_matches(path, reader, index))
             return false;
     }

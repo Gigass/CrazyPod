@@ -1,0 +1,39 @@
+[open] InternalError: interrupted
+    at filter (native)
+    at bn (/.crazypod/miniapps/.stage-game2048/app.js:1:18597)
+    at xn (/.crazypod/miniapps/.stage-game2048/app.js:1:18705)
+    at Fe (/.crazypod/miniapps/.stage-game2048/app.js:1:18835)
+    at We (/.crazypod/miniapps/.stage-game2048/app.js:1:23212)
+    at F (/.crazypod/miniapps/.stage-game2048/app.js:1:24639)
+    at Ut (/.crazypod/miniapps/.stage-game2048/app.js:3:305)
+    at <anonymous> (/.crazypod/miniapps/.stage-game2048/app.js:3:931)
+    at rt
+[open] InternalError: interrupted
+    at bn (/.crazypod/miniapps/.stage-game2048/app.js:1:18567)
+    at xn (/.crazypod/miniapps/.stage-game2048/app.js:1:18705)
+    at Fe (/.crazypod/miniapps/.stage-game2048/app.js:1:18835)
+    at We (/.crazypod/miniapps/.stage-game2048/app.js:1:23212)
+    at F (/.crazypod/miniapps/.stage-game2048/app.js:1:24639)
+    at Ut (/.crazypod/miniapps/.stage-game2048/app.js:3:305)
+    at <anonymous> (/.crazypod/miniapps/.stage-game2048/app.js:3:931)
+    at rt (/.crazypod/miniapps/.
+[open] InternalError: interrupted
+    at get flags (native)
+    at [Symbol.split] (native)
+    at split (native)
+    at bn (/.crazypod/miniapps/.stage-game2048/app.js:1:18583)
+    at xn (/.crazypod/miniapps/.stage-game2048/app.js:1:18705)
+    at Fe (/.crazypod/miniapps/.stage-game2048/app.js:1:18835)
+    at We (/.crazypod/miniapps/.stage-game2048/app.js:1:23212)
+    at F (/.crazypod/miniapps/.stage-game2048/app.js:1:24639)
+    at Ut (/.crazypod/miniapps/.stage-game2048/app.js:3:305)
+    at <anonymous> (/.c
+[open] InternalError: interrupted
+    at bn (/.crazypod/miniapps/.stage-game2048/app.js:1:18567)
+    at xn (/.crazypod/miniapps/.stage-game2048/app.js:1:18705)
+    at Fe (/.crazypod/miniapps/.stage-game2048/app.js:1:18835)
+    at We (/.crazypod/miniapps/.stage-game2048/app.js:1:23212)
+    at F (/.crazypod/miniapps/.stage-game2048/app.js:1:24639)
+    at Ut (/.crazypod/miniapps/.stage-game2048/app.js:3:305)
+    at <anonymous> (/.crazypod/miniapps/.stage-game2048/app.js:3:931)
+    at rt (/.crazypod/miniapps/.

@@ -36,6 +36,7 @@ uint32_t crazypod_video_duration_seconds(int index);
 const lv_image_dsc_t *crazypod_video_poster(int index);
 unsigned crazypod_video_generation(void);
 bool crazypod_videos_busy(void);
+bool crazypod_video_delete(int index);
 
 enum crazypod_video_result crazypod_video_play(int index);
 enum crazypod_video_result crazypod_video_last_result(void);

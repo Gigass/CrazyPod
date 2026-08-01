@@ -60,6 +60,9 @@ static void get_mount_point_entry(IF_MV(int volume,) struct DIRENT *entry)
 #if defined(_FILESYSTEM_NATIVE_H_)
     entry->info.attr    = ATTR_MOUNT_POINT;
     entry->info.size    = 0;
+    entry->info.crttimetenth = 0;
+    entry->info.crtdate = 0;
+    entry->info.crttime = 0;
     entry->info.wrtdate = 0;
     entry->info.wrttime = 0;
 #endif /* is dirinfo_native */

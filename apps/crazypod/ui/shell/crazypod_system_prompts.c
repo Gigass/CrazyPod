@@ -228,10 +228,10 @@ void crazypod_system_prompts_usb_connected(intptr_t data)
     crazypod_photos_invalidate_catalog();
     crazypod_videos_invalidate_catalog();
     crazypod_state_save(true);
-    /* Every catalog and decoded-media cache is now invalidated. Removing
-     * the transaction marker here prevents newly rebuilt photo/video
-     * catalogs from being rejected on the next boot when Music was never
-     * opened. A crash before this point leaves the marker for boot cleanup. */
+    /* Catalogs and host-sensitive media caches are now invalidated.
+     * Removing the transaction marker here prevents newly rebuilt photo/
+     * video catalogs from being rejected on the next boot when Music was
+     * never opened. A crash before this point leaves it for boot cleanup. */
     remove(MEDIA_INVALID_PATH);
     usb_acknowledge(SYS_USB_CONNECTED_ACK, data);
 }

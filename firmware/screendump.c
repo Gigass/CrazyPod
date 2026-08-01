@@ -99,10 +99,10 @@ static const unsigned char bmpheader[] =
 
 static void (*screen_dump_hook)(int fh) = NULL;
 
-void screen_dump(void)
+bool screen_dump_to_file(const char *filename)
 {
     int fd, y;
-    char filename[MAX_PATH];
+    bool complete = true;
 
     fb_data *src;
 #if LCD_DEPTH == 1
@@ -123,16 +123,12 @@ void screen_dump(void)
     unsigned char linebuf[DUMP_BMP_LINESIZE * 3];
 #endif
 
-#if CONFIG_RTC
-    create_datetime_filename(filename, HOME_DIR, "dump ", ".bmp", false);
-#else
-    create_numbered_filename(filename, HOME_DIR, "dump_", ".bmp", 4
-                             IF_CNFN_NUM_(, NULL));
-#endif
+    if (filename == NULL || filename[0] == '\0')
+        return false;
 
     fd = creat(filename, 0666);
     if (fd < 0)
-        return;
+        return false;
 
     if (screen_dump_hook)
     {
@@ -141,21 +137,21 @@ void screen_dump(void)
     else
     {
         if(write(fd, bmpheader, sizeof(bmpheader)) != sizeof(bmpheader))
-        {
-            close(fd);
-            return;
-        }
+            complete = false;
 
         /* BMP image goes bottom up */
-        for (y = LCD_HEIGHT - 1; y >= 0; y--)
+        for (y = LCD_HEIGHT - 1; complete && y >= 0; y--)
         {
             memset(linebuf, 0, DUMP_BMP_LINESIZE);
 
 #if defined(HAVE_LCD_SPLIT) && (LCD_SPLIT_LINES == 2)
             if (y == LCD_SPLIT_POS - 1)
             {
-                write(fd, linebuf, DUMP_BMP_LINESIZE);
-                write(fd, linebuf, DUMP_BMP_LINESIZE);
+                if(write(fd, linebuf, DUMP_BMP_LINESIZE) !=
+                       DUMP_BMP_LINESIZE ||
+                   write(fd, linebuf, DUMP_BMP_LINESIZE) !=
+                       DUMP_BMP_LINESIZE)
+                    complete = false;
             }
 #endif
             dst = linebuf;
@@ -248,13 +244,33 @@ void screen_dump(void)
 
 #endif /* LCD_DEPTH */
             if(write(fd, linebuf, DUMP_BMP_LINESIZE) != DUMP_BMP_LINESIZE)
-            {
-                close(fd);
-                return;
-            }
+                complete = false;
         }
     }
-    close(fd);
+    if(complete)
+        complete = fsync(fd) >= 0;
+    if(close(fd) < 0)
+        complete = false;
+    if(!complete)
+        remove(filename);
+    return complete;
+}
+
+void screen_dump(void)
+{
+    char filename[MAX_PATH];
+    char *generated;
+
+#if CONFIG_RTC
+    generated = create_datetime_filename(
+        filename, HOME_DIR, "dump ", ".bmp", false);
+#else
+    generated = create_numbered_filename(
+        filename, HOME_DIR, "dump_", ".bmp", 4
+        IF_CNFN_NUM_(, NULL));
+#endif
+    if(generated != NULL)
+        (void)screen_dump_to_file(filename);
 }
 
 void screen_dump_set_hook(void (*hook)(int fh))

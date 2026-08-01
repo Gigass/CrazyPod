@@ -3,6 +3,7 @@ crazypod/crazypod_lcd.c
 crazypod/crazypod_frameclock.c
 crazypod/crazypod_image.c
 crazypod/crazypod_photos.c
+crazypod/crazypod_screenshot.c
 crazypod/video/crazypod_video_catalog.c
 crazypod/video/crazypod_video_poster.c
 crazypod/photos/crazypod_photo_catalog.c
@@ -11,6 +12,7 @@ crazypod/photos/crazypod_photo_viewport.c
 crazypod/wallpaper/crazypod_wallpaper_crop_engine.c
 crazypod/wallpaper/crazypod_wallpaper_store.c
 crazypod/ui/app/crazypod_simulator_snapshot.c
+crazypod/ui/app/crazypod_miniapp_repro.c
 crazypod/ui/app/crazypod_choice_coordinator.c
 crazypod/ui/app/crazypod_menu_preview.c
 crazypod/ui/app/crazypod_menu_rows.c
@@ -33,6 +35,8 @@ crazypod/ui/features/settings/crazypod_settings_catalog.c
 crazypod/ui/features/settings/crazypod_settings_controller.c
 crazypod/ui/features/settings/crazypod_settings_preview.c
 crazypod/ui/features/miniapps/crazypod_miniapp_screen.c
+crazypod/ui/features/miniapps/crazypod_miniapp_scene.c
+crazypod/ui/features/miniapps/crazypod_miniapp_scene_renderer.c
 crazypod/ui/features/miniapps/crazypod_miniapp_runtime_controller.c
 crazypod/ui/features/miniapps/crazypod_miniapp_input.c
 crazypod/ui/features/miniapps/crazypod_miniapp_activation.c
@@ -47,13 +51,8 @@ crazypod/crazypod_playlist.c
 crazypod/crazypod_audio_shims.c
 crazypod/crazypod_soundwave.c
 crazypod/crazypod_apps.c
-crazypod/crazypod_crypto.c
-crazypod/miniapps/crazypod_miniapp_alarm_store.c
 crazypod/miniapps/installer/crazypod_miniapp_manifest.c
 crazypod/miniapps/catalog/crazypod_miniapp_catalog.c
-crazypod/miniapps/modal/crazypod_miniapp_modal.c
-crazypod/miniapps/notification/crazypod_miniapp_notification.c
-crazypod/miniapps/alarm/crazypod_miniapp_alarm_service.c
 crazypod/miniapps/runtime/crazypod_miniapp_host_system.c
 crazypod/miniapps/runtime/crazypod_miniapp_resource_host.c
 crazypod/miniapps/installer/crazypod_miniapp_resource_validator.c
@@ -62,7 +61,7 @@ crazypod/miniapps/installer/crazypod_miniapp_install_record.c
 crazypod/miniapps/installer/crazypod_cpk_verifier.c
 crazypod/miniapps/installer/crazypod_miniapp_stage.c
 crazypod/miniapps/catalog/crazypod_miniapp_registry_loader.c
-crazypod/miniapps/runtime/crazypod_miniapp_native_validator.c
+crazypod/miniapps/runtime/crazypod_miniapp_native_runtime.c
 crazypod/miniapps/runtime/crazypod_miniapp_verification_cache.c
 crazypod/miniapps/installer/crazypod_miniapp_installer.c
 crazypod/miniapps/runtime/crazypod_miniapp_installed_verifier.c
@@ -130,6 +129,7 @@ crazypod/ui/features/settings/crazypod_settings_feature.c
 crazypod/ui/features/miniapps/crazypod_miniapps_feature.c
 crazypod/ui/shell/crazypod_now_capsule.c
 crazypod/ui/shell/crazypod_desktop.c
+crazypod/ui/shell/crazypod_screenshot_feedback.c
 crazypod/ui/features/organizer/crazypod_calendar_controller.c
 crazypod/ui/features/organizer/crazypod_activity_controller.c
 crazypod/ui/features/books/crazypod_books_actions.c

@@ -3,16 +3,15 @@
 
 #include <stdint.h>
 
-#define MINIAPP_CPK_V1_ENTRIES 4
-#define MINIAPP_CPK_V2_ENTRIES 5
-#define MINIAPP_CPK_MAX_ENTRIES MINIAPP_CPK_V2_ENTRIES
+#define MINIAPP_CPK_ENTRIES 5
+#define MINIAPP_CPK_MAX_ENTRIES MINIAPP_CPK_ENTRIES
 
 enum cpk_entry_id {
     CPK_MANIFEST = 0,
-    CPK_BINARY,
+    CPK_APP,
+    CPK_PROFILE,
+    CPK_ASSETS,
     CPK_ICON,
-    CPK_SIGNATURE,
-    CPK_RESOURCES,
 };
 
 struct cpk_entry {

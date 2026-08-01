@@ -52,14 +52,15 @@ static int find_resource(
     uint16_t index;
     int fd;
 
-    if(metadata == NULL || metadata->package_format != 2u ||
+    if(metadata == NULL ||
+       metadata->package_format != CP_NATIVE_PACKAGE_FORMAT ||
        id == NULL || info == NULL ||
        data_offset == NULL || fd_out == NULL)
         return CRAZYPOD_MINIAPP_ERROR_STATE;
     id_length = strlen(id);
-    if(id_length == 0 || id_length >= CP_MINIAPP_RESOURCE_ID_SIZE)
+    if(id_length == 0 || id_length >= 32u)
         return CRAZYPOD_MINIAPP_ERROR_LIMIT;
-    fd = open(metadata->resources_path, O_RDONLY);
+    fd = open(metadata->assets_path, O_RDONLY);
     if(fd < 0 || !read_at_exact(fd, 0, header, sizeof(header))) {
         if(fd >= 0)
             close(fd);
@@ -86,8 +87,10 @@ static int find_resource(
         memset(info, 0, sizeof(*info));
         info->struct_size = sizeof(*info);
         info->type = entry[32];
+        info->frame_count = entry[33];
         info->width = read_le16(entry + 34);
         info->height = read_le16(entry + 36);
+        info->frame_duration_ms = read_le16(entry + 38);
         info->size = read_le32(entry + 44);
         info->crc32 = read_le32(entry + 48);
         *data_offset = read_le32(entry + 40);

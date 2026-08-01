@@ -1,0 +1,32 @@
+{
+  "name": "create-crazypod-app",
+  "version": "5.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node src/cli.mjs build",
+    "test": "node --test test/*.test.mjs"
+  },
+  "bin": {
+    "crazypod": "src/cli.mjs",
+    "create-crazypod-app": "src/create-app.mjs"
+  },
+  "exports": {
+    ".": "./src/create-app.mjs",
+    "./types": "./types/index.d.ts"
+  },
+  "files": [
+    "src",
+    "types"
+  ],
+  "dependencies": {
+    "@lottiefiles/dotlottie-web": "0.78.2",
+    "omggif": "1.0.10",
+    "pngjs": "7.0.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2"
+  }
+}

@@ -40,7 +40,7 @@ static const char *const music_menu_symbols[] = {
     LV_SYMBOL_EYE_OPEN
 };
 static const char *const photos_menu_symbols[] = {
-    LV_SYMBOL_IMAGE, LV_SYMBOL_PLAY, LV_SYMBOL_OK
+    LV_SYMBOL_IMAGE, LV_SYMBOL_PLAY, LV_SYMBOL_OK, LV_SYMBOL_TRASH
 };
 
 static lv_obj_t *make_box(
@@ -121,7 +121,8 @@ void crazypod_menu_screen_render(
                 LV_SYMBOL_IMAGE,
                 CP_TR("No Pictures"),
                 CP_TR("Add JPG, JPEG or BMP files to /Pictures."));
-        else if(state->route == PHOTOS_ROUTE_VIDEOS)
+        else if(state->route == PHOTOS_ROUTE_VIDEOS ||
+                state->route == PHOTOS_ROUTE_DELETE_VIDEOS)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_PLAY,
                 CP_TR("No Videos"),

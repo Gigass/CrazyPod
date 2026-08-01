@@ -15,6 +15,7 @@
 
 #include "../../crazypod_apps.h"
 #include "../../crazypod_playlist.h"
+#include "../../crazypod_screenshot.h"
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/notes/crazypod_notes_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
@@ -24,6 +25,7 @@
 #include "../shell/crazypod_desktop.h"
 #include "../shell/crazypod_home_input.h"
 #include "../shell/crazypod_shell.h"
+#include "../shell/crazypod_screenshot_feedback.h"
 #include "crazypod_app_input.h"
 #include "crazypod_app_launcher.h"
 #include "crazypod_choice_coordinator.h"
@@ -125,6 +127,20 @@ static void home_open_selected_app(void)
             crazypod_desktop_selected()));
 }
 
+static bool handle_screenshot_chord(long button)
+{
+    if(button_base(button) != (BUTTON_LEFT | BUTTON_RIGHT))
+        return false;
+    if((button & (BUTTON_REL | BUTTON_REPEAT)) == 0) {
+        bool saved;
+
+        backlight_on();
+        saved = crazypod_screenshot_capture();
+        crazypod_screenshot_feedback_show(saved);
+    }
+    return true;
+}
+
 void crazypod_app_input_configure(
     const struct crazypod_app_input_host *new_host)
 {
@@ -149,6 +165,20 @@ int crazypod_app_input_wait_ticks(long now)
 
 void crazypod_app_input_tick(long now, bool locked)
 {
+    bool home_active =
+        !locked && !crazypod_shell_product_active() &&
+        !host.power_prompt_visible();
+    int feedback;
+
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+    home_active = home_active && !host.usb_prompt_visible();
+#endif
+    crazypod_desktop_set_active(home_active, now);
+    crazypod_desktop_tick(now);
+    feedback = crazypod_desktop_take_wheel_feedback();
+    if(feedback != 0)
+        wheel_feedback(feedback < 0
+            ? BUTTON_SCROLL_BACK : BUTTON_SCROLL_FWD);
     if(locked || !crazypod_shell_product_active())
         crazypod_alpha_jump_reset(&alpha_jump);
     if(!home_hold_pending)
@@ -184,6 +214,8 @@ void crazypod_app_input_handle(
         return;
     if(crazypod_system_event_handle(
            button, data, &host.system_events))
+        return;
+    if(handle_screenshot_chord(button))
         return;
     base = button_base(button);
     if(base == BUTTON_MENU &&

@@ -158,20 +158,18 @@ static bool read_chunk_stsd(qtmovie_t *qtmovie, size_t chunk_len)
     unsigned int i;
     int j;
     uint32_t numentries;
-    size_t size_remaining = chunk_len - 8;
     bool got_codec_data = false;
+
+    (void)chunk_len;
 
     /* version */
     stream_read_uint8(qtmovie->stream);
-    size_remaining -= 1;
     /* flags */
     stream_read_uint8(qtmovie->stream);
     stream_read_uint8(qtmovie->stream);
     stream_read_uint8(qtmovie->stream);
-    size_remaining -= 3;
 
     numentries = stream_read_uint32(qtmovie->stream);
-    size_remaining -= 4;
 
     /* if (numentries != 1)
     {
@@ -866,5 +864,4 @@ int qtmovie_read(stream_t *file, demux_res_t *demux_res)
     }
     return 0;
 }
-
 

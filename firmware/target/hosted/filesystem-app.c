@@ -509,7 +509,9 @@ struct dirinfo dir_get_info(DIR *dirp, struct dirent *entry)
 {
     struct __dir *this = (struct __dir *)dirp;
     struct dirinfo ret = { .attribute = 0,
-                           .mtime = 0 };
+                           .mtime = 0,
+                           .ctime = 0,
+                           .ctime_tenth = 0 };
 
     if (!this)
         FILE_ERROR_RETURN(EBADF, ret);
@@ -558,6 +560,7 @@ struct dirinfo dir_get_info(DIR *dirp, struct dirent *entry)
         FILE_ERROR_RETURN(ERRNO, ret);
 
     ret.mtime = mktime(&tm);
+    ret.ctime = ret.mtime;
     return ret;
 }
 

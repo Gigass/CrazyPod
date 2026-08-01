@@ -9,6 +9,7 @@
 enum crazypod_photo_grid_mode {
     CRAZYPOD_PHOTO_GRID_LIBRARY = 0,
     CRAZYPOD_PHOTO_GRID_FAVORITES,
+    CRAZYPOD_PHOTO_GRID_DELETE,
     CRAZYPOD_PHOTO_GRID_WALLPAPER,
 };
 
@@ -38,5 +39,9 @@ void crazypod_photo_screen_update_favorite_progress(int width);
 lv_obj_t *crazypod_photo_screen_render_image(
     lv_obj_t *parent, const lv_image_dsc_t *descriptor,
     int x, int y, int width, int height);
+void crazypod_photo_screen_render_delete_confirmation(
+    lv_obj_t *parent, const char *name,
+    const lv_image_dsc_t *descriptor, bool video,
+    uint32_t white_color, uint32_t muted_color);
 
 #endif

@@ -1,0 +1,10 @@
+[
+  {
+    "id": "confirm",
+    "type": "tone",
+    "sampleRate": 44100,
+    "frequency": 880,
+    "duration": 35,
+    "volume": 0.18
+  }
+]

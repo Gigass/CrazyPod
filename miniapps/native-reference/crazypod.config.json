@@ -1,0 +1,14 @@
+{
+  "runtime": "native-aot",
+  "manifest": {
+    "id": "native-reference",
+    "name": "Native AOT Reference",
+    "version": "1.0.0",
+    "versionCode": 10000,
+    "symbol": "AOT",
+    "summary": "React Profile compiled to native C",
+    "accent": "#ff9f43"
+  },
+  "source": "App.tsx",
+  "iconColor": "#ff9f43"
+}

@@ -48,8 +48,10 @@
 
 #include "crazypod_image.h"
 #include "crazypod_lcd.h"
+#include "crazypod_screenshot.h"
 #include "crazypod_state.h"
 #include "crazypod_videos.h"
+#include "platform/crazypod_platform_display.h"
 #include "video/crazypod_video_catalog.h"
 #include "video/crazypod_video_poster.h"
 
@@ -58,11 +60,11 @@ struct mpeg_settings settings = {
     .skipframes = 1,
 };
 
-#define CRAZYPOD_VIDEO_UI_HEIGHT 42
 #define CRAZYPOD_VIDEO_SEEK_SECONDS 10u
 #define CRAZYPOD_VIDEO_RESUME_MIN_SECONDS 5u
 #define CRAZYPOD_VIDEO_RESUME_END_SECONDS 5u
 #define CRAZYPOD_VIDEO_CLOCK_CHECK_SECONDS 2u
+#define CRAZYPOD_VIDEO_CONTROLS_TIMEOUT (5 * HZ)
 
 static enum crazypod_video_result last_video_result = CRAZYPOD_VIDEO_OK;
 static int video_audio_buffer_handle;
@@ -73,6 +75,16 @@ static bool videos_storage_suspended;
 static bool videos_lock_suspended;
 static bool videos_route_suspended;
 static bool videos_refresh_pending;
+
+static struct {
+    const char *title;
+    const char *message;
+    uint32_t elapsed_seconds;
+    uint32_t duration_seconds;
+    int volume;
+    bool paused;
+    bool visible;
+} video_controls;
 
 static void video_engine_splashf(int ticks, const char *format, ...)
 {
@@ -131,6 +143,22 @@ static void video_engine_release_audio_buffer(void)
     video_audio_buffer_size = 0;
 }
 
+static void video_engine_lcd_blit_yuv(
+    unsigned char * const source[3],
+    int source_x, int source_y, int stride,
+    int destination_x, int destination_y,
+    int width, int height)
+{
+    crazypod_lcd_draw_video_frame(
+        source, source_x, source_y, stride,
+        destination_x, destination_y, width, height,
+        video_controls.visible, video_controls.title,
+        video_controls.elapsed_seconds,
+        video_controls.duration_seconds,
+        video_controls.volume, video_controls.paused,
+        video_controls.message);
+}
+
 static const struct crazypod_video_plugin_api video_engine_api = {
     .splash = video_engine_splashf,
     .splashf = video_engine_splashf,
@@ -142,7 +170,7 @@ static const struct crazypod_video_plugin_api video_engine_api = {
     .lcd_get_foreground = lcd_get_foreground,
     .lcd_set_background = lcd_set_background,
     .lcd_get_background = lcd_get_background,
-    .lcd_blit_yuv = lcd_blit_yuv,
+    .lcd_blit_yuv = video_engine_lcd_blit_yuv,
     .open = video_engine_open,
     .close = close,
     .read = read,
@@ -217,16 +245,59 @@ static const struct crazypod_video_plugin_api video_engine_api = {
 const struct crazypod_video_plugin_api *rb = &video_engine_api;
 
 static void draw_video_controls(
-                                const struct crazypod_video_catalog_entry *video,
-                                bool paused, const char *message)
+    const struct crazypod_video_catalog_entry *video,
+    bool paused, const char *message)
 {
     uint32_t duration = stream_get_duration();
     uint32_t elapsed = stream_get_time();
 
-    crazypod_lcd_draw_video_controls(
-        video->name, elapsed / TS_SECOND,
-        duration / TS_SECOND, global_status.volume,
-        paused, message);
+    vo_lock();
+    video_controls.visible = false;
+    video_controls.title = video->name;
+    video_controls.message = message;
+    video_controls.elapsed_seconds = elapsed / TS_SECOND;
+    video_controls.duration_seconds = duration / TS_SECOND;
+    video_controls.volume = global_status.volume;
+    video_controls.paused = paused;
+    video_controls.visible = true;
+    vo_unlock();
+    (void)stream_draw_frame(false);
+}
+
+static void reveal_video_controls(
+    const struct crazypod_video_catalog_entry *video,
+    bool paused, const char *message, long *hide_tick)
+{
+    draw_video_controls(video, paused, message);
+    *hide_tick = current_tick + CRAZYPOD_VIDEO_CONTROLS_TIMEOUT;
+}
+
+static void hide_video_controls(void)
+{
+    vo_lock();
+    video_controls.visible = false;
+    vo_unlock();
+    (void)stream_draw_frame(false);
+}
+
+static void flash_video_frame(void)
+{
+    fb_data *pixel =
+        (fb_data *)crazypod_platform_display_framebuffer();
+    fb_data *end = pixel + LCD_WIDTH * LCD_HEIGHT;
+
+    while(pixel < end) {
+        *pixel ^= (fb_data)LCD_WHITE;
+        ++pixel;
+    }
+    lcd_update();
+    sleep((HZ / 20) > 0 ? HZ / 20 : 1);
+    pixel = (fb_data *)crazypod_platform_display_framebuffer();
+    while(pixel < end) {
+        *pixel ^= (fb_data)LCD_WHITE;
+        ++pixel;
+    }
+    lcd_update();
 }
 
 static uint32_t valid_resume_time(
@@ -273,13 +344,15 @@ static uint32_t seek_target(int direction)
 
 void crazypod_videos_init(void)
 {
+    bool catalog_loaded;
+
     videos_storage_suspended = false;
     videos_lock_suspended = false;
     videos_route_suspended = true;
-    videos_refresh_pending = true;
     crazypod_video_poster_init();
     crazypod_video_poster_suspend();
-    (void)crazypod_video_catalog_init();
+    catalog_loaded = crazypod_video_catalog_init();
+    videos_refresh_pending = !catalog_loaded;
 }
 
 void crazypod_videos_refresh(void)
@@ -404,10 +477,27 @@ bool crazypod_videos_busy(void)
     return crazypod_video_poster_busy();
 }
 
+bool crazypod_video_delete(int index)
+{
+    bool deleted;
+
+    if(videos_storage_suspended || videos_lock_suspended)
+        return false;
+    crazypod_video_poster_suspend();
+    deleted = crazypod_video_catalog_delete(index);
+    if(deleted)
+        crazypod_video_poster_reset();
+    if(videos_storage_suspended || videos_lock_suspended ||
+       videos_route_suspended)
+        crazypod_video_poster_suspend();
+    else
+        crazypod_video_poster_resume();
+    return deleted;
+}
+
 enum crazypod_video_result crazypod_video_play(int index)
 {
     const struct crazypod_video_catalog_entry *video;
-    struct vo_rect clip;
     enum crazypod_video_result result = CRAZYPOD_VIDEO_OK;
     uint32_t duration = 0;
     uint32_t resume = 0;
@@ -421,6 +511,10 @@ enum crazypod_video_result crazypod_video_play(int index)
     bool clock_stalled = false;
     bool completed = false;
     bool repost_system_event = false;
+    bool controls_visible = true;
+    long controls_hide_tick = 0;
+    const char *screenshot_message = NULL;
+    long screenshot_message_until = 0;
     int system_event = 0;
     intptr_t system_event_data = 0;
 #ifdef SIMULATOR
@@ -467,6 +561,7 @@ enum crazypod_video_result crazypod_video_play(int index)
         goto cleanup;
     }
     engine_initialized = true;
+    memset(&video_controls, 0, sizeof(video_controls));
     {
         int open_result = stream_open(video->path);
 
@@ -479,9 +574,7 @@ enum crazypod_video_result crazypod_video_play(int index)
     }
     stream_opened = true;
     duration = stream_get_duration();
-    vo_rect_set_ext(&clip, 0, 0, LCD_WIDTH,
-                    LCD_HEIGHT - CRAZYPOD_VIDEO_UI_HEIGHT);
-    stream_vo_set_clip(&clip);
+    stream_vo_set_clip(NULL);
     stream_show_vo(true);
     resume = valid_resume_time(video, duration);
     if(resume > 0)
@@ -493,8 +586,10 @@ enum crazypod_video_result crazypod_video_play(int index)
     clock_check_time = stream_get_time();
     clock_check_tick =
         current_tick + CRAZYPOD_VIDEO_CLOCK_CHECK_SECONDS * HZ;
-    draw_video_controls(
-        video, false, resume > 0 ? CP_TR("RESUMED") : NULL);
+    reveal_video_controls(
+        video, false, resume > 0 ? CP_TR("RESUMED") : NULL,
+        &controls_hide_tick);
+    last_draw_tick = current_tick;
 
     for(;;) {
         int status = stream_status();
@@ -510,10 +605,26 @@ enum crazypod_video_result crazypod_video_play(int index)
             clock_checked = true;
             clock_stalled = stream_get_time() == clock_check_time;
         }
-        if(!TIME_BEFORE(current_tick, last_draw_tick + HZ / 4)) {
+        if(controls_visible && !paused &&
+           !TIME_BEFORE(current_tick, controls_hide_tick)) {
+            hide_video_controls();
+            controls_visible = false;
+        }
+        if(controls_visible &&
+           !TIME_BEFORE(current_tick, last_draw_tick + HZ / 4)) {
+            const char *message =
+                clock_stalled ? CP_TR("CLOCK STALLED") : NULL;
+
+            if(screenshot_message != NULL) {
+                if(TIME_BEFORE(
+                       current_tick,
+                       screenshot_message_until))
+                    message = screenshot_message;
+                else
+                    screenshot_message = NULL;
+            }
             draw_video_controls(
-                video, paused,
-                clock_stalled ? CP_TR("CLOCK STALLED") : NULL);
+                video, paused, message);
             last_draw_tick = current_tick;
         }
 #ifdef SIMULATOR
@@ -536,6 +647,30 @@ enum crazypod_video_result crazypod_video_play(int index)
             break;
         }
         base = button & ~(BUTTON_REL | BUTTON_REPEAT);
+        if(base == (BUTTON_LEFT | BUTTON_RIGHT)) {
+            if((button & (BUTTON_REL | BUTTON_REPEAT)) == 0) {
+                bool resume_after_flash = !paused;
+                bool saved;
+
+                if(resume_after_flash)
+                    stream_pause();
+                saved = crazypod_screenshot_capture();
+                flash_video_frame();
+                if(resume_after_flash)
+                    stream_resume();
+                screenshot_message = saved
+                    ? CP_TR("Saved to Photos")
+                    : CP_TR("Screenshot failed");
+                screenshot_message_until =
+                    current_tick + HZ * 3 / 2;
+                reveal_video_controls(
+                    video, paused, screenshot_message,
+                    &controls_hide_tick);
+                controls_visible = true;
+                last_draw_tick = current_tick;
+            }
+            continue;
+        }
         if(base == BUTTON_MENU && (button & BUTTON_REL)) {
             break;
         }
@@ -554,7 +689,10 @@ enum crazypod_video_result crazypod_video_play(int index)
                 stream_pause();
                 paused = true;
             }
-            draw_video_controls(video, paused, NULL);
+            reveal_video_controls(
+                video, paused, NULL, &controls_hide_tick);
+            controls_visible = true;
+            last_draw_tick = current_tick;
         }
         else if((base == BUTTON_LEFT || base == BUTTON_RIGHT) &&
                 !(button & BUTTON_REL)) {
@@ -568,20 +706,29 @@ enum crazypod_video_result crazypod_video_play(int index)
                 CRAZYPOD_VIDEO_CLOCK_CHECK_SECONDS * HZ;
             clock_checked = paused;
             clock_stalled = false;
-            draw_video_controls(video, paused,
-                                base == BUTTON_RIGHT
-                                    ? CP_TR("FORWARD 10 SEC")
-                                    : CP_TR("BACK 10 SEC"));
+            reveal_video_controls(
+                video, paused,
+                base == BUTTON_RIGHT
+                    ? CP_TR("FORWARD 10 SEC")
+                    : CP_TR("BACK 10 SEC"),
+                &controls_hide_tick);
+            controls_visible = true;
+            last_draw_tick = current_tick;
         }
         else if(base == BUTTON_SCROLL_FWD ||
                 base == BUTTON_SCROLL_BACK) {
             adjust_video_volume(
                 base == BUTTON_SCROLL_FWD ? 1 : -1);
-            draw_video_controls(video, paused, CP_TR("VOLUME"));
+            reveal_video_controls(
+                video, paused, CP_TR("VOLUME"),
+                &controls_hide_tick);
+            controls_visible = true;
+            last_draw_tick = current_tick;
         }
     }
 
 cleanup:
+    video_controls.visible = false;
     if(stream_opened) {
         uint32_t elapsed = stream_get_time();
         uint32_t next_resume;

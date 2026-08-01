@@ -51,6 +51,20 @@ static void send(long button, intptr_t data)
 
 int main(void)
 {
+    struct crazypod_home_wheel_filter filter;
+
+    crazypod_home_wheel_filter_reset(&filter);
+    assert(crazypod_home_wheel_filter_apply(&filter, 1) == 0);
+    assert(crazypod_home_wheel_filter_apply(&filter, -1) == 0);
+    assert(crazypod_home_wheel_filter_apply(&filter, 1) == 0);
+    assert(crazypod_home_wheel_filter_apply(&filter, 1) == 1);
+    assert(crazypod_home_wheel_filter_apply(&filter, 1) == 1);
+    assert(crazypod_home_wheel_filter_apply(&filter, -1) == 0);
+    assert(crazypod_home_wheel_filter_apply(&filter, 1) == 0);
+    assert(crazypod_home_wheel_filter_apply(&filter, -1) == 0);
+    assert(crazypod_home_wheel_filter_apply(&filter, -1) == -1);
+    assert(crazypod_home_wheel_filter_apply(&filter, -1) == -1);
+
     send(BUTTON_SCROLL_FWD, 1);
     assert(selection_delta == 1);
     send(BUTTON_SCROLL_FWD | BUTTON_REPEAT, 8);

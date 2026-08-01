@@ -465,4 +465,31 @@ bool crazypod_video_catalog_update_playback(
     return save_state() && save_catalog();
 }
 
+bool crazypod_video_catalog_delete(int index)
+{
+    const char *path;
+    size_t path_length;
+
+    if(index < 0 || index >= entry_count)
+        return false;
+    path = entries[index].path;
+    path_length = strlen(path);
+    if(strncmp(path, VIDEO_DIRECTORY "/",
+               sizeof(VIDEO_DIRECTORY)) != 0 ||
+       strstr(path, "/../") != NULL ||
+       (path_length >= 3 &&
+        strcmp(path + path_length - 3, "/..") == 0) ||
+       !crazypod_video_catalog_path_supported(path) ||
+       remove(path) < 0)
+        return false;
+    if(index + 1 < entry_count)
+        memmove(&entries[index], &entries[index + 1],
+                (size_t)(entry_count - index - 1) * sizeof(entries[0]));
+    --entry_count;
+    memset(&entries[entry_count], 0, sizeof(entries[0]));
+    if(!save_state() || !save_catalog())
+        crazypod_video_catalog_invalidate();
+    return true;
+}
+
 #endif

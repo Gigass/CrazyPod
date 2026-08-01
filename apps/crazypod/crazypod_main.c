@@ -45,6 +45,7 @@
 #include "crazypod_notes.h"
 #include "crazypod_organizer.h"
 #include "crazypod_presets.h"
+#include "crazypod_runtime_limits.h"
 #include "crazypod_state.h"
 #include "crazypod_ui.h"
 #include "crazypod_workouts.h"
@@ -107,6 +108,16 @@ int main(int argc, char *argv[])
 }
 
 #else
+
+static unsigned char
+    crazypod_ui_thread_stack[CRAZYPOD_UI_THREAD_STACK_SIZE]
+    CACHEALIGN_ATTR;
+
+static void crazypod_ui_thread_entry(void)
+{
+    crazypod_ui_run();
+    panicf("CrazyPod UI exited");
+}
 
 static void crazypod_platform_init(void)
 {
@@ -188,8 +199,20 @@ static void crazypod_platform_init(void)
 int main(void) NORETURN_ATTR;
 int main(void)
 {
+    unsigned int ui_thread;
+
     crazypod_platform_init();
-    crazypod_ui_run();
+    ui_thread = create_thread(
+        crazypod_ui_thread_entry,
+        crazypod_ui_thread_stack,
+        sizeof(crazypod_ui_thread_stack),
+        0, "crazypod_ui"
+        IF_PRIO(, PRIORITY_USER_INTERFACE)
+        IF_COP(, CPU));
+    if(ui_thread == 0)
+        panicf("CrazyPod UI thread");
+    thread_wait(ui_thread);
+    panicf("CrazyPod UI stopped");
 }
 
 #endif

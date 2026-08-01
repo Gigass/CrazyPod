@@ -187,6 +187,9 @@ struct dircache_entry
     uint32_t    attr         :  8; /* entry file attributes */
 #ifdef DIRCACHE_NATIVE
     long        firstcluster;      /* first file cluster - max 0x0ffffff4 */
+    uint8_t     crttimetenth;      /* FAT creation hundredths */
+    uint16_t    crtdate;           /* FAT creation date */
+    uint16_t    crttime;           /* FAT creation time */
     uint16_t    wrtdate;           /* FAT write date */
     uint16_t    wrttime;           /* FAT write time */
 #else
@@ -1329,6 +1332,9 @@ static void sab_process_sub(struct sab *sabp)
             ce->direntries   = infop->fatfile.e.entries;
             ce->attr         = fatentp->attr;
             ce->firstcluster = fatentp->firstcluster;
+            ce->crttimetenth = fatentp->crttimetenth;
+            ce->crtdate      = fatentp->crtdate;
+            ce->crttime      = fatentp->crttime;
             ce->wrtdate      = fatentp->wrtdate;
             ce->wrttime      = fatentp->wrttime;
 
@@ -1517,6 +1523,9 @@ int dircache_readdir_dirent(struct filestr_base *stream,
     entry_name_copy(entry->d_name, ce);
     entry->info.attr    = ce->attr;
     entry->info.size    = (ce->attr & ATTR_DIRECTORY) ? 0 : ce->filesize;
+    entry->info.crttimetenth = ce->crttimetenth;
+    entry->info.crtdate = ce->crtdate;
+    entry->info.crttime = ce->crttime;
     entry->info.wrtdate = ce->wrtdate;
     entry->info.wrttime = ce->wrttime;
 
@@ -2341,6 +2350,9 @@ void dircache_fileop_create(struct file_base_info *dirinfop,
     ce->firstcluster = infop->fatfile.firstcluster;
     ce->direntry     = infop->fatfile.e.entry;
     ce->direntries   = infop->fatfile.e.entries;
+    ce->crttimetenth = dinp->crttimetenth;
+    ce->crtdate      = dinp->crtdate;
+    ce->crttime      = dinp->crttime;
     ce->wrtdate      = dinp->wrtdate;
     ce->wrttime      = dinp->wrttime;
 #else
@@ -2464,6 +2476,9 @@ void dircache_fileop_sync(struct file_base_binding *bindp,
 
 #ifdef DIRCACHE_NATIVE
     ce->firstcluster = infop->fatfile.firstcluster;
+    ce->crttimetenth = dinp->crttimetenth;
+    ce->crtdate      = dinp->crtdate;
+    ce->crttime      = dinp->crttime;
     ce->wrtdate      = dinp->wrtdate;
     ce->wrttime      = dinp->wrttime;
 #else

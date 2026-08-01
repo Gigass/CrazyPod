@@ -16,6 +16,7 @@ bool crazypod_miniapps_feature_item_title(
 bool crazypod_miniapps_feature_render(
     const struct route_state *state, lv_obj_t *parent,
     uint32_t primary_color);
+bool crazypod_miniapps_feature_surface_attached(lv_obj_t *parent);
 void crazypod_miniapps_feature_initialize(void);
 bool crazypod_miniapps_feature_handle_input(
     const struct route_state *state,
@@ -24,15 +25,13 @@ bool crazypod_miniapps_feature_handle_input(
 enum crazypod_miniapps_service_event {
     CRAZYPOD_MINIAPPS_SERVICE_NONE = 0,
     CRAZYPOD_MINIAPPS_SERVICE_CLOSE = 1,
-    CRAZYPOD_MINIAPPS_SERVICE_BEEP = 2,
-    CRAZYPOD_MINIAPPS_SERVICE_RENDER = 4,
+    CRAZYPOD_MINIAPPS_SERVICE_RENDER = 2,
 };
 int crazypod_miniapps_feature_service(
     bool active, bool frame_due, long now,
     long ticks_per_second);
 bool crazypod_miniapps_feature_is_open(void);
 bool crazypod_miniapps_feature_motion_active(void);
-bool crazypod_miniapps_feature_alert_active(void);
 void crazypod_miniapps_feature_close(void);
 void crazypod_miniapps_feature_reset_input(void);
 void crazypod_miniapps_feature_rescan(void);
@@ -46,5 +45,11 @@ struct crazypod_miniapps_activation_host {
 bool crazypod_miniapps_feature_activate(
     const struct route_state *state,
     const struct crazypod_miniapps_activation_host *host);
-
+unsigned crazypod_miniapps_feature_input_count(void);
+bool crazypod_miniapps_feature_exit_prompt_visible(void);
+bool crazypod_miniapps_feature_has_scene_content(void);
+#ifdef SIMULATOR
+bool crazypod_miniapps_feature_simulate_long_menu(
+    long now, long ticks_per_second);
+#endif
 #endif

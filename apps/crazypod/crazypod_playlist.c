@@ -227,6 +227,20 @@ int playlist_get_display_index(void)
     return queue_length > 0 ? queue_index + 1 : 0;
 }
 
+int playlist_get_track_info(
+    struct playlist_info *playlist, int index,
+    struct playlist_track_info *info)
+{
+    (void)playlist;
+    if(info == NULL || index < 0 || index >= queue_length)
+        return -1;
+    memset(info, 0, sizeof(*info));
+    copy_path(info->filename, queue_paths[index]);
+    info->index = index;
+    info->display_index = index + 1;
+    return 0;
+}
+
 struct playlist_info *playlist_get_current(void)
 {
     return &queue_info;

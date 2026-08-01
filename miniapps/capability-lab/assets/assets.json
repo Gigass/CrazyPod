@@ -1,0 +1,40 @@
+[
+  {
+    "id": "logo",
+    "type": "rgb565",
+    "file": "tiles.png.b64",
+    "format": "png",
+    "encoding": "base64"
+  },
+  {
+    "id": "tiles",
+    "type": "tileset",
+    "file": "tiles.png.b64",
+    "format": "png",
+    "encoding": "base64"
+  },
+  {
+    "id": "pulse",
+    "type": "animation",
+    "file": "pulse.json",
+    "fps": 8,
+    "maxFrames": 8,
+    "background": "#15181e"
+  },
+  {
+    "id": "click",
+    "type": "tone",
+    "sampleRate": 44100,
+    "frequency": 880,
+    "duration": 80,
+    "volume": 0.3
+  },
+  {
+    "id": "stream-tone",
+    "type": "tone",
+    "sampleRate": 22050,
+    "frequency": 330,
+    "duration": 600,
+    "volume": 0.2
+  }
+]

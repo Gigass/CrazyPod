@@ -8,37 +8,218 @@
 
 #include "crazypod_miniapp_manifest.h"
 
+#define ICON_NAME "icon.bin"
+#define COMMON_REQUIRED_FIELDS \
+    ((1u << 0) | (1u << 1) | (1u << 2) | (1u << 3) | \
+     (1u << 4) | (1u << 5) | (1u << 7) | (1u << 9) | \
+     (1u << 10) | (1u << 11))
+#define CPK5_REQUIRED_FIELDS \
+    (COMMON_REQUIRED_FIELDS | (1u << 12) | (1u << 13) | \
+     (1u << 14) | (1u << 15) | (1u << 16))
+
 #if CONFIG_BINFMT == BINFMT_ROCK
-#define EXPECTED_TARGET "ipod6g"
-#define EXPECTED_BINARY "app.arm"
+#define NATIVE_TARGET "ipod6g"
+#define NATIVE_ENTRY "app.arm"
 #else
-#define EXPECTED_TARGET "simulator"
-#define EXPECTED_BINARY "app.dylib"
+#define NATIVE_TARGET "simulator"
+#define NATIVE_ENTRY "app.dylib"
 #endif
 
-#define ICON_NAME "icon.bmp"
-#define RESOURCES_NAME "resources.bin"
+struct json_reader {
+    const char *cursor;
+    const char *end;
+};
 
-static bool copy_text(
-    char *destination, size_t capacity,
-    const char *source, size_t length)
+static void skip_space(struct json_reader *reader)
 {
-    if(destination == NULL || source == NULL ||
-       capacity == 0 || length >= capacity)
+    while(reader->cursor < reader->end &&
+          (*reader->cursor == ' ' || *reader->cursor == '\t' ||
+           *reader->cursor == '\r' || *reader->cursor == '\n'))
+        reader->cursor++;
+}
+
+static bool take(struct json_reader *reader, char expected)
+{
+    skip_space(reader);
+    if(reader->cursor >= reader->end ||
+       *reader->cursor != expected)
         return false;
-    memcpy(destination, source, length);
-    destination[length] = '\0';
+    reader->cursor++;
+    return true;
+}
+
+static int hex_digit(char value)
+{
+    if(value >= '0' && value <= '9')
+        return value - '0';
+    if(value >= 'a' && value <= 'f')
+        return value - 'a' + 10;
+    if(value >= 'A' && value <= 'F')
+        return value - 'A' + 10;
+    return -1;
+}
+
+static bool read_hex4(
+    struct json_reader *reader, uint32_t *value)
+{
+    uint32_t result = 0;
+    int index;
+
+    if(reader->end - reader->cursor < 4)
+        return false;
+    for(index = 0; index < 4; ++index) {
+        int digit = hex_digit(reader->cursor[index]);
+        if(digit < 0)
+            return false;
+        result = (result << 4) | (uint32_t)digit;
+    }
+    reader->cursor += 4;
+    *value = result;
+    return true;
+}
+
+static bool append_codepoint(
+    char *output, size_t capacity, size_t *length,
+    uint32_t codepoint)
+{
+    uint8_t encoded[4];
+    size_t count;
+
+    if(codepoint == 0 || codepoint > 0x10ffffu ||
+       (codepoint >= 0xd800u && codepoint <= 0xdfffu))
+        return false;
+    if(codepoint < 0x80u) {
+        encoded[0] = (uint8_t)codepoint;
+        count = 1;
+    }
+    else if(codepoint < 0x800u) {
+        encoded[0] = 0xc0u | (uint8_t)(codepoint >> 6);
+        encoded[1] = 0x80u | (uint8_t)(codepoint & 0x3fu);
+        count = 2;
+    }
+    else if(codepoint < 0x10000u) {
+        encoded[0] = 0xe0u | (uint8_t)(codepoint >> 12);
+        encoded[1] = 0x80u | (uint8_t)((codepoint >> 6) & 0x3fu);
+        encoded[2] = 0x80u | (uint8_t)(codepoint & 0x3fu);
+        count = 3;
+    }
+    else {
+        encoded[0] = 0xf0u | (uint8_t)(codepoint >> 18);
+        encoded[1] = 0x80u | (uint8_t)((codepoint >> 12) & 0x3fu);
+        encoded[2] = 0x80u | (uint8_t)((codepoint >> 6) & 0x3fu);
+        encoded[3] = 0x80u | (uint8_t)(codepoint & 0x3fu);
+        count = 4;
+    }
+    if(*length + count >= capacity)
+        return false;
+    memcpy(output + *length, encoded, count);
+    *length += count;
+    return true;
+}
+
+static bool read_string(
+    struct json_reader *reader, char *output, size_t capacity)
+{
+    size_t length = 0;
+
+    skip_space(reader);
+    if(capacity == 0 || reader->cursor >= reader->end ||
+       *reader->cursor++ != '"')
+        return false;
+    while(reader->cursor < reader->end) {
+        uint8_t value = (uint8_t)*reader->cursor++;
+
+        if(value == '"') {
+            output[length] = '\0';
+            return true;
+        }
+        if(value < 0x20u)
+            return false;
+        if(value != '\\') {
+            if(length + 1 >= capacity)
+                return false;
+            output[length++] = (char)value;
+            continue;
+        }
+        if(reader->cursor >= reader->end)
+            return false;
+        value = (uint8_t)*reader->cursor++;
+        if(value == '"' || value == '\\' || value == '/') {
+            if(length + 1 >= capacity)
+                return false;
+            output[length++] = (char)value;
+        }
+        else if(value == 'b' || value == 'f' ||
+                value == 'n' || value == 'r' || value == 't') {
+            char decoded = value == 'b' ? '\b' :
+                           value == 'f' ? '\f' :
+                           value == 'n' ? '\n' :
+                           value == 'r' ? '\r' : '\t';
+            if(length + 1 >= capacity)
+                return false;
+            output[length++] = decoded;
+        }
+        else if(value == 'u') {
+            uint32_t codepoint;
+
+            if(!read_hex4(reader, &codepoint))
+                return false;
+            if(codepoint >= 0xd800u && codepoint <= 0xdbffu) {
+                uint32_t low;
+                if(reader->end - reader->cursor < 6 ||
+                   reader->cursor[0] != '\\' ||
+                   reader->cursor[1] != 'u') {
+                    return false;
+                }
+                reader->cursor += 2;
+                if(!read_hex4(reader, &low) ||
+                   low < 0xdc00u || low > 0xdfffu)
+                    return false;
+                codepoint = 0x10000u +
+                    ((codepoint - 0xd800u) << 10) +
+                    (low - 0xdc00u);
+            }
+            if(!append_codepoint(
+                   output, capacity, &length, codepoint))
+                return false;
+        }
+        else {
+            return false;
+        }
+    }
+    return false;
+}
+
+static bool read_uint32(
+    struct json_reader *reader, uint32_t *value)
+{
+    uint32_t result = 0;
+    const char *start;
+
+    skip_space(reader);
+    start = reader->cursor;
+    if(start >= reader->end || *start < '0' || *start > '9')
+        return false;
+    if(*start == '0' && start + 1 < reader->end &&
+       start[1] >= '0' && start[1] <= '9')
+        return false;
+    while(reader->cursor < reader->end &&
+          *reader->cursor >= '0' && *reader->cursor <= '9') {
+        unsigned int digit =
+            (unsigned int)(*reader->cursor++ - '0');
+        if(result > (UINT32_MAX - digit) / 10u)
+            return false;
+        result = result * 10u + digit;
+    }
+    *value = result;
     return true;
 }
 
 static bool valid_id(const char *id)
 {
     size_t index;
-    size_t length;
+    size_t length = strlen(id);
 
-    if(id == NULL)
-        return false;
-    length = strlen(id);
     if(length == 0 || length >= CRAZYPOD_MINIAPP_ID_SIZE ||
        id[0] < 'a' || id[0] > 'z')
         return false;
@@ -64,24 +245,24 @@ bool crazypod_miniapp_text_valid(const char *text, bool allow_space)
         uint32_t codepoint;
         uint32_t minimum;
 
-        if(value < 0x80) {
-            if(value < 0x20 || (!allow_space && value == ' '))
+        if(value < 0x80u) {
+            if(value < 0x20u || (!allow_space && value == ' '))
                 return false;
             continue;
         }
-        if((value & 0xe0) == 0xc0) {
+        if((value & 0xe0u) == 0xc0u) {
             continuation = 1;
-            codepoint = value & 0x1f;
+            codepoint = value & 0x1fu;
             minimum = 0x80u;
         }
-        else if((value & 0xf0) == 0xe0) {
+        else if((value & 0xf0u) == 0xe0u) {
             continuation = 2;
-            codepoint = value & 0x0f;
+            codepoint = value & 0x0fu;
             minimum = 0x800u;
         }
-        else if((value & 0xf8) == 0xf0) {
+        else if((value & 0xf8u) == 0xf0u) {
             continuation = 3;
-            codepoint = value & 0x07;
+            codepoint = value & 0x07u;
             minimum = 0x10000u;
         }
         else {
@@ -89,9 +270,9 @@ bool crazypod_miniapp_text_valid(const char *text, bool allow_space)
         }
         while(continuation-- > 0) {
             value = *cursor++;
-            if((value & 0xc0) != 0x80)
+            if((value & 0xc0u) != 0x80u)
                 return false;
-            codepoint = (codepoint << 6) | (value & 0x3f);
+            codepoint = (codepoint << 6) | (value & 0x3fu);
         }
         if(codepoint < minimum || codepoint > 0x10ffffu ||
            (codepoint >= 0xd800u && codepoint <= 0xdfffu))
@@ -100,204 +281,147 @@ bool crazypod_miniapp_text_valid(const char *text, bool allow_space)
     return true;
 }
 
-static bool parse_uint32(
-    const char *text, size_t length, uint32_t *value)
+static bool parse_rgb(const char *text, uint32_t *color)
 {
     uint32_t result = 0;
-    size_t index;
+    int index;
 
-    if(length == 0)
+    if(strlen(text) != 7 || text[0] != '#')
         return false;
-    for(index = 0; index < length; ++index) {
-        unsigned int digit;
-        if(text[index] < '0' || text[index] > '9')
+    for(index = 1; index < 7; ++index) {
+        int digit = hex_digit(text[index]);
+        if(digit < 0)
             return false;
-        digit = (unsigned int)(text[index] - '0');
-        if(result > (UINT32_MAX - digit) / 10u)
-            return false;
-        result = result * 10u + digit;
+        result = (result << 4) | (uint32_t)digit;
     }
-    *value = result;
+    *color = result;
     return true;
 }
 
-static bool parse_hex(
-    const char *text, size_t length,
-    uint8_t *bytes, size_t byte_count)
-{
-    size_t index;
-
-    if(length != byte_count * 2)
-        return false;
-    for(index = 0; index < byte_count; ++index) {
-        unsigned int pair = 0;
-        int nibble;
-        int part;
-        for(part = 0; part < 2; ++part) {
-            char value = text[index * 2 + part];
-            if(value >= '0' && value <= '9')
-                nibble = value - '0';
-            else if(value >= 'a' && value <= 'f')
-                nibble = value - 'a' + 10;
-            else if(value >= 'A' && value <= 'F')
-                nibble = value - 'A' + 10;
-            else
-                return false;
-            pair = (pair << 4) | (unsigned int)nibble;
-        }
-        bytes[index] = (uint8_t)pair;
-    }
-    return true;
-}
-
-static bool parse_rgb(
-    const char *text, size_t length, uint32_t *value)
-{
-    uint8_t bytes[3];
-
-    if(!parse_hex(text, length, bytes, sizeof(bytes)))
-        return false;
-    *value = ((uint32_t)bytes[0] << 16) |
-             ((uint32_t)bytes[1] << 8) |
-             bytes[2];
-    return true;
-}
-
-static int parse_field(
-    const char *key, size_t key_length,
-    const char *value, size_t value_length,
+static int read_field(
+    struct json_reader *reader, const char *key,
     struct crazypod_miniapp_metadata *metadata,
-    char *resources, uint32_t *format, uint32_t *bit)
+    uint32_t *bit)
 {
-#define KEY(name) \
-    (key_length == sizeof(name) - 1 && \
-     memcmp(key, name, sizeof(name) - 1) == 0)
-#define COPY(member) \
-    copy_text(metadata->member, sizeof(metadata->member), value, value_length)
-
-    if(KEY("format")) {
+#define IS_KEY(value) (strcmp(key, value) == 0)
+    if(IS_KEY("format")) {
         *bit = 1u << 0;
-        return parse_uint32(value, value_length, format);
+        return read_uint32(reader, &metadata->package_format);
     }
-    if(KEY("id")) {
+    if(IS_KEY("id")) {
         *bit = 1u << 1;
-        return COPY(id);
+        return read_string(
+            reader, metadata->id, sizeof(metadata->id));
     }
-    if(KEY("name")) {
+    if(IS_KEY("name")) {
         *bit = 1u << 2;
-        return COPY(name);
+        return read_string(
+            reader, metadata->name, sizeof(metadata->name));
     }
-    if(KEY("version")) {
+    if(IS_KEY("version")) {
         *bit = 1u << 3;
-        return COPY(version);
+        return read_string(
+            reader, metadata->version, sizeof(metadata->version));
     }
-    if(KEY("version_code")) {
+    if(IS_KEY("versionCode")) {
         *bit = 1u << 4;
-        return parse_uint32(
-            value, value_length, &metadata->version_code);
+        return read_uint32(reader, &metadata->version_code);
     }
-    if(KEY("abi")) {
+    if(IS_KEY("entry")) {
         *bit = 1u << 5;
-        return parse_uint32(
-            value, value_length, &metadata->abi_version);
+        return read_string(
+            reader, metadata->entry, sizeof(metadata->entry));
     }
-    if(KEY("target")) {
-        *bit = 1u << 6;
-        return COPY(target);
-    }
-    if(KEY("binary")) {
+    if(IS_KEY("icon")) {
         *bit = 1u << 7;
-        return COPY(binary);
+        return read_string(
+            reader, metadata->icon, sizeof(metadata->icon));
     }
-    if(KEY("binary_sha256")) {
-        *bit = 1u << 8;
-        return parse_hex(value, value_length,
-                         metadata->binary_sha256, 32);
-    }
-    if(KEY("icon")) {
+    if(IS_KEY("symbol")) {
         *bit = 1u << 9;
-        return COPY(icon);
+        return read_string(
+            reader, metadata->symbol, sizeof(metadata->symbol));
     }
-    if(KEY("icon_sha256")) {
+    if(IS_KEY("summary")) {
         *bit = 1u << 10;
-        return parse_hex(value, value_length,
-                         metadata->icon_sha256, 32);
+        return read_string(
+            reader, metadata->summary, sizeof(metadata->summary));
     }
-    if(KEY("symbol")) {
+    if(IS_KEY("accent")) {
+        char value[8];
         *bit = 1u << 11;
-        return COPY(symbol);
+        return read_string(reader, value, sizeof(value)) &&
+            parse_rgb(value, &metadata->accent_rgb);
     }
-    if(KEY("accent")) {
+    if(IS_KEY("runtime")) {
         *bit = 1u << 12;
-        return parse_rgb(value, value_length, &metadata->accent_rgb);
+        return read_string(
+            reader, metadata->runtime, sizeof(metadata->runtime));
     }
-    if(KEY("summary")) {
+    if(IS_KEY("abiMajor")) {
         *bit = 1u << 13;
-        return COPY(summary);
+        return read_uint32(reader, &metadata->abi_version);
     }
-    if(KEY("resources")) {
+    if(IS_KEY("abiMinor")) {
         *bit = 1u << 14;
-        return copy_text(resources, CRAZYPOD_MINIAPP_RESOURCES_SIZE,
-                         value, value_length);
+        return read_uint32(reader, &metadata->abi_minor);
     }
-    if(KEY("resources_sha256")) {
+    if(IS_KEY("reactProfile")) {
         *bit = 1u << 15;
-        return parse_hex(value, value_length,
-                         metadata->resources_sha256, 32);
+        return read_uint32(reader, &metadata->react_profile);
+    }
+    if(IS_KEY("target")) {
+        *bit = 1u << 16;
+        return read_string(
+            reader, metadata->target, sizeof(metadata->target));
     }
     return false;
-#undef COPY
-#undef KEY
+#undef IS_KEY
 }
 
 int crazypod_miniapp_manifest_parse(
     char *buffer, size_t size,
     struct crazypod_miniapp_metadata *metadata)
 {
-    char *cursor = buffer;
-    char *end = buffer + size;
-    char resources[CRAZYPOD_MINIAPP_RESOURCES_SIZE] = "";
+    struct json_reader reader;
     uint32_t seen = 0;
-    uint32_t format = 0;
 
     if(buffer == NULL || metadata == NULL || size == 0 ||
        size > CRAZYPOD_MINIAPP_MANIFEST_MAX ||
        memchr(buffer, '\0', size) != NULL)
         return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
     memset(metadata, 0, sizeof(*metadata));
-    buffer[size] = '\0';
-
-    while(cursor < end) {
-        char *line = cursor;
-        char *equals;
-        size_t line_length;
-        size_t key_length;
-        size_t value_length;
+    reader.cursor = buffer;
+    reader.end = buffer + size;
+    if(!take(&reader, '{'))
+        return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
+    skip_space(&reader);
+    while(reader.cursor < reader.end && *reader.cursor != '}') {
+        char key[24];
         uint32_t bit = 0;
 
-        while(cursor < end && *cursor != '\n')
-            ++cursor;
-        line_length = (size_t)(cursor - line);
-        if(cursor < end)
-            ++cursor;
-        if(line_length > 0 && line[line_length - 1] == '\r')
-            --line_length;
-        equals = line_length > 0 ? memchr(line, '=', line_length) : NULL;
-        if(equals == NULL || equals == line)
-            return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
-        key_length = (size_t)(equals - line);
-        value_length = line_length - key_length - 1;
-        if(value_length == 0 ||
-           !parse_field(line, key_length, equals + 1, value_length,
-                        metadata, resources, &format, &bit) ||
-           (seen & bit) != 0)
+        if(!read_string(&reader, key, sizeof(key)) ||
+           !take(&reader, ':') ||
+           !read_field(&reader, key, metadata, &bit) ||
+           bit == 0 || (seen & bit) != 0)
             return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
         seen |= bit;
+        skip_space(&reader);
+        if(reader.cursor < reader.end && *reader.cursor == ',') {
+            reader.cursor++;
+            skip_space(&reader);
+            if(reader.cursor >= reader.end ||
+               *reader.cursor == '}')
+                return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
+        }
+        else {
+            break;
+        }
     }
-
-    if((format == 1u && seen != 0x3fffu) ||
-       (format == 2u && seen != 0xffffu) ||
-       (format != 1u && format != 2u) ||
+    if(!take(&reader, '}'))
+        return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
+    skip_space(&reader);
+    if(reader.cursor != reader.end ||
        metadata->version_code == 0 ||
        !valid_id(metadata->id) ||
        !crazypod_miniapp_text_valid(metadata->name, true) ||
@@ -305,16 +429,20 @@ int crazypod_miniapp_manifest_parse(
        !crazypod_miniapp_text_valid(metadata->symbol, true) ||
        !crazypod_miniapp_text_valid(metadata->summary, true))
         return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
-
-    metadata->package_format = format;
-    if(metadata->abi_version != CP_MINIAPP_ABI_VERSION)
-        return CRAZYPOD_MINIAPP_ERROR_ABI;
-    if(strcmp(metadata->target, EXPECTED_TARGET) != 0 ||
-       strcmp(metadata->binary, EXPECTED_BINARY) != 0 ||
-       strcmp(metadata->icon, ICON_NAME) != 0 ||
-       (format == 2u && strcmp(resources, RESOURCES_NAME) != 0))
-        return CRAZYPOD_MINIAPP_ERROR_PLATFORM;
-    return CRAZYPOD_MINIAPP_OK;
+    if(metadata->package_format == CP_NATIVE_PACKAGE_FORMAT) {
+        if(seen != CPK5_REQUIRED_FIELDS ||
+           strcmp(metadata->runtime, "native-aot") != 0 ||
+           metadata->abi_version != CP_NATIVE_ABI_MAJOR ||
+           metadata->abi_minor > CP_NATIVE_ABI_MINOR ||
+           metadata->react_profile != CP_NATIVE_REACT_PROFILE)
+            return CRAZYPOD_MINIAPP_ERROR_VERSION;
+        if(strcmp(metadata->target, NATIVE_TARGET) != 0 ||
+           strcmp(metadata->entry, NATIVE_ENTRY) != 0 ||
+           strcmp(metadata->icon, ICON_NAME) != 0)
+            return CRAZYPOD_MINIAPP_ERROR_PLATFORM;
+        return CRAZYPOD_MINIAPP_OK;
+    }
+    return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
 }
 
 #endif

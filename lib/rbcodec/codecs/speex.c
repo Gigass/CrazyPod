@@ -473,7 +473,6 @@ next_page:
 
         /* Loop for all complete pages we got (most likely only one) */
         while (spx_ogg_sync_pageout(&oy, &og) == 1) {
-            int packet_no;
             if (stream_init == 0) {
                 spx_ogg_stream_init(&os, spx_ogg_page_serialno(&og));
                 stream_init = 1;
@@ -488,8 +487,6 @@ next_page:
             cur_granule = page_granule;
 
             /* Extract all available packets */
-            packet_no=0;
-
             while (!eos && spx_ogg_stream_packetout(&os, &op)==1){
                 /* If first packet, process as Speex header */
                 if (packet_count==0){
@@ -531,8 +528,6 @@ next_page:
                             goto next_page;
                         }
                     }
-                    packet_no++;
-
                     if (op.e_o_s) /* End of stream condition */
                         eos=1;
 

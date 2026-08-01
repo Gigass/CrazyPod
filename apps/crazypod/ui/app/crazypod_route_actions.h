@@ -30,6 +30,9 @@ bool crazypod_route_actions_alpha_jump(
 void crazypod_route_actions_begin_note(
     uint32_t id, bool resume_draft);
 void crazypod_route_actions_show_calendar_day(int date);
+bool crazypod_route_actions_confirm_photos(
+    const struct route_state *state, long now,
+    long feedback_ticks);
 bool crazypod_route_actions_note_dirty(void);
 void crazypod_route_actions_service_notes(void);
 

@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "lib": [
+      "ES2020"
+    ],
+    "jsx": "preserve",
+    "noEmit": true
+  },
+  "files": [
+    "../tools/miniapp-builder/types/native.d.ts"
+  ],
+  "include": [
+    "native-reference/**/*.tsx",
+    "capability-lab/App.tsx",
+    "game2048/App.tsx"
+  ],
+  "exclude": [
+    "**/generated/**",
+    "**/dist/**"
+  ]
+}

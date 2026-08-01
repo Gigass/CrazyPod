@@ -184,7 +184,7 @@ static void chapter_title_from_href(char *title, size_t size,
             title[i] = ' ';
     }
     if(title[0] == '\0')
-        snprintf(title, size, CP_FMT("Chapter"));
+        snprintf(title, size, "%s", CP_FMT("Chapter"));
 }
 
 static bool element_text(const char *xml, const char *local_name,

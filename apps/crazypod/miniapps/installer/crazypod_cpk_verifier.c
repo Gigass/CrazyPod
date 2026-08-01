@@ -8,13 +8,14 @@
 #include "crc32.h"
 #include "file.h"
 
-#include "../../crazypod_crypto.h"
 #include "../../crazypod_miniapps.h"
 #include "crazypod_cpk_verifier.h"
 #include "crazypod_miniapp_resource_validator.h"
 
 #define IO_BUFFER_SIZE 1024u
-#define ICON_BYTES 102454u
+#define ICON_BYTES 51216u
+#define ICON_MAGIC 0x35495043u
+#define PROFILE_MAGIC 0x35415043u
 
 typedef bool (*sink_fn)(void *context, const void *buffer, size_t size);
 
@@ -83,14 +84,42 @@ static int stream_entry(
         ? CRAZYPOD_MINIAPP_OK : CRAZYPOD_MINIAPP_ERROR_CRC;
 }
 
-bool crazypod_cpk_resources_valid(const struct cpk_reader *reader)
+bool crazypod_cpk_assets_valid(const struct cpk_reader *reader)
 {
     const struct cpk_entry *entry;
-    if(reader->entry_count != MINIAPP_CPK_V2_ENTRIES)
+    if(reader->entry_count != MINIAPP_CPK_ENTRIES)
         return false;
-    entry = &reader->entries[CPK_RESOURCES];
+    entry = &reader->entries[CPK_ASSETS];
     return crazypod_miniapp_resource_container_valid(
         reader->fd, entry->data_offset, entry->size);
+}
+
+bool crazypod_cpk_profile_valid(const struct cpk_reader *reader)
+{
+    const struct cpk_entry *entry = &reader->entries[CPK_PROFILE];
+    uint8_t header[16];
+
+    return strcmp(entry->name, "profile.bin") == 0 &&
+           entry->size == sizeof(header) &&
+           read_at_exact(
+               reader->fd, entry->data_offset,
+               header, sizeof(header)) &&
+           read_le32(header) == PROFILE_MAGIC &&
+           read_le16(header + 4) == 1u &&
+           read_le16(header + 6) == sizeof(header) &&
+           read_le16(header + 8) == CP_NATIVE_ABI_MAJOR &&
+           read_le16(header + 10) <= CP_NATIVE_ABI_MINOR &&
+           read_le16(header + 12) == CP_NATIVE_REACT_PROFILE &&
+           read_le16(header + 14) == 0;
+}
+
+int crazypod_cpk_verify_crc(
+    const struct cpk_reader *reader, int entry)
+{
+    if(reader == NULL || entry < 0 ||
+       entry >= reader->entry_count)
+        return CRAZYPOD_MINIAPP_ERROR_FORMAT;
+    return stream_entry(reader, entry, NULL, NULL);
 }
 
 int crazypod_cpk_read_entry(
@@ -112,69 +141,19 @@ int crazypod_cpk_read_entry(
 
 bool crazypod_cpk_icon_valid(const struct cpk_reader *reader)
 {
-    uint8_t header[54];
+    uint8_t header[16];
     const struct cpk_entry *entry = &reader->entries[CPK_ICON];
-    int32_t width;
-    int32_t height;
 
     if(!read_at_exact(reader->fd, entry->data_offset,
-                      header, sizeof(header)) ||
-       header[0] != 'B' || header[1] != 'M' ||
-       read_le32(header + 2) != ICON_BYTES ||
-       read_le32(header + 10) != 54 ||
-       read_le32(header + 14) != 40)
+                      header, sizeof(header)))
         return false;
-    width = (int32_t)read_le32(header + 18);
-    height = (int32_t)read_le32(header + 22);
-    return width == 160 && (height == 160 || height == -160) &&
-           read_le16(header + 26) == 1 &&
-           read_le16(header + 28) == 32 &&
-           read_le32(header + 30) == 0 &&
-           read_le32(header + 34) == 102400u;
-}
-
-struct sha_sink {
-    struct crazypod_sha256_context context;
-};
-
-static bool update_sha(void *context, const void *buffer, size_t size)
-{
-    struct sha_sink *sink = context;
-    crazypod_sha256_update(&sink->context, buffer, size);
-    return true;
-}
-
-int crazypod_cpk_verify_sha256(
-    const struct cpk_reader *reader, int entry,
-    const uint8_t expected[32])
-{
-    struct sha_sink sink;
-    uint8_t digest[32];
-    int result;
-
-    crazypod_sha256_init(&sink.context);
-    result = stream_entry(reader, entry, update_sha, &sink);
-    if(result != CRAZYPOD_MINIAPP_OK)
-        return result;
-    crazypod_sha256_final(&sink.context, digest);
-    return memcmp(digest, expected, sizeof(digest)) == 0
-        ? CRAZYPOD_MINIAPP_OK : CRAZYPOD_MINIAPP_ERROR_SIGNATURE;
-}
-
-int crazypod_cpk_verify_signature(
-    const struct cpk_reader *reader,
-    const uint8_t *manifest, size_t manifest_size)
-{
-    uint8_t signature[CRAZYPOD_MINIAPP_SIGNATURE_SIZE];
-    int result = crazypod_cpk_read_entry(
-        reader, CPK_SIGNATURE, signature, sizeof(signature));
-
-    if(result != CRAZYPOD_MINIAPP_OK)
-        return result;
-    return crazypod_ed25519_verify(
-               signature, manifest, manifest_size,
-               crazypod_miniapp_development_public_key)
-        ? CRAZYPOD_MINIAPP_OK : CRAZYPOD_MINIAPP_ERROR_SIGNATURE;
+    return entry->size == ICON_BYTES &&
+           read_le32(header) == ICON_MAGIC &&
+           read_le16(header + 4) == 1u &&
+           read_le16(header + 6) == 160u &&
+           read_le16(header + 8) == 160u &&
+           read_le16(header + 10) == 1u &&
+           read_le32(header + 12) == 160u * 160u * 2u;
 }
 
 struct file_sink {

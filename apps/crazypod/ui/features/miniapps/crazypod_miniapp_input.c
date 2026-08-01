@@ -15,6 +15,8 @@ static struct {
     bool suppress_menu_release;
     bool exit_prompt_visible;
     bool exit_selected;
+    bool select_long_sent;
+    bool play_long_sent;
     long menu_hold_deadline;
 } state;
 
@@ -133,6 +135,7 @@ static bool handle_exit_prompt(
     else if(input->base == BUTTON_SELECT) {
         state.exit_prompt_visible = false;
         if(state.exit_selected) {
+            actions->keep_boosted(boost_ticks);
             actions->close();
             return true;
         }
@@ -155,8 +158,6 @@ bool crazypod_miniapp_input_handle(
     const struct crazypod_miniapp_input_actions *actions)
 {
     struct cp_input_event event;
-    bool handled;
-    bool ui_refresh;
 
     if(!crazypod_miniapps_is_open())
         return false;
@@ -195,15 +196,27 @@ bool crazypod_miniapp_input_handle(
             return true;
         }
     }
-    else if(input->release)
+    else if(input->release) {
+        if(input->base == BUTTON_SELECT)
+            state.select_long_sent = false;
+        else if(input->base == BUTTON_PLAY)
+            state.play_long_sent = false;
         return true;
+    }
 
     if(!translate_event(input, &event))
         return true;
 
-    if((input->base == BUTTON_PLAY ||
-        input->base == BUTTON_SELECT) && input->repeated)
-        return true;
+    if(input->repeated && input->base == BUTTON_SELECT) {
+        if(state.select_long_sent)
+            return true;
+        state.select_long_sent = true;
+    }
+    else if(input->repeated && input->base == BUTTON_PLAY) {
+        if(state.play_long_sent)
+            return true;
+        state.play_long_sent = true;
+    }
     if(event.type == CP_INPUT_WHEEL_CLOCKWISE ||
        event.type == CP_INPUT_WHEEL_COUNTERCLOCKWISE) {
         crazypod_miniapp_runtime_push_wheel(&event);
@@ -216,18 +229,13 @@ bool crazypod_miniapp_input_handle(
      * Drop wheel intent that has not reached a presented frame.
      */
     crazypod_miniapp_runtime_reset_input();
-    handled = crazypod_miniapps_event(&event);
-    if(crazypod_miniapps_take_close_request()) {
+    actions->keep_boosted(boost_ticks);
+    (void)crazypod_miniapps_event(&event);
+    if(!crazypod_miniapps_is_open()) {
         actions->close();
         return true;
     }
-    ui_refresh = crazypod_miniapps_take_ui_refresh();
-    if(handled || ui_refresh) {
-        if(ui_refresh)
-            crazypod_miniapp_runtime_reset_input();
-        crazypod_miniapp_runtime_request_render();
-        actions->keep_boosted(boost_ticks);
-    }
+    (void)crazypod_miniapps_take_ui_refresh();
     return true;
 }
 

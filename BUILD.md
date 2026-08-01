@@ -58,7 +58,8 @@ Simulator-only framebuffer snapshots can open a deterministic route and write
 the real 320×240 RGB565 output to `build-sim/simdisk/dump *.bmp`:
 
 ```sh
-CRAZYPOD_SIM_DUMP=1 CRAZYPOD_SIM_SCREEN=clock \
+CRAZYPOD_SIM_DUMP=1 CRAZYPOD_SIM_EXIT_AFTER_DUMP=1 \
+CRAZYPOD_SIM_SCREEN=clock \
   "build-sim/CrazyPod Simulator.app/Contents/MacOS/CrazyPod Simulator"
 ```
 
@@ -69,7 +70,9 @@ Supported routes are `home`, `power`, `more`, `more-second`,
 `notes-deleted`, `books`, `books-reading`, `book-reader`,
 `book-reader-next`, `clock`, `stopwatch`, `workouts`, `workout-ready`,
 `workout-active`, `workout-detail`, `calendar`, `calendar-day`,
-`contacts`, `contact-detail`, `calculator`, and `pomodoro`. First-level preview
+`contacts`, `contact-detail`, `game2048`, `capability-lab-controls`,
+`capability-lab-data`, `capability-lab-game`, and the
+`capability-lab-host-*` actions. First-level preview
 variants also support `music-0` through `music-7`, `media-0` through
 `media-2` (`photos-N` remains an alias), and `books-N`. Video routes use
 `videos-N` for a list frame and `play-video-N` for a playback smoke test.
@@ -162,9 +165,9 @@ Artifacts:
 
 - `build-hw-ipod6g/rockbox.ipod`
 - `build-hw-ipod6g/CrazyPod-6G.zip`
-- `dist/miniapps/calculator-1.2.0.cpk`
-- `dist/miniapps/pomodoro-1.2.0.cpk`
-- `dist/miniapps/game2048-1.0.0.cpk`
+- `dist/miniapps/game2048-5.0.1.cpk`
+- `dist/miniapps/capability-lab-5.0.1.cpk`
+- `dist/miniapps/native-reference-1.0.0.cpk`
 
 The zip deliberately contains only the firmware and the runtime resources
 required by the independent product:
@@ -176,9 +179,9 @@ required by the independent product:
 .rockbox/codepages/936.cp
 .rockbox/crazypod/default-home.bmp
 .rockbox/crazypod/icons/<theme>/*.bmp
-.rockbox/crazypod/miniapps/packages/calculator-1.2.0.cpk
-.rockbox/crazypod/miniapps/packages/pomodoro-1.2.0.cpk
-.rockbox/crazypod/miniapps/packages/game2048-1.0.0.cpk
+.rockbox/crazypod/miniapps/packages/game2048-5.0.1.cpk
+.rockbox/crazypod/miniapps/packages/capability-lab-5.0.1.cpk
+.rockbox/crazypod/miniapps/packages/native-reference-1.0.0.cpk
 ```
 
 There are no Rockbox WPS files, themes, skin fonts, plugins, or recording
@@ -191,9 +194,12 @@ stack boundary symbols is missing or not 8-byte aligned. This is required by
 the ARM EABI for values such as `double` and prevents variadic number
 formatting from reading the wrong stack data on the iPod 6G.
 
-The Mini App package builder requires OpenSSL 3, produces deterministic stored
-ZIP entries, signs each manifest with Ed25519, and records SHA-256 hashes for
-the payload, icon, and resource container.
+The Mini App package builder requires Node.js 22 and npm. It AOT-compiles the
+supported React Profile TypeScript/TSX subset to C. The Rockbox build compiles
+that same C to `app.arm`; the simulator compiles it to `app.dylib`. CPK5 is a
+deterministic ZIP STORE package containing the target-native binary, ABI
+profile, converted resources and icon. It uses ZIP CRC and strict structure
+validation but has no signature.
 
 Check the generated archive and record its hashes before copying it:
 
@@ -247,4 +253,4 @@ CrazyPod does not yet provide a supported end-user installer. See
 | `ROCKPOD_INCREMENTAL=1` | Reuse the simulator build directory |
 | `ROCKPOD_SKIP_DEP=1` | Reuse an existing simulator `make.dep` |
 | `CROSS_COMPILE=prefix-` | Override `arm-none-eabi-` |
-| `CRAZYPOD_OPENSSL=/path/to/openssl` | Select an OpenSSL 3 executable |
+| `CRAZYPOD_SIM_EXIT_AFTER_DUMP=1` | Exit after a simulator framebuffer dump |

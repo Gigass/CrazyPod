@@ -10,7 +10,9 @@ struct crazypod_photo_catalog_entry {
     char path[MAX_PATH];
     uint32_t size;
     uint32_t mtime;
+    uint32_t ctime;
     uint32_t key;
+    uint8_t ctime_tenth;
     bool favorite;
 };
 
@@ -24,6 +26,7 @@ const struct crazypod_photo_catalog_entry *
 crazypod_photo_catalog_get(int index);
 const char *crazypod_photo_catalog_name(int index);
 bool crazypod_photo_catalog_toggle_favorite(int index);
+bool crazypod_photo_catalog_delete(int index);
 uint32_t crazypod_photo_catalog_key(const char *path);
 bool crazypod_photo_catalog_path_supported(const char *path);
 

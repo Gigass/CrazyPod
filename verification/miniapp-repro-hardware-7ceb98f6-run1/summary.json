@@ -1,0 +1,15 @@
+{
+  "status":"FAIL",
+  "reason":"game2048-enter-game",
+  "phase":"enter-game",
+  "cycles":0,
+  "moveSamples":0,
+  "moveP95Ms":0,
+  "moveMaxMs":0,
+  "actionMaxMs":730,
+  "heartbeatMaxMs":730,
+  "buttonQueueMax":1,
+  "miniappQueueMax":0,
+  "violationCount":2,
+  "traceRecords":38
+}

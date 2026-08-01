@@ -1,0 +1,43 @@
+{
+  "volume": "/Volumes/CRAZYPOD",
+  "device": {
+    "Target": "ipod6g",
+    "Target id": "71",
+    "Target define": "-DIPOD_6G",
+    "Memory": "64",
+    "CPU": "arm",
+    "Manufacturer": "s5l8702",
+    "Version": "74de36a8c2M-260731",
+    "Binary": "rockbox.ipod",
+    "Binary size": "2821692",
+    "Voice format": "400",
+    "Actual size": "2821684",
+    "RAM usage": "18717688",
+    "Features": "accessory_supply:backlight_brightness:crossfade:headphone_detection:hold_button:hotkey:lcd_bitmap:lcd_non-mono:lcd_color:lcd_sleep:morse_input:pitchscreen:multivolume:quickscreen:rtc:swcodec:tagcache:tc_ramcache:charging:usb_charging_enable:wheel_acceleration:lineout_poweroff:large_plugin_buffer:albumart:disk_storage:scrollwheel:usb_power:usbstack:himem:hardware_click:play_frequency:clear_settings_on_hold:perceptual_volume:codec_aac_he",
+    "gcc": "arm-none-eabi-gcc (GCC) 16.1.0",
+    "ld": "GNU ld (GNU Binutils) 2.46.1",
+    "Host gcc": "Apple clang version 21.0.0 (clang-2100.3.20.102)",
+    "Host system": "Darwin"
+  },
+  "freeBytes": 143997403136,
+  "artifacts": {
+    "build-hw-ipod6g/CrazyPod-6G.zip": {
+      "bytes": 10502504,
+      "sha256": "9c125604c37e6036f8bc2cfd6ddde835e806408a5b35a3b42cb5ede5bb51d071"
+    },
+    "dist/miniapps/game2048-3.0.0.cpk": {
+      "bytes": 93307,
+      "sha256": "ace92f8755a9e0a25af9da02f26fc77efc574bfd44aa56b61f831491e95cdc84"
+    },
+    "dist/miniapps/capability-lab-3.0.0.cpk": {
+      "bytes": 199154,
+      "sha256": "a73e3945afb78b32dbba435d6033912c95403914bb5c8f60b41aa5f8b7a93a68"
+    }
+  },
+  "collectedAtUtc": "2026-07-31T01:09:42.393384+00:00",
+  "commit": "74de36a8c2748d6a03af209c723e0f0509e2f78b",
+  "logs": [
+    "device-logs/game2048.log"
+  ],
+  "memorySamples": 0
+}

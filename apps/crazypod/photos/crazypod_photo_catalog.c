@@ -24,7 +24,7 @@
 #define PHOTO_CATALOG_TMP PHOTO_CACHE_DIRECTORY "/photo-catalog.tmp"
 #define MEDIA_INVALID_PATH PHOTO_CACHE_DIRECTORY "/media.invalid"
 #define PHOTO_CATALOG_MAGIC 0x43505043u
-#define PHOTO_CATALOG_VERSION 1u
+#define PHOTO_CATALOG_VERSION 2u
 
 struct photo_catalog_header {
     uint32_t magic;
@@ -148,9 +148,16 @@ static int compare_entries(
     const struct crazypod_photo_catalog_entry *left,
     const struct crazypod_photo_catalog_entry *right)
 {
+    int path_order;
+
+    if(left->ctime != right->ctime)
+        return left->ctime > right->ctime ? -1 : 1;
+    if(left->ctime_tenth != right->ctime_tenth)
+        return left->ctime_tenth > right->ctime_tenth ? -1 : 1;
     if(left->mtime != right->mtime)
         return left->mtime > right->mtime ? -1 : 1;
-    return strcasecmp(left->path, right->path);
+    path_order = strcasecmp(left->path, right->path);
+    return path_order > 0 ? -1 : path_order < 0 ? 1 : 0;
 }
 
 static void insert_entry(const char *path, const struct dirinfo *info)
@@ -168,6 +175,11 @@ static void insert_entry(const char *path, const struct dirinfo *info)
     entry.mtime = info->mtime <= 0 ? 0 :
         (uint64_t)info->mtime > UINT32_MAX ? UINT32_MAX :
         (uint32_t)info->mtime;
+    entry.ctime = info->ctime <= 0 ? entry.mtime :
+        (uint64_t)info->ctime > UINT32_MAX ? UINT32_MAX :
+        (uint32_t)info->ctime;
+    entry.ctime_tenth = info->ctime_tenth > 199
+        ? 199 : (uint8_t)info->ctime_tenth;
     entry.key = crazypod_photo_catalog_key(entry.path);
     position = entry_count;
     while(position > 0 &&
@@ -322,7 +334,9 @@ static bool load_catalog(void)
     for(index = 0; index < header.count; ++index) {
         if(memchr(entries[index].path, '\0',
                   sizeof(entries[index].path)) == NULL ||
-           entries[index].path[0] != '/' ||
+           strncmp(entries[index].path, PHOTO_DIRECTORY "/",
+                   sizeof(PHOTO_DIRECTORY)) != 0 ||
+           strstr(entries[index].path, "/../") != NULL ||
            !crazypod_photo_catalog_path_supported(
                entries[index].path) ||
            entries[index].key !=
@@ -453,6 +467,37 @@ bool crazypod_photo_catalog_toggle_favorite(int index)
         favorites += previous ? 1 : -1;
         return false;
     }
+    return true;
+}
+
+bool crazypod_photo_catalog_delete(int index)
+{
+    const char *path;
+    size_t path_length;
+    bool was_favorite;
+
+    if(index < 0 || index >= entry_count)
+        return false;
+    path = entries[index].path;
+    path_length = strlen(path);
+    if(strncmp(path, PHOTO_DIRECTORY "/",
+               sizeof(PHOTO_DIRECTORY)) != 0 ||
+       strstr(path, "/../") != NULL ||
+       (path_length >= 3 &&
+        strcmp(path + path_length - 3, "/..") == 0) ||
+       !crazypod_photo_catalog_path_supported(path) ||
+       remove(path) < 0)
+        return false;
+    was_favorite = entries[index].favorite;
+    if(index + 1 < entry_count)
+        memmove(&entries[index], &entries[index + 1],
+                (size_t)(entry_count - index - 1) * sizeof(entries[0]));
+    --entry_count;
+    memset(&entries[entry_count], 0, sizeof(entries[0]));
+    if(was_favorite)
+        --favorites;
+    if(!save_favorites() || !save_catalog())
+        crazypod_photo_catalog_invalidate();
     return true;
 }
 

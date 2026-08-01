@@ -210,7 +210,10 @@ void crazypod_menu_preview_render(
     }
     else if(state->route == PHOTOS_ROUTE_MENU)
         render_photos(state, false);
-    else if(state->route == PHOTOS_ROUTE_VIDEOS)
+    else if(state->route == PHOTOS_ROUTE_DELETE_MENU)
+        render_photos(state, state->selected == 1);
+    else if(state->route == PHOTOS_ROUTE_VIDEOS ||
+            state->route == PHOTOS_ROUTE_DELETE_VIDEOS)
         render_photos(state, true);
     else if(state->route == EXTRAS_ROUTE_MENU) {
         crazypod_extras_preview_render(
@@ -286,6 +289,11 @@ void crazypod_menu_preview_prefetch(
 
     if(state == NULL)
         return;
+    if(state->route >= PHOTOS_ROUTE_MENU &&
+       state->route <= PHOTOS_ROUTE_DETAIL) {
+        crazypod_photos_feature_prefetch_preview(state);
+        return;
+    }
     if(state->route == MUSIC_ROUTE_MENU) {
         if(state->selected == 0) {
             track = current_track();

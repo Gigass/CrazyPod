@@ -27,7 +27,7 @@ static const char *const music_symbols[] = {
 };
 
 static const char *const photo_symbols[] = {
-    LV_SYMBOL_IMAGE, LV_SYMBOL_PLAY, LV_SYMBOL_OK
+    LV_SYMBOL_IMAGE, LV_SYMBOL_PLAY, LV_SYMBOL_OK, LV_SYMBOL_TRASH
 };
 
 static const struct crazypod_app_descriptor *route_app(

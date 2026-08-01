@@ -278,6 +278,10 @@ void crazypod_lock_screen_show(bool turn_display_off)
        lock_state.callbacks.lock_inhibited())
         return;
     lock_state.locked = true;
+#ifdef HAVE_WHEEL_POSITION
+    wheel_set_backlight_on_touch(false);
+    wheel_send_events(true);
+#endif
     crazypod_coverflow_set_input_suspended(true);
     lock_state.release_guard = false;
     lock_state.wait_for_wake_release = turn_display_off;
@@ -296,6 +300,9 @@ void crazypod_lock_screen_show(bool turn_display_off)
 static void finish_unlock(void)
 {
     lock_state.locked = false;
+#ifdef HAVE_WHEEL_POSITION
+    wheel_set_backlight_on_touch(true);
+#endif
     lock_state.opening = false;
     lock_state.unlock_pressed = false;
     lock_state.unlock_press_start = 0;
@@ -447,6 +454,8 @@ bool crazypod_lock_screen_handle_button(long button, intptr_t data)
         lock_state.wait_for_wake_release = false;
         return true;
     }
+    if(base == BUTTON_SCROLL_FWD || base == BUTTON_SCROLL_BACK)
+        return true;
     backlight_on();
     if(!lock_state.backlight_was_on) {
         lock_state.backlight_was_on = true;
@@ -583,6 +592,9 @@ void crazypod_lock_screen_initialize_backlight_state(void)
 {
     bool backlight_is_on = is_backlight_on(true);
 
+#ifdef HAVE_WHEEL_POSITION
+    wheel_set_backlight_on_touch(true);
+#endif
     lock_state.backlight_was_on = backlight_is_on;
     lock_state.backlight_off_generation =
         backlight_off_generation();

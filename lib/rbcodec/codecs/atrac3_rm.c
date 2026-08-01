@@ -68,7 +68,6 @@ enum codec_status codec_run(void)
 {
     int datasize, res, consumed, i, time_offset;
     uint16_t fs,sps,h;
-    uint32_t packet_count;
     int spn, packet_header_size, scrambling_unit_size, num_units, elapsed;
     int playback_on = -1;
     size_t resume_offset;
@@ -99,7 +98,6 @@ enum codec_status codec_run(void)
 
     packet_header_size = PACKET_HEADER_SIZE +
       ((rmctx.flags & RM_PKT_V1) ? 1 : 0);
-    packet_count = rmctx.nb_packets;
     rmctx.audio_framesize = rmctx.block_align;
     rmctx.block_align = rmctx.sub_packet_size;
     fs = rmctx.audio_framesize;
@@ -168,7 +166,6 @@ seek_start :
                 }       
 
                 ci->seek_buffer(rmctx.data_offset + DATA_HEADER_SIZE);
-                packet_count = rmctx.nb_packets;
                 rmctx.audio_pkt_cnt = 0;
                 rmctx.frame_number = 0;
 
@@ -195,7 +192,6 @@ seek_start :
                         return CODEC_OK;
                 }
 
-                packet_count = rmctx.nb_packets - h * num_units;
                 rmctx.frame_number = (param/(sps*1000*8/rmctx.bit_rate)); 
                 while (rmctx.audiotimestamp > (unsigned)param && num_units-- > 0) {
                     rmctx.audio_pkt_cnt = 0;
@@ -213,7 +209,6 @@ seek_start :
                             return CODEC_OK;
                     }
 
-                    packet_count += h;
                 }
 
                 if (num_units < 0)
@@ -244,7 +239,6 @@ seek_start :
             ci->set_elapsed(elapsed);
             rmctx.frame_number++;
         }
-        packet_count -= h;
         rmctx.audio_pkt_cnt = 0;
         ci->advance_buffer(scrambling_unit_size);
     }

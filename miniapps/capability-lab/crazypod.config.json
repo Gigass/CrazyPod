@@ -1,0 +1,15 @@
+{
+  "manifest": {
+    "id": "capability-lab",
+    "name": "Capability Lab",
+    "version": "5.0.1",
+    "versionCode": 50001,
+    "symbol": "LAB",
+    "summary": "Native AOT React capability verification",
+    "accent": "#3dc483"
+  },
+  "runtime": "native-aot",
+  "source": "App.tsx",
+  "assets": "assets",
+  "iconColor": "#3dc483"
+}

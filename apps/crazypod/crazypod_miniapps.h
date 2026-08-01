@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../../miniapps/sdk/crazypod_miniapp.h"
+#include "../../miniapps/sdk/crazypod_miniapp_native.h"
 
 #define CRAZYPOD_MINIAPP_MAX_APPS 32
 #define CRAZYPOD_MINIAPP_ID_SIZE 33
@@ -13,11 +13,9 @@
 #define CRAZYPOD_MINIAPP_VERSION_SIZE 25
 #define CRAZYPOD_MINIAPP_SYMBOL_SIZE 9
 #define CRAZYPOD_MINIAPP_SUMMARY_SIZE 97
-#define CRAZYPOD_MINIAPP_TARGET_SIZE 17
-#define CRAZYPOD_MINIAPP_BINARY_SIZE 17
+#define CRAZYPOD_MINIAPP_FILE_NAME_SIZE 17
+#define CRAZYPOD_MINIAPP_RUNTIME_SIZE 17
 #define CRAZYPOD_MINIAPP_PATH_SIZE 260
-#define CRAZYPOD_MINIAPP_SIGNATURE_SIZE 64
-#define CRAZYPOD_MINIAPP_RESOURCES_SIZE 17
 
 enum crazypod_miniapp_result {
     CRAZYPOD_MINIAPP_OK = 0,
@@ -44,29 +42,79 @@ struct crazypod_miniapp_metadata {
     char version[CRAZYPOD_MINIAPP_VERSION_SIZE];
     char symbol[CRAZYPOD_MINIAPP_SYMBOL_SIZE];
     char summary[CRAZYPOD_MINIAPP_SUMMARY_SIZE];
-    char target[CRAZYPOD_MINIAPP_TARGET_SIZE];
-    char binary[CRAZYPOD_MINIAPP_BINARY_SIZE];
-    char icon[CRAZYPOD_MINIAPP_BINARY_SIZE];
+    char runtime[CRAZYPOD_MINIAPP_RUNTIME_SIZE];
+    char target[CRAZYPOD_MINIAPP_RUNTIME_SIZE];
+    char entry[CRAZYPOD_MINIAPP_FILE_NAME_SIZE];
+    char icon[CRAZYPOD_MINIAPP_FILE_NAME_SIZE];
     uint32_t version_code;
     uint32_t abi_version;
+    uint32_t abi_minor;
+    uint32_t react_profile;
     uint32_t package_format;
     uint32_t accent_rgb;
-    uint8_t binary_sha256[32];
-    uint8_t icon_sha256[32];
-    uint8_t resources_sha256[32];
+    uint32_t assets_size;
+    uint32_t icon_size;
+    uint32_t binary_size;
+    uint32_t profile_size;
     char install_path[CRAZYPOD_MINIAPP_PATH_SIZE];
-    char binary_path[CRAZYPOD_MINIAPP_PATH_SIZE];
+    char profile_path[CRAZYPOD_MINIAPP_PATH_SIZE];
+    char assets_path[CRAZYPOD_MINIAPP_PATH_SIZE];
     char icon_path[CRAZYPOD_MINIAPP_PATH_SIZE];
-    char resources_path[CRAZYPOD_MINIAPP_PATH_SIZE];
+    char binary_path[CRAZYPOD_MINIAPP_PATH_SIZE];
 };
 
-struct crazypod_miniapp_alarm {
-    char id[CRAZYPOD_MINIAPP_ID_SIZE];
-    char name[CRAZYPOD_MINIAPP_NAME_SIZE];
-    uint32_t deadline_epoch;
-    uint32_t token;
-    bool fired;
+struct crazypod_miniapp_ui_host {
+    int (*begin_update)(void);
+    uint32_t (*create)(uint8_t object_type);
+    int (*insert)(uint32_t child, uint32_t parent, uint32_t before);
+    int (*set_i32)(uint32_t target, uint16_t property, int32_t value);
+    int (*set_color)(uint32_t target, uint16_t property, uint32_t rgb);
+    int (*set_string)(
+        uint32_t target, uint16_t property, const char *value);
+    int (*set_bytes)(
+        uint32_t target, uint16_t property,
+        const void *data, size_t size);
+    int (*listen)(
+        uint32_t target, uint8_t event_type, uint32_t handler);
+    int (*animate)(
+        uint32_t target, uint16_t property,
+        int32_t from, int32_t to,
+        uint32_t duration_ms, uint32_t delay_ms,
+        uint16_t easing, uint32_t completion_handler);
+    int (*commit_drawing)(
+        uint32_t target, const void *data, size_t size);
+    int (*remove)(uint32_t target);
+    int (*end_update)(void);
+    bool (*input)(const struct cp_input_event *event);
+    void (*reset)(void);
 };
+
+void crazypod_miniapps_set_ui_host(
+    const struct crazypod_miniapp_ui_host *host);
+int crazypod_miniapps_ui_begin_update(void);
+uint32_t crazypod_miniapps_ui_create(uint8_t object_type);
+int crazypod_miniapps_ui_insert(
+    uint32_t child, uint32_t parent, uint32_t before);
+int crazypod_miniapps_ui_set_i32(
+    uint32_t target, uint16_t property, int32_t value);
+int crazypod_miniapps_ui_set_color(
+    uint32_t target, uint16_t property, uint32_t rgb);
+int crazypod_miniapps_ui_set_string(
+    uint32_t target, uint16_t property, const char *value);
+int crazypod_miniapps_ui_set_bytes(
+    uint32_t target, uint16_t property,
+    const void *data, size_t size);
+int crazypod_miniapps_ui_listen(
+    uint32_t target, uint8_t event_type, uint32_t handler);
+int crazypod_miniapps_ui_animate(
+    uint32_t target, uint16_t property,
+    int32_t from, int32_t to,
+    uint32_t duration_ms, uint32_t delay_ms,
+    uint16_t easing, uint32_t completion_handler);
+int crazypod_miniapps_ui_commit_drawing(
+    uint32_t target, const void *data, size_t size);
+int crazypod_miniapps_ui_remove(uint32_t target);
+int crazypod_miniapps_ui_end_update(void);
 
 int crazypod_miniapps_init(void);
 int crazypod_miniapps_prepare(void);
@@ -83,22 +131,17 @@ int crazypod_miniapps_open_id(const char *id);
 void crazypod_miniapps_close(void);
 bool crazypod_miniapps_is_open(void);
 int crazypod_miniapps_current(void);
-bool crazypod_miniapps_take_close_request(void);
 bool crazypod_miniapps_take_ui_refresh(void);
-bool crazypod_miniapps_toast(char *buffer, size_t capacity);
 
 bool crazypod_miniapps_event(const struct cp_input_event *event);
+bool crazypod_miniapps_ui_event(
+    uint32_t handler, uint8_t event_type,
+    uint32_t target, int32_t value);
 bool crazypod_miniapps_tick(void);
-bool crazypod_miniapps_render(struct cp_scene *scene);
+bool crazypod_miniapps_has_scheduled_work(void);
 int crazypod_miniapps_resource_stat(
     const char *id, struct cp_resource_info *info);
 int crazypod_miniapps_resource_read(
     const char *id, uint32_t offset, void *buffer, size_t capacity);
-
-bool crazypod_miniapps_alarm_service(
-    struct crazypod_miniapp_alarm *alarm);
-int crazypod_miniapps_alarm_acknowledge(const char *id);
-int crazypod_miniapps_alarm_delivery_acknowledge(
-    const char *id, uint32_t deadline_epoch, uint32_t token);
 
 #endif

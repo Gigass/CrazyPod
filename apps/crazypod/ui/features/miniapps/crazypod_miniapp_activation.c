@@ -22,12 +22,11 @@ crazypod_miniapp_activation_execute(
 
     result.handled = true;
     result.selected = selected;
+    crazypod_miniapp_screen_reset();
     result.error = crazypod_miniapps_open(selected);
     result.opened = result.error == CRAZYPOD_MINIAPP_OK;
-    if(result.opened) {
+    if(result.opened)
         crazypod_miniapp_runtime_opened();
-        crazypod_miniapp_screen_reset();
-    }
     return result;
 }
 

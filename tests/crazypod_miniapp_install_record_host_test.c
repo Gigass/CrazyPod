@@ -25,7 +25,7 @@ int main(int argc, char **argv)
         argv[2], &reader, 9));
     assert(crazypod_miniapp_install_record_read(argv[2], &record));
     assert(record.version_code == 9);
-    assert(record.files[CPK_ICON].size == 102454);
+    assert(record.files[CPK_ICON].size == 51216);
     crazypod_cpk_close(&reader);
 
     snprintf(path, sizeof(path), "%s/.install.bin", argv[2]);

@@ -25,8 +25,11 @@ inside that product boundary unless a proposal explicitly expands it.
 - Expose each UI feature through its `crazypod_<name>_feature.h` facade. Do not
   include feature-private headers from another feature, App, Shell,
   Presentation, Platform, or the composition root.
-- Keep Mini App ABI fields append-only. Preserve the ABI 1 host-table prefix
-  and gate optional tail functions with size and capability checks.
+- Treat Native ABI 1, React Profile 1, CPK5 and each binary sub-format as
+  versioned contracts.
+  Keep fields append-only within a version, reject unknown versions, and add
+  parser/renderer tests with every format change. Do not restore a JavaScript
+  runtime or an ABI2/ABI3 compatibility loader.
 - Wrap translatable CrazyPod UI text with `CP_TR()` and update all eight
   non-English locale files. Keep the nine native language names in the font
   character manifest.
@@ -58,16 +61,17 @@ Run only the relevant host suites while iterating, but run every applicable
 suite before submission. Documentation-only changes still require link and
 Markdown checks.
 
-For localization changes, regenerate `crazypod_l10n_data.inc` and
-`miniapps/sdk/crazypod_miniapp_l10n.h`, run the strict localization audit, and
-verify every committed localized font size covers the collected character
-manifest. A successful translation audit does not prove font coverage.
+For localization changes, regenerate `crazypod_l10n_data.inc`, run the strict
+localization audit, and verify every committed localized font size covers the
+collected character manifest. Native AOT Mini App text is compiled into each
+application binary and does not generate a firmware localization header. A
+successful translation audit does not prove font coverage.
 
 For interface changes, launch the simulator and verify click-wheel navigation,
 Select, Menu, Left, Right, and Play. For hardware-specific changes, state
 clearly whether the result was tested on an iPod or only compiled.
 
-Bootloader, LCD, power, USB, native Mini App, and filesystem changes require a
+Bootloader, LCD, power, USB, Mini App Host, and filesystem changes require a
 documented recovery path and explicit physical-test status. A successful ARM
 build does not validate those behaviors.
 

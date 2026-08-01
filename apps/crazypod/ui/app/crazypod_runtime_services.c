@@ -6,10 +6,6 @@
 #include "backlight.h"
 #include "kernel.h"
 #include "lvgl.h"
-#include "misc.h"
-#if defined(HAVE_HARDWARE_CLICK) && !defined(SIMULATOR)
-#include "piezo.h"
-#endif
 #include "../../crazypod_artwork.h"
 #include "../../crazypod_coverflow.h"
 #include "../../crazypod_frameclock.h"
@@ -22,11 +18,21 @@
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../features/photos/crazypod_photos_feature.h"
 #include "../navigation/crazypod_ui_routes.h"
+#include "../shell/crazypod_desktop.h"
 #include "../shell/crazypod_lock_screen.h"
 #include "../shell/crazypod_shell.h"
 #include "../shell/crazypod_system_prompts.h"
 #include "crazypod_route_actions.h"
+#include "crazypod_miniapp_repro.h"
 #include "crazypod_runtime_services.h"
+
+#if defined(SIMULATOR) || \
+    defined(CRAZYPOD_REPRO_DIAGNOSTICS)
+#define REPRO_MARK(PHASE, VALUE) \
+    crazypod_miniapp_repro_trace_marker((PHASE), (VALUE))
+#else
+#define REPRO_MARK(PHASE, VALUE) do { } while(0)
+#endif
 
 static void (*render_route)(bool transition);
 
@@ -70,8 +76,6 @@ int crazypod_runtime_services_wait_ticks(void)
 {
     int status;
 
-    if(crazypod_miniapps_feature_alert_active())
-        return CRAZYPOD_PLAYBACK_WAIT_TICKS;
     if(crazypod_lock_screen_is_locked()) {
         if(!is_backlight_on(true))
             return CRAZYPOD_SCREEN_OFF_WAIT_TICKS;
@@ -81,6 +85,7 @@ int crazypod_runtime_services_wait_ticks(void)
     }
     if(crazypod_miniapps_feature_motion_active() ||
        lv_anim_count_running() ||
+       crazypod_desktop_motion_active() ||
        crazypod_coverflow_motion_active())
         return CRAZYPOD_FRAME_WAIT_TICKS;
     if(crazypod_artwork_busy() || crazypod_photos_busy() ||
@@ -100,21 +105,40 @@ int crazypod_runtime_services_wait_ticks(void)
 static void service_miniapp(
     bool active, long now, bool frame_due)
 {
-    int events = crazypod_miniapps_feature_service(
+    int events;
+#if defined(SIMULATOR) || \
+    defined(CRAZYPOD_REPRO_DIAGNOSTICS)
+    long started = current_tick;
+#endif
+
+    events = crazypod_miniapps_feature_service(
         active, frame_due, now, HZ);
+#if defined(SIMULATOR) || \
+    defined(CRAZYPOD_REPRO_DIAGNOSTICS)
+    if(current_tick != started)
+        REPRO_MARK(
+            "miniapp-service-duration",
+            current_tick - started);
+#endif
 
     if((events & CRAZYPOD_MINIAPPS_SERVICE_CLOSE) != 0) {
         crazypod_route_actions_pop();
         return;
     }
-    if((events & CRAZYPOD_MINIAPPS_SERVICE_BEEP) != 0) {
-#if defined(HAVE_HARDWARE_CLICK) && !defined(SIMULATOR)
-        piezo_button_beep(false, false);
+    if((events & CRAZYPOD_MINIAPPS_SERVICE_RENDER) != 0) {
+#if defined(SIMULATOR) || \
+    defined(CRAZYPOD_REPRO_DIAGNOSTICS)
+        started = current_tick;
 #endif
-        beep_play(1568, 90, 6000);
-    }
-    if((events & CRAZYPOD_MINIAPPS_SERVICE_RENDER) != 0)
         render_route(false);
+#if defined(SIMULATOR) || \
+    defined(CRAZYPOD_REPRO_DIAGNOSTICS)
+        if(current_tick != started)
+            REPRO_MARK(
+                "miniapp-render-duration",
+                current_tick - started);
+#endif
+    }
 }
 
 void crazypod_runtime_services_tick(
@@ -151,6 +175,9 @@ void crazypod_runtime_services_tick(
     }
     if(!locked && routed)
         crazypod_photos_runtime_service(state, now);
+    if(!locked && routed &&
+       crazypod_photos_feature_service_feedback(now))
+        render_route(false);
     if(!locked)
         crazypod_wallpaper_crop_runtime_service(now);
     crazypod_music_library_service(

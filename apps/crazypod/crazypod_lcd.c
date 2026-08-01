@@ -106,10 +106,11 @@ static int clamp_video_component(int value)
     return value;
 }
 
-void lcd_blit_yuv(unsigned char * const source[3],
-                  int source_x, int source_y, int stride,
-                  int destination_x, int destination_y,
-                  int width, int height)
+static bool blit_yuv_to_framebuffer(
+    unsigned char * const source[3],
+    int source_x, int source_y, int stride,
+    int destination_x, int destination_y,
+    int width, int height)
 {
     int row;
     int column;
@@ -117,7 +118,7 @@ void lcd_blit_yuv(unsigned char * const source[3],
     if(destination_x < 0 || destination_y < 0 ||
        destination_x + width > LCD_WIDTH ||
        destination_y + height > LCD_HEIGHT)
-        return;
+        return false;
 
     width &= ~1;
     height &= ~1;
@@ -153,7 +154,75 @@ void lcd_blit_yuv(unsigned char * const source[3],
                 clamp_video_component(blue));
         }
     }
+    return true;
+}
+
+void lcd_blit_yuv(unsigned char * const source[3],
+                  int source_x, int source_y, int stride,
+                  int destination_x, int destination_y,
+                  int width, int height)
+{
+    if(!blit_yuv_to_framebuffer(
+           source, source_x, source_y, stride,
+           destination_x, destination_y, width, height))
+        return;
     lcd_update_rect(destination_x, destination_y, width, height);
+}
+#else
+static uint16_t video_line_buffer[LCD_WIDTH * 2]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+
+extern void lcd_write_yuv420_lines(
+    unsigned char const * const source[3],
+    uint16_t *output, int width, int stride);
+
+static bool blit_yuv_to_framebuffer(
+    unsigned char * const source[3],
+    int source_x, int source_y, int stride,
+    int destination_x, int destination_y,
+    int width, int height)
+{
+    unsigned int offset;
+    unsigned char const *yuv_source[3];
+    int row;
+
+    width &= ~1;
+    height &= ~1;
+    if(width <= 0 || height <= 0 ||
+       destination_x < 0 || destination_y < 0 ||
+       destination_x + width > LCD_WIDTH ||
+       destination_y + height > LCD_HEIGHT)
+        return false;
+
+    offset = stride * source_y;
+    yuv_source[0] = source[0] + offset + source_x;
+    yuv_source[1] = source[1] + (offset >> 2) + (source_x >> 1);
+    yuv_source[2] = source[2] + (yuv_source[1] - source[1]);
+
+    for(row = 0; row < height; row += 2) {
+        if(destination_x == 0 && width == LCD_WIDTH) {
+            lcd_write_yuv420_lines(
+                yuv_source,
+                (uint16_t *)&crazypod_framebuffer[
+                    destination_y + row][0],
+                width, stride);
+        }
+        else {
+            lcd_write_yuv420_lines(
+                yuv_source, video_line_buffer, width, stride);
+            memcpy(&crazypod_framebuffer[
+                       destination_y + row][destination_x],
+                   video_line_buffer, width * sizeof(uint16_t));
+            memcpy(&crazypod_framebuffer[
+                       destination_y + row + 1][destination_x],
+                   video_line_buffer + width,
+                   width * sizeof(uint16_t));
+        }
+        yuv_source[0] += stride << 1;
+        yuv_source[1] += stride >> 1;
+        yuv_source[2] += stride >> 1;
+    }
+    return true;
 }
 #endif
 
@@ -458,12 +527,13 @@ static void format_video_time(char *buffer, size_t size, uint32_t seconds)
                  (unsigned long)minutes, (unsigned long)remainder);
 }
 
-void crazypod_lcd_draw_video_controls(
+static void compose_video_controls(
     const char *title, uint32_t elapsed_seconds,
     uint32_t duration_seconds, int volume,
     bool paused, const char *message)
 {
-    const int panel_y = 198;
+    const int panel_height = 32;
+    const int panel_y = LCD_HEIGHT - panel_height;
     const fb_data white = LCD_RGBPACK(255, 255, 255);
     const fb_data muted = LCD_RGBPACK(154, 160, 168);
     const fb_data accent = LCD_RGBPACK(52, 120, 246);
@@ -482,20 +552,20 @@ void crazypod_lcd_draw_video_controls(
 
     draw_text(&lv_font_montserrat_8,
               paused ? CP_TR("PAUSED") : CP_TR("PLAYING"),
-              8, 201, 62, paused ? muted : accent);
+              8, panel_y + 3, 62, paused ? muted : accent);
     if(message != NULL && message[0] != '\0')
         draw_text(&lv_font_montserrat_8, message,
-                  66, 201, 312, white);
+                  66, panel_y + 3, 312, white);
     else
         draw_text(&lv_font_montserrat_8, title,
-                  66, 201, 312, white);
+                  66, panel_y + 3, 312, white);
 
     for(row = 8; row < 312; ++row) {
-        crazypod_framebuffer[218][row] =
+        crazypod_framebuffer[panel_y + 15][row] =
             LCD_RGBPACK(48, 52, 60);
-        crazypod_framebuffer[219][row] =
+        crazypod_framebuffer[panel_y + 16][row] =
             LCD_RGBPACK(48, 52, 60);
-        crazypod_framebuffer[220][row] =
+        crazypod_framebuffer[panel_y + 17][row] =
             LCD_RGBPACK(48, 52, 60);
     }
     if(duration_seconds > 0) {
@@ -505,22 +575,44 @@ void crazypod_lcd_draw_video_controls(
             progress_width = 304;
     }
     for(row = 8; row < 8 + progress_width; ++row) {
-        crazypod_framebuffer[218][row] = accent;
-        crazypod_framebuffer[219][row] = accent;
-        crazypod_framebuffer[220][row] = accent;
+        crazypod_framebuffer[panel_y + 15][row] = accent;
+        crazypod_framebuffer[panel_y + 16][row] = accent;
+        crazypod_framebuffer[panel_y + 17][row] = accent;
     }
 
     format_video_time(elapsed, sizeof(elapsed), elapsed_seconds);
     format_video_time(duration, sizeof(duration), duration_seconds);
     snprintf(volume_text, sizeof(volume_text), CP_FMT("VOL %d"), volume);
-    draw_text(&lv_font_montserrat_8, elapsed, 8, 225, 75, muted);
-    draw_text(&lv_font_montserrat_8, duration, 78, 225, 152, muted);
+    draw_text(&lv_font_montserrat_8, elapsed,
+              8, panel_y + 21, 75, muted);
+    draw_text(&lv_font_montserrat_8, duration,
+              78, panel_y + 21, 152, muted);
     draw_text(&lv_font_montserrat_8,
               CP_TR("PLAY  -10s  +10s  MENU"),
-              158, 225, 276, muted);
+              158, panel_y + 21, 276, muted);
     draw_text(&lv_font_montserrat_8, volume_text,
-              278, 225, 318, white);
-    lcd_update_rect(0, panel_y, LCD_WIDTH, LCD_HEIGHT - panel_y);
+              278, panel_y + 21, 318, white);
+}
+
+void crazypod_lcd_draw_video_frame(
+    unsigned char * const source[3],
+    int source_x, int source_y, int stride,
+    int destination_x, int destination_y,
+    int width, int height,
+    bool controls_visible, const char *title,
+    uint32_t elapsed_seconds, uint32_t duration_seconds,
+    int volume, bool paused, const char *message)
+{
+    memset(crazypod_framebuffer, 0, sizeof(crazypod_framebuffer));
+    if(!blit_yuv_to_framebuffer(
+           source, source_x, source_y, stride,
+           destination_x, destination_y, width, height))
+        return;
+    if(controls_visible)
+        compose_video_controls(
+            title, elapsed_seconds, duration_seconds,
+            volume, paused, message);
+    lcd_update();
 }
 
 void crazypod_lcd_show_panic(const char *message)

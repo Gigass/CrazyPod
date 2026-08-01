@@ -64,6 +64,39 @@ bool crazypod_render_scheduler_blocked(void)
         crazypod_preview_motion_media_refresh_pending();
 }
 
+static int wait_until(long due, long now)
+{
+    long remaining = due - now;
+
+    if(remaining <= 0)
+        return 1;
+    return remaining > HZ ? HZ : (int)remaining;
+}
+
+int crazypod_render_scheduler_wait_ticks(long now)
+{
+    int wait = HZ > 0 ? HZ : 1;
+    int pending_wait;
+
+    if(scheduler.route_pending) {
+        pending_wait = wait_until(scheduler.route_due, now);
+        if(pending_wait < wait)
+            wait = pending_wait;
+    }
+    if(scheduler.preview_pending) {
+        pending_wait = wait_until(scheduler.preview_due, now);
+        if(pending_wait < wait)
+            wait = pending_wait;
+    }
+    if(crazypod_preview_motion_media_refresh_pending()) {
+        pending_wait = wait_until(
+            crazypod_preview_motion_media_due(), now);
+        if(pending_wait < wait)
+            wait = pending_wait;
+    }
+    return wait;
+}
+
 void crazypod_render_scheduler_service(long now)
 {
     struct route_state *state;

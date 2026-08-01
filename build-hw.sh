@@ -17,7 +17,7 @@ detect_jobs() {
 
 require_tools() {
     missing=0
-    for tool in make perl python3 zip "${CROSS_COMPILE}gcc" \
+    for tool in make perl python3 zip node npm gcc "${CROSS_COMPILE}gcc" \
         "${CROSS_COMPILE}objcopy" "${CROSS_COMPILE}nm"; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             echo "Error: missing required tool '$tool' on PATH." >&2
@@ -31,9 +31,12 @@ prepare_generated_headers() {
     builddir_unix=$(pwd)
     # rbversion.h is phony when the UTC date changes. Build it separately so
     # GNU Make 3.81 cannot schedule generated files twice through other goals.
-    make -j1 "$builddir_unix/rbversion.h"
-    make -j1 "$builddir_unix/apps/core_asmdefs.h"
-    make -j1 "$builddir_unix/ram.link"
+    make EXTRA_DEFINES="$CRAZYPOD_BUILD_DEFINES" \
+        -j1 "$builddir_unix/rbversion.h"
+    make EXTRA_DEFINES="$CRAZYPOD_BUILD_DEFINES" \
+        -j1 "$builddir_unix/apps/core_asmdefs.h"
+    make EXTRA_DEFINES="$CRAZYPOD_BUILD_DEFINES" \
+        -j1 "$builddir_unix/ram.link"
 }
 
 verify_stack_alignment() {
@@ -47,6 +50,23 @@ verify_stack_alignment() {
         fi
         if [ $((0x$address % 8)) -ne 0 ]; then
             echo "Error: stack symbol '$symbol' is not 8-byte aligned: 0x$address." >&2
+            exit 1
+        fi
+    done
+}
+
+verify_removed_runtime_absent() {
+    forbidden='quickjs|mquickjs|crazypod_js|crazypod_script|solid_renderer|ui_command_batch'
+    for binary in rockbox.elf \
+        miniapps/native-reference/app.arm \
+        miniapps/capability-lab/app.arm \
+        miniapps/game2048/app.arm; do
+        matches=$("${CROSS_COMPILE}nm" -a "$binary" 2>/dev/null |
+            awk '{ print $3 }' |
+            grep -E -i "$forbidden" || true)
+        if [ -n "$matches" ]; then
+            echo "Error: removed script runtime symbol in $binary:" >&2
+            echo "$matches" >&2
             exit 1
         fi
     done
@@ -69,8 +89,10 @@ Usage: build-hw.sh [-i|--incremental]
 Builds CrazyPod exclusively for the Rockbox iPod 6G target.
 
 Environment:
-  CRAZYPOD_INCREMENTAL=1  reuse build-hw-ipod6g/
+  CRAZYPOD_INCREMENTAL=1  reuse the selected variant build directory
   CRAZYPOD_SKIP_DEP=1     skip make dep when make.dep exists
+  CRAZYPOD_REPRO_DIAGNOSTICS=1
+                           build the one-shot harness in build-hw-ipod6g-repro/
   CROSS_COMPILE=prefix-   default arm-none-eabi-
   JOBS=N                  parallel job count
 EOF
@@ -86,10 +108,34 @@ done
 
 CROSS_COMPILE="${CROSS_COMPILE:-arm-none-eabi-}"
 export CROSS_COMPILE
+CRAZYPOD_BUILD_DEFINES=""
+CRAZYPOD_BUILD_VARIANT="production"
+case "${CRAZYPOD_REPRO_DIAGNOSTICS:-}" in
+    1|yes|true|YES|TRUE)
+        CRAZYPOD_BUILD_DEFINES="-DCRAZYPOD_REPRO_DIAGNOSTICS"
+        CRAZYPOD_BUILD_VARIANT="repro"
+        ;;
+esac
 require_tools
+npm ci --ignore-scripts --no-audit --no-fund \
+    --prefix tools/miniapp-builder
+node tools/miniapp-builder/src/cli.mjs generate \
+    miniapps/native-reference \
+    --out miniapps/native-reference/generated/app.c
+node tools/miniapp-builder/src/cli.mjs generate \
+    miniapps/capability-lab \
+    --out miniapps/capability-lab/generated/app.c
+node tools/miniapp-builder/src/cli.mjs generate \
+    miniapps/game2048 \
+    --out miniapps/game2048/generated/app.c
 
-BUILDDIR="build-hw-ipod6g"
-STAMP="crazypod hardware ipod6g lvgl"
+if [ "$CRAZYPOD_BUILD_VARIANT" = "repro" ]; then
+    BUILDDIR="build-hw-ipod6g-repro"
+    STAMP="crazypod hardware ipod6g lvgl repro"
+else
+    BUILDDIR="build-hw-ipod6g"
+    STAMP="crazypod hardware ipod6g lvgl production"
+fi
 
 configure_build() {
     ../tools/configure --target=ipod6g --type=n
@@ -116,26 +162,44 @@ fi
 if [ -n "${CRAZYPOD_SKIP_DEP:-}" ] && [ -f make.dep ]; then
     echo "CrazyPod: reusing make.dep"
 else
-    make dep
+    make EXTRA_DEFINES="$CRAZYPOD_BUILD_DEFINES" dep
 fi
 
 prepare_generated_headers
-make -j"$(detect_jobs)"
+make EXTRA_DEFINES="$CRAZYPOD_BUILD_DEFINES" \
+    -j"$(detect_jobs)"
 
 if [ ! -f rockbox.ipod ]; then
     echo "Error: hardware build did not produce rockbox.ipod." >&2
     exit 1
 fi
 verify_stack_alignment
+verify_removed_runtime_absent
 mkdir -p ../dist/miniapps
-find ../dist/miniapps -type f \
-    \( -name 'calculator-*.cpk' -o -name 'pomodoro-*.cpk' \
-       -o -name 'game2048-*.cpk' \) -delete
-python3 ../tools/build-miniapp-packages.py \
-    --build-dir . \
+find ../dist/miniapps -type f -name 'game2048-*.cpk' -delete
+find ../dist/miniapps -type f -name 'capability-lab-*.cpk' -delete
+find ../dist/miniapps -type f -name 'native-reference-*.cpk' -delete
+GAME2048_PACKAGE="game2048-$(node -p \
+    "require('../miniapps/game2048/crazypod.config.json').manifest.version").cpk"
+CAPABILITY_LAB_PACKAGE="capability-lab-$(node -p \
+    "require('../miniapps/capability-lab/crazypod.config.json').manifest.version").cpk"
+NATIVE_REFERENCE_PACKAGE="native-reference-$(node -p \
+    "require('../miniapps/native-reference/crazypod.config.json').manifest.version").cpk"
+node ../tools/miniapp-builder/src/cli.mjs build \
+    ../miniapps/game2048 \
     --target ipod6g \
-    --binary app.arm \
-    --output ../dist/miniapps
+    --binary miniapps/game2048/app.arm \
+    --out "../dist/miniapps/$GAME2048_PACKAGE"
+node ../tools/miniapp-builder/src/cli.mjs build \
+    ../miniapps/capability-lab \
+    --target ipod6g \
+    --binary miniapps/capability-lab/app.arm \
+    --out "../dist/miniapps/$CAPABILITY_LAB_PACKAGE"
+node ../tools/miniapp-builder/src/cli.mjs build \
+    ../miniapps/native-reference \
+    --target ipod6g \
+    --binary miniapps/native-reference/app.arm \
+    --out "../dist/miniapps/$NATIVE_REFERENCE_PACKAGE"
 
 PACKAGE_DIR="$(mktemp -d)"
 trap 'rm -rf "$PACKAGE_DIR"' EXIT HUP INT TERM
@@ -170,9 +234,11 @@ cp -R ../assets/crazypod-icons/. \
     "$PACKAGE_DIR/.rockbox/crazypod/icons/"
 cp ../assets/crazypod/default-home.bmp \
     "$PACKAGE_DIR/.rockbox/crazypod/default-home.bmp"
-cp ../dist/miniapps/calculator-1.2.0.cpk \
-   ../dist/miniapps/pomodoro-1.2.0.cpk \
-   ../dist/miniapps/game2048-1.0.0.cpk \
+cp "../dist/miniapps/$GAME2048_PACKAGE" \
+   "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
+cp "../dist/miniapps/$CAPABILITY_LAB_PACKAGE" \
+   "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
+cp "../dist/miniapps/$NATIVE_REFERENCE_PACKAGE" \
    "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
 for codec in lib/rbcodec/codecs/*.codec; do
     [ -f "$codec" ] || continue

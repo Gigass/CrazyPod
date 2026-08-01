@@ -1,0 +1,19 @@
+{
+  "status":"FAIL",
+  "reason":"ui-heartbeat-gap",
+  "scenario":"game2048",
+  "phase":"game-exit-select",
+  "cycles":1,
+  "moveSamples":28,
+  "moveP95Ms":1980,
+  "moveMaxMs":2080,
+  "actionMaxMs":2080,
+  "heartbeatMaxMs":750,
+  "buttonQueueMax":2,
+  "miniappQueueMax":0,
+  "cpuBoostRequested":false,
+  "cpuFrequencyMinHz":54000000,
+  "cpuFrequencyMaxHz":216000000,
+  "violationCount":39,
+  "traceRecords":498
+}

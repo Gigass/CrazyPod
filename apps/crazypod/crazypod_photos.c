@@ -345,6 +345,7 @@ static void wait_for_photo_idle(void)
 
 void crazypod_photos_init(void)
 {
+    bool catalog_loaded;
     int slot;
 
     memset(thumbnail_slots, 0, sizeof(thumbnail_slots));
@@ -369,16 +370,13 @@ void crazypod_photos_init(void)
                   "crazypod photos"
                   IF_PRIO(, PRIORITY_USER_INTERFACE)
                   IF_COP(, CPU));
-    (void)crazypod_photo_catalog_init();
-    /* A persistent catalog makes Home/lock startup disk-idle. Validate it
-     * once, lazily, when a photo route is actually opened. The thumbnail
-     * cache index is deferred for the same reason. */
-    photo_refresh_pending = true;
+    catalog_loaded = crazypod_photo_catalog_init();
+    photo_refresh_pending = !catalog_loaded;
 }
 
 void crazypod_photos_refresh(void)
 {
-    int slot;
+    bool wake;
 
     mutex_lock(&photo_mutex);
     if(photo_storage_suspended || photo_lock_suspended ||
@@ -393,14 +391,6 @@ void crazypod_photos_refresh(void)
     wait_for_photo_idle();
     crazypod_photo_catalog_refresh();
     mutex_lock(&photo_mutex);
-    memset(thumbnail_slots, 0, sizeof(thumbnail_slots));
-    memset(&view_slot, 0, sizeof(view_slot));
-    for(slot = 0; slot < CRAZYPOD_PHOTO_THUMB_SLOTS; ++slot) {
-        thumbnail_slots[slot].requested_index = -1;
-        thumbnail_slots[slot].decoded_index = -1;
-    }
-    view_slot.requested_index = -1;
-    view_slot.decoded_index = -1;
     photo_suspended =
         photo_storage_suspended || photo_lock_suspended ||
         photo_route_suspended;
@@ -408,26 +398,30 @@ void crazypod_photos_refresh(void)
     ++photo_publish_generation;
     ++photo_view_publish_generation;
     crazypod_photo_viewport_reset();
+    wake = !photo_suspended;
     mutex_unlock(&photo_mutex);
+    if(wake)
+        wake_worker();
 }
 
 void crazypod_photos_ensure_catalog(void)
 {
+    bool active;
+    bool initialize_cache;
     bool refresh;
 
     mutex_lock(&photo_mutex);
-    refresh = photo_refresh_pending &&
-        !photo_storage_suspended &&
-        !photo_lock_suspended &&
+    active = !photo_storage_suspended && !photo_lock_suspended &&
         !photo_route_suspended;
+    initialize_cache = active && !photo_cache_initialized;
+    if(initialize_cache)
+        photo_cache_initialized = true;
+    refresh = active && photo_refresh_pending;
     mutex_unlock(&photo_mutex);
-    if(refresh) {
-        if(!photo_cache_initialized) {
-            crazypod_photo_cache_init();
-            photo_cache_initialized = true;
-        }
+    if(initialize_cache)
+        crazypod_photo_cache_init();
+    if(refresh)
         crazypod_photos_refresh();
-    }
 }
 
 void crazypod_photos_suspend(void)
@@ -505,6 +499,14 @@ void crazypod_photos_invalidate_catalog(void)
     crazypod_photo_cache_invalidate();
 }
 
+void crazypod_photos_note_file_added(void)
+{
+    mutex_lock(&photo_mutex);
+    photo_refresh_pending = true;
+    mutex_unlock(&photo_mutex);
+    crazypod_photo_catalog_invalidate();
+}
+
 int crazypod_photo_count(void)
 {
     return crazypod_photo_catalog_count();
@@ -549,29 +551,102 @@ bool crazypod_photo_toggle_favorite(int index)
     return true;
 }
 
+bool crazypod_photo_delete(int index)
+{
+    bool deleted;
+    bool wake;
+    char deleted_path[MAX_PATH];
+    int slot;
+
+    snprintf(deleted_path, sizeof(deleted_path), "%s",
+             crazypod_photo_path(index));
+    if(deleted_path[0] == '\0')
+        return false;
+
+    mutex_lock(&photo_mutex);
+    if(photo_storage_suspended || photo_lock_suspended) {
+        mutex_unlock(&photo_mutex);
+        return false;
+    }
+    photo_suspended = true;
+    mutex_unlock(&photo_mutex);
+    wait_for_photo_idle();
+    deleted = crazypod_photo_catalog_delete(index);
+    mutex_lock(&photo_mutex);
+    if(deleted) {
+        for(slot = 0; slot < CRAZYPOD_PHOTO_THUMB_SLOTS; ++slot) {
+            if(strcmp(thumbnail_slots[slot].requested_path,
+                      deleted_path) != 0)
+                continue;
+            thumbnail_slots[slot].requested_index = -1;
+            thumbnail_slots[slot].decoded_index = -1;
+            thumbnail_slots[slot].pending = false;
+            thumbnail_slots[slot].valid = false;
+            ++thumbnail_slots[slot].request_serial;
+        }
+        if(strcmp(view_slot.requested_path, deleted_path) == 0) {
+            view_slot.requested_index = -1;
+            view_slot.decoded_index = -1;
+            view_slot.pending = false;
+            view_slot.valid = false;
+            ++view_slot.request_serial;
+        }
+        photo_refresh_pending = false;
+        ++photo_publish_generation;
+        ++photo_view_publish_generation;
+        crazypod_photo_viewport_reset();
+    }
+    photo_suspended =
+        photo_storage_suspended || photo_lock_suspended ||
+        photo_route_suspended;
+    photo_wake_queued = false;
+    wake = !photo_suspended;
+    mutex_unlock(&photo_mutex);
+    if(wake)
+        wake_worker();
+    return deleted;
+}
+
 const lv_image_dsc_t *crazypod_photo_thumbnail(int slot_index, int index)
 {
     const struct crazypod_photo_catalog_entry *entry =
         crazypod_photo_catalog_get(index);
-    struct photo_slot *slot;
+    struct photo_slot *slot = NULL;
     const lv_image_dsc_t *result = NULL;
     bool changed = false;
+    int candidate;
 
     if(slot_index < 0 || slot_index >= CRAZYPOD_PHOTO_THUMB_SLOTS ||
        entry == NULL)
         return NULL;
     mutex_lock(&photo_mutex);
-    slot = &thumbnail_slots[slot_index];
-    if(slot->decoded_index == index &&
-       slot->decoded_serial == slot->request_serial &&
-       slot->valid &&
-       strcmp(slot->requested_path, entry->path) == 0) {
-        result = &slot->descriptor[slot->active_bank];
+    for(candidate = 0; candidate < CRAZYPOD_PHOTO_THUMB_SLOTS;
+        ++candidate) {
+        struct photo_slot *cached = &thumbnail_slots[candidate];
+
+        if(cached->requested_size != entry->size ||
+           cached->requested_mtime != entry->mtime ||
+           strcmp(cached->requested_path, entry->path) != 0)
+            continue;
+        slot = cached;
+        slot->requested_index = index;
+        if(slot->decoded_serial == slot->request_serial && slot->valid) {
+            slot->decoded_index = index;
+            result = &slot->descriptor[slot->active_bank];
+        }
+        break;
     }
-    else if(slot->requested_index != index ||
-            slot->requested_size != entry->size ||
-            slot->requested_mtime != entry->mtime ||
-            strcmp(slot->requested_path, entry->path) != 0) {
+    if(slot == NULL) {
+        for(candidate = 0; candidate < CRAZYPOD_PHOTO_THUMB_SLOTS;
+            ++candidate) {
+            if(!thumbnail_slots[candidate].valid &&
+               !thumbnail_slots[candidate].pending) {
+                slot = &thumbnail_slots[candidate];
+                break;
+            }
+        }
+        if(slot == NULL)
+            slot = &thumbnail_slots[slot_index];
         slot->requested_index = index;
         slot->requested_size = entry->size;
         slot->requested_mtime = entry->mtime;
@@ -598,10 +673,13 @@ const lv_image_dsc_t *crazypod_photo_view(int index)
     if(entry == NULL)
         return NULL;
     mutex_lock(&photo_mutex);
-    if(view_slot.decoded_index == index &&
-       view_slot.decoded_serial == view_slot.request_serial &&
+    if(view_slot.decoded_serial == view_slot.request_serial &&
        view_slot.valid &&
+       view_slot.requested_size == entry->size &&
+       view_slot.requested_mtime == entry->mtime &&
        strcmp(view_slot.requested_path, entry->path) == 0) {
+        view_slot.requested_index = index;
+        view_slot.decoded_index = index;
         result = &view_slot.descriptor[view_slot.active_bank];
     }
     else if(view_slot.requested_index != index ||
@@ -658,8 +736,12 @@ static const lv_image_dsc_t *ready_thumbnail(int index)
         slot_index < CRAZYPOD_PHOTO_THUMB_SLOTS; ++slot_index) {
         struct photo_slot *slot = &thumbnail_slots[slot_index];
 
-        if(slot->decoded_index == index && slot->valid &&
+        if(slot->decoded_serial == slot->request_serial && slot->valid &&
+           slot->requested_size == entry->size &&
+           slot->requested_mtime == entry->mtime &&
            strcmp(slot->requested_path, entry->path) == 0) {
+            slot->requested_index = index;
+            slot->decoded_index = index;
             result = &slot->descriptor[slot->active_bank];
             break;
         }

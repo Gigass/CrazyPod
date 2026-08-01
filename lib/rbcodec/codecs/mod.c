@@ -1299,7 +1299,6 @@ enum codec_status codec_run(void)
     size_t n;
     unsigned char *modfile;
     int old_patterntableposition;
-    int bytesdone;
     intptr_t param;
 
     if (codec_init()) {
@@ -1329,7 +1328,6 @@ enum codec_status codec_run(void)
 
     ci->set_elapsed(modplayer.patterntableposition*1000);
 
-    bytesdone = 0;
     old_patterntableposition = 0;
 
     while (1) {
@@ -1351,8 +1349,6 @@ enum codec_status codec_run(void)
         }
 
         synthrender(samples, CHUNK_SIZE/2);
-
-        bytesdone += CHUNK_SIZE;
 
         ci->pcmbuf_insert(samples, NULL, CHUNK_SIZE/2);
 

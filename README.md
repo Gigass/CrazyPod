@@ -62,11 +62,9 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
   favorites, chapters, font sizes, and paper themes. TXT and Markdown content
   automatically distinguishes strict UTF-8 from GBK/GB2312 (CP936).
 - **Organizer:** local calendar events, read-only ICS import, and VCF contacts.
-- **Mini Apps:** signed native Calculator, Pomodoro, and 2048 packages using
-  ABI 1, SDK revision 4, CPK format 2 resources, host-owned asynchronous
-  dialogs, read-only Now Playing metadata, and a shared click-wheel runtime.
-  Clock, stopwatch, calendar, and contacts remain under More Features rather
-  than being duplicated as packages.
+- **Mini Apps:** React-style TypeScript/TSX is AOT-compiled to C and then to
+  native `app.arm`; Native ABI 1 drives host-owned LVGL. The device runs no
+  JavaScript engine. Reference apps are 2048 and Capability Lab.
 - **Workouts:** 20 timed activities with pause, resume, history, and summaries.
   CrazyPod records elapsed time only; it does not invent distance, steps, or
   calorie data.
@@ -87,37 +85,27 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
 
 - Settings → Language applies one of nine languages immediately and persists
   it across restarts.
-- The firmware catalog contains 856 translated UI keys. Calculator and
-  Pomodoro share another 27 translated strings and follow the current system
-  language.
+- The firmware catalog contains 827 translated UI keys.
 - Generated 8, 10, 12, 14, and 16px font subsets cover the current CJK,
   Hangul, and accented Latin catalog. The non-LVGL LCD text path also decodes
   UTF-8.
 
 ### Mini Apps
 
-The firmware bundles three usable ABI 1 reference packages:
+The firmware bundles two CPK5 Native AOT reference packages:
 
-- **Calculator:** a standard calculator that starts at `0` and supports
-  chaining, contextual percent, repeat equals, sign, decimal, backspace, clear,
-  and error recovery. Play is a direct equals shortcut.
-- **Pomodoro:** defaults to 25-minute focus, 5-minute short break, 15-minute
-  long break, and four rounds. Durations and rounds are editable; running
-  sessions support pause, resume, skip, reset, persisted deadlines, and
-  background alarms.
-- **2048:** maps the four Click Wheel buttons to board movement, persists an
-  unfinished game, records wins, failures, and abandoned sessions, and keeps
-  the ten most recent completed games with final-board details.
+- **2048:** React-style TSX UI, generated native C game logic, Click Wheel
+  input and CRC-checked persistent board state.
+- **Capability Lab:** controls, Flex layout, resources, conditional subtrees,
+  events and repeated mount/unmount behavior.
 
 Fast wheel input never skips visible actionable controls. The host keeps a
 bounded input queue and consumes at most one discrete focus movement per
 display frame; reversing direction discards stale queued movement. Acceleration
-is used only while editing a numeric or continuous value, such as Pomodoro
-duration. Additional signed packages can be placed in `/MiniApps/Install`; see
-[miniapps/README.md](miniapps/README.md) for the package, runtime, and security
-contracts, or follow the
-[Chinese Mini App tutorial](miniapps/TUTORIAL.zh-CN.md) to create a package
-from scratch.
+is available to applications as a 1–4 step magnitude. Additional CPK5 packages
+can be placed in `/MiniApps/Install`; see
+[miniapps/README.md](miniapps/README.md) for the package and runtime contract,
+or follow the [Chinese Mini App tutorial](miniapps/TUTORIAL.zh-CN.md).
 
 ### Appearance
 
@@ -165,9 +153,7 @@ existing build directory.
 | Firmware | `build-hw-ipod6g/rockbox.ipod` |
 | Install archive | `build-hw-ipod6g/CrazyPod-6G.zip` |
 | Optional bootloader | `build-bootloader-ipod6g/bootloader-ipod6g.ipod` |
-| Calculator package | `dist/miniapps/calculator-1.2.0.cpk` |
-| Pomodoro package | `dist/miniapps/pomodoro-1.2.0.cpk` |
-| 2048 package | `dist/miniapps/game2048-1.0.0.cpk` |
+| 2048 package | `dist/miniapps/game2048-5.0.1.cpk` |
 
 The project does not yet claim a supported hardware installation procedure.
 The generated archive is for controlled device testing by users who already
@@ -247,14 +233,10 @@ the queue. The Favorite action adds or removes the current track from
   bundled font subset may appear blank.
 - Camera and voice recording are absent because the target has neither
   required input.
-- Mini Apps accepts the restricted, signed native `.cpk` format documented in
-  [miniapps/README.md](miniapps/README.md). Ed25519 signing verifies package
-  origin and integrity; it is not a sandbox. An installed native Mini App runs
-  with firmware privileges. Host text input remains printable ASCII and is not
-  a multilingual IME.
-- The repository's Mini App signing key is a public development key. Replace
-  the trusted public key and keep the matching private key outside the
-  repository before distributing production packages.
+- Mini Apps accepts only target-matched CPK5 native packages. Packages are
+  CRC/structure checked but are not signed. React Profile v1 is a constrained
+  AOT source subset, not arbitrary TypeScript-to-C. See the
+  [Native AOT architecture](docs/CRAZYPOD_MINIAPP_NATIVE_AOT_ARCHITECTURE.zh-CN.md).
 - The optional custom bootloader is built and installed separately from the
   firmware archive. It has not completed physical boot regression. Its current
   Apple-shaped mark is also unsuitable for an unaffiliated public release
@@ -271,8 +253,8 @@ the queue. The Favorite action adds or removes the current track from
 - [`apps/crazypod/ARCHITECTURE.md`](apps/crazypod/ARCHITECTURE.md) defines the
   feature, Shell, Navigation, Presentation, Platform, and composition-root
   boundaries enforced by the architecture test.
-- `miniapps/` contains the native Mini App SDK, Calculator, Pomodoro, package
-  manifests, development key, and host tests.
+- `miniapps/` contains the Native ABI header, React Profile examples, 2048,
+  and Capability Lab.
 - `lib/lvgl/` contains the vendored LVGL 9.5.0 source.
 - `assets/crazypod/` and `assets/crazypod-icons/` contain packaged runtime
   graphics.

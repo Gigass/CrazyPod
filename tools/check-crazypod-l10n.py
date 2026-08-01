@@ -26,15 +26,6 @@ SINK_PARTS = (
     "lcd_puts", "lcd_putsf", "splash", "set_message", "show_message",
     "choice_overlay", "confirm_overlay", "snprintf",
 )
-MINIAPP_SOURCES = {
-    "Error", "Cannot divide by zero", "Result out of range",
-    " OF ", " MIN", " ROUNDS", "ROUNDS", "SHORT BREAK", "LONG BREAK",
-    "FOCUS", "SHORT", "LONG", "RUNNING", "PAUSED", "COMPLETE", "READY",
-    "START", "SETUP", "PAUSE", "SKIP", "RESET", "RESUME", "NEXT",
-    "TIMER NOT STARTED", "CHANGES NOT SAVED", "DONE", "Settings saved",
-}
-
-
 @dataclass(frozen=True)
 class Token:
     kind: str
@@ -315,7 +306,7 @@ def audit(repo: Path, strict_bare: bool) -> tuple[list[str], list[str]]:
     for key, locations in sorted(calls.items()):
         if key not in catalog:
             errors.append(f"{locations[0]}: localization key absent from catalog: {key!r}")
-    for key in sorted(set(catalog) - set(calls) - MINIAPP_SOURCES):
+    for key in sorted(set(catalog) - set(calls)):
         errors.append(f"localization/crazypod/catalog.json: unused key: {key!r}")
 
     expected = set(catalog)

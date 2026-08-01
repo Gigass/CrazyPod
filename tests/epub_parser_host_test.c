@@ -3,6 +3,11 @@
 #include <string.h>
 #include <sys/stat.h>
 
+const char *crazypod_l10n_text(const char *text)
+{
+    return text;
+}
+
 #include "../apps/crazypod/crazypod_epub.c"
 
 static int progress_calls;

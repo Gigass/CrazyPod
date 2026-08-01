@@ -84,6 +84,8 @@ struct dirinfo
     unsigned int attribute; /* attribute bits of file */
     off_t        size;      /* binary size of file */
     time_t       mtime;     /* local file time */
+    time_t       ctime;     /* local file creation time */
+    unsigned int ctime_tenth; /* FAT creation hundredths (0-199) */
 };
 
 #ifndef DIRFUNCTIONS_DECLARED

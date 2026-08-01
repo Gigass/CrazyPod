@@ -7,7 +7,6 @@
 
 #include "dir.h"
 #include "crazypod_cpk_reader.h"
-#include "crazypod_miniapp_alarm_store.h"
 #include "crazypod_miniapp_install_record.h"
 #include "crazypod_miniapps.h"
 
@@ -19,7 +18,6 @@ static struct test_directory test_directory;
 static struct dirent test_entry;
 static int open_count;
 static int registry_rebuild_count;
-static int alarm_reload_count;
 static int recovery_count;
 static int verification_clear_count;
 static int package_open_count;
@@ -129,11 +127,6 @@ bool crazypod_miniapp_registry_package_matches(
     return false;
 }
 
-void crazypod_miniapp_alarm_store_reload(void)
-{
-    ++alarm_reload_count;
-}
-
 void crazypod_miniapp_verification_cache_clear(void)
 {
     ++verification_clear_count;
@@ -151,7 +144,7 @@ int crazypod_cpk_open(
 {
     (void)path;
     memset(reader, 0, sizeof(*reader));
-    reader->entry_count = MINIAPP_CPK_V1_ENTRIES;
+    reader->entry_count = MINIAPP_CPK_ENTRIES;
     ++package_open_count;
     return CRAZYPOD_MINIAPP_OK;
 }
@@ -187,31 +180,25 @@ int crazypod_miniapp_manifest_parse(
     memset(metadata, 0, sizeof(*metadata));
     snprintf(metadata->id, sizeof(metadata->id), "test");
     metadata->version_code = 1;
-    metadata->package_format = 1;
+    metadata->package_format = CP_NATIVE_PACKAGE_FORMAT;
     return CRAZYPOD_MINIAPP_OK;
 }
 
-int crazypod_cpk_verify_signature(
-    const struct cpk_reader *reader,
-    const uint8_t *manifest, size_t manifest_size)
-{
-    (void)reader;
-    (void)manifest;
-    (void)manifest_size;
-    return CRAZYPOD_MINIAPP_OK;
-}
-
-int crazypod_cpk_verify_sha256(
-    const struct cpk_reader *reader, int entry,
-    const uint8_t expected[32])
+int crazypod_cpk_verify_crc(
+    const struct cpk_reader *reader, int entry)
 {
     (void)reader;
     (void)entry;
-    (void)expected;
     return CRAZYPOD_MINIAPP_OK;
 }
 
-bool crazypod_cpk_resources_valid(const struct cpk_reader *reader)
+bool crazypod_cpk_assets_valid(const struct cpk_reader *reader)
+{
+    (void)reader;
+    return true;
+}
+
+bool crazypod_cpk_profile_valid(const struct cpk_reader *reader)
 {
     (void)reader;
     return true;
@@ -223,19 +210,11 @@ bool crazypod_cpk_icon_valid(const struct cpk_reader *reader)
     return true;
 }
 
-int crazypod_miniapp_native_package_validate(
-    const struct cpk_reader *reader)
-{
-    (void)reader;
-    return CRAZYPOD_MINIAPP_OK;
-}
-
 static void assert_boot_work(void)
 {
     assert(crazypod_miniapps_init() == CRAZYPOD_MINIAPP_OK);
     assert(recovery_count == 1);
     assert(registry_rebuild_count == 1);
-    assert(alarm_reload_count == 1);
     assert(verification_clear_count == 0);
     assert(open_count == 0);
     assert(package_open_count == 0);
@@ -244,7 +223,6 @@ static void assert_boot_work(void)
     assert(crazypod_miniapps_init() == CRAZYPOD_MINIAPP_OK);
     assert(recovery_count == 1);
     assert(registry_rebuild_count == 1);
-    assert(alarm_reload_count == 1);
 }
 
 static void assert_lazy_prepare(void)
@@ -254,7 +232,6 @@ static void assert_lazy_prepare(void)
     assert(crazypod_miniapps_prepare() == CRAZYPOD_MINIAPP_OK);
     assert(recovery_count == 1);
     assert(registry_rebuild_count == 2);
-    assert(alarm_reload_count == 2);
     assert(verification_clear_count == 1);
     assert(open_count == 2);
     assert(package_open_count == 2);
@@ -263,7 +240,6 @@ static void assert_lazy_prepare(void)
     assert(crazypod_miniapps_prepare() == CRAZYPOD_MINIAPP_OK);
     assert(recovery_count == 1);
     assert(registry_rebuild_count == 2);
-    assert(alarm_reload_count == 2);
     assert(verification_clear_count == 1);
     assert(open_count == 2);
     assert(package_open_count == 2);
@@ -272,7 +248,6 @@ static void assert_lazy_prepare(void)
     assert(crazypod_miniapps_install("/manual.cpk") ==
            CRAZYPOD_MINIAPP_OK);
     assert(registry_rebuild_count == 3);
-    assert(alarm_reload_count == 3);
 }
 
 static void assert_usb_rescan_satisfies_prepare(void)
@@ -282,13 +257,11 @@ static void assert_usb_rescan_satisfies_prepare(void)
     assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
     assert(recovery_count == 2);
     assert(registry_rebuild_count == 2);
-    assert(alarm_reload_count == 2);
     assert(package_open_count == 2);
 
     assert(crazypod_miniapps_prepare() == CRAZYPOD_MINIAPP_OK);
     assert(recovery_count == 2);
     assert(registry_rebuild_count == 2);
-    assert(alarm_reload_count == 2);
     assert(package_open_count == 2);
 }
 

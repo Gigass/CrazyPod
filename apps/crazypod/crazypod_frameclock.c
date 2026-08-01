@@ -7,6 +7,12 @@
 
 #include "crazypod_frameclock.h"
 
+#ifdef SIMULATOR
+#include "crc32.h"
+
+extern struct frame_buffer_t lcd_framebuffer_default;
+#endif
+
 static struct crazypod_frameclock present_clock;
 static bool present_initialized;
 static bool present_pending;
@@ -14,6 +20,11 @@ static int present_x1;
 static int present_y1;
 static int present_x2;
 static int present_y2;
+static uint32_t present_sequence;
+static long present_tick;
+#ifdef SIMULATOR
+static uint32_t simulator_present_crc;
+#endif
 
 void crazypod_frameclock_reset(struct crazypod_frameclock *clock, long now)
 {
@@ -108,6 +119,15 @@ void crazypod_present_now(void)
                     present_x2 - present_x1 + 1,
                     present_y2 - present_y1 + 1);
     present_pending = false;
+    ++present_sequence;
+    present_tick = current_tick;
+#ifdef SIMULATOR
+    simulator_present_crc = crc_32(
+        lcd_framebuffer_default.data,
+        (uint32_t)(
+            lcd_framebuffer_default.elems * sizeof(fb_data)),
+        0xffffffffu);
+#endif
 }
 
 void crazypod_present_tick(void)
@@ -121,5 +141,22 @@ void crazypod_present_tick(void)
     crazypod_present_now();
     crazypod_frameclock_schedule_next(&present_clock, now);
 }
+
+uint32_t crazypod_present_sequence(void)
+{
+    return present_sequence;
+}
+
+long crazypod_present_last_tick(void)
+{
+    return present_tick;
+}
+
+#ifdef SIMULATOR
+uint32_t crazypod_present_framebuffer_crc(void)
+{
+    return simulator_present_crc;
+}
+#endif
 
 #endif

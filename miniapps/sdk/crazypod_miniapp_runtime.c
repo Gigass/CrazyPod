@@ -1,6 +1,6 @@
 /*
- * Minimal freestanding memory primitives for native CrazyPod payloads.
- * Mini-apps are linked as raw images and therefore cannot import libc.
+ * Freestanding memory primitives for hardware app.arm payloads.
+ * Generated miniapps do not link libc or any JavaScript runtime.
  */
 
 #include <stddef.h>

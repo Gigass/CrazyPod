@@ -184,15 +184,6 @@ static int build(
     const struct crazypod_miniapp_metadata *metadata,
     struct crazypod_miniapp_metadata *verified)
 {
-    static const char *const names[MINIAPP_CPK_MAX_ENTRIES] = {
-        "manifest.ini",
-#if CONFIG_BINFMT == BINFMT_ROCK
-        "app.arm",
-#else
-        "app.dylib",
-#endif
-        "icon.bmp", "signature.ed25519", "resources.bin",
-    };
     char stage_path[MAX_PATH];
     char file_path[MAX_PATH];
     int result;
@@ -208,7 +199,7 @@ static int build(
         return CRAZYPOD_MINIAPP_ERROR_IO;
     for(index = 0; index < reader->entry_count; ++index) {
         if(!make_path(file_path, sizeof(file_path),
-                      stage_path, names[index])) {
+                      stage_path, reader->entries[index].name)) {
             result = CRAZYPOD_MINIAPP_ERROR_LIMIT;
             goto fail;
         }

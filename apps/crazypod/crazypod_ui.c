@@ -26,6 +26,7 @@
 #include "timefuncs.h"
 #include "usb.h"
 #ifdef SIMULATOR
+#include <stdlib.h>
 #include "screendump.h"
 #endif
 
@@ -55,6 +56,7 @@
 #include "crazypod_state.h"
 #include "crazypod_ui.h"
 #include "platform/crazypod_platform_display.h"
+#include "ui/app/crazypod_miniapp_repro.h"
 #include "ui/app/crazypod_simulator_snapshot.h"
 #include "ui/app/crazypod_choice_coordinator.h"
 #include "ui/app/crazypod_menu_preview.h"
@@ -139,7 +141,6 @@ static bool modal_prompt_visible(void)
     return crazypod_system_prompts_usb_visible() ||
         crazypod_system_prompts_power_visible();
 }
-
 static void set_cpu_boost(bool enabled)
 {
     if(cpu_is_boosted == enabled)
@@ -147,7 +148,6 @@ static void set_cpu_boost(bool enabled)
     cpu_boost(enabled);
     cpu_is_boosted = enabled;
 }
-
 static void keep_cpu_boosted(int ticks)
 {
     long deadline = current_tick + ticks;
@@ -156,17 +156,14 @@ static void keep_cpu_boosted(int ticks)
     if(TIME_AFTER(deadline, boost_until))
         boost_until = deadline;
 }
-
 static void refresh_lock_clock(void)
 {
     crazypod_lock_screen_refresh_clock();
 }
-
 static void refresh_lock_appearance(void)
 {
     crazypod_lock_screen_refresh_appearance();
 }
-
 static void show_lock_screen(bool turn_display_off)
 {
     crazypod_lock_screen_show(turn_display_off);
@@ -398,6 +395,9 @@ static bool handle_confirmation(const struct route_state *state)
     struct crazypod_books_confirmation_result books;
     struct crazypod_organizer_confirmation_result organizer;
 
+    if(crazypod_route_actions_confirm_photos(
+           state, current_tick, HZ * 6 / 5))
+        return true;
     if(notes.handled) {
         if(notes.navigation ==
            CRAZYPOD_NOTES_CONFIRMATION_RESET_MENU) {
@@ -512,7 +512,6 @@ static void handle_button(long button, intptr_t data)
 {
     crazypod_app_input_handle(button, data, current_tick);
 }
-
 static uint32_t rockbox_tick_ms(void)
 {
     return (uint32_t)((current_tick * 1000L) / HZ);
@@ -537,7 +536,6 @@ static void process_deferred_route_render(void)
 {
     crazypod_render_scheduler_service(current_tick);
 }
-
 #ifdef SIMULATOR
 static bool simulator_prepare_snapshot(void)
 {
@@ -546,7 +544,7 @@ static bool simulator_prepare_snapshot(void)
             crazypod_system_prompts_show_power,
         .open_app = crazypod_app_launcher_open,
         .open_root_route = crazypod_app_launcher_open_root,
-        .push_route = push_route,
+        .push_route = push_route, .pop_route = crazypod_route_actions_pop,
         .render = render_current_route,
         .activate_selected = activate_selected,
         .begin_note_composer = begin_note_composer,
@@ -565,6 +563,7 @@ void crazypod_ui_run(void)
 #ifdef SIMULATOR
     bool simulator_snapshot_pending;
     long simulator_snapshot_due = 0;
+    long simulator_snapshot_settle = HZ / 2;
     int simulator_snapshot_stage = 0;
 #endif
 
@@ -637,23 +636,27 @@ void crazypod_ui_run(void)
     crazypod_now_capsule_initialize_artwork();
     crazypod_photos_feature_initialize_media();
     crazypod_customize_feature_initialize_media();
-
 #ifdef SIMULATOR
     simulator_snapshot_pending =
         getenv("CRAZYPOD_SIM_DUMP") != NULL;
-    if(simulator_snapshot_pending)
+    if(simulator_snapshot_pending) {
+        simulator_snapshot_settle =
+            crazypod_simulator_snapshot_settle_ticks();
         simulator_snapshot_due = current_tick + HZ / 2;
+    }
 #endif
-
     crazypod_music_library_initialize(current_tick);
     crazypod_lock_screen_initialize_backlight_state();
-
+#if defined(SIMULATOR) || \
+    defined(CRAZYPOD_REPRO_DIAGNOSTICS)
+    (void)crazypod_miniapp_repro_start(
+        current_tick);
+#endif
     while(true) {
         long button;
         bool locked;
         int drained = 0;
         int wait_ticks;
-
         /* Once mass storage is acknowledged, the host owns the filesystem.
          * The UI thread must not run timers, services, rendering or accept
          * local actions until USB broadcasts disconnect. */
@@ -666,7 +669,6 @@ void crazypod_ui_run(void)
                 continue;
             }
         }
-
         process_lock_state();
         wait_ticks = crazypod_runtime_services_wait_ticks();
         {
@@ -676,6 +678,19 @@ void crazypod_ui_run(void)
             if(input_wait < wait_ticks)
                 wait_ticks = input_wait;
         }
+        wait_ticks = MIN(
+            wait_ticks,
+            crazypod_render_scheduler_wait_ticks(current_tick));
+#if defined(SIMULATOR) || \
+    defined(CRAZYPOD_REPRO_DIAGNOSTICS)
+        {
+            int repro_wait =
+                crazypod_miniapp_repro_wait_ticks();
+
+            if(repro_wait < wait_ticks)
+                wait_ticks = repro_wait;
+        }
+#endif
         button = button_get_w_tmo(wait_ticks);
         process_lock_state();
         while(button != BUTTON_NONE && drained < 16) {
@@ -734,20 +749,33 @@ void crazypod_ui_run(void)
             crazypod_playback_sync_album_flow();
         }
         crazypod_present_tick();
+#if defined(CRAZYPOD_REPRO_DIAGNOSTICS) && \
+    !defined(SIMULATOR)
+        crazypod_miniapp_repro_service(
+            current_tick);
+        if(crazypod_miniapp_repro_cpu_boost_requested())
+            keep_cpu_boosted(HZ / 10);
+#endif
 #ifdef SIMULATOR
+        crazypod_miniapp_repro_service(
+            current_tick);
         if(simulator_snapshot_pending &&
            !TIME_BEFORE(current_tick, simulator_snapshot_due)) {
             if(simulator_snapshot_stage == 0) {
                 simulator_snapshot_pending =
                     simulator_prepare_snapshot();
                 simulator_snapshot_stage = 1;
-                simulator_snapshot_due = current_tick + HZ / 2;
+                simulator_snapshot_due =
+                    current_tick + simulator_snapshot_settle;
             }
             else {
                 lv_refr_now(display);
                 crazypod_present_tick();
                 screen_dump();
                 simulator_snapshot_pending = false;
+                if(getenv(
+                       "CRAZYPOD_SIM_EXIT_AFTER_DUMP") != NULL)
+                    exit(0);
             }
         }
 #endif

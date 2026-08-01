@@ -245,6 +245,9 @@ void empty_dirent(struct DIRENT *entry)
     entry->d_name[0] = '\0';
     entry->info.attr    = 0;
     entry->info.size    = 0;
+    entry->info.crttimetenth = 0;
+    entry->info.crtdate = 0;
+    entry->info.crttime = 0;
     entry->info.wrtdate = 0;
     entry->info.wrttime = 0;
 }
@@ -255,6 +258,9 @@ void fill_dirinfo_native(struct dirinfo_native *dinp)
     struct fat_direntry *fatent = get_dir_fatent();
     dinp->attr    = fatent->attr;
     dinp->size    = fatent->filesize;
+    dinp->crttimetenth = fatent->crttimetenth;
+    dinp->crtdate = fatent->crtdate;
+    dinp->crttime = fatent->crttime;
     dinp->wrtdate = fatent->wrtdate;
     dinp->wrttime = fatent->wrttime;
 }
@@ -272,6 +278,9 @@ int uncached_readdir_dirent(struct filestr_base *stream,
     strcpy(entry->d_name, fatent.name);
     entry->info.attr    = fatent.attr;
     entry->info.size    = fatent.filesize;
+    entry->info.crttimetenth = fatent.crttimetenth;
+    entry->info.crtdate = fatent.crtdate;
+    entry->info.crttime = fatent.crttime;
     entry->info.wrtdate = fatent.wrtdate;
     entry->info.wrttime = fatent.wrttime;
 

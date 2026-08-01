@@ -21,10 +21,25 @@
 #include "../../crazypod_workouts.h"
 #include "../features/books/crazypod_books_feature.h"
 #include "../features/music/crazypod_music_feature.h"
+#include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/notes/crazypod_notes_feature.h"
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../navigation/crazypod_route_query.h"
 #include "crazypod_simulator_snapshot.h"
+
+long crazypod_simulator_snapshot_settle_ticks(void)
+{
+    const char *value =
+        getenv("CRAZYPOD_SIM_DUMP_SETTLE_MS");
+    char *end = NULL;
+    long milliseconds = value != NULL
+        ? strtol(value, &end, 10) : 500;
+
+    if(end == value || (end != NULL && *end != '\0') ||
+       milliseconds < 50 || milliseconds > 10000)
+        milliseconds = 500;
+    return MAX(1, milliseconds * HZ / 1000);
+}
 
 static struct route_state *current_route(void)
 {
@@ -75,6 +90,225 @@ static void open_photos_route(
 {
     host->open_app(CRAZYPOD_APP_PHOTOS);
     host->push_route(route, -1);
+}
+
+static bool open_miniapp_snapshot(
+    const struct crazypod_simulator_snapshot_host *host,
+    const char *id, int page)
+{
+    struct cp_input_event event = {
+        .struct_size = sizeof(event),
+        .steps = 1,
+    };
+    int app_index;
+
+    host->open_app(CRAZYPOD_APP_MINI_APPS);
+    app_index = crazypod_miniapps_find(id);
+    if(app_index < 0)
+        return false;
+    current_route()->selected = app_index;
+    host->activate_selected();
+    if(current_route()->route != MINIAPP_ROUTE_VIEW) {
+        fprintf(
+            stderr,
+            "CrazyPod Mini App smoke failed: %d\n",
+            crazypod_miniapps_feature_last_error());
+        return false;
+    }
+    if(page >= 0) {
+        if(page > 0) {
+            event.type = CP_INPUT_WHEEL_CLOCKWISE;
+            event.steps = (uint8_t)page;
+            (void)crazypod_miniapps_event(&event);
+        }
+        event.type = CP_INPUT_SELECT;
+        event.steps = 1;
+        (void)crazypod_miniapps_event(&event);
+        if(!crazypod_miniapps_is_open())
+            return false;
+        host->render(false);
+    }
+    return true;
+}
+
+static bool show_miniapp_exit_prompt(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    if(!crazypod_miniapps_feature_simulate_long_menu(
+           current_tick, HZ))
+        return false;
+    host->render(false);
+    return crazypod_miniapps_feature_exit_prompt_visible();
+}
+
+static struct crazypod_simulator_snapshot_host capability_action_host;
+
+static void service_capability_action(lv_timer_t *timer)
+{
+    struct cp_input_event event = {
+        .struct_size = sizeof(event),
+        .type = CP_INPUT_SELECT,
+        .steps = 1,
+    };
+
+    (void)crazypod_miniapps_event(&event);
+    capability_action_host.render(false);
+    lv_timer_delete(timer);
+}
+
+static bool open_capability_action(
+    const struct crazypod_simulator_snapshot_host *host,
+    int page)
+{
+    if(!open_miniapp_snapshot(host, "capability-lab", page))
+        return false;
+    capability_action_host = *host;
+    lv_timer_create(service_capability_action, 250, NULL);
+    return crazypod_miniapps_is_open();
+}
+
+static bool open_capability_directory(
+    const struct crazypod_simulator_snapshot_host *host,
+    int focused_entry)
+{
+    struct cp_input_event event = {
+        .struct_size = sizeof(event),
+        .type = CP_INPUT_WHEEL_CLOCKWISE,
+        .steps = (uint8_t)focused_entry,
+    };
+
+    if(!open_miniapp_snapshot(host, "capability-lab", -1))
+        return false;
+    if(focused_entry > 0)
+        (void)crazypod_miniapps_event(&event);
+    return crazypod_miniapps_is_open();
+}
+
+struct game2048_scene_event {
+    uint8_t type;
+    uint8_t steps;
+};
+
+static void schedule_game2048_scene(
+    const struct crazypod_simulator_snapshot_host *host,
+    const struct game2048_scene_event *events, uint8_t count,
+    bool show_pause);
+
+static bool send_miniapp_event(
+    const struct crazypod_simulator_snapshot_host *host,
+    uint8_t type, int steps)
+{
+    struct cp_input_event event = {
+        .struct_size = sizeof(event),
+        .type = type,
+        .steps = (uint8_t)(steps > 0 ? steps : 1),
+    };
+
+    bool handled = crazypod_miniapps_event(&event);
+
+    host->render(false);
+    lv_refr_now(NULL);
+    crazypod_present_now();
+    return handled;
+}
+
+static struct {
+    struct crazypod_simulator_snapshot_host host;
+    struct game2048_scene_event events[4];
+    uint8_t count;
+    uint8_t index;
+    bool show_pause;
+} game2048_scene_plan;
+
+static void service_game2048_scene(lv_timer_t *timer)
+{
+    while(game2048_scene_plan.index < game2048_scene_plan.count &&
+          crazypod_miniapps_is_open()) {
+        const struct game2048_scene_event *event =
+            &game2048_scene_plan.events[game2048_scene_plan.index++];
+
+        (void)send_miniapp_event(
+            &game2048_scene_plan.host,
+            event->type, event->steps);
+    }
+    if(game2048_scene_plan.show_pause &&
+       crazypod_miniapps_is_open()) {
+        (void)crazypod_miniapps_ui_event(
+            3, CP_UI_EVENT_SELECT, 0, 0);
+        game2048_scene_plan.host.render(false);
+    }
+    lv_timer_delete(timer);
+}
+
+static void schedule_game2048_scene(
+    const struct crazypod_simulator_snapshot_host *host,
+    const struct game2048_scene_event *events, uint8_t count,
+    bool show_pause)
+{
+    game2048_scene_plan.host = *host;
+    memcpy(
+        game2048_scene_plan.events,
+        events,
+        count * sizeof(*events));
+    game2048_scene_plan.count = count;
+    game2048_scene_plan.index = 0;
+    game2048_scene_plan.show_pause = show_pause;
+    lv_timer_create(service_game2048_scene, 150, NULL);
+}
+
+static bool open_game2048_scene(
+    const struct crazypod_simulator_snapshot_host *host,
+    const char *scene)
+{
+    struct game2048_scene_event events[3];
+    uint8_t count = 0;
+
+    if(!open_miniapp_snapshot(host, "game2048", -1))
+        return false;
+    if(strcmp(scene, "game2048") == 0)
+        return true;
+    if(strcmp(scene, "game2048-exit-prompt") == 0)
+        return show_miniapp_exit_prompt(host);
+    if(strcmp(scene, "game2048-game") == 0 ||
+       strcmp(scene, "game2048-moved") == 0 ||
+       strcmp(scene, "game2048-pause") == 0)
+        events[count++] = (struct game2048_scene_event) {
+            CP_INPUT_SELECT, 1
+        };
+    else
+        return false;
+    if(strcmp(scene, "game2048-moved") == 0) {
+        events[count++] = (struct game2048_scene_event) {
+            CP_INPUT_LEFT, 1
+        };
+        events[count++] = (struct game2048_scene_event) {
+            CP_INPUT_RIGHT, 1
+        };
+    }
+    schedule_game2048_scene(
+        host, events, count,
+        strcmp(scene, "game2048-pause") == 0);
+    return true;
+}
+
+static bool open_game2048_exit_scene(
+    const struct crazypod_simulator_snapshot_host *host,
+    bool open_notes)
+{
+    if(host->pop_route == NULL ||
+       !open_miniapp_snapshot(host, "game2048", -1))
+        return false;
+    host->pop_route();
+    if(current_route() == NULL ||
+       current_route()->route != UTILITIES_ROUTE_MENU ||
+       crazypod_miniapps_is_open())
+        return false;
+    if(!open_notes)
+        return true;
+    host->pop_route();
+    host->open_app(CRAZYPOD_APP_NOTES);
+    return current_route() != NULL &&
+        current_route()->route == NOTES_ROUTE_MENU;
 }
 
 bool crazypod_simulator_snapshot_prepare(
@@ -136,10 +370,22 @@ bool crazypod_simulator_snapshot_prepare(
         host->open_app(CRAZYPOD_APP_PHOTOS);
         if(preview_index < 0)
             preview_index = 0;
-        if(preview_index > 2)
-            preview_index = 2;
+        if(preview_index > 3)
+            preview_index = 3;
         current_route()->selected = preview_index;
         host->render(false);
+    }
+    else if(sscanf(screen, "delete-photos-%d", &preview_index) == 1) {
+        open_photos_route(host, PHOTOS_ROUTE_DELETE_PHOTOS);
+        select_bounded(host, preview_index);
+    }
+    else if(sscanf(
+                screen, "delete-photo-confirm-%d",
+                &preview_index) == 1) {
+        open_photos_route(host, PHOTOS_ROUTE_DELETE_PHOTOS);
+        select_bounded(host, preview_index);
+        if(item_count() > 0)
+            host->activate_selected();
     }
     else if(sscanf(screen, "books-%d", &preview_index) == 1) {
         host->open_app(CRAZYPOD_APP_BOOKS);
@@ -187,6 +433,8 @@ bool crazypod_simulator_snapshot_prepare(
     }
     else if(strcmp(screen, "notes") == 0)
         host->open_app(CRAZYPOD_APP_NOTES);
+    else if(strcmp(screen, "miniapps-list") == 0)
+        host->open_app(CRAZYPOD_APP_MINI_APPS);
     else if(strcmp(screen, "note-compose") == 0) {
         host->open_app(CRAZYPOD_APP_NOTES);
         host->begin_note_composer(0, false);
@@ -247,21 +495,37 @@ bool crazypod_simulator_snapshot_prepare(
         if(crazypod_contacts_count() > 0)
             host->push_route(CONTACTS_ROUTE_DETAIL, 0);
     }
-    else if(strcmp(screen, "calculator") == 0 ||
-            strcmp(screen, "pomodoro") == 0) {
-        int app_index;
-
-        host->open_app(CRAZYPOD_APP_MINI_APPS);
-        app_index = crazypod_miniapps_find(screen);
-        if(app_index < 0)
+    else if(strcmp(screen, "game2048-exit-list") == 0)
+        return open_game2048_exit_scene(host, false);
+    else if(strcmp(screen, "game2048-exit-notes") == 0)
+        return open_game2048_exit_scene(host, true);
+    else if(strncmp(screen, "game2048", 8) == 0)
+        return open_game2048_scene(host, screen);
+    else if(strcmp(screen, "capability-lab") == 0)
+        return open_capability_directory(host, 0);
+    else if(strcmp(screen, "capability-lab-controls") == 0)
+        return open_miniapp_snapshot(
+            host, "capability-lab", 0);
+    else if(strcmp(screen, "capability-lab-assets") == 0)
+        return open_miniapp_snapshot(
+            host, "capability-lab", 1);
+    else if(strcmp(screen, "capability-lab-lifecycle") == 0)
+        return open_miniapp_snapshot(
+            host, "capability-lab", 2);
+    else if(strcmp(screen, "capability-lab-modal") == 0)
+        return open_capability_action(host, 2);
+    else if(strcmp(screen, "native-reference-clicked") == 0) {
+        if(!open_miniapp_snapshot(host, "native-reference", -1))
             return false;
-        current_route()->selected = app_index;
-        host->activate_selected();
-        if(current_route()->route != MINIAPP_ROUTE_VIEW)
-            return false;
+        (void)crazypod_miniapps_ui_event(
+            1, CP_UI_EVENT_SELECT, 0, 0);
+        (void)crazypod_miniapps_ui_event(
+            1, CP_UI_EVENT_SELECT, 0, 0);
+        host->render(false);
+        return crazypod_miniapps_is_open();
     }
     else
-        return false;
+        return open_miniapp_snapshot(host, screen, -1);
     return true;
 }
 

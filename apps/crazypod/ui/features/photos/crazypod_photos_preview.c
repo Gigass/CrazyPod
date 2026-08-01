@@ -103,12 +103,12 @@ static lv_obj_t *render_video_card(
         card, lv_color_hex(0xAEB7C7), 0);
     lv_obj_set_style_border_opa(card, 120, 0);
     if(video_index >= 0) {
+        poster = crazypod_video_poster(video_index);
         if(context->defer_media) {
             if(context->media_deferred != NULL)
                 *context->media_deferred = true;
+            poster = NULL;
         }
-        else
-            poster = crazypod_video_poster(video_index);
     }
     if(poster != NULL)
         (void)crazypod_photo_screen_render_image(
@@ -136,7 +136,10 @@ void crazypod_videos_preview_render(
     const struct crazypod_photos_preview_context *context)
 {
     int count = crazypod_video_count();
-    int index = count > 0 ? state->selected : -1;
+    int index = count > 0
+        ? state->route == PHOTOS_ROUTE_DELETE_MENU
+            ? 0 : state->selected
+        : -1;
     const char *name =
         index >= 0 ? crazypod_video_name(index) : CP_TR("No Videos");
     uint32_t resume = index >= 0
@@ -184,7 +187,9 @@ void crazypod_photos_preview_render(
         ? crazypod_photo_count()
         : state->selected == 1
             ? crazypod_video_count()
-            : crazypod_photo_favorite_count();
+            : state->selected == 2
+                ? crazypod_photo_favorite_count()
+                : crazypod_photo_count() + crazypod_video_count();
     lv_obj_t *parent = context->parent;
     lv_obj_t *preview = NULL;
     lv_obj_t *label;
@@ -202,13 +207,11 @@ void crazypod_photos_preview_render(
             const lv_image_dsc_t *descriptor = NULL;
 
             if(i < count) {
+                descriptor = crazypod_photo_thumbnail(i, i);
                 if(context->defer_media) {
                     if(context->media_deferred != NULL)
                         *context->media_deferred = true;
-                }
-                else {
-                    descriptor = crazypod_photo_thumbnail(
-                        CRAZYPOD_PHOTO_THUMB_SLOTS - 1 - i, i);
+                    descriptor = NULL;
                 }
             }
             preview = make_box(
@@ -248,18 +251,16 @@ void crazypod_photos_preview_render(
                 preview, 18, 0, 205, 55, 0,
                 0, 280, 18, -4, 205, 80);
     }
-    else {
+    else if(state->selected == 2) {
         int photo_index = crazypod_photo_favorite_index(0);
         const lv_image_dsc_t *descriptor = NULL;
 
         if(photo_index >= 0) {
+            descriptor = crazypod_photo_thumbnail(0, photo_index);
             if(context->defer_media) {
                 if(context->media_deferred != NULL)
                     *context->media_deferred = true;
-            }
-            else {
-                descriptor = crazypod_photo_thumbnail(
-                    CRAZYPOD_PHOTO_THUMB_SLOTS - 1, photo_index);
+                descriptor = NULL;
             }
         }
         preview = make_box(
@@ -320,12 +321,36 @@ void crazypod_photos_preview_render(
             preview, 17, 0, 214, 65, 0,
             0, 280, 18, -5, 214, 95);
     }
+    else {
+        preview = make_box(
+            parent, 195, 64, 90, 90, 18,
+            0x5A1417, LV_OPA_COVER);
+        lv_obj_set_style_bg_grad_color(
+            preview, lv_color_hex(0x18090A), 0);
+        lv_obj_set_style_bg_grad_dir(
+            preview, LV_GRAD_DIR_VER, 0);
+        lv_obj_set_style_border_width(preview, 2, 0);
+        lv_obj_set_style_border_color(
+            preview, lv_color_hex(0xFF6B63), 0);
+        lv_obj_set_style_border_opa(preview, 160, 0);
+        label = make_label(
+            preview, LV_SYMBOL_TRASH,
+            &lv_font_montserrat_24,
+            0xFF8A84, LV_OPA_COVER);
+        lv_obj_center(label);
+        crazypod_menu_preview_motion_register(
+            preview, 12, 6, 210, 35, 0,
+            0, 260, 12, -5, 210, 65);
+    }
 
-    snprintf(detail, sizeof(detail),
-             state->selected == 1
-                 ? (count == 1 ? CP_FMT("%d video") : CP_FMT("%d videos"))
-                 : (count == 1 ? CP_FMT("%d photo") : CP_FMT("%d photos")),
-             count);
+    if(state->selected == 3)
+        snprintf(detail, sizeof(detail), CP_FMT("%d"), count);
+    else
+        snprintf(detail, sizeof(detail),
+                 state->selected == 1
+                     ? (count == 1 ? CP_FMT("%d video") : CP_FMT("%d videos"))
+                     : (count == 1 ? CP_FMT("%d photo") : CP_FMT("%d photos")),
+                 count);
     text_panel = crazypod_preview_make_text_panel(parent, 166, 52);
     label = make_label(
         text_panel, detail, &lv_font_montserrat_10,
@@ -337,7 +362,8 @@ void crazypod_photos_preview_render(
         text_panel,
         state->selected == 0 ? CP_TR("All pictures in /Pictures")
         : state->selected == 1 ? CP_TR("Converted MPEG files in /Videos")
-                               : CP_TR("Saved favorites"),
+        : state->selected == 2 ? CP_TR("Saved favorites")
+                               : CP_TR("Erase Forever"),
         &lv_font_montserrat_8, COLOR_WHITE, 100);
     lv_obj_set_width(label, 132);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);

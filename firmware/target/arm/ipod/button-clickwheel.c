@@ -86,6 +86,7 @@ static int int_btn = BUTTON_NONE;
 #ifdef HAVE_WHEEL_POSITION
     static int wheel_position = -1;
     static bool send_events = true;
+    static bool backlight_on_touch = true;
 #endif
 
 #if CONFIG_CPU==S5L8701 || CONFIG_CPU==S5L8702 || CONFIG_CPU==S5L8720
@@ -140,9 +141,14 @@ static inline int ipod_4g_button_read(void)
                 new_wheel_value = (status >> 16) & 0x7f;
                 whl = new_wheel_value;
                 
-                /* switch on backlight (again), reset power-off timer */
-                backlight_on();
-                reset_poweroff_timer();
+                /* Locked clients may consume wheel input without waking. */
+#ifdef HAVE_WHEEL_POSITION
+                if (backlight_on_touch)
+#endif
+                {
+                    backlight_on();
+                    reset_poweroff_timer();
+                }
                 
                 /* Check whether the scrollwheel was untouched by accident or by will. */
                 /* This is needed because wheel may be untoched very shortly during rotation */
@@ -346,6 +352,11 @@ int wheel_status(void)
 void wheel_send_events(bool send)
 {
     send_events = send;
+}
+
+void wheel_set_backlight_on_touch(bool enable)
+{
+    backlight_on_touch = enable;
 }
 #endif
 

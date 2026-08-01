@@ -12,6 +12,7 @@
 #include "../../platform/crazypod_platform_display.h"
 #include "crazypod_app_catalog.h"
 #include "crazypod_desktop_native.h"
+#include "crazypod_screenshot_feedback.h"
 
 #define NATIVE_TOP CRAZYPOD_DESKTOP_NATIVE_TOP
 #define NATIVE_BOTTOM CRAZYPOD_DESKTOP_NATIVE_BOTTOM
@@ -19,24 +20,18 @@
 #define NATIVE_ICON_CENTER_X 160
 #define NATIVE_ICON_CENTER_Y 91
 #define NATIVE_MAX_ICON_SIZE 120
-#define NATIVE_SLOT_COUNT 3
-#define NATIVE_SLOT_LEFT 0
-#define NATIVE_SLOT_CENTER 1
-#define NATIVE_SLOT_RIGHT 2
-#define NATIVE_SLOT_GAP 2
-#define NATIVE_SIDE_OPACITY 255
 
 static fb_data backdrop[LCD_WIDTH * NATIVE_HEIGHT]
     CACHEALIGN_AT_LEAST_ATTR(16);
-static fb_data icon_patches
-    [NATIVE_SLOT_COUNT][CRAZYPOD_ICON_COUNT]
-    [NATIVE_MAX_ICON_SIZE * NATIVE_HEIGHT]
+static uint8_t scaled_icons
+    [CRAZYPOD_ICON_COUNT]
+    [NATIVE_MAX_ICON_SIZE * NATIVE_MAX_ICON_SIZE * 4]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static uint16_t sample_x_offset[NATIVE_MAX_ICON_SIZE];
 static uint16_t sample_x_next_offset[NATIVE_MAX_ICON_SIZE];
 static uint8_t sample_x_fraction[NATIVE_MAX_ICON_SIZE];
-static bool patch_valid[NATIVE_SLOT_COUNT][CRAZYPOD_ICON_COUNT];
-static int patch_size;
+static bool scaled_valid[CRAZYPOD_ICON_COUNT];
+static int scaled_size;
 static bool rendered_bounds_valid;
 static int rendered_left;
 static int rendered_top;
@@ -44,10 +39,22 @@ static int rendered_width;
 static int rendered_height;
 static bool dirty;
 static bool backdrop_ready;
+static bool overlay_active;
+static int overlay_left;
+static int overlay_top;
+static int overlay_right;
+static int overlay_bottom;
 
-static void invalidate_patches(void)
+static bool pixel_occluded(int x, int y)
 {
-    memset(patch_valid, 0, sizeof(patch_valid));
+    return overlay_active &&
+        x >= overlay_left && x < overlay_right &&
+        y >= overlay_top && y < overlay_bottom;
+}
+
+static void invalidate_scaled_icons(void)
+{
+    memset(scaled_valid, 0, sizeof(scaled_valid));
 }
 
 static int clamp_icon_size(int size)
@@ -96,44 +103,13 @@ static void restore_backdrop_rect(
     }
 }
 
-static void save_patch(
-    int slot, int app_index, const fb_data *framebuffer,
-    int left, int top, int width, int height)
-{
-    fb_data *patch = icon_patches[slot][app_index];
-    int row;
-
-    for(row = 0; row < height; ++row) {
-        memcpy(
-            patch + row * NATIVE_MAX_ICON_SIZE,
-            framebuffer + (top + row) * LCD_WIDTH + left,
-            (size_t)width * sizeof(fb_data));
-    }
-    patch_valid[slot][app_index] = true;
-}
-
-static void restore_patch(
-    int slot, int app_index, fb_data *framebuffer,
-    int left, int top, int width, int height)
-{
-    const fb_data *patch = icon_patches[slot][app_index];
-    int row;
-
-    for(row = 0; row < height; ++row) {
-        memcpy(
-            framebuffer + (top + row) * LCD_WIDTH + left,
-            patch + row * NATIVE_MAX_ICON_SIZE,
-            (size_t)width * sizeof(fb_data));
-    }
-}
-
 void crazypod_desktop_native_reset(void)
 {
     dirty = true;
     backdrop_ready = false;
-    patch_size = 0;
+    scaled_size = 0;
     rendered_bounds_valid = false;
-    invalidate_patches();
+    invalidate_scaled_icons();
 }
 
 void crazypod_desktop_native_invalidate(bool discard_backdrop)
@@ -141,10 +117,15 @@ void crazypod_desktop_native_invalidate(bool discard_backdrop)
     dirty = true;
     if(discard_backdrop) {
         backdrop_ready = false;
-        patch_size = 0;
         rendered_bounds_valid = false;
-        invalidate_patches();
     }
+}
+
+void crazypod_desktop_native_invalidate_icons(void)
+{
+    scaled_size = 0;
+    invalidate_scaled_icons();
+    dirty = true;
 }
 
 void crazypod_desktop_native_capture_flush(const lv_area_t *area)
@@ -175,7 +156,6 @@ void crazypod_desktop_native_capture_flush(const lv_area_t *area)
                 framebuffer + y * LCD_WIDTH + left,
                 (size_t)width * sizeof(fb_data));
         }
-        invalidate_patches();
         rendered_bounds_valid = false;
     }
     dirty = true;
@@ -223,6 +203,8 @@ static void draw_desktop_placeholder(int app_index, int center_x,
             fb_data *destination;
             if(px < 0 || px >= LCD_WIDTH)
                 continue;
+            if(pixel_occluded(px, py))
+                continue;
             destination = pixels + py * LCD_WIDTH + px;
             *destination = desktop_blend565(
                 color, *destination, opacity);
@@ -266,81 +248,58 @@ static inline fb_data blend_icon_premultiplied(
     return LCD_RGBPACK(red, green, blue);
 }
 
-static void draw_desktop_icon(int app_index, int center_x, int center_y,
-                              int size, int opacity)
+static bool prepare_scaled_icon(int app_index, int size)
 {
     const struct crazypod_icon *image = crazypod_icon_get(app_index);
     const uint8_t *source = image != NULL ? image->pixels : NULL;
-    fb_data *pixels =
-        (fb_data *)crazypod_platform_display_framebuffer();
+    uint8_t *scaled;
     int source_width;
     int source_height;
     int source_stride;
-    int left;
-    int top;
-    int first_x;
-    int last_x;
-    int first_y;
-    int last_y;
     int source_y_q16;
     int source_y_step;
     int source_x_q16;
     int source_x_step;
+    int x;
     int y;
 
-    if(image == NULL || source == NULL) {
-        draw_desktop_placeholder(app_index, center_x, center_y,
-                                 size, opacity);
-        return;
-    }
+    if(app_index < 0 || app_index >= CRAZYPOD_ICON_COUNT ||
+       image == NULL || source == NULL)
+        return false;
+    if(scaled_valid[app_index])
+        return true;
     source_width = image->width;
     source_height = image->height;
     source_stride = image->stride;
-    if(size > NATIVE_MAX_ICON_SIZE)
-        size = NATIVE_MAX_ICON_SIZE;
-    left = center_x - size / 2;
-    top = center_y - size / 2;
-    first_x = left < 0 ? -left : 0;
-    last_x =
-        left + size > LCD_WIDTH
-            ? LCD_WIDTH - left : size;
-    first_y = top < NATIVE_TOP
-        ? NATIVE_TOP - top : 0;
-    last_y = top + size > NATIVE_BOTTOM
-        ? NATIVE_BOTTOM - top : size;
-    if(first_x >= last_x || first_y >= last_y)
-        return;
+    scaled = scaled_icons[app_index];
     source_x_step = (source_width << 16) / size;
     source_x_q16 =
         ((source_width << 15) / size) - 32768;
-    for(y = 0; y < size; ++y) {
+    for(x = 0; x < size; ++x) {
         int sx = source_x_q16 >> 16;
 
         if(sx < 0)
             sx = 0;
         if(sx >= source_width)
             sx = source_width - 1;
-        sample_x_offset[y] = sx * 4;
-        sample_x_next_offset[y] =
+        sample_x_offset[x] = sx * 4;
+        sample_x_next_offset[x] =
             (sx + 1 < source_width ? sx + 1 : sx) * 4;
-        sample_x_fraction[y] =
+        sample_x_fraction[x] =
             (source_x_q16 >> 8) & 255;
         source_x_q16 += source_x_step;
     }
     source_y_step = (source_height << 16) / size;
     source_y_q16 =
-        ((source_height << 15) / size) - 32768 +
-        first_y * source_y_step;
-    for(y = first_y; y < last_y; ++y) {
-        int py = top + y;
+        ((source_height << 15) / size) - 32768;
+    for(y = 0; y < size; ++y) {
         int sy = source_y_q16 >> 16;
         int sy1;
         int fraction_y;
         const uint8_t *source_top;
         const uint8_t *source_bottom;
-        fb_data *destination =
-            pixels + py * LCD_WIDTH + left + first_x;
-        int x;
+        uint8_t *destination =
+            scaled + y * NATIVE_MAX_ICON_SIZE * 4;
 
         if(sy < 0)
             sy = 0;
@@ -350,7 +309,7 @@ static void draw_desktop_icon(int app_index, int center_x, int center_y,
         fraction_y = (source_y_q16 >> 8) & 255;
         source_top = source + sy * source_stride;
         source_bottom = source + sy1 * source_stride;
-        for(x = first_x; x < last_x; ++x) {
+        for(x = 0; x < size; ++x) {
             const uint8_t *top_left =
                 source_top + sample_x_offset[x];
             const uint8_t *top_right =
@@ -360,63 +319,86 @@ static void draw_desktop_icon(int app_index, int center_x, int center_y,
             const uint8_t *bottom_right =
                 source_bottom + sample_x_next_offset[x];
             int fraction_x = sample_x_fraction[x];
-            int alpha = interpolate_channel(
-                top_left[3], top_right[3],
-                bottom_left[3], bottom_right[3],
-                fraction_x, fraction_y);
+            int channel;
 
-            if(alpha > 0) {
-                int blue = interpolate_channel(
-                    top_left[0], top_right[0],
-                    bottom_left[0], bottom_right[0],
+            for(channel = 0; channel < 4; ++channel)
+                destination[channel] = (uint8_t)interpolate_channel(
+                    top_left[channel], top_right[channel],
+                    bottom_left[channel], bottom_right[channel],
                     fraction_x, fraction_y);
-                int green = interpolate_channel(
-                    top_left[1], top_right[1],
-                    bottom_left[1], bottom_right[1],
-                    fraction_x, fraction_y);
-                int red = interpolate_channel(
-                    top_left[2], top_right[2],
-                    bottom_left[2], bottom_right[2],
-                    fraction_x, fraction_y);
-
-                *destination =
-                    blend_icon_premultiplied(
-                        red, green, blue, alpha,
-                        *destination, opacity);
-            }
-            ++destination;
+            destination += 4;
         }
         source_y_q16 += source_y_step;
     }
+    scaled_valid[app_index] = true;
+    return true;
+}
 
+static void draw_desktop_icon(int app_index, int center_x, int center_y,
+                              int size)
+{
+    fb_data *pixels =
+        (fb_data *)crazypod_platform_display_framebuffer();
+    const uint8_t *source;
+    int left = center_x - size / 2;
+    int top = center_y - size / 2;
+    int first_x = left < 0 ? -left : 0;
+    int last_x = left + size > LCD_WIDTH
+        ? LCD_WIDTH - left : size;
+    int first_y = top < NATIVE_TOP ? NATIVE_TOP - top : 0;
+    int last_y = top + size > NATIVE_BOTTOM
+        ? NATIVE_BOTTOM - top : size;
+    int y;
+
+    if(!prepare_scaled_icon(app_index, size)) {
+        draw_desktop_placeholder(
+            app_index, center_x, center_y, size, 255);
+        return;
+    }
+    source = scaled_icons[app_index];
+    for(y = first_y; y < last_y; ++y) {
+        const uint8_t *source_pixel = source +
+            (y * NATIVE_MAX_ICON_SIZE + first_x) * 4;
+        fb_data *destination =
+            pixels + (top + y) * LCD_WIDTH + left + first_x;
+        int x;
+
+        for(x = first_x; x < last_x; ++x) {
+            int alpha = source_pixel[3];
+
+            if(alpha > 0 && !pixel_occluded(left + x, top + y))
+                *destination = blend_icon_premultiplied(
+                    source_pixel[2], source_pixel[1], source_pixel[0],
+                    alpha, *destination, 255);
+            source_pixel += 4;
+            ++destination;
+        }
+    }
 }
 
 void crazypod_desktop_native_render(
-    int left_app_index, int center_app_index, int right_app_index,
-    int base_size, bool blocked)
+    const int *app_indices, const int *centers_x, int icon_count,
+    int icon_size, bool blocked)
 {
     fb_data *framebuffer =
         (fb_data *)crazypod_platform_display_framebuffer();
-    int app_indices[NATIVE_SLOT_COUNT];
-    int centers_x[NATIVE_SLOT_COUNT];
-    int sizes[NATIVE_SLOT_COUNT];
-    int opacities[NATIVE_SLOT_COUNT];
-    int left[NATIVE_SLOT_COUNT];
-    int top[NATIVE_SLOT_COUNT];
-    int width[NATIVE_SLOT_COUNT];
-    int height[NATIVE_SLOT_COUNT];
-    int dirty_left;
-    int dirty_top;
-    int dirty_right;
-    int dirty_bottom;
+    int left[CRAZYPOD_DESKTOP_NATIVE_MAX_VISIBLE];
+    int top[CRAZYPOD_DESKTOP_NATIVE_MAX_VISIBLE];
+    int width[CRAZYPOD_DESKTOP_NATIVE_MAX_VISIBLE];
+    int height[CRAZYPOD_DESKTOP_NATIVE_MAX_VISIBLE];
+    int dirty_left = LCD_WIDTH;
+    int dirty_top = NATIVE_BOTTOM;
+    int dirty_right = 0;
+    int dirty_bottom = NATIVE_TOP;
     bool any_bounds = false;
-    int side_size;
     int slot;
 
-    if(blocked)
+    if(blocked || !dirty)
         return;
-    if(!dirty)
-        return;
+    if(icon_count < 0)
+        icon_count = 0;
+    if(icon_count > CRAZYPOD_DESKTOP_NATIVE_MAX_VISIBLE)
+        icon_count = CRAZYPOD_DESKTOP_NATIVE_MAX_VISIBLE;
     if(!backdrop_ready) {
         memcpy(
             backdrop,
@@ -425,41 +407,17 @@ void crazypod_desktop_native_render(
         backdrop_ready = true;
         rendered_bounds_valid = false;
     }
-    base_size = clamp_icon_size(base_size);
-    if(patch_size != base_size) {
-        patch_size = base_size;
-        invalidate_patches();
+    overlay_active = crazypod_screenshot_feedback_bounds(
+        &overlay_left, &overlay_top,
+        &overlay_right, &overlay_bottom);
+    icon_size = clamp_icon_size(icon_size);
+    if(scaled_size != icon_size) {
+        scaled_size = icon_size;
+        invalidate_scaled_icons();
     }
-    side_size = base_size * 2 / 3;
-    if(side_size >
-       (LCD_WIDTH - base_size - NATIVE_SLOT_GAP * 2) / 2)
-        side_size =
-            (LCD_WIDTH - base_size - NATIVE_SLOT_GAP * 2) / 2;
-    if((side_size & 1) != 0)
-        ++side_size;
-    app_indices[NATIVE_SLOT_LEFT] = left_app_index;
-    app_indices[NATIVE_SLOT_CENTER] = center_app_index;
-    app_indices[NATIVE_SLOT_RIGHT] = right_app_index;
-    sizes[NATIVE_SLOT_LEFT] = side_size;
-    sizes[NATIVE_SLOT_CENTER] = base_size;
-    sizes[NATIVE_SLOT_RIGHT] = side_size;
-    centers_x[NATIVE_SLOT_CENTER] = NATIVE_ICON_CENTER_X;
-    centers_x[NATIVE_SLOT_LEFT] =
-        NATIVE_ICON_CENTER_X - base_size / 2 -
-        NATIVE_SLOT_GAP - side_size / 2;
-    centers_x[NATIVE_SLOT_RIGHT] =
-        NATIVE_ICON_CENTER_X + base_size / 2 +
-        NATIVE_SLOT_GAP + side_size / 2;
-    opacities[NATIVE_SLOT_LEFT] = NATIVE_SIDE_OPACITY;
-    opacities[NATIVE_SLOT_CENTER] = 255;
-    opacities[NATIVE_SLOT_RIGHT] = NATIVE_SIDE_OPACITY;
-    dirty_left = LCD_WIDTH;
-    dirty_top = NATIVE_BOTTOM;
-    dirty_right = 0;
-    dirty_bottom = NATIVE_TOP;
-    for(slot = 0; slot < NATIVE_SLOT_COUNT; ++slot) {
+    for(slot = 0; slot < icon_count; ++slot) {
         icon_bounds(
-            centers_x[slot], NATIVE_ICON_CENTER_Y, sizes[slot],
+            centers_x[slot], NATIVE_ICON_CENTER_Y, icon_size,
             &left[slot], &top[slot], &width[slot], &height[slot]);
         if(app_indices[slot] < 0 ||
            app_indices[slot] >= CRAZYPOD_ICON_COUNT)
@@ -495,26 +453,14 @@ void crazypod_desktop_native_render(
     restore_backdrop_rect(
         framebuffer, dirty_left, dirty_top,
         dirty_right - dirty_left, dirty_bottom - dirty_top);
-    for(slot = 0; slot < NATIVE_SLOT_COUNT; ++slot) {
+    for(slot = 0; slot < icon_count; ++slot) {
         int app_index = app_indices[slot];
 
         if(app_index < 0 || app_index >= CRAZYPOD_ICON_COUNT)
             continue;
-        if(patch_valid[slot][app_index]) {
-            restore_patch(
-                slot, app_index, framebuffer,
-                left[slot], top[slot], width[slot], height[slot]);
-        }
-        else {
-            draw_desktop_icon(
-                app_index,
-                centers_x[slot],
-                NATIVE_ICON_CENTER_Y,
-                sizes[slot], opacities[slot]);
-            save_patch(
-                slot, app_index, framebuffer,
-                left[slot], top[slot], width[slot], height[slot]);
-        }
+        draw_desktop_icon(
+            app_index, centers_x[slot],
+            NATIVE_ICON_CENTER_Y, icon_size);
     }
     rendered_bounds_valid = true;
     rendered_left = dirty_left;

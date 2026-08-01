@@ -77,6 +77,16 @@ enum pcm_mixer_channel
 #ifndef HAVE_HARDWARE_BEEP
     PCM_MIXER_CHAN_BEEP,
 #endif
+#ifdef IPOD_6G
+    PCM_MIXER_CHAN_MINIAPP_0,
+    PCM_MIXER_CHAN_MINIAPP_1,
+    PCM_MIXER_CHAN_MINIAPP_2,
+    PCM_MIXER_CHAN_MINIAPP_3,
+    PCM_MIXER_CHAN_MINIAPP_4,
+    PCM_MIXER_CHAN_MINIAPP_5,
+    PCM_MIXER_CHAN_MINIAPP_6,
+    PCM_MIXER_CHAN_MINIAPP_7,
+#endif
     /* Add new channel indexes above this line */
     PCM_MIXER_NUM_CHANNELS,
 };

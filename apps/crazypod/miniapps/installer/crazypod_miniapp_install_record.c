@@ -14,16 +14,15 @@
 #include "crazypod_miniapp_resource_validator.h"
 
 #define INSTALL_RECORD_NAME ".install.bin"
-#define MANIFEST_NAME "manifest.ini"
-#define ICON_NAME "icon.bmp"
-#define SIGNATURE_NAME "signature.ed25519"
-#define RESOURCES_NAME "resources.bin"
+#define MANIFEST_NAME "manifest.json"
+#define ASSETS_NAME "assets.bin"
+#define ICON_NAME "icon.bin"
 #define INSTALL_MAGIC 0x4350494eu
-#define DISK_VERSION 1u
-#define ICON_BYTES 102454u
-#define BINARY_MAX ((uint32_t)PLUGIN_BUFFER_SIZE)
+#define DISK_VERSION 3u
+#define ICON_BYTES 51216u
 #define RESOURCE_HEADER_SIZE 16u
-#define RESOURCES_MAX (512u * 1024u)
+#define ICON_MAGIC 0x35495043u
+#define PROFILE_MAGIC 0x35415043u
 
 static uint32_t checksum(const struct install_record *record)
 {
@@ -82,7 +81,7 @@ bool crazypod_miniapp_install_record_write(
     record.version = DISK_VERSION;
     record.struct_size = sizeof(record);
     record.version_code = version_code;
-    for(index = 0; index < MINIAPP_CPK_V1_ENTRIES; ++index) {
+    for(index = 0; index < MINIAPP_CPK_ENTRIES; ++index) {
         record.files[index].size = reader->entries[index].size;
         record.files[index].crc32 = reader->entries[index].crc32;
     }
@@ -128,6 +127,64 @@ static bool file_has_size(const char *path, uint32_t size)
     matches = filesize(fd) == (off_t)size;
     close(fd);
     return matches;
+}
+
+static uint16_t read_le16(const uint8_t *value)
+{
+    return (uint16_t)value[0] | ((uint16_t)value[1] << 8);
+}
+
+static uint32_t read_le32(const uint8_t *value)
+{
+    return (uint32_t)value[0] | ((uint32_t)value[1] << 8) |
+           ((uint32_t)value[2] << 16) | ((uint32_t)value[3] << 24);
+}
+
+static bool icon_header_valid(
+    const char *path, uint32_t expected_size)
+{
+    uint8_t header[16];
+    int fd = open(path, O_RDONLY);
+    bool valid;
+
+    if(fd < 0)
+        return false;
+    valid = filesize(fd) == (off_t)expected_size &&
+        read_exact(fd, header, sizeof(header)) &&
+        read_le32(header) == ICON_MAGIC;
+    if(valid) {
+        valid = expected_size == ICON_BYTES &&
+            read_le16(header + 4) == 1u &&
+            read_le16(header + 6) == 160u &&
+            read_le16(header + 8) == 160u &&
+            read_le16(header + 10) == 1u &&
+            read_le32(header + 12) == 160u * 160u * 2u;
+    }
+    close(fd);
+    return valid;
+}
+
+static bool profile_header_valid(
+    const char *path, uint32_t expected_size)
+{
+    uint8_t header[16];
+    int fd = open(path, O_RDONLY);
+    bool valid;
+
+    if(fd < 0)
+        return false;
+    valid = expected_size == sizeof(header) &&
+        filesize(fd) == (off_t)expected_size &&
+        read_exact(fd, header, sizeof(header)) &&
+        read_le32(header) == PROFILE_MAGIC &&
+        read_le16(header + 4) == 1u &&
+        read_le16(header + 6) == sizeof(header) &&
+        read_le16(header + 8) == CP_NATIVE_ABI_MAJOR &&
+        read_le16(header + 10) <= CP_NATIVE_ABI_MINOR &&
+        read_le16(header + 12) == CP_NATIVE_REACT_PROFILE &&
+        read_le16(header + 14) == 0;
+    close(fd);
+    return valid;
 }
 
 static int load_manifest(
@@ -182,30 +239,36 @@ bool crazypod_miniapp_install_directory_validate(
        record.files[CPK_MANIFEST].size != manifest_size ||
        record.files[CPK_MANIFEST].crc32 != manifest_crc)
         return false;
-    if(!make_path(path, sizeof(path), directory, metadata->binary) ||
-       !file_has_size(path, record.files[CPK_BINARY].size) ||
+    if(!make_path(
+           path, sizeof(path), directory,
+           metadata->entry) ||
+       !file_has_size(path, record.files[CPK_APP].size) ||
+       !make_path(path, sizeof(path), directory, "profile.bin") ||
+       !profile_header_valid(
+           path, record.files[CPK_PROFILE].size) ||
        !make_path(path, sizeof(path), directory, ICON_NAME) ||
-       !file_has_size(path, record.files[CPK_ICON].size) ||
-       !make_path(path, sizeof(path), directory, SIGNATURE_NAME) ||
-       !file_has_size(path, record.files[CPK_SIGNATURE].size))
+       !icon_header_valid(
+           path, record.files[CPK_ICON].size))
         return false;
-    if(record.files[CPK_BINARY].size == 0 ||
-       record.files[CPK_BINARY].size > BINARY_MAX ||
-       record.files[CPK_ICON].size != ICON_BYTES ||
-       record.files[CPK_SIGNATURE].size !=
-           CRAZYPOD_MINIAPP_SIGNATURE_SIZE)
+    if(record.files[CPK_APP].size == 0 ||
+       record.files[CPK_APP].size >
+           8u * 1024u * 1024u ||
+       record.files[CPK_PROFILE].size != 16u ||
+       record.files[CPK_ASSETS].size < RESOURCE_HEADER_SIZE ||
+       record.files[CPK_ASSETS].size > CP_NATIVE_ASSET_MAX ||
+       record.files[CPK_ICON].size != ICON_BYTES)
         return false;
-    if(metadata->package_format == 2u) {
+    {
         int fd;
         off_t size;
-        if(!make_path(path, sizeof(path), directory, RESOURCES_NAME))
+        if(!make_path(path, sizeof(path), directory, ASSETS_NAME))
             return false;
         fd = open(path, O_RDONLY);
         if(fd < 0)
             return false;
         size = filesize(fd);
         if(size < (off_t)RESOURCE_HEADER_SIZE ||
-           size > (off_t)RESOURCES_MAX ||
+           size > (off_t)CP_NATIVE_ASSET_MAX ||
            !crazypod_miniapp_resource_container_valid(
                fd, 0, (uint32_t)size)) {
             close(fd);
@@ -213,6 +276,10 @@ bool crazypod_miniapp_install_directory_validate(
         }
         close(fd);
     }
+    metadata->binary_size = record.files[CPK_APP].size;
+    metadata->profile_size = record.files[CPK_PROFILE].size;
+    metadata->assets_size = record.files[CPK_ASSETS].size;
+    metadata->icon_size = record.files[CPK_ICON].size;
     if(record_out != NULL)
         *record_out = record;
     return true;

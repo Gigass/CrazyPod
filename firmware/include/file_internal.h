@@ -252,6 +252,9 @@ struct dirinfo_internal
 {
     unsigned int attr;
     file_size_t  size;
+    uint8_t      crttimetenth;
+    uint16_t     crtdate;
+    uint16_t     crttime;
     uint16_t     wrtdate;
     uint16_t     wrttime;
 };

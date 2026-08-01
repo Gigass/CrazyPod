@@ -72,9 +72,12 @@ void crazypod_ui_widget_set_label_text(lv_obj_t *label, const char *text)
 
 void crazypod_ui_widget_align_row_label(lv_obj_t *label, int x)
 {
+    const lv_font_t *font;
+
     if(label == NULL)
         return;
-    lv_obj_set_height(label, LV_SIZE_CONTENT);
+    font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
+    lv_obj_set_height(label, lv_font_get_line_height(font));
     lv_obj_align(label, LV_ALIGN_LEFT_MID, x, 0);
 }
 

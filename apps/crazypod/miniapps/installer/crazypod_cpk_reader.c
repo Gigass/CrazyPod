@@ -11,17 +11,8 @@
 #include "crazypod_cpk_reader.h"
 #include "crazypod_miniapp_manifest.h"
 
-#if CONFIG_BINFMT == BINFMT_ROCK
-#define EXPECTED_BINARY "app.arm"
-#else
-#define EXPECTED_BINARY "app.dylib"
-#endif
-
-#define ICON_BYTES 102454u
-#define BINARY_MAX ((uint32_t)PLUGIN_BUFFER_SIZE)
-#define CPK_MAX (BINARY_MAX + 640u * 1024u)
-#define RESOURCES_MAX (512u * 1024u)
-#define RESOURCE_HEADER_SIZE 16u
+#define ICON_BYTES 51216u
+#define CPK_MAX (12u * 1024u * 1024u)
 #define ZIP_SIG_EOCD 0x06054b50u
 #define ZIP_SIG_CENTRAL 0x02014b50u
 #define ZIP_SIG_LOCAL 0x04034b50u
@@ -55,27 +46,29 @@ static bool read_at_exact(
 
 static int expected_entry(const char *name)
 {
-    if(strcmp(name, "manifest.ini") == 0) return CPK_MANIFEST;
-    if(strcmp(name, EXPECTED_BINARY) == 0) return CPK_BINARY;
-    if(strcmp(name, "icon.bmp") == 0) return CPK_ICON;
-    if(strcmp(name, "signature.ed25519") == 0) return CPK_SIGNATURE;
-    if(strcmp(name, "resources.bin") == 0) return CPK_RESOURCES;
+    if(strcmp(name, "manifest.json") == 0) return CPK_MANIFEST;
+    if(strcmp(name, "app.arm") == 0 ||
+       strcmp(name, "app.dylib") == 0) return CPK_APP;
+    if(strcmp(name, "profile.bin") == 0) return CPK_PROFILE;
+    if(strcmp(name, "assets.bin") == 0) return CPK_ASSETS;
+    if(strcmp(name, "icon.bin") == 0) return CPK_ICON;
     return -1;
 }
 
-static bool entry_size_valid(int entry, uint32_t size)
+static bool entry_size_valid(
+    int entry, const char *name, uint32_t size)
 {
     switch(entry) {
     case CPK_MANIFEST:
         return size > 0 && size <= CRAZYPOD_MINIAPP_MANIFEST_MAX;
-    case CPK_BINARY:
-        return size > 0 && size <= BINARY_MAX;
+    case CPK_APP:
+        return size > 0 && size <= 8u * 1024u * 1024u;
+    case CPK_PROFILE:
+        return strcmp(name, "profile.bin") == 0 && size == 16u;
+    case CPK_ASSETS:
+        return size >= 16u && size <= CP_NATIVE_ASSET_MAX;
     case CPK_ICON:
         return size == ICON_BYTES;
-    case CPK_SIGNATURE:
-        return size == CRAZYPOD_MINIAPP_SIGNATURE_SIZE;
-    case CPK_RESOURCES:
-        return size >= RESOURCE_HEADER_SIZE && size <= RESOURCES_MAX;
     default:
         return false;
     }
@@ -108,8 +101,7 @@ int crazypod_cpk_open(
     entry_count = read_le16(eocd + 8);
     if(read_le32(eocd) != ZIP_SIG_EOCD ||
        read_le16(eocd + 4) != 0 || read_le16(eocd + 6) != 0 ||
-       (entry_count != MINIAPP_CPK_V1_ENTRIES &&
-        entry_count != MINIAPP_CPK_V2_ENTRIES) ||
+       entry_count != MINIAPP_CPK_ENTRIES ||
        read_le16(eocd + 10) != entry_count ||
        read_le16(eocd + 20) != 0)
         return CRAZYPOD_MINIAPP_ERROR_FORMAT;
@@ -169,13 +161,12 @@ int crazypod_cpk_open(
         entry->local_offset = read_le32(header + 42);
         if(entry->version_needed > 20 || entry->flags != 0 ||
            entry->method != 0 ||
-           !entry_size_valid(slot, entry->size) ||
+           !entry_size_valid(slot, name, entry->size) ||
            entry->local_offset >= central_offset)
             return CRAZYPOD_MINIAPP_ERROR_FORMAT;
         cursor += name_length;
     }
-    if(seen != (reader->entry_count == MINIAPP_CPK_V1_ENTRIES
-                    ? 0x0fu : 0x1fu) ||
+    if(seen != 0x1fu ||
        cursor != (uint64_t)central_offset + central_size)
         return CRAZYPOD_MINIAPP_ERROR_FORMAT;
     return CRAZYPOD_MINIAPP_OK;

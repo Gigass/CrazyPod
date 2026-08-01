@@ -2,6 +2,7 @@
 
 #ifdef IPOD_6G
 
+#include "../../../crazypod_photos.h"
 #include "../../../crazypod_videos.h"
 #include "crazypod_media_activation.h"
 #include "crazypod_photo_controller.h"
@@ -29,9 +30,45 @@ crazypod_media_activation_execute(struct route_state *state)
             CRAZYPOD_MEDIA_ACTIVATION_PUSH,
             state->selected == 0 ? PHOTOS_ROUTE_LIBRARY :
             state->selected == 1 ? PHOTOS_ROUTE_VIDEOS :
-                                   PHOTOS_ROUTE_FAVORITES,
+            state->selected == 2 ? PHOTOS_ROUTE_FAVORITES :
+                                   PHOTOS_ROUTE_DELETE_MENU,
             -1, 0);
     }
+    if(state->route == PHOTOS_ROUTE_DELETE_MENU) {
+        return result(
+            CRAZYPOD_MEDIA_ACTIVATION_PUSH,
+            state->selected == 0
+                ? PHOTOS_ROUTE_DELETE_PHOTOS
+                : PHOTOS_ROUTE_DELETE_VIDEOS,
+            -1, 0);
+    }
+    if(state->route == PHOTOS_ROUTE_DELETE_PHOTOS) {
+        if(state->selected < 0 ||
+           state->selected >= crazypod_photo_count())
+            return result(
+                CRAZYPOD_MEDIA_ACTIVATION_NONE,
+                state->route, 0, 0);
+        return result(
+            CRAZYPOD_MEDIA_ACTIVATION_PUSH,
+            PHOTOS_ROUTE_DELETE_PHOTO_CONFIRM,
+            state->selected, 0);
+    }
+    if(state->route == PHOTOS_ROUTE_DELETE_VIDEOS) {
+        if(state->selected < 0 ||
+           state->selected >= crazypod_video_count())
+            return result(
+                CRAZYPOD_MEDIA_ACTIVATION_NONE,
+                state->route, 0, 0);
+        return result(
+            CRAZYPOD_MEDIA_ACTIVATION_PUSH,
+            PHOTOS_ROUTE_DELETE_VIDEO_CONFIRM,
+            state->selected, 0);
+    }
+    if(state->route == PHOTOS_ROUTE_DELETE_PHOTO_CONFIRM ||
+       state->route == PHOTOS_ROUTE_DELETE_VIDEO_CONFIRM)
+        return result(
+            CRAZYPOD_MEDIA_ACTIVATION_NONE,
+            state->route, 0, 0);
     if(state->route == PHOTOS_ROUTE_VIDEOS) {
         struct crazypod_media_activation_result value =
             result(CRAZYPOD_MEDIA_ACTIVATION_NONE, state->route, 0, 0);

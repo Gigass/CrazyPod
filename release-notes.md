@@ -1,11 +1,28 @@
 # CrazyPod unreleased changes
 
-Last updated: 2026-07-30
+Last updated: 2026-07-31
 
 These notes describe the current unreleased CrazyPod source. See
 [README.md](README.md) for the full feature baseline and
 [PROJECT_STATUS.md](PROJECT_STATUS.md) for build, device, and release-blocker
 status.
+
+## Mini App Native AOT replacement
+
+- Replaced the device-side QuickJS/Solid/CPK4 runtime with CPK5 and versioned
+  Native ABI 1.
+- Developers write the supported React Profile TypeScript/TSX subset with
+  React/React Native imports, `useState`, StyleSheet and Flexbox.
+- The host builder AOT-generates deterministic C; the same C becomes
+  `app.arm` on iPod 6G and `app.dylib` in the simulator.
+- Removed QuickJS, its compatibility/math layer, the ABI3 SDK, JavaScript
+  runtime, bytecode cache and serialized UI command batch.
+- Migrated 2048 and Capability Lab to Native AOT packages.
+- Added retained UI handles so state-only updates change dynamic LVGL
+  properties instead of rebuilding the entire scene.
+- Added CPK5/Native ABI host tests and a five-cycle 2048-to-Lab latency
+  reproduction. The old ABI3 entries later in this file are historical
+  implementation notes and no longer describe the current runtime.
 
 ## Product boundary
 
@@ -67,11 +84,11 @@ protocol, and non-`ipod6g` targets.
   Japanese, Korean, German, French, Spanish, and Brazilian Portuguese.
 - Settings → Language applies immediately and persists through state version
   10. State versions 1–9 migrate to English.
-- The generated catalog contains 856 firmware keys. Calculator and Pomodoro
-  use 27 additional translated strings and follow the system language.
+- The generated catalog contains 827 firmware keys. ABI 3 Mini App text is
+  bundled with each JavaScript package rather than generated into firmware.
 - Strict localization audits reject missing keys, placeholder mismatches,
   unresolved markers, and untagged text in common UI sinks.
-- Generated 8, 10, 12, 14, and 16px fonts cover all 1,344 currently required
+- Generated 8, 10, 12, 14, and 16px fonts cover all 1,320 currently required
   non-whitespace characters. Native language names are part of the manifest.
   The current artifacts share SC glyph shapes rather than regional Han forms.
 - The non-LVGL LCD path now decodes UTF-8.
@@ -90,14 +107,23 @@ protocol, and non-`ipod6g` targets.
 
 ### Mini Apps
 
-- ABI 1 revision 3 retains the original host-table prefix and adds
-  capability-gated asynchronous text, choice, and confirmation surfaces.
-- CPK format 2 adds a deterministic `resources.bin` container and bounded
-  RGB565 bitmap rendering.
-- Read-only Now Playing snapshots are available through an optional host API.
-- Same-version damaged installs repair from a valid package.
-- Package verification is cached by app ID and version for the current
-  firmware session.
+- Replaced the native ABI 1/CPK2 path with Runtime ABI 3 and deterministic
+  CPK4 source packages. ABI 1/2 are not loaded by the current firmware.
+- Added bounded QuickJS `2025-09-13` sessions, compiled Solid JSX, a
+  CrazyPod-specific Universal Renderer, compiled CSS, generation handles and
+  host-owned LVGL 9.5 objects.
+- Added 22 UI components, Flex/Grid, CSS pseudo-states, inherited text styles,
+  LVGL animations, Canvas command buffers, two-layer Tilemap rendering and
+  up to 32 sprites.
+- Added JSON/binary storage, private app files, user import/export, player
+  state/queue/control, eight short-effect voices, exclusive PCM streaming,
+  device/backlight control and persistent Host alarms/notifications.
+- Added desktop conversion for PNG, animated GIF and Lottie assets, generated
+  PCM tones, strict TypeScript testing and simulator hot reload.
+- Added 2048 and Capability Lab as ABI 3 reference applications.
+- Kept CRC, format, path, memory, handle, watchdog and atomic-install
+  protections. CPK4 intentionally has no package signature or permission
+  model.
 
 ## Changed
 
@@ -140,7 +166,7 @@ protocol, and non-`ipod6g` targets.
 
 - Simulator build and pixel-level short/long marquee checks pass for the
   current working tree.
-- UI, Mini App, EPUB, and architecture host gates pass.
+- UI, Mini App, EPUB, builder, and architecture host gates pass.
 - The strict localization audit reports 0 errors and 0 warnings; all five font
   sizes pass complete-manifest coverage.
 - The current working tree builds and packages for `ipod6g`; its ZIP contains
@@ -156,8 +182,8 @@ protocol, and non-`ipod6g` targets.
 
 - 3.5mm headset remote control. The target does not yet initialize the Mikey
   remote controller or normalize its multimedia events for CrazyPod.
-- Native Mini App sandboxing, general permissions, direct filesystem access,
-  audio callbacks, networking, sensors, or a multilingual IME.
+- Mini App package signing, malicious-code isolation, networking, sensors,
+  SQLite, 3D/OpenGL, browser DOM compatibility, or a multilingual IME.
 - A supported end-user installer.
 
 ## Upgrade notes

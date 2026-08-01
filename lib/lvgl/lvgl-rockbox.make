@@ -24,6 +24,8 @@ LVGL_SRC := \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_48.c \
 	$(shell find $(LVGL_DIR)/src/indev -maxdepth 1 -type f -name '*.c') \
 	$(LVGL_DIR)/src/layouts/lv_layout.c \
+	$(LVGL_DIR)/src/layouts/flex/lv_flex.c \
+	$(LVGL_DIR)/src/layouts/grid/lv_grid.c \
 	$(LVGL_DIR)/src/libs/bin_decoder/lv_bin_decoder.c \
 	$(shell find $(LVGL_DIR)/src/misc -maxdepth 1 -type f -name '*.c') \
 	$(shell find $(LVGL_DIR)/src/misc/cache -type f -name '*.c') \
@@ -33,9 +35,24 @@ LVGL_SRC := \
 	$(shell find $(LVGL_DIR)/src/stdlib/builtin -maxdepth 1 -type f -name '*.c') \
 	$(LVGL_DIR)/src/themes/lv_theme.c \
 	$(LVGL_DIR)/src/tick/lv_tick.c \
-	$(LVGL_DIR)/src/widgets/arc/lv_arc.c \
-	$(LVGL_DIR)/src/widgets/image/lv_image.c \
-	$(LVGL_DIR)/src/widgets/label/lv_label.c
+	$(shell find $(LVGL_DIR)/src/widgets/animimage -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/arc -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/bar -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/button -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/canvas -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/chart -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/checkbox -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/dropdown -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/image -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/imagebutton -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/label -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/list -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/roller -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/slider -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/switch -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/table -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/textarea -type f -name '*.c') \
+	$(shell find $(LVGL_DIR)/src/widgets/tileview -type f -name '*.c')
 
 SRC += $(LVGL_SRC)
 OTHER_SRC += $(LVGL_SRC)

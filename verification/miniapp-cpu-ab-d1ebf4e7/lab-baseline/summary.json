@@ -1,0 +1,19 @@
+{
+  "status":"FAIL",
+  "reason":"ui-heartbeat-gap",
+  "scenario":"capability-lab",
+  "phase":"lab-exit-select",
+  "cycles":1,
+  "moveSamples":0,
+  "moveP95Ms":0,
+  "moveMaxMs":0,
+  "actionMaxMs":960,
+  "heartbeatMaxMs":960,
+  "buttonQueueMax":1,
+  "miniappQueueMax":0,
+  "cpuBoostRequested":false,
+  "cpuFrequencyMinHz":216000000,
+  "cpuFrequencyMaxHz":216000000,
+  "violationCount":5,
+  "traceRecords":93
+}

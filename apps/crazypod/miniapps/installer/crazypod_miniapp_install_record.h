@@ -17,7 +17,7 @@ struct install_record {
     uint16_t version;
     uint16_t struct_size;
     uint32_t version_code;
-    struct install_file_record files[MINIAPP_CPK_V1_ENTRIES];
+    struct install_file_record files[MINIAPP_CPK_ENTRIES];
     uint32_t checksum;
 };
 

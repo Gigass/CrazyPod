@@ -17,7 +17,7 @@ detect_jobs() {
 
 require_tools() {
     missing=0
-    for tool in make gcc perl python3 sdl2-config pkg-config; do
+    for tool in make gcc perl python3 node npm sdl2-config pkg-config; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             echo "Error: missing required simulator tool '$tool' on PATH." >&2
             missing=1
@@ -66,6 +66,17 @@ while [ "$#" -gt 0 ]; do
 done
 
 require_tools
+npm ci --ignore-scripts --no-audit --no-fund \
+    --prefix tools/miniapp-builder
+node tools/miniapp-builder/src/cli.mjs generate \
+    miniapps/native-reference \
+    --out miniapps/native-reference/generated/app.c
+node tools/miniapp-builder/src/cli.mjs generate \
+    miniapps/capability-lab \
+    --out miniapps/capability-lab/generated/app.c
+node tools/miniapp-builder/src/cli.mjs generate \
+    miniapps/game2048 \
+    --out miniapps/game2048/generated/app.c
 
 builddir="build-sim"
 configure_stamp="crazypod simulator ipod6g lvgl sdl-threads"
@@ -136,20 +147,38 @@ cp -R ../assets/crazypod-icons/. "$icon_dir/"
 cp ../assets/crazypod/default-home.bmp \
    simdisk/.rockbox/crazypod/default-home.bmp
 mkdir -p miniapps/packages
-find miniapps/packages -type f \
-    \( -name 'calculator-*.cpk' -o -name 'pomodoro-*.cpk' \
-       -o -name 'game2048-*.cpk' \) -delete
-python3 ../tools/build-miniapp-packages.py \
-    --build-dir . \
+find miniapps/packages -type f -name 'game2048-*.cpk' -delete
+find miniapps/packages -type f -name 'capability-lab-*.cpk' -delete
+find miniapps/packages -type f -name 'native-reference-*.cpk' -delete
+game2048_package="game2048-$(node -p \
+    "require('../miniapps/game2048/crazypod.config.json').manifest.version").cpk"
+capability_lab_package="capability-lab-$(node -p \
+    "require('../miniapps/capability-lab/crazypod.config.json').manifest.version").cpk"
+native_reference_package="native-reference-$(node -p \
+    "require('../miniapps/native-reference/crazypod.config.json').manifest.version").cpk"
+node ../tools/miniapp-builder/src/cli.mjs build \
+    ../miniapps/game2048 \
     --target simulator \
-    --binary app.dylib \
-    --output miniapps/packages
+    --binary miniapps/game2048/app.dylib \
+    --out "miniapps/packages/$game2048_package"
+node ../tools/miniapp-builder/src/cli.mjs build \
+    ../miniapps/capability-lab \
+    --target simulator \
+    --binary miniapps/capability-lab/app.dylib \
+    --out "miniapps/packages/$capability_lab_package"
+node ../tools/miniapp-builder/src/cli.mjs build \
+    ../miniapps/native-reference \
+    --target simulator \
+    --binary miniapps/native-reference/app.dylib \
+    --out "miniapps/packages/$native_reference_package"
 miniapp_package_dir="simdisk/.rockbox/crazypod/miniapps/packages"
 mkdir -p "$miniapp_package_dir"
 find "$miniapp_package_dir" -type f -name '*.cpk' -delete
-cp miniapps/packages/calculator-1.2.0.cpk \
-   miniapps/packages/pomodoro-1.2.0.cpk \
-   miniapps/packages/game2048-1.0.0.cpk \
+cp "miniapps/packages/$game2048_package" \
+   "$miniapp_package_dir/"
+cp "miniapps/packages/$capability_lab_package" \
+   "$miniapp_package_dir/"
+cp "miniapps/packages/$native_reference_package" \
    "$miniapp_package_dir/"
 
 app_bundle="CrazyPod Simulator.app"

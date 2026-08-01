@@ -22,6 +22,7 @@ void crazypod_photos_resume(void);
 void crazypod_photos_set_lock_suspended(bool suspended);
 void crazypod_photos_set_route_suspended(bool suspended);
 void crazypod_photos_invalidate_catalog(void);
+void crazypod_photos_note_file_added(void);
 
 int crazypod_photo_count(void);
 int crazypod_photo_favorite_count(void);
@@ -30,6 +31,7 @@ const char *crazypod_photo_path(int index);
 const char *crazypod_photo_name(int index);
 bool crazypod_photo_is_favorite(int index);
 bool crazypod_photo_toggle_favorite(int index);
+bool crazypod_photo_delete(int index);
 
 const lv_image_dsc_t *crazypod_photo_thumbnail(int slot, int index);
 const lv_image_dsc_t *crazypod_photo_view(int index);

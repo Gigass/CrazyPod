@@ -32,6 +32,13 @@ struct crazypod_photos_render_context {
     long now;
 };
 
+struct crazypod_photos_confirmation_result {
+    bool handled;
+    bool deleted;
+    enum crazypod_route return_route;
+    int selected;
+};
+
 int crazypod_photos_feature_item_count(
     const struct route_state *state);
 const char *crazypod_photos_feature_title(
@@ -54,6 +61,15 @@ bool crazypod_photos_feature_activate(
 bool crazypod_photos_feature_render(
     const struct route_state *state,
     const struct crazypod_photos_render_context *context);
+struct crazypod_photos_confirmation_result
+crazypod_photos_feature_confirm(
+    const struct route_state *state, long now,
+    long feedback_ticks);
+bool crazypod_photos_feature_service_feedback(long now);
+void crazypod_photos_feature_render_feedback(
+    const struct route_state *state, lv_obj_t *parent,
+    uint32_t foreground_color, uint32_t muted_color,
+    long now);
 void crazypod_photos_feature_reset_view(void);
 void crazypod_photos_runtime_configure(
     const struct crazypod_photos_runtime_host *host);
@@ -74,6 +90,8 @@ void crazypod_photos_feature_render_preview(
     const struct route_state *state, lv_obj_t *parent,
     bool videos, bool defer_media,
     bool *media_deferred);
+void crazypod_photos_feature_prefetch_preview(
+    const struct route_state *state);
 void crazypod_photos_feature_reset_controller(void);
 void crazypod_photos_feature_open_detail(int zoom_percent);
 

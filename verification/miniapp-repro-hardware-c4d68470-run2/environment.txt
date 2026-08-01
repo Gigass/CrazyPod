@@ -1,0 +1,7 @@
+target=ipod6g-hardware
+hz=100
+cycles=5
+scenario=full
+movesPerCycle=32
+inputPath=button_queue
+displayCriterion=hardware-lcd-present-sequence

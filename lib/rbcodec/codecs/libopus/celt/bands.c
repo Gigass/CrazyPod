@@ -910,6 +910,8 @@ static unsigned quant_band_n1(struct band_ctx *ctx, celt_norm *X, celt_norm *Y, 
    int encode;
    ec_ctx *ec;
 
+   (void)b;
+
    encode = ctx->encode;
    ec = ctx->ec;
 
@@ -926,7 +928,6 @@ static unsigned quant_band_n1(struct band_ctx *ctx, celt_norm *X, celt_norm *Y, 
             sign = ec_dec_bits(ec, 1);
          }
          ctx->remaining_bits -= 1<<BITRES;
-         b-=1<<BITRES;
       }
       if (ctx->resynth)
          x[0] = sign ? -NORM_SCALING : NORM_SCALING;
@@ -1669,4 +1670,3 @@ void quant_all_bands(int encode, const CELTMode *m, int start, int end,
 
    RESTORE_STACK;
 }
-

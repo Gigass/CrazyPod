@@ -11,9 +11,9 @@
 #include "../../crazypod_miniapps.h"
 #include "crazypod_miniapp_resource_validator.h"
 
-#define RESOURCE_MAX (128u * 1024u)
-#define RESOURCES_MAX (512u * 1024u)
-#define RESOURCE_COUNT_MAX 32u
+#define RESOURCE_MAX CP_NATIVE_ASSET_MAX
+#define RESOURCES_MAX CP_NATIVE_ASSET_MAX
+#define RESOURCE_COUNT_MAX 256u
 #define RESOURCE_HEADER_SIZE 16u
 #define RESOURCE_ENTRY_SIZE 52u
 #define RESOURCE_MAGIC 0x53525043u
@@ -116,8 +116,7 @@ bool crazypod_miniapp_resource_container_valid(
                    (uint32_t)index * RESOURCE_ENTRY_SIZE,
                entry, sizeof(entry)) ||
            !valid_id(entry) ||
-           (index > 0 && memcmp(previous_id, entry, 32) >= 0) ||
-           entry[33] != 0 || read_le16(entry + 38) != 0)
+           (index > 0 && memcmp(previous_id, entry, 32) >= 0))
             return false;
         memcpy(previous_id, entry, sizeof(previous_id));
         index_crc = crc_32r(entry, sizeof(entry), index_crc);
@@ -128,14 +127,41 @@ bool crazypod_miniapp_resource_container_valid(
         if(size > RESOURCE_MAX || offset != expected_offset ||
            (uint64_t)offset + size > total_size)
             return false;
-        if(entry[32] == CP_RESOURCE_BITMAP_RGB565) {
+        if(entry[32] == CP_RESOURCE_BITMAP_RGB565 ||
+           entry[32] == CP_RESOURCE_TILESET) {
             if(width == 0 || height == 0 ||
-               width > 160 || height > 160 ||
+               width > 320 ||
+               height > (entry[32] == CP_RESOURCE_BITMAP_RGB565
+                   ? 240 : 320) ||
+               size != (uint32_t)width * height * 2u)
+                return false;
+            if(entry[33] != 0 || read_le16(entry + 38) != 0)
+                return false;
+        }
+        else if(entry[32] == CP_RESOURCE_SPRITE_SHEET) {
+            uint8_t frames = entry[33];
+            uint16_t duration = read_le16(entry + 38);
+
+            if(width == 0 || width > 320 ||
+               height == 0 || height > 4096 ||
+               frames == 0 || frames > 32 ||
+               height % frames != 0 ||
+               height / frames > 240 ||
+               duration < 10 || duration > 60000 ||
                size != (uint32_t)width * height * 2u)
                 return false;
         }
-        else if(entry[32] != CP_RESOURCE_BLOB ||
-                width != 0 || height != 0) {
+        else if(entry[32] == CP_RESOURCE_AUDIO_PCM) {
+            if(width < 8000 || width > 48000 ||
+               height != 2 || size == 0 ||
+               size > 512u * 1024u || (size & 3u) != 0 ||
+               entry[33] != 0 || read_le16(entry + 38) != 0)
+                return false;
+        }
+        else if((entry[32] != CP_RESOURCE_BLOB &&
+                 entry[32] != CP_RESOURCE_FONT) ||
+                width != 0 || height != 0 ||
+                entry[33] != 0 || read_le16(entry + 38) != 0) {
             return false;
         }
         remaining = size;

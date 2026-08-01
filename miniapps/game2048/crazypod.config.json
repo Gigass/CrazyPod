@@ -1,0 +1,15 @@
+{
+  "manifest": {
+    "id": "game2048",
+    "name": "2048",
+    "version": "5.0.1",
+    "versionCode": 50001,
+    "symbol": "2048",
+    "summary": "Native AOT click-wheel 2048",
+    "accent": "#ff9f43"
+  },
+  "runtime": "native-aot",
+  "source": "App.tsx",
+  "assets": "assets",
+  "iconColor": "#edc53f"
+}

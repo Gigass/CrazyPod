@@ -6,6 +6,7 @@
 #ifdef IPOD_6G
 
 #include <stdbool.h>
+#include <stdint.h>
 
 /*
  * The kernel tick rate is 100 Hz on iPod 6G. 50 fps maps to an exact
@@ -30,6 +31,12 @@ void crazypod_present_queue_full(void);
 /* Commit an already-rendered queued frame before a synchronous operation. */
 void crazypod_present_now(void);
 void crazypod_present_tick(void);
+uint32_t crazypod_present_sequence(void);
+long crazypod_present_last_tick(void);
+
+#ifdef SIMULATOR
+uint32_t crazypod_present_framebuffer_crc(void);
+#endif
 
 #endif
 

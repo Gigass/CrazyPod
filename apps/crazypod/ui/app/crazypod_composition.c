@@ -7,6 +7,7 @@
 #include "../../crazypod_state.h"
 #include "../features/books/crazypod_books_feature.h"
 #include "../features/customize/crazypod_customize_feature.h"
+#include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../features/photos/crazypod_photos_feature.h"
