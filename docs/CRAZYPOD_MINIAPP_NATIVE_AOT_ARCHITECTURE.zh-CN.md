@@ -15,7 +15,7 @@ app.arm（iPod 6G） / app.dylib（模拟器）
         ↓
 CPK5
         ↓ 固件严格校验、安装、原生加载
-Native ABI 1.1
+Native ABI 1.2
         ↓ 句柄和纯数据调用
 宿主持有的 LVGL 9.5
 ```

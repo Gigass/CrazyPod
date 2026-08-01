@@ -13,7 +13,7 @@
  * objects, Rockbox internals and compiler-runtime state remain host-owned.
  */
 #define CP_NATIVE_ABI_MAJOR 1u
-#define CP_NATIVE_ABI_MINOR 1u
+#define CP_NATIVE_ABI_MINOR 2u
 #define CP_NATIVE_PACKAGE_FORMAT 5u
 #define CP_NATIVE_REACT_PROFILE 1u
 #define CP_NATIVE_BINARY_MAGIC 0x35414d43ul /* CMA5 */
@@ -399,7 +399,8 @@ enum cp_native_host_capability {
     CP_NATIVE_CAP_STATE = 1u << 0,
     CP_NATIVE_CAP_RESOURCES = 1u << 1,
     CP_NATIVE_CAP_REQUEST_CLOSE = 1u << 2,
-    CP_NATIVE_CAP_LOG = 1u << 3
+    CP_NATIVE_CAP_LOG = 1u << 3,
+    CP_NATIVE_CAP_FILES = 1u << 4
 };
 
 struct cp_native_host_api {
@@ -417,6 +418,12 @@ struct cp_native_host_api {
                          void *buffer, size_t capacity);
     int (*request_close)(void);
     void (*log)(uint8_t level, const char *message);
+    int (*file_size)(const char *relative_path);
+    int (*file_read)(const char *relative_path,
+                     void *buffer, size_t capacity);
+    int (*file_write)(const char *relative_path,
+                      const void *buffer, size_t size);
+    int (*file_remove)(const char *relative_path);
 };
 
 struct cp_native_app_ops {

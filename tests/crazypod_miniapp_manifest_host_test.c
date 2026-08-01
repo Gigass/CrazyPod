@@ -14,7 +14,7 @@ static const char valid_manifest[] =
     "\"versionCode\":50000,"
     "\"runtime\":\"native-aot\","
     "\"abiMajor\":1,"
-    "\"abiMinor\":1,"
+    "\"abiMinor\":2,"
     "\"reactProfile\":1,"
     "\"target\":\"simulator\","
     "\"entry\":\"app.dylib\","

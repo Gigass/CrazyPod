@@ -112,6 +112,38 @@ static void host_log(uint8_t level, const char *message)
     (void)message;
 }
 
+static int host_file_size(const char *relative_path)
+{
+    return native.metadata != NULL
+        ? crazypod_miniapp_file_size(native.metadata->id, relative_path)
+        : CRAZYPOD_MINIAPP_ERROR_STATE;
+}
+
+static int host_file_read(
+    const char *relative_path, void *buffer, size_t capacity)
+{
+    return native.metadata != NULL
+        ? crazypod_miniapp_file_read(
+            native.metadata->id, relative_path, buffer, capacity)
+        : CRAZYPOD_MINIAPP_ERROR_STATE;
+}
+
+static int host_file_write(
+    const char *relative_path, const void *buffer, size_t size)
+{
+    return native.metadata != NULL
+        ? crazypod_miniapp_file_write(
+            native.metadata->id, relative_path, buffer, size)
+        : CRAZYPOD_MINIAPP_ERROR_STATE;
+}
+
+static int host_file_remove(const char *relative_path)
+{
+    return native.metadata != NULL
+        ? crazypod_miniapp_file_remove(native.metadata->id, relative_path)
+        : CRAZYPOD_MINIAPP_ERROR_STATE;
+}
+
 static const struct cp_native_host_api host_api = {
     .abi_major = CP_NATIVE_ABI_MAJOR,
     .abi_minor = CP_NATIVE_ABI_MINOR,
@@ -120,7 +152,8 @@ static const struct cp_native_host_api host_api = {
         CP_NATIVE_CAP_STATE |
         CP_NATIVE_CAP_RESOURCES |
         CP_NATIVE_CAP_REQUEST_CLOSE |
-        CP_NATIVE_CAP_LOG,
+        CP_NATIVE_CAP_LOG |
+        CP_NATIVE_CAP_FILES,
     .ui = &ui_api,
     .epoch_seconds = crazypod_miniapp_host_epoch_seconds,
     .monotonic_ms = crazypod_miniapp_host_monotonic_ms,
@@ -130,6 +163,10 @@ static const struct cp_native_host_api host_api = {
     .resource_read = host_resource_read,
     .request_close = host_request_close,
     .log = host_log,
+    .file_size = host_file_size,
+    .file_read = host_file_read,
+    .file_write = host_file_write,
+    .file_remove = host_file_remove,
 };
 
 static size_t bounded_length(const char *text, size_t capacity)
