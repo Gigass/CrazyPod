@@ -37,6 +37,11 @@ static struct {
     bool close_requested;
 } native;
 
+#define CRAZYPOD_NATIVE_CAPABILITIES ( \
+    CP_NATIVE_CAP_STATE | CP_NATIVE_CAP_RESOURCES | \
+    CP_NATIVE_CAP_REQUEST_CLOSE | CP_NATIVE_CAP_LOG | \
+    CP_NATIVE_CAP_FILES | CP_NATIVE_CAP_SERVICES)
+
 static int ui_animate(
     cp_ui_handle_t target, uint16_t property,
     const struct cp_native_ui_animation *animation)
@@ -144,16 +149,37 @@ static int host_file_remove(const char *relative_path)
         : CRAZYPOD_MINIAPP_ERROR_STATE;
 }
 
+static int host_service_call(
+    uint32_t service, uint32_t operation,
+    const void *request, size_t request_size,
+    void *response, size_t response_capacity)
+{
+    struct cp_native_system_info info;
+
+    if(request_size > CP_NATIVE_SERVICE_PAYLOAD_MAX ||
+       response_capacity > CP_NATIVE_SERVICE_PAYLOAD_MAX ||
+       (request_size > 0 && request == NULL) ||
+       (response_capacity > 0 && response == NULL))
+        return CP_NATIVE_ERROR_ARGUMENT;
+    if(service != CP_NATIVE_SERVICE_SYSTEM ||
+       operation != CP_NATIVE_SYSTEM_INFO)
+        return CP_NATIVE_ERROR_UNSUPPORTED;
+    if(response_capacity < sizeof(info))
+        return CP_NATIVE_ERROR_LIMIT;
+
+    info.abi_major = CP_NATIVE_ABI_MAJOR;
+    info.abi_minor = CP_NATIVE_ABI_MINOR;
+    info.capabilities = CRAZYPOD_NATIVE_CAPABILITIES;
+    info.service_payload_max = CP_NATIVE_SERVICE_PAYLOAD_MAX;
+    memcpy(response, &info, sizeof(info));
+    return (int)sizeof(info);
+}
+
 static const struct cp_native_host_api host_api = {
     .abi_major = CP_NATIVE_ABI_MAJOR,
     .abi_minor = CP_NATIVE_ABI_MINOR,
     .struct_size = sizeof(struct cp_native_host_api),
-    .capabilities =
-        CP_NATIVE_CAP_STATE |
-        CP_NATIVE_CAP_RESOURCES |
-        CP_NATIVE_CAP_REQUEST_CLOSE |
-        CP_NATIVE_CAP_LOG |
-        CP_NATIVE_CAP_FILES,
+    .capabilities = CRAZYPOD_NATIVE_CAPABILITIES,
     .ui = &ui_api,
     .epoch_seconds = crazypod_miniapp_host_epoch_seconds,
     .monotonic_ms = crazypod_miniapp_host_monotonic_ms,
@@ -167,6 +193,7 @@ static const struct cp_native_host_api host_api = {
     .file_read = host_file_read,
     .file_write = host_file_write,
     .file_remove = host_file_remove,
+    .service_call = host_service_call,
 };
 
 static size_t bounded_length(const char *text, size_t capacity)
@@ -250,7 +277,14 @@ static bool header_valid(
        header->lc_header.api_version != CP_NATIVE_ABI_MAJOR ||
        header->abi_minor > CP_NATIVE_ABI_MINOR ||
        header->react_profile != CP_NATIVE_REACT_PROFILE ||
-       header->host_api_size != sizeof(host_api) ||
+       header->host_api_size <
+           offsetof(struct cp_native_host_api, file_size) ||
+       (header->abi_minor >= 2u &&
+        header->host_api_size <
+            offsetof(struct cp_native_host_api, service_call)) ||
+       (header->abi_minor >= 3u &&
+        header->host_api_size < sizeof(host_api)) ||
+       header->host_api_size > sizeof(host_api) ||
        header->ui_api_size != sizeof(ui_api) ||
        header->app_ops_size !=
            sizeof(struct cp_native_app_ops) ||

@@ -7,10 +7,13 @@
 static void verify_constants(void)
 {
     assert(CP_NATIVE_ABI_MAJOR == 1u);
-    assert(CP_NATIVE_ABI_MINOR == 2u);
+    assert(CP_NATIVE_ABI_MINOR == 3u);
     assert(CP_NATIVE_PACKAGE_FORMAT == 5u);
     assert(CP_NATIVE_REACT_PROFILE == 1u);
     assert(CP_NATIVE_CAP_FILES == (1u << 4));
+    assert(CP_NATIVE_CAP_SERVICES == (1u << 5));
+    assert(CP_NATIVE_SERVICE_PAYLOAD_MAX == 1024u);
+    assert(sizeof(struct cp_native_system_info) == 12u);
     assert(CP_UI_OBJECT_SCREEN == 1);
     assert(CP_UI_OBJECT_TYPE_COUNT < 256);
     assert(CP_UI_PROP_COUNT < 65536);
@@ -31,9 +34,12 @@ static void verify_layout(void)
     assert(offsetof(struct cp_native_host_api, file_remove) ==
            offsetof(struct cp_native_host_api, file_write) +
                sizeof(((struct cp_native_host_api *)0)->file_write));
-    assert(sizeof(struct cp_native_host_api) ==
+    assert(offsetof(struct cp_native_host_api, service_call) ==
            offsetof(struct cp_native_host_api, file_remove) +
                sizeof(((struct cp_native_host_api *)0)->file_remove));
+    assert(sizeof(struct cp_native_host_api) ==
+           offsetof(struct cp_native_host_api, service_call) +
+               sizeof(((struct cp_native_host_api *)0)->service_call));
     assert(sizeof(struct cp_input_event) == 8u);
     assert(sizeof(struct cp_resource_info) == 20u);
     assert(sizeof(struct cp_native_ui_animation) == 24u);

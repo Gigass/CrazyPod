@@ -13,7 +13,7 @@
  * objects, Rockbox internals and compiler-runtime state remain host-owned.
  */
 #define CP_NATIVE_ABI_MAJOR 1u
-#define CP_NATIVE_ABI_MINOR 2u
+#define CP_NATIVE_ABI_MINOR 3u
 #define CP_NATIVE_PACKAGE_FORMAT 5u
 #define CP_NATIVE_REACT_PROFILE 1u
 #define CP_NATIVE_BINARY_MAGIC 0x35414d43ul /* CMA5 */
@@ -31,6 +31,10 @@
 #define CP_NATIVE_MANIFEST_MAX (8u * 1024u)
 #define CP_NATIVE_ASSET_MAX (8u * 1024u * 1024u)
 #define CP_NATIVE_UI_PAYLOAD_MAX (64u * 1024u)
+#define CP_NATIVE_SERVICE_PAYLOAD_MAX 1024u
+
+#define CP_NATIVE_SERVICE_SYSTEM 0u
+#define CP_NATIVE_SYSTEM_INFO 0u
 
 #define CP_UI_HANDLE_MAX CP_NATIVE_UI_HANDLE_MAX
 #define CP_UI_HANDLE_NONE CP_NATIVE_UI_HANDLE_NONE
@@ -353,6 +357,13 @@ struct cp_resource_info {
     uint16_t frame_duration_ms;
 };
 
+struct cp_native_system_info {
+    uint16_t abi_major;
+    uint16_t abi_minor;
+    uint32_t capabilities;
+    uint32_t service_payload_max;
+};
+
 struct cp_native_ui_animation {
     int32_t from;
     int32_t to;
@@ -400,7 +411,8 @@ enum cp_native_host_capability {
     CP_NATIVE_CAP_RESOURCES = 1u << 1,
     CP_NATIVE_CAP_REQUEST_CLOSE = 1u << 2,
     CP_NATIVE_CAP_LOG = 1u << 3,
-    CP_NATIVE_CAP_FILES = 1u << 4
+    CP_NATIVE_CAP_FILES = 1u << 4,
+    CP_NATIVE_CAP_SERVICES = 1u << 5
 };
 
 struct cp_native_host_api {
@@ -424,6 +436,9 @@ struct cp_native_host_api {
     int (*file_write)(const char *relative_path,
                       const void *buffer, size_t size);
     int (*file_remove)(const char *relative_path);
+    int (*service_call)(uint32_t service, uint32_t operation,
+                        const void *request, size_t request_size,
+                        void *response, size_t response_capacity);
 };
 
 struct cp_native_app_ops {
