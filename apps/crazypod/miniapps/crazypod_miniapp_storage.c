@@ -33,6 +33,7 @@
 #endif
 #define MINIAPP_STATE_NAME "state.bin"
 #define MINIAPP_STATE_TEMP_NAME "state.tmp"
+#define MINIAPP_STATE_BACKUP_NAME "state.bak"
 #define MINIAPP_STATE_MAX CRAZYPOD_MINIAPP_STORAGE_MAX
 #define MINIAPP_STATE_MAGIC 0x43505354u
 #define MINIAPP_DISK_VERSION 1u
@@ -269,19 +270,25 @@ static uint32_t header_checksum(const struct state_header *header)
     return crc_buffer(header, offsetof(struct state_header, checksum));
 }
 
-int crazypod_miniapp_storage_read(
-    const char *id, void *buffer, size_t capacity)
+static bool state_path_exists(const char *path)
+{
+    int fd = open(path, O_RDONLY);
+
+    if(fd < 0)
+        return false;
+    close(fd);
+    return true;
+}
+
+static int read_state_path(
+    const char *path, void *buffer, size_t capacity)
 {
     struct state_header header;
-    char path[MAX_PATH];
     int fd;
 
-    if(buffer == NULL ||
-       !data_path(path, sizeof(path), id, MINIAPP_STATE_NAME))
-        return CRAZYPOD_MINIAPP_ERROR_STATE;
     fd = open(path, O_RDONLY);
     if(fd < 0)
-        return 0;
+        return CRAZYPOD_MINIAPP_ERROR_STATE;
     if(filesize(fd) < (off_t)sizeof(header) ||
        !read_exact(fd, &header, sizeof(header)) ||
        header.magic != MINIAPP_STATE_MAGIC ||
@@ -300,13 +307,78 @@ int crazypod_miniapp_storage_read(
     return (int)header.data_size;
 }
 
+static bool state_path_valid(const char *path)
+{
+    struct state_header header;
+    uint8_t block[512];
+    uint32_t remaining;
+    uint32_t crc = 0xffffffffu;
+    int fd = open(path, O_RDONLY);
+
+    if(fd < 0)
+        return false;
+    if(filesize(fd) < (off_t)sizeof(header) ||
+       !read_exact(fd, &header, sizeof(header)) ||
+       header.magic != MINIAPP_STATE_MAGIC ||
+       header.version != MINIAPP_DISK_VERSION ||
+       header.struct_size != sizeof(header) ||
+       header.data_size > MINIAPP_STATE_MAX ||
+       filesize(fd) != (off_t)(sizeof(header) + header.data_size) ||
+       header.checksum != header_checksum(&header)) {
+        close(fd);
+        return false;
+    }
+    remaining = header.data_size;
+    while(remaining > 0) {
+        uint32_t amount = remaining > sizeof(block)
+            ? (uint32_t)sizeof(block) : remaining;
+
+        if(!read_exact(fd, block, amount)) {
+            close(fd);
+            return false;
+        }
+        crc = crc_32r(block, amount, crc);
+        remaining -= amount;
+    }
+    close(fd);
+    return ~crc == header.data_crc32;
+}
+
+int crazypod_miniapp_storage_read(
+    const char *id, void *buffer, size_t capacity)
+{
+    char path[MAX_PATH];
+    char backup[MAX_PATH];
+    bool primary_exists;
+    bool backup_exists;
+    int result;
+
+    if(buffer == NULL ||
+       !data_path(path, sizeof(path), id, MINIAPP_STATE_NAME) ||
+       !data_path(
+           backup, sizeof(backup), id, MINIAPP_STATE_BACKUP_NAME))
+        return CRAZYPOD_MINIAPP_ERROR_STATE;
+    primary_exists = state_path_exists(path);
+    backup_exists = state_path_exists(backup);
+    if(primary_exists) {
+        result = read_state_path(path, buffer, capacity);
+        if(result >= 0)
+            return result;
+    }
+    if(backup_exists)
+        return read_state_path(backup, buffer, capacity);
+    return primary_exists ? CRAZYPOD_MINIAPP_ERROR_STATE : 0;
+}
+
 int crazypod_miniapp_storage_write(
     const char *id, const void *buffer, size_t size)
 {
     struct state_header header;
     char path[MAX_PATH];
     char temporary[MAX_PATH];
+    char backup[MAX_PATH];
     int fd;
+    bool had_primary;
     bool success;
 
     if((size > 0 && buffer == NULL) ||
@@ -314,7 +386,9 @@ int crazypod_miniapp_storage_write(
        !ensure_data_directory(id) ||
        !data_path(path, sizeof(path), id, MINIAPP_STATE_NAME) ||
        !data_path(
-           temporary, sizeof(temporary), id, MINIAPP_STATE_TEMP_NAME))
+           temporary, sizeof(temporary), id, MINIAPP_STATE_TEMP_NAME) ||
+       !data_path(
+           backup, sizeof(backup), id, MINIAPP_STATE_BACKUP_NAME))
         return CRAZYPOD_MINIAPP_ERROR_STATE;
 
     memset(&header, 0, sizeof(header));
@@ -332,7 +406,21 @@ int crazypod_miniapp_storage_write(
               fsync(fd) == 0;
     if(close(fd) < 0)
         success = false;
-    if(!success || rename(temporary, path) < 0) {
+    if(!success) {
+        remove(temporary);
+        return CRAZYPOD_MINIAPP_ERROR_STATE;
+    }
+    had_primary = state_path_valid(path);
+    if(had_primary) {
+        if((state_path_exists(backup) && remove(backup) < 0) ||
+           rename(path, backup) < 0) {
+            remove(temporary);
+            return CRAZYPOD_MINIAPP_ERROR_STATE;
+        }
+    }
+    if(rename(temporary, path) < 0) {
+        if(had_primary)
+            (void)rename(backup, path);
         remove(temporary);
         return CRAZYPOD_MINIAPP_ERROR_STATE;
     }
