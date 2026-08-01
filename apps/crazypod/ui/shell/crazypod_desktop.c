@@ -19,19 +19,25 @@
 #include "crazypod_app_catalog.h"
 #include "crazypod_desktop.h"
 #include "crazypod_desktop_native.h"
-#include "crazypod_home_input.h"
 #include "crazypod_now_capsule.h"
 #include "crazypod_status_bar.h"
 
 #define COLOR_WHITE 0xFFFFFF
 #define HOME_POSITION_ONE (1L << 16)
 #define HOME_WHEEL_POSITIONS 96
-#define HOME_WHEEL_CLICKS_PER_ICON 12
-#define HOME_WHEEL_FEEDBACK_CLICKS 4
+#define HOME_WHEEL_CLICKS_PER_DETENT 8
 #define HOME_WHEEL_RELEASE_TICKS \
     (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
-#define HOME_SNAP_TICKS \
-    (((HZ * 18) / 100) > 0 ? ((HZ * 18) / 100) : 1)
+#define HOME_SPRING_STIFFNESS 503
+#define HOME_SPRING_DAMPING 37
+#define HOME_SPRING_POSITION_EPSILON (HOME_POSITION_ONE / 1024)
+#define HOME_SPRING_VELOCITY_EPSILON (HOME_POSITION_ONE / 64)
+#define HOME_WHEEL_VELOCITY_SMOOTHING_SHIFT 3
+#define HOME_WHEEL_MAX_SPEED_Q16 (184L * HOME_POSITION_ONE)
+#define HOME_INERTIA_START_SPEED_Q16 (76L * HOME_POSITION_ONE)
+#define HOME_INERTIA_STOP_SPEED_Q16 (61L * HOME_POSITION_ONE)
+#define HOME_INERTIA_DECAY_Q16 (168L * HOME_POSITION_ONE)
+#define HOME_INERTIA_MIN_DETENTS 2
 
 static struct crazypod_desktop_host desktop_host;
 static lv_obj_t *screen;
@@ -40,18 +46,21 @@ static lv_obj_t *title;
 static lv_obj_t *indicators[CRAZYPOD_APP_COUNT];
 static int selected_app;
 static int32_t position_q16;
-static int32_t snap_start_q16;
-static int32_t snap_target_q16;
-static long snap_started;
+static int32_t spring_velocity_q16;
+static int32_t wheel_velocity_q16;
+static int32_t inertia_fraction_q16;
+static long motion_last_tick;
+static long wheel_last_sample_tick;
 static long wheel_last_seen;
 static struct crazypod_frameclock render_clock;
-static struct crazypod_home_wheel_filter wheel_filter;
 static int wheel_position;
-static int wheel_feedback_accumulator;
+static int wheel_detent_accumulator;
+static int wheel_move_detents;
 static int wheel_feedback_direction;
 static bool desktop_active;
 static bool wheel_tracking;
-static bool snapping;
+static bool springing;
+static bool inertia_active;
 
 static const struct crazypod_app_descriptor *visible_app(int index)
 {
@@ -104,83 +113,155 @@ static int clamp_selected(int selected)
     return selected;
 }
 
-#ifdef HAVE_WHEEL_POSITION
-static int nearest_selected(void)
+static int32_t selected_position_q16(void)
 {
-    return clamp_selected(
-        (position_q16 + HOME_POSITION_ONE / 2) >> 16);
+    return selected_app * HOME_POSITION_ONE;
 }
 
-static void update_nearest_selection(void)
+static void start_spring(void)
 {
-    int nearest = nearest_selected();
+    springing = position_q16 != selected_position_q16() ||
+        spring_velocity_q16 != 0;
+    if(springing)
+        crazypod_desktop_native_invalidate(false);
+}
 
-    if(nearest == selected_app)
-        return;
-    selected_app = nearest;
+static bool set_selected_target(int selected)
+{
+    selected = clamp_selected(selected);
+
+    if(selected == selected_app)
+        return false;
+    selected_app = selected;
     update_selection_chrome();
+    start_spring();
+    return true;
 }
 
-static void begin_snap(long now)
+static void advance_spring_tick(void)
 {
-    int target = nearest_selected();
+    int32_t target = selected_position_q16();
+    int64_t acceleration;
+    int32_t maximum =
+        (crazypod_apps_visible_count() > 0
+            ? crazypod_apps_visible_count() - 1 : 0) *
+        HOME_POSITION_ONE;
 
-    selected_app = target;
-    snap_start_q16 = position_q16;
-    snap_target_q16 = target * HOME_POSITION_ONE;
-    snap_started = now;
-    snapping = snap_start_q16 != snap_target_q16;
-    update_selection_chrome();
-    crazypod_desktop_native_invalidate(false);
-}
-#endif
-
-static void advance_snap(long now)
-{
-    long elapsed = now - snap_started;
-    int32_t remaining_q16;
-    int32_t eased_q16;
-
-    if(!snapping)
+    if(!springing)
         return;
-    if(elapsed >= HOME_SNAP_TICKS) {
-        position_q16 = snap_target_q16;
-        snapping = false;
+    acceleration =
+        (int64_t)(target - position_q16) * HOME_SPRING_STIFFNESS -
+        (int64_t)spring_velocity_q16 * HOME_SPRING_DAMPING;
+    spring_velocity_q16 += (int32_t)(acceleration / HZ);
+    position_q16 += spring_velocity_q16 / HZ;
+    if(position_q16 < 0) {
+        position_q16 = 0;
+        if(spring_velocity_q16 < 0)
+            spring_velocity_q16 = 0;
     }
-    else {
-        int32_t progress_q16 =
-            (int32_t)((int64_t)elapsed * HOME_POSITION_ONE /
-                      HOME_SNAP_TICKS);
-        int32_t remaining_squared_q16;
-
-        if(progress_q16 < 0)
-            progress_q16 = 0;
-        remaining_q16 = HOME_POSITION_ONE - progress_q16;
-        remaining_squared_q16 = (int32_t)(
-            (int64_t)remaining_q16 * remaining_q16 >> 16);
-        eased_q16 = HOME_POSITION_ONE - (int32_t)(
-            (int64_t)remaining_squared_q16 * remaining_q16 >> 16);
-        position_q16 = snap_start_q16 +
-            (int32_t)(((int64_t)
-                (snap_target_q16 - snap_start_q16) * eased_q16) >> 16);
+    else if(position_q16 > maximum) {
+        position_q16 = maximum;
+        if(spring_velocity_q16 > 0)
+            spring_velocity_q16 = 0;
     }
-    crazypod_desktop_native_invalidate(false);
+    if(position_q16 >= target - HOME_SPRING_POSITION_EPSILON &&
+       position_q16 <= target + HOME_SPRING_POSITION_EPSILON &&
+       spring_velocity_q16 >= -HOME_SPRING_VELOCITY_EPSILON &&
+       spring_velocity_q16 <= HOME_SPRING_VELOCITY_EPSILON) {
+        position_q16 = target;
+        spring_velocity_q16 = 0;
+        springing = false;
+    }
 }
 
 #ifdef HAVE_WHEEL_POSITION
+static void apply_wheel_clicks(int delta)
+{
+    int direction;
+
+    wheel_detent_accumulator += delta;
+    while(wheel_detent_accumulator >= HOME_WHEEL_CLICKS_PER_DETENT ||
+          wheel_detent_accumulator <= -HOME_WHEEL_CLICKS_PER_DETENT) {
+        direction = wheel_detent_accumulator < 0 ? -1 : 1;
+        if(!set_selected_target(selected_app + direction)) {
+            wheel_detent_accumulator = 0;
+            if((direction < 0 && spring_velocity_q16 < 0) ||
+               (direction > 0 && spring_velocity_q16 > 0))
+                spring_velocity_q16 = 0;
+            return;
+        }
+        wheel_detent_accumulator -=
+            direction * HOME_WHEEL_CLICKS_PER_DETENT;
+        ++wheel_move_detents;
+        wheel_feedback_direction = direction;
+    }
+}
+
+static void record_wheel_velocity(int delta, long now)
+{
+    long elapsed = now - wheel_last_sample_tick;
+    int64_t instantaneous;
+    int64_t blended;
+
+    if(elapsed <= 0)
+        return;
+    wheel_last_sample_tick = now;
+    instantaneous =
+        (int64_t)delta * HZ * HOME_POSITION_ONE / elapsed;
+    blended = wheel_velocity_q16 +
+        ((instantaneous - wheel_velocity_q16) >>
+            HOME_WHEEL_VELOCITY_SMOOTHING_SHIFT);
+    if(blended > HOME_WHEEL_MAX_SPEED_Q16)
+        blended = HOME_WHEEL_MAX_SPEED_Q16;
+    else if(blended < -HOME_WHEEL_MAX_SPEED_Q16)
+        blended = -HOME_WHEEL_MAX_SPEED_Q16;
+    wheel_velocity_q16 = (int32_t)blended;
+}
+
+static void advance_inertia_tick(void)
+{
+    int32_t decay = HOME_INERTIA_DECAY_Q16 / HZ;
+    int clicks;
+
+    if(!inertia_active)
+        return;
+    inertia_fraction_q16 += wheel_velocity_q16 / HZ;
+    clicks = inertia_fraction_q16 / HOME_POSITION_ONE;
+    if(clicks != 0) {
+        inertia_fraction_q16 -= clicks * HOME_POSITION_ONE;
+        apply_wheel_clicks(clicks);
+    }
+    if(wheel_velocity_q16 > 0)
+        wheel_velocity_q16 -=
+            wheel_velocity_q16 > decay ? decay : wheel_velocity_q16;
+    else if(wheel_velocity_q16 < 0)
+        wheel_velocity_q16 +=
+            wheel_velocity_q16 < -decay ? decay : -wheel_velocity_q16;
+    if(wheel_velocity_q16 > -HOME_INERTIA_STOP_SPEED_Q16 &&
+       wheel_velocity_q16 < HOME_INERTIA_STOP_SPEED_Q16) {
+        inertia_active = false;
+        wheel_velocity_q16 = 0;
+        inertia_fraction_q16 = 0;
+        wheel_detent_accumulator = 0;
+    }
+}
+
 static void sample_wheel(long now)
 {
     int current = wheel_status();
-    int count = crazypod_apps_visible_count();
 
     if(current >= 0) {
         current %= HOME_WHEEL_POSITIONS;
         if(!wheel_tracking) {
             wheel_tracking = true;
             wheel_position = current;
-            wheel_feedback_accumulator = 0;
-            crazypod_home_wheel_filter_reset(&wheel_filter);
-            snapping = false;
+            wheel_detent_accumulator = 0;
+            wheel_move_detents = 0;
+            wheel_velocity_q16 = 0;
+            inertia_fraction_q16 = 0;
+            inertia_active = false;
+            wheel_last_sample_tick = now;
+            motion_last_tick = now;
         }
         else {
             int delta = current - wheel_position;
@@ -190,39 +271,9 @@ static void sample_wheel(long now)
             else if(delta > HOME_WHEEL_POSITIONS / 2)
                 delta -= HOME_WHEEL_POSITIONS;
             wheel_position = current;
-            delta = crazypod_home_wheel_filter_apply(
-                &wheel_filter, delta);
             if(delta != 0) {
-                int32_t previous = position_q16;
-                int32_t maximum =
-                    (count > 0 ? count - 1 : 0) * HOME_POSITION_ONE;
-                int64_t next = (int64_t)position_q16 +
-                    (int64_t)delta * HOME_POSITION_ONE /
-                        HOME_WHEEL_CLICKS_PER_ICON;
-
-                if(next < 0)
-                    position_q16 = 0;
-                else if(next > maximum)
-                    position_q16 = maximum;
-                else
-                    position_q16 = (int32_t)next;
-                if(position_q16 != previous) {
-                    if(wheel_feedback_accumulator != 0 &&
-                       (wheel_feedback_accumulator < 0) != (delta < 0))
-                        wheel_feedback_accumulator = 0;
-                    wheel_feedback_accumulator += delta;
-                    if(wheel_feedback_accumulator >=
-                       HOME_WHEEL_FEEDBACK_CLICKS ||
-                       wheel_feedback_accumulator <=
-                       -HOME_WHEEL_FEEDBACK_CLICKS) {
-                        wheel_feedback_direction =
-                            wheel_feedback_accumulator < 0 ? -1 : 1;
-                        wheel_feedback_accumulator %=
-                            HOME_WHEEL_FEEDBACK_CLICKS;
-                    }
-                    update_nearest_selection();
-                    crazypod_desktop_native_invalidate(false);
-                }
+                record_wheel_velocity(delta, now);
+                apply_wheel_clicks(delta);
             }
         }
         wheel_last_seen = now;
@@ -233,12 +284,43 @@ static void sample_wheel(long now)
                     wheel_last_seen + HOME_WHEEL_RELEASE_TICKS)) {
         wheel_tracking = false;
         wheel_position = -1;
-        wheel_feedback_accumulator = 0;
-        crazypod_home_wheel_filter_reset(&wheel_filter);
-        begin_snap(now);
+        inertia_active = wheel_move_detents >= HOME_INERTIA_MIN_DETENTS &&
+            (wheel_velocity_q16 >= HOME_INERTIA_START_SPEED_Q16 ||
+             wheel_velocity_q16 <= -HOME_INERTIA_START_SPEED_Q16);
+        if(!inertia_active) {
+            wheel_velocity_q16 = 0;
+            wheel_detent_accumulator = 0;
+        }
+        inertia_fraction_q16 = 0;
+        motion_last_tick = now;
     }
 }
 #endif
+
+static void advance_motion(long now)
+{
+    long elapsed = now - motion_last_tick;
+    long steps;
+
+    if(elapsed <= 0)
+        return;
+    motion_last_tick = now;
+    if(elapsed > HZ / 2) {
+        position_q16 = selected_position_q16();
+        spring_velocity_q16 = 0;
+        springing = false;
+        inertia_active = false;
+        return;
+    }
+    for(steps = 0; steps < elapsed; ++steps) {
+#ifdef HAVE_WHEEL_POSITION
+        advance_inertia_tick();
+#endif
+        advance_spring_tick();
+    }
+    if(springing)
+        crazypod_desktop_native_invalidate(false);
+}
 
 lv_obj_t *crazypod_desktop_create(
     long now, const lv_font_t *metadata_font,
@@ -284,17 +366,20 @@ lv_obj_t *crazypod_desktop_create(
     crazypod_now_capsule_create(screen, metadata_font);
     selected_app = 0;
     position_q16 = 0;
-    snap_start_q16 = 0;
-    snap_target_q16 = 0;
-    snap_started = now;
+    spring_velocity_q16 = 0;
+    wheel_velocity_q16 = 0;
+    inertia_fraction_q16 = 0;
+    motion_last_tick = now;
+    wheel_last_sample_tick = now;
     wheel_last_seen = now;
     wheel_position = -1;
-    wheel_feedback_accumulator = 0;
+    wheel_detent_accumulator = 0;
+    wheel_move_detents = 0;
     wheel_feedback_direction = 0;
-    crazypod_home_wheel_filter_reset(&wheel_filter);
     desktop_active = true;
     wheel_tracking = false;
-    snapping = false;
+    springing = false;
+    inertia_active = false;
     crazypod_frameclock_reset(&render_clock, now);
 #ifdef HAVE_WHEEL_POSITION
     wheel_send_events(false);
@@ -319,21 +404,23 @@ int crazypod_desktop_selected(void)
 void crazypod_desktop_set_selected(int selected, bool animated)
 {
     selected = clamp_selected(selected);
-    selected_app = selected;
     wheel_tracking = false;
+    inertia_active = false;
+    wheel_detent_accumulator = 0;
+    wheel_velocity_q16 = 0;
+    motion_last_tick = current_tick;
     if(animated) {
-        snap_start_q16 = position_q16;
-        snap_target_q16 = selected * HOME_POSITION_ONE;
-        snap_started = current_tick;
-        snapping = snap_start_q16 != snap_target_q16;
-        update_selection_chrome();
-        crazypod_desktop_native_invalidate(false);
+        if(selected != selected_app) {
+            selected_app = selected;
+            update_selection_chrome();
+        }
+        start_spring();
     }
     else {
+        selected_app = selected;
         position_q16 = selected * HOME_POSITION_ONE;
-        snap_start_q16 = position_q16;
-        snap_target_q16 = position_q16;
-        snapping = false;
+        spring_velocity_q16 = 0;
+        springing = false;
         layout();
     }
 }
@@ -360,15 +447,15 @@ void crazypod_desktop_set_active(bool active, long now)
         return;
     wheel_tracking = false;
     wheel_position = -1;
-    wheel_feedback_accumulator = 0;
+    wheel_detent_accumulator = 0;
+    wheel_move_detents = 0;
     wheel_feedback_direction = 0;
-    crazypod_home_wheel_filter_reset(&wheel_filter);
-    if(snapping)
-        advance_snap(now);
+    advance_motion(now);
     position_q16 = selected_app * HOME_POSITION_ONE;
-    snap_start_q16 = position_q16;
-    snap_target_q16 = position_q16;
-    snapping = false;
+    spring_velocity_q16 = 0;
+    wheel_velocity_q16 = 0;
+    springing = false;
+    inertia_active = false;
 }
 
 void crazypod_desktop_tick(long now)
@@ -380,13 +467,13 @@ void crazypod_desktop_tick(long now)
 #else
     (void)now;
 #endif
-    if(!wheel_tracking)
-        advance_snap(now);
+    advance_motion(now);
 }
 
 bool crazypod_desktop_motion_active(void)
 {
-    return desktop_active && (wheel_tracking || snapping);
+    return desktop_active &&
+        (wheel_tracking || springing || inertia_active);
 }
 
 int crazypod_desktop_take_wheel_feedback(void)
