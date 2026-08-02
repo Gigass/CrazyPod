@@ -62,6 +62,7 @@ crazypod/miniapps/installer/crazypod_cpk_verifier.c
 crazypod/miniapps/installer/crazypod_miniapp_stage.c
 crazypod/miniapps/catalog/crazypod_miniapp_registry_loader.c
 crazypod/miniapps/runtime/crazypod_miniapp_native_runtime.c
+crazypod/miniapps/runtime/crazypod_miniapp_now_playing_service.c
 crazypod/miniapps/runtime/crazypod_miniapp_verification_cache.c
 crazypod/miniapps/installer/crazypod_miniapp_installer.c
 crazypod/miniapps/runtime/crazypod_miniapp_installed_verifier.c
@@ -115,6 +116,7 @@ crazypod/ui/features/music/crazypod_music_feature.c
 crazypod/ui/features/music/crazypod_music_library.c
 crazypod/ui/features/music/crazypod_music_root_preview.c
 crazypod/ui/features/now_playing/crazypod_now_playing_feature.c
+crazypod/ui/features/now_playing/crazypod_now_playing_theme.c
 crazypod/ui/features/now_playing/crazypod_now_playing_render.c
 crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c
 crazypod/ui/features/books/crazypod_books_feature.c

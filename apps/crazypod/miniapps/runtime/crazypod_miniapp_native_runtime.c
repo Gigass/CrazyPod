@@ -13,6 +13,7 @@
 #include "../crazypod_miniapp_storage.h"
 #include "crazypod_miniapp_host_system.h"
 #include "crazypod_miniapp_native_runtime.h"
+#include "crazypod_miniapp_now_playing_service.h"
 #include "crazypod_miniapp_resource_host.h"
 
 #if CONFIG_BINFMT == BINFMT_ROCK
@@ -162,8 +163,16 @@ static int host_service_call(
        (response_capacity > 0 && response == NULL))
         return CP_NATIVE_ERROR_ARGUMENT;
     if(service != CP_NATIVE_SERVICE_SYSTEM ||
-       operation != CP_NATIVE_SYSTEM_INFO)
+       operation != CP_NATIVE_SYSTEM_INFO) {
+        if(service == CP_NATIVE_SERVICE_NOW_PLAYING &&
+           native.metadata != NULL &&
+           native.metadata->kind ==
+               CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME)
+            return crazypod_miniapp_now_playing_service_call(
+                operation, request, request_size,
+                response, response_capacity);
         return CP_NATIVE_ERROR_UNSUPPORTED;
+    }
     if(response_capacity < sizeof(info))
         return CP_NATIVE_ERROR_LIMIT;
 

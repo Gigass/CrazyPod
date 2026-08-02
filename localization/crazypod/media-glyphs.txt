@@ -1,0 +1,7 @@
+# Baseline glyphs exercised by the checked real-media simulator library.
+# Keep this as characters, not track records: CrazyPod metadata UI must render
+# these scripts even when they do not occur in firmware translation strings.
+ !'(),-.124ABCDEFGHIKLMNOQRSTUVWacdeghiklmnoprstuvwy~
+あおくしすだとのまりれイザスズタチツトドビラリ・ー
+一之你俊儿元冯刚动動单双吧团囧国城増大天好封小就山崩张心所抄拉提揺摇明样汐淇焕爱生田男的空笙简舒茗莫菌见詩诗达这遇那郎锦陈鲤鳥鸟
+국남니대루뱅블비빅씨아애엔원투틀

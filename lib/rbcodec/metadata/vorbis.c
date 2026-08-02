@@ -426,8 +426,6 @@ long read_vorbis_tags(int fd, struct mp3entry *id3,
         if (!id3->has_embedded_albumart /* only use the first PICTURE */
             && !strcasecmp(name, "METADATA_BLOCK_PICTURE"))
         {
-            int after_block_pos = lseek(fd, 0, SEEK_CUR);
-
             char* buf = id3->path;
             size_t outlen = base64_decode(buf, MIN(read_len, (int32_t) sizeof(id3->path) - 1), buf);
 
@@ -439,10 +437,17 @@ long read_vorbis_tags(int fd, struct mp3entry *id3,
                 // But it's OK with our jpeg decoder if we add or miss few bytes in jpeg header
                 const int picframe_pos_b64 = base64_encoded_size(picframe_pos + 4);
 
+                if(picframe_pos_b64 >= read_len) {
+                    id3->albumart.type = AA_TYPE_UNKNOWN;
+                    continue;
+                }
+
                 id3->has_embedded_albumart = true;
                 id3->albumart.type |= AA_FLAG_VORBIS_BASE64;
                 id3->albumart.pos = picframe_pos_b64 + before_block_pos;
-                id3->albumart.size = after_block_pos - id3->albumart.pos;
+                /* Keep the logical Base64 payload length.  Physical Ogg page
+                 * headers must never be fed to the decoder. */
+                id3->albumart.size = read_len - picframe_pos_b64;
             }
             continue;
         }

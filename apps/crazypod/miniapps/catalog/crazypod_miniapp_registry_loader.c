@@ -13,8 +13,6 @@
 #include "../installer/crazypod_miniapp_install_record.h"
 
 #define MINIAPP_ROOT "/.crazypod/miniapps"
-#define IO_BUFFER_SIZE 512u
-
 static bool valid_id(const char *id)
 {
     size_t index;
@@ -122,65 +120,12 @@ bool crazypod_miniapp_registry_installed_version(
     return true;
 }
 
-static bool read_exact(int fd, void *buffer, size_t size)
-{
-    uint8_t *cursor = buffer;
-    while(size > 0) {
-        ssize_t count = read(fd, cursor, size);
-        if(count <= 0)
-            return false;
-        cursor += count;
-        size -= (size_t)count;
-    }
-    return true;
-}
-
-static bool read_at_exact(
-    int fd, uint32_t offset, void *buffer, size_t size)
-{
-    return lseek(fd, (off_t)offset, SEEK_SET) >= 0 &&
-           read_exact(fd, buffer, size);
-}
-
-static bool file_matches(
-    const char *path, const struct cpk_reader *reader, int entry_index)
-{
-    uint8_t installed[IO_BUFFER_SIZE];
-    uint8_t packaged[IO_BUFFER_SIZE];
-    const struct cpk_entry *entry = &reader->entries[entry_index];
-    uint32_t remaining = entry->size;
-    uint32_t package_offset = entry->data_offset;
-    int fd = open(path, O_RDONLY);
-
-    if(fd < 0 || filesize(fd) != (off_t)entry->size) {
-        if(fd >= 0)
-            close(fd);
-        return false;
-    }
-    while(remaining > 0) {
-        uint32_t amount = remaining > sizeof(installed)
-            ? (uint32_t)sizeof(installed) : remaining;
-        if(!read_exact(fd, installed, amount) ||
-           !read_at_exact(reader->fd, package_offset,
-                          packaged, amount) ||
-           memcmp(installed, packaged, amount) != 0) {
-            close(fd);
-            return false;
-        }
-        package_offset += amount;
-        remaining -= amount;
-    }
-    close(fd);
-    return true;
-}
-
 bool crazypod_miniapp_registry_package_matches(
     const char *id, const struct cpk_reader *reader,
     struct crazypod_miniapp_metadata *verified_metadata)
 {
     struct install_record record;
     char directory[MAX_PATH];
-    char path[MAX_PATH];
     int index;
 
     if(!make_path(directory, sizeof(directory), MINIAPP_ROOT, id) ||
@@ -189,14 +134,11 @@ bool crazypod_miniapp_registry_package_matches(
         return false;
     for(index = 0; index < reader->entry_count; ++index) {
         if(record.files[index].size != reader->entries[index].size ||
-           record.files[index].crc32 != reader->entries[index].crc32 ||
-           !make_path(
-               path, sizeof(path), directory,
-               reader->entries[index].name) ||
-           !file_matches(path, reader, index))
+           record.files[index].crc32 != reader->entries[index].crc32)
             return false;
     }
-    return true;
+    return populate_paths(verified_metadata, directory) ==
+        CRAZYPOD_MINIAPP_OK;
 }
 
 #endif

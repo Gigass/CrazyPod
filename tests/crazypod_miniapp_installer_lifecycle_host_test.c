@@ -22,6 +22,10 @@ static int recovery_count;
 static int verification_clear_count;
 static int package_open_count;
 static int publish_count;
+static int installed_verify_count;
+static int package_crc_count;
+static int verification_mark_count;
+static bool installed_same_version;
 
 DIR *test_opendir(const char *path)
 {
@@ -113,8 +117,10 @@ bool crazypod_miniapp_registry_installed_version(
     const char *id, uint32_t *version)
 {
     (void)id;
-    (void)version;
-    return false;
+    if(!installed_same_version)
+        return false;
+    *version = 1;
+    return true;
 }
 
 bool crazypod_miniapp_registry_package_matches(
@@ -123,8 +129,21 @@ bool crazypod_miniapp_registry_package_matches(
 {
     (void)id;
     (void)reader;
-    (void)verified_metadata;
-    return false;
+    if(!installed_same_version)
+        return false;
+    memset(verified_metadata, 0, sizeof(*verified_metadata));
+    snprintf(verified_metadata->id,
+             sizeof(verified_metadata->id), "test");
+    verified_metadata->version_code = 1;
+    return true;
+}
+
+int crazypod_miniapp_installed_verify(
+    const struct crazypod_miniapp_metadata *metadata)
+{
+    assert(metadata != NULL);
+    ++installed_verify_count;
+    return CRAZYPOD_MINIAPP_OK;
 }
 
 void crazypod_miniapp_verification_cache_clear(void)
@@ -137,6 +156,7 @@ void crazypod_miniapp_verification_cache_mark(
 {
     (void)id;
     (void)version_code;
+    ++verification_mark_count;
 }
 
 int crazypod_cpk_open(
@@ -189,6 +209,7 @@ int crazypod_cpk_verify_crc(
 {
     (void)reader;
     (void)entry;
+    ++package_crc_count;
     return CRAZYPOD_MINIAPP_OK;
 }
 
@@ -265,14 +286,29 @@ static void assert_usb_rescan_satisfies_prepare(void)
     assert(package_open_count == 2);
 }
 
+static void assert_same_version_fast_path(void)
+{
+    assert_boot_work();
+    installed_same_version = true;
+
+    assert(crazypod_miniapps_prepare() == CRAZYPOD_MINIAPP_OK);
+    assert(package_open_count == 2);
+    assert(installed_verify_count == 2);
+    assert(verification_mark_count == 2);
+    assert(package_crc_count == 0);
+    assert(publish_count == 0);
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 2);
     if(strcmp(argv[1], "lazy") == 0)
         assert_lazy_prepare();
-    else {
-        assert(strcmp(argv[1], "usb") == 0);
+    else if(strcmp(argv[1], "usb") == 0) {
         assert_usb_rescan_satisfies_prepare();
+    } else {
+        assert(strcmp(argv[1], "same") == 0);
+        assert_same_version_fast_path();
     }
     return 0;
 }

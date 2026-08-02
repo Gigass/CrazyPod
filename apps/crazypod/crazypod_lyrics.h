@@ -6,6 +6,7 @@
 
 bool crazypod_lyrics_load(const char *track_path);
 bool crazypod_lyrics_available(void);
+int crazypod_lyrics_current_line(uint32_t elapsed_ms);
 void crazypod_lyrics_window(uint32_t elapsed_ms,
                             const char **previous,
                             const char **current,

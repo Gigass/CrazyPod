@@ -52,6 +52,21 @@ bool crazypod_miniapp_host_memory_reserve(size_t size)
     return true;
 }
 
+bool crazypod_miniapp_host_memory_replace(
+    size_t old_size, size_t new_size)
+{
+    size_t retained;
+
+    if(!session_memory.active ||
+       old_size > session_memory.external_used)
+        return false;
+    retained = session_memory.external_used - old_size;
+    if(new_size > session_memory.external_limit - retained)
+        return false;
+    session_memory.external_used = retained + new_size;
+    return true;
+}
+
 void crazypod_miniapp_host_memory_release(size_t size)
 {
     if(size <= session_memory.external_used)

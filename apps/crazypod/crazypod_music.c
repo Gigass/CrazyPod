@@ -37,7 +37,7 @@
     CRAZYPOD_STATE_DIRECTORY "/favorites.tmp"
 #define CRAZYPOD_FAVORITES_NAME CP_TR("My Favorites")
 #define CRAZYPOD_MUSIC_CACHE_MAGIC 0x43504d4cu
-#define CRAZYPOD_MUSIC_CACHE_VERSION 3u
+#define CRAZYPOD_MUSIC_CACHE_VERSION 4u
 
 struct music_source_fingerprint {
     uint32_t file_count;
@@ -638,8 +638,7 @@ static void add_track(const char *path, off_t source_size,
         track->artwork_embedded = true;
         track->artwork_offset = metadata.albumart.pos;
         track->artwork_size = metadata.albumart.size;
-        track->artwork_type =
-            metadata.albumart.type & AA_CLEAR_FLAGS_MASK;
+        track->artwork_type = metadata.albumart.type;
     }
     close(fd);
 }

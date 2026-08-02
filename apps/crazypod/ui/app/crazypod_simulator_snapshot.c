@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "button.h"
 #include "kernel.h"
 #include "lvgl.h"
 
@@ -23,8 +24,11 @@
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/notes/crazypod_notes_feature.h"
+#include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../navigation/crazypod_route_query.h"
+#include "../shell/crazypod_shell.h"
+#include "crazypod_app_input.h"
 #include "crazypod_simulator_snapshot.h"
 
 long crazypod_simulator_snapshot_settle_ticks(void)
@@ -129,6 +133,335 @@ static bool open_miniapp_snapshot(
         host->render(false);
     }
     return true;
+}
+
+static bool open_now_playing_theme_snapshot(
+    const struct crazypod_simulator_snapshot_host *host,
+    const char *id)
+{
+    bool custom = id != NULL;
+    (void)crazypod_now_playing_theme_choice_count();
+    int theme_index = custom
+        ? crazypod_now_playing_themes_find(id) : -1;
+    int index = custom ? theme_index + 1 : 0;
+
+    if((custom && theme_index < 0) ||
+       !crazypod_now_playing_theme_select(index)) {
+        fprintf(stderr,
+                "CrazyPod now-playing theme smoke failed: index=%d count=%d\n",
+                theme_index, crazypod_now_playing_themes_count());
+        return false;
+    }
+    host->open_root_route(MUSIC_ROUTE_NOW_PLAYING);
+    if(custom && !crazypod_now_playing_theme_open())
+        fprintf(stderr,
+                "CrazyPod now-playing theme open failed: %d\n",
+                crazypod_now_playing_theme_last_error());
+    return custom
+        ? crazypod_now_playing_theme_open()
+        : !crazypod_now_playing_theme_open();
+}
+
+static bool open_now_playing_theme_from_home_hold(void)
+{
+    int theme_index;
+    const struct route_state *route;
+
+    (void)crazypod_now_playing_theme_choice_count();
+    theme_index = crazypod_now_playing_themes_find(
+        "now-playing-neon");
+    if(theme_index < 0 ||
+       !crazypod_now_playing_theme_select(theme_index + 1) ||
+       crazypod_shell_product_active())
+        return false;
+
+    crazypod_app_input_handle(BUTTON_MENU, 0, current_tick);
+    crazypod_app_input_tick(current_tick + HZ / 2, false);
+    route = crazypod_ui_routes_current();
+    if(route == NULL || route->route != MUSIC_ROUTE_NOW_PLAYING ||
+       !crazypod_now_playing_theme_open())
+        return false;
+
+    crazypod_app_input_handle(
+        BUTTON_MENU | BUTTON_REPEAT, 0, current_tick + HZ / 2 + 1);
+    crazypod_app_input_handle(
+        BUTTON_MENU | BUTTON_REL, 0, current_tick + HZ / 2 + 2);
+    route = crazypod_ui_routes_current();
+    return route != NULL && route->route == MUSIC_ROUTE_NOW_PLAYING &&
+        crazypod_now_playing_theme_open();
+}
+
+static bool exercise_now_playing_theme_controls(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    static const long buttons[] = {
+        BUTTON_SCROLL_FWD,
+        BUTTON_SCROLL_BACK,
+        BUTTON_LEFT,
+        BUTTON_RIGHT,
+        BUTTON_SELECT,
+        BUTTON_PLAY,
+    };
+    unsigned int index;
+
+    if(!open_now_playing_theme_snapshot(
+           host, "now-playing-neon"))
+        return false;
+    for(index = 0; index <
+         sizeof(buttons) / sizeof(buttons[0]); ++index) {
+        struct crazypod_input_event event =
+            crazypod_input_event_make(buttons[index], 0);
+
+        if(!crazypod_now_playing_theme_handle_input(&event) ||
+           !crazypod_now_playing_theme_open())
+            return false;
+    }
+    host->render(false);
+    return crazypod_now_playing_theme_open();
+}
+
+static bool exercise_signal_theme_controls(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    static const long buttons[] = {
+        BUTTON_SCROLL_FWD,
+        BUTTON_SCROLL_BACK,
+        BUTTON_LEFT,
+        BUTTON_RIGHT,
+        BUTTON_SELECT,
+        BUTTON_PLAY,
+    };
+    unsigned int index;
+
+    if(!open_now_playing_theme_snapshot(
+           host, "now-playing-signal"))
+        return false;
+    for(index = 0; index <
+         sizeof(buttons) / sizeof(buttons[0]); ++index) {
+        struct crazypod_input_event event =
+            crazypod_input_event_make(buttons[index], 0);
+
+        if(!crazypod_now_playing_theme_handle_input(&event) ||
+           !crazypod_now_playing_theme_open())
+            return false;
+    }
+    host->render(false);
+    return crazypod_now_playing_theme_open();
+}
+
+static bool open_signal_theme_panel(
+    const struct crazypod_simulator_snapshot_host *host,
+    int action)
+{
+    struct crazypod_input_event right =
+        crazypod_input_event_make(BUTTON_RIGHT, 0);
+    struct crazypod_input_event select =
+        crazypod_input_event_make(BUTTON_SELECT, 0);
+    int index;
+
+    if(crazypod_music_track_count() < 2 ||
+       !crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0) ||
+       !open_now_playing_theme_snapshot(host, "now-playing-signal") ||
+       !crazypod_now_playing_theme_handle_input(&select))
+        return false;
+    if(action >= 0) {
+        for(index = 0; index < action; ++index)
+            if(!crazypod_now_playing_theme_handle_input(&right))
+                return false;
+        if(!crazypod_now_playing_theme_handle_input(&select))
+            return false;
+    }
+    host->render(false);
+    return crazypod_now_playing_theme_open();
+}
+
+static bool exercise_signal_theme_panels(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    struct crazypod_input_event right =
+        crazypod_input_event_make(BUTTON_RIGHT, 0);
+    struct crazypod_input_event select =
+        crazypod_input_event_make(BUTTON_SELECT, 0);
+    struct crazypod_input_event menu =
+        crazypod_input_event_make(BUTTON_MENU, 0);
+    struct crazypod_input_event wheel =
+        crazypod_input_event_make(BUTTON_SCROLL_FWD, 0);
+
+    if(crazypod_music_track_count() < 2 ||
+       !crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0) ||
+       !open_now_playing_theme_snapshot(host, "now-playing-signal") ||
+       !crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_miniapps_feature_modal_visible() ||
+       !crazypod_now_playing_theme_handle_input(&menu) ||
+       !crazypod_miniapps_feature_modal_visible())
+        return false;
+
+    if(!crazypod_now_playing_theme_handle_input(&right) ||
+       !crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_miniapps_feature_modal_visible() ||
+       !crazypod_now_playing_theme_handle_input(&right) ||
+       !crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_miniapps_feature_modal_visible() ||
+       !crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_miniapps_feature_modal_visible())
+        return false;
+
+    if(!crazypod_now_playing_theme_handle_input(&right) ||
+       !crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_miniapps_feature_modal_visible() ||
+       !crazypod_now_playing_theme_handle_input(&menu) ||
+       !crazypod_miniapps_feature_modal_visible() ||
+       !crazypod_now_playing_theme_handle_input(&right) ||
+       !crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_miniapps_feature_modal_visible() ||
+       !crazypod_now_playing_theme_handle_input(&wheel) ||
+       !crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_miniapps_feature_modal_visible() ||
+       !crazypod_now_playing_theme_handle_input(&menu) ||
+       crazypod_miniapps_feature_modal_visible())
+        return false;
+
+    host->render(false);
+    return crazypod_now_playing_theme_open();
+}
+
+static bool open_now_playing_theme_panel(
+    const struct crazypod_simulator_snapshot_host *host,
+    bool queue)
+{
+    struct crazypod_input_event select =
+        crazypod_input_event_make(BUTTON_SELECT, 0);
+
+    if(crazypod_music_track_count() < 2 ||
+       !crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0) ||
+       !open_now_playing_theme_snapshot(
+           host, "now-playing-neon") ||
+       !crazypod_now_playing_theme_handle_input(&select))
+        return false;
+    if(queue && !crazypod_now_playing_theme_handle_input(&select))
+        return false;
+    host->render(false);
+    return crazypod_now_playing_theme_open();
+}
+
+static bool scroll_now_playing_theme_panel_repeated(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    struct crazypod_input_event wheel =
+        crazypod_input_event_make(
+            BUTTON_SCROLL_FWD | BUTTON_REPEAT, 0);
+
+    if(!open_now_playing_theme_panel(host, false) ||
+       !crazypod_now_playing_theme_handle_input(&wheel) ||
+       !crazypod_now_playing_theme_handle_input(&wheel) ||
+       !crazypod_now_playing_theme_handle_input(&wheel))
+        return false;
+    return crazypod_miniapps_feature_input_count() == 1 &&
+        crazypod_now_playing_theme_open();
+}
+
+static bool return_from_saved_seek_with_menu(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    struct crazypod_input_event right =
+        crazypod_input_event_make(BUTTON_RIGHT, 0);
+    struct crazypod_input_event select =
+        crazypod_input_event_make(BUTTON_SELECT, 0);
+    struct crazypod_input_event menu =
+        crazypod_input_event_make(BUTTON_MENU, 0);
+    unsigned index;
+
+    if(!open_now_playing_theme_panel(host, false))
+        return false;
+    for(index = 0; index < 4; ++index)
+        if(!crazypod_now_playing_theme_handle_input(&right))
+            return false;
+    if(!crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_miniapps_feature_modal_visible() ||
+       !crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_miniapps_feature_modal_visible() ||
+       !crazypod_now_playing_theme_handle_input(&menu) ||
+       crazypod_miniapps_feature_modal_visible())
+        return false;
+    host->render(false);
+    return crazypod_now_playing_theme_open();
+}
+
+static bool exit_now_playing_theme_with_menu(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    struct crazypod_input_event menu =
+        crazypod_input_event_make(BUTTON_MENU, 0);
+
+    if(!open_now_playing_theme_snapshot(
+           host, "now-playing-neon") ||
+       crazypod_now_playing_theme_handle_input(&menu))
+        return false;
+    host->pop_route();
+    return !crazypod_now_playing_theme_open();
+}
+
+static bool open_now_playing_theme_media(
+    const struct crazypod_simulator_snapshot_host *host,
+    unsigned selected_index)
+{
+    if(crazypod_music_track_count() < 2 ||
+       selected_index >= (unsigned)crazypod_music_track_count() ||
+       !crazypod_music_play(
+           CRAZYPOD_SCOPE_ALL, 0, (int)selected_index) ||
+       !open_now_playing_theme_snapshot(
+           host, "now-playing-neon"))
+        return false;
+    return crazypod_now_playing_theme_open();
+}
+
+static bool open_now_playing_theme_media_next(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    struct crazypod_input_event event =
+        crazypod_input_event_make(BUTTON_RIGHT, 0);
+
+    return open_now_playing_theme_media(host, 0) &&
+        crazypod_now_playing_theme_handle_input(&event) &&
+        crazypod_now_playing_theme_open();
+}
+
+static bool open_now_playing_theme_real_library(
+    const struct crazypod_simulator_snapshot_host *host,
+    const char *id)
+{
+    crazypod_music_cancel_scan();
+    crazypod_music_scan();
+    if(crazypod_music_track_count() <= 0 ||
+       !crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0))
+        return false;
+    return open_now_playing_theme_snapshot(host, id);
+}
+
+static bool exercise_now_playing_theme_media_controls(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    if(!open_now_playing_theme_media(host, 0))
+        return false;
+    return exercise_now_playing_theme_controls(host);
+}
+
+static bool build_now_playing_theme_media_catalog(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    crazypod_music_cancel_scan();
+    crazypod_music_scan();
+    return crazypod_music_track_count() >= 2 &&
+        open_now_playing_theme_snapshot(host, NULL);
+}
+
+static bool open_now_playing_default_media(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    return crazypod_music_track_count() >= 2 &&
+        crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0) &&
+        open_now_playing_theme_snapshot(host, NULL);
 }
 
 static bool show_miniapp_exit_prompt(
@@ -435,6 +768,60 @@ bool crazypod_simulator_snapshot_prepare(
         host->open_app(CRAZYPOD_APP_NOTES);
     else if(strcmp(screen, "miniapps-list") == 0)
         host->open_app(CRAZYPOD_APP_MINI_APPS);
+    else if(strcmp(screen, "customize") == 0)
+        host->open_app(CRAZYPOD_APP_CUSTOMIZE);
+    else if(strcmp(screen, "now-playing-theme") == 0)
+        return open_now_playing_theme_snapshot(
+            host, "now-playing-neon");
+    else if(strcmp(screen, "now-playing-theme-home-hold") == 0)
+        return open_now_playing_theme_from_home_hold();
+    else if(strcmp(screen, "now-playing-theme-rerender") == 0) {
+        if(!open_now_playing_theme_snapshot(
+               host, "now-playing-neon"))
+            return false;
+        host->render(false);
+        return crazypod_now_playing_theme_open() &&
+            crazypod_miniapps_feature_surface_attached(
+                crazypod_shell_product_content());
+    }
+    else if(strcmp(screen, "now-playing-theme-controls") == 0)
+        return exercise_now_playing_theme_controls(host);
+    else if(strcmp(screen, "now-playing-signal-controls") == 0)
+        return exercise_signal_theme_controls(host);
+    else if(strcmp(screen, "now-playing-signal-all-panels") == 0)
+        return exercise_signal_theme_panels(host);
+    else if(strcmp(screen, "now-playing-signal-panel") == 0)
+        return open_signal_theme_panel(host, -1);
+    else if(strcmp(screen, "now-playing-signal-queue") == 0)
+        return open_signal_theme_panel(host, 0);
+    else if(strcmp(screen, "now-playing-signal-mode") == 0)
+        return open_signal_theme_panel(host, 2);
+    else if(strcmp(screen, "now-playing-signal-lyrics") == 0)
+        return open_signal_theme_panel(host, 3);
+    else if(strcmp(screen, "now-playing-signal-seek") == 0)
+        return open_signal_theme_panel(host, 4);
+    else if(strcmp(screen, "now-playing-theme-panel") == 0)
+        return open_now_playing_theme_panel(host, false);
+    else if(strcmp(screen, "now-playing-theme-panel-repeat") == 0)
+        return scroll_now_playing_theme_panel_repeated(host);
+    else if(strcmp(screen, "now-playing-theme-seek-menu-back") == 0)
+        return return_from_saved_seek_with_menu(host);
+    else if(strcmp(screen, "now-playing-theme-queue") == 0)
+        return open_now_playing_theme_panel(host, true);
+    else if(strcmp(screen, "now-playing-theme-menu-exit") == 0)
+        return exit_now_playing_theme_with_menu(host);
+    else if(strcmp(screen, "now-playing-theme-media-controls") == 0)
+        return exercise_now_playing_theme_media_controls(host);
+    else if(strcmp(screen, "now-playing-theme-media") == 0)
+        return open_now_playing_theme_media(host, 0);
+    else if(strcmp(screen, "now-playing-theme-media-next") == 0)
+        return open_now_playing_theme_media_next(host);
+    else if(strcmp(screen, "now-playing-theme-media-catalog") == 0)
+        return build_now_playing_theme_media_catalog(host);
+    else if(strcmp(screen, "now-playing-default-media") == 0)
+        return open_now_playing_default_media(host);
+    else if(strcmp(screen, "now-playing-default") == 0)
+        return open_now_playing_theme_snapshot(host, NULL);
     else if(strcmp(screen, "note-compose") == 0) {
         host->open_app(CRAZYPOD_APP_NOTES);
         host->begin_note_composer(0, false);
@@ -524,6 +911,21 @@ bool crazypod_simulator_snapshot_prepare(
         host->render(false);
         return crazypod_miniapps_is_open();
     }
+    else if(strncmp(
+                screen, "now-playing-theme-media-step-", 29) == 0) {
+        char *end = NULL;
+        long step = strtol(screen + 29, &end, 10);
+
+        if(end == screen + 29 || *end != '\0' ||
+           step < 0 || step >= crazypod_music_track_count())
+            return false;
+        return open_now_playing_theme_media(host, (unsigned)step);
+    }
+    else if(crazypod_now_playing_theme_choice_count() > 1 &&
+            crazypod_now_playing_themes_find(screen) >= 0)
+        return getenv("CRAZYPOD_SIM_REAL_LIBRARY") != NULL
+            ? open_now_playing_theme_real_library(host, screen)
+            : open_now_playing_theme_snapshot(host, screen);
     else
         return open_miniapp_snapshot(host, screen, -1);
     return true;

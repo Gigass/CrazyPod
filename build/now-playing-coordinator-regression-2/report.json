@@ -1,0 +1,24 @@
+{
+  "musicDirectory": "/Users/gigass/DEVELOP/GitHub/CrazyPod/Rockbox-UI-UX-Overhaul/build-sim/test-media-archive",
+  "trackCount": 2,
+  "uniqueFrameCount": 2,
+  "controls": "passed",
+  "frames": [
+    {
+      "index": 0,
+      "frame": "track-00.bmp",
+      "sha256": "7491ce4deb8272a49cd2ea4635cdaf5ee40e3b2756f4221622a4779c70fa084d",
+      "coverSampleColors": 247,
+      "coverHorizontalDiversity": 23,
+      "coverDominantRatio": 0.0556
+    },
+    {
+      "index": 1,
+      "frame": "track-01.bmp",
+      "sha256": "b942e5025d71d3290c16446febdce687e965dcff8d9c086ffee4bf89270d6024",
+      "coverSampleColors": 247,
+      "coverHorizontalDiversity": 23,
+      "coverDominantRatio": 0.0556
+    }
+  ]
+}

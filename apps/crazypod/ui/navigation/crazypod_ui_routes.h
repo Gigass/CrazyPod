@@ -105,9 +105,10 @@ enum crazypod_route {
     DIY_ROUTE_WALLPAPER_FILES,
     DIY_ROUTE_WALLPAPER_CROP,
     DIY_ROUTE_LAYOUT,
+    DIY_ROUTE_NOW_PLAYING_THEMES,
 };
 
-#define CRAZYPOD_ROUTE_COUNT ((int)DIY_ROUTE_LAYOUT + 1)
+#define CRAZYPOD_ROUTE_COUNT ((int)DIY_ROUTE_NOW_PLAYING_THEMES + 1)
 
 struct route_state {
     enum crazypod_route route;

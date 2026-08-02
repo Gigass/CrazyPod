@@ -20,6 +20,8 @@ int crazypod_miniapp_runtime_last_error(void);
 void crazypod_miniapp_runtime_opened(void);
 void crazypod_miniapp_runtime_push_wheel(
     const struct cp_input_event *event);
+void crazypod_miniapp_runtime_push_wheel_coalesced(
+    const struct cp_input_event *event);
 bool crazypod_miniapp_runtime_next_input(
     bool frame_due, struct cp_input_event *event);
 void crazypod_miniapp_runtime_request_render(void);

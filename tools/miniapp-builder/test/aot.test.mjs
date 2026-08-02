@@ -56,7 +56,7 @@ test("React Profile emits native C without a JavaScript runtime", () => {
 test("repository native reference generates deterministic C", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "cp-aot-"));
   const repository = path.resolve(import.meta.dirname, "../../..");
-  const project = path.join(repository, "miniapps/native-reference");
+  const project = path.join(repository, "miniapps/apps/native-reference");
   const first = await generateNativeProject(project, {
     output: path.join(directory, "first.c"),
   });

@@ -1,0 +1,40 @@
+init_volume_names: vol<0> = <HDD0> 
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/DOES (ドーズ)-トーチ・ライター (Torch Lighter).ogg
+Codec: calling entrypoint
+Codec: entering run state
+Codec: cleaning up
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/대국남아 (大国男儿)-비틀비틀 (Staggering).ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/DOES (ドーズ)-トーチ・ライター (Torch Lighter).ogg
+Codec: calling entrypoint
+Codec: entering run state
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/대국남아 (大国男儿)-비틀비틀 (Staggering).ogg
+Codec: cleaning up
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/DOES (ドーズ)-トーチ・ライター (Torch Lighter).ogg
+Codec: calling entrypoint
+Codec: entering run state
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/대국남아 (大国男儿)-비틀비틀 (Staggering).ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/双笙 (陈元汐)-达拉崩吧.ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/Candee!-Ein Kleines Lied (Around the World).ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/BIGBANG (빅뱅)-EMOTION.ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/HowieQuan-Flower Dance.ogg
+Codec: cleaning up
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/MIC男团-Get It Hot.ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/DOES (ドーズ)-トーチ・ライター (Torch Lighter).ogg
+Codec: calling entrypoint
+Codec: entering run state
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/대국남아 (大国男儿)-비틀비틀 (Staggering).ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/双笙 (陈元汐)-达拉崩吧.ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/Candee!-Ein Kleines Lied (Around the World).ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/BIGBANG (빅뱅)-EMOTION.ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/HowieQuan-Flower Dance.ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/MIC男团-Get It Hot.ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/冯提莫-刚好遇见你.ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/BIGBANG (빅뱅)-Hands Up (Live).ogg
+Read metadata for /Music/QQ音乐.cover-backup-20260516-005509/THE STREET BEATS (ザ・ストリート・ビーツ)-I WANNA CHANGE.ogg
+Rockbox compiled with SDL 2.32.8 but running on SDL 2.32.8
+SDL Audio Drivers supported:
+   coreaudio 
+   disk 
+   dummy (active)
+SDL Audio Devices present:
+  'System audio output device'

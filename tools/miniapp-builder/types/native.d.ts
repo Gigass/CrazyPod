@@ -2,6 +2,11 @@ declare module "react" {
   export type Dispatch<T> = (value: T | ((previous: T) => T)) => void;
 
   export function useState<T>(initial: T): [T, Dispatch<T>];
+  export function useFixedArray(
+    length: number, initial: number,
+  ): [readonly number[], (index: number, value: number) => void];
+  export function useOnMount(callback: () => void): void;
+  export function useInterval(milliseconds: number, callback: () => void): void;
 
   const React: Record<string, never>;
   export default React;
@@ -91,6 +96,7 @@ declare module "react-native" {
 
   export interface TextProps extends ViewProps {
     children?: JSX.Element | string | number;
+    numberOfLines?: number;
   }
 
   export interface ValueProps extends ViewProps {
@@ -130,6 +136,78 @@ declare module "react-native" {
   export const StyleSheet: {
     create<T extends Record<string, ViewStyle | TextStyle>>(styles: T): T;
   };
+}
+
+declare module "@crazypod/now-playing" {
+  import type { Component, TextProps, ViewProps } from "react-native";
+
+  export interface NowPlayingArtworkProps extends ViewProps {
+    variant?: number;
+    /** Compatibility hint for ABI 8 themes; ABI 9 refreshes automatically. */
+    revision?: number;
+  }
+
+  export interface SoundWaveProps extends ViewProps {
+    phase?: number;
+    playing?: boolean;
+    waveStyle?: number;
+  }
+
+  export const NowPlayingArtwork: Component<NowPlayingArtworkProps>;
+  export const SoundWave: Component<SoundWaveProps>;
+  export const MarqueeText: Component<TextProps>;
+  export function refreshNowPlaying(
+    setTitle: (value: string) => void,
+    setArtist: (value: string) => void,
+    setAlbum: (value: string) => void,
+    /** Fixed 10-item state; indices 8/9 are normalized 0–1000 peaks. */
+    setInfo: (index: number, value: number) => void,
+    setResult: (value: number) => void,
+  ): void;
+  export function togglePlayback(setResult: (value: number) => void): void;
+  export function previousTrack(setResult: (value: number) => void): void;
+  export function nextTrack(setResult: (value: number) => void): void;
+  export function adjustVolume(
+    delta: number, setResult: (value: number) => void,
+  ): void;
+  export function seekPlayback(
+    positionMs: number, setResult: (value: number) => void,
+  ): void;
+  export function toggleFavorite(setResult: (value: number) => void): void;
+  export function cyclePlaybackMode(setResult: (value: number) => void): void;
+  export function setFavorite(
+    favorite: boolean, setResult: (value: number) => void,
+  ): void;
+  export function setPlaybackMode(
+    mode: "normal" | "shuffle" | "repeat-all" | "repeat-one",
+    setResult: (value: number) => void,
+  ): void;
+  export function seekBy(
+    deltaMs: number, setResult: (value: number) => void,
+  ): void;
+  export function refreshQueueState(
+    setInfo: (index: number, value: number) => void,
+    setResult: (value: number) => void,
+  ): void;
+  export function refreshQueueItem(
+    index: number,
+    setTitle: (value: string) => void,
+    setArtist: (value: string) => void,
+    setAlbum: (value: string) => void,
+    setInfo: (index: number, value: number) => void,
+    setResult: (value: number) => void,
+  ): void;
+  export function playQueueItem(
+    index: number, setResult: (value: number) => void,
+  ): void;
+  export function refreshLyricsWindow(
+    elapsedMs: number,
+    setPrevious: (value: string) => void,
+    setCurrent: (value: string) => void,
+    setNext: (value: string) => void,
+    setInfo: (index: number, value: number) => void,
+    setResult: (value: number) => void,
+  ): void;
 }
 
 declare module "@crazypod/game2048" {

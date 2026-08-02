@@ -14,6 +14,7 @@
 #include "crazypod_customize_controller.h"
 #include "crazypod_customize_feature.h"
 #include "../photos/crazypod_photos_feature.h"
+#include "../now_playing/crazypod_now_playing_feature.h"
 #include "crazypod_preset_editor_controller.h"
 #include "crazypod_wallpaper_crop_controller.h"
 #include "crazypod_wallpaper_crop_screen.h"
@@ -80,6 +81,8 @@ int crazypod_customize_feature_item_count(
         return 0;
     case DIY_ROUTE_LAYOUT:
         return CRAZYPOD_CUSTOMIZE_LAYOUT_COUNT;
+    case DIY_ROUTE_NOW_PLAYING_THEMES:
+        return crazypod_now_playing_theme_choice_count();
     default:
         return 0;
     }
@@ -133,6 +136,8 @@ const char *crazypod_customize_feature_title(
         return CP_TR("CROP HOME");
     case DIY_ROUTE_LAYOUT:
         return CP_TR("LAYOUT");
+    case DIY_ROUTE_NOW_PLAYING_THEMES:
+        return CP_TR("Themes");
     default:
         return "";
     }
@@ -145,6 +150,8 @@ bool crazypod_customize_feature_item_is_current(
         crazypod_appearance_get();
 
     switch(state->route) {
+    case DIY_ROUTE_NOW_PLAYING_THEMES:
+        return crazypod_now_playing_theme_choice_current(index);
     case DIY_ROUTE_ICONS:
         return index == appearance->icon_theme;
     case DIY_ROUTE_CHOICES: {
@@ -260,6 +267,9 @@ bool crazypod_customize_feature_item_title(
     case DIY_ROUTE_LAYOUT:
         *title = index >= 0 && index < CRAZYPOD_CUSTOMIZE_LAYOUT_COUNT
             ? crazypod_customize_layout_titles[index] : "";
+        return true;
+    case DIY_ROUTE_NOW_PLAYING_THEMES:
+        *title = crazypod_now_playing_theme_choice_title(index);
         return true;
     default:
         return false;

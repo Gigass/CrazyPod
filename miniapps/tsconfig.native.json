@@ -14,9 +14,11 @@
     "../tools/miniapp-builder/types/native.d.ts"
   ],
   "include": [
-    "native-reference/**/*.tsx",
-    "capability-lab/App.tsx",
-    "game2048/App.tsx"
+    "apps/native-reference/**/*.tsx",
+    "apps/capability-lab/App.tsx",
+    "apps/game2048/App.tsx",
+    "themes/atelier-hifi/App.tsx",
+    "themes/signal-one/App.tsx"
   ],
   "exclude": [
     "**/generated/**",

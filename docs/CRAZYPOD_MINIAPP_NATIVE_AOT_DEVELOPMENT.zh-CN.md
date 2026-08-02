@@ -95,31 +95,25 @@ React 包。
 
 当前支持：
 
-- 一个默认导出的 `App` 函数，且 JSX 根必须是 `View`；
-- 顶层整数 `useState(initial)`；
-- 函数式或直接 setter；
-- 整数算术、比较、逻辑、位运算和三元表达式；
-- `&&` 和三元 JSX 条件；
-- 字符串、整数和条件文本；
-- `StyleSheet.create` 的静态对象；
-- 默认纵向 Flex、`SafeAreaView`、根级 `Modal`、`flexWrap`、absolute
-  position、overflow 和构建期动画资源；
-- `AnimatedImage` 播放构建期转换的 GIF/Lottie 精灵表；
-- 本架构文档列出的组件、事件和物理输入；
-- 同一事件中的多个 setter。
+- 一个默认导出的 `App`，以及构建期内联的有界自定义函数组件；
+- 整数、布尔、字符串枚举、有界字符串、固定对象、固定数组和固定对象数组状态；
+- `useFixedArray`、`useBoundedList`、固定 `.map()` 和有界 `FlatList`；
+- 固定对象 reducer、标量 Context、`useEffect`、mount/unmount hook 和 interval；
+- 有界本地 action、固定循环、持久化状态和应用私有文件；
+- `delay` 降低得到的固定 async 状态机和有界 Promise continuation；
+- 源码型 React Native npm 包；
+- 条件 JSX、运行期整数布局值和两套完整静态样式之间的切换；
+- 架构文档列出的控件、事件、物理输入和构建期转换资源；
+- 通用有界 Host service dispatcher。
 
 当前不支持：
 
-- 任意 npm React 组件；
-- 自定义函数组件和 props；
-- 数组 `.map()`、动态列表 diff；
-- `FlatList`、可编辑 `TextInput` 和 `Picker`；
-- 对象/数组状态；
-- `useEffect`、`useMemo`、`useReducer`、Context；
-- Promise、async/await、网络；
-- 运行期样式对象或完整 CSS；
-- 任意 TypeScript 函数自动翻译为 C；
-- 浏览器 DOM 或 React Native bridge。
+- 任意堆对象、原型语义、无界数组和通用动态列表 diff；
+- 可编辑 `TextInput`、`Picker`、`useMemo` 和完整 React reconciliation；
+- 通用 Promise 构造/拒绝、任意 async I/O 和网络；
+- 带 JavaScript 运行时语义或原生二进制的普通 npm 组件；
+- 任意运行期样式对象、完整 CSS、DOM、Node API 或 Metro；
+- 任意 TypeScript 自动翻译为 C。
 
 违反子集时编译器必须报具体源码位置并停止，不能把代码留到设备端解释。
 
@@ -144,6 +138,10 @@ React 包。
 ```
 
 `id` 必须匹配 `[a-z][a-z0-9_-]{0,31}`。`versionCode` 只能递增。
+
+正在播放主题把 `manifest.kind` 设为 `now-playing-theme`。创建、API 和安装流程
+见[正在播放主题](CRAZYPOD_NOW_PLAYING_THEMES.zh-CN.md)。普通 Mini App 的
+`kind` 为 `miniapp`，也可省略该字段以兼容旧包。
 
 ## 5. 命令
 

@@ -15,7 +15,7 @@ app.arm（iPod 6G） / app.dylib（模拟器）
         ↓
 CPK5
         ↓ 固件严格校验、安装、原生加载
-Native ABI 1.2
+Native ABI 1.9
         ↓ 句柄和纯数据调用
 宿主持有的 LVGL 9.5
 ```
@@ -29,7 +29,7 @@ JS 源码解析或 UI 命令批处理解释器。`app.arm` 直接执行生成的
 | 合约 | 当前值 |
 | --- | --- |
 | 包格式 | CPK5 |
-| Native ABI | major 1, minor 1 |
+| Native ABI | major 1, minor 5 |
 | React Profile | 1 |
 | 硬件目标 | iPod Classic 6G，target id 71 |
 | UI | LVGL 9.5，宿主持有 |
@@ -82,6 +82,20 @@ AOT 产物保留节点句柄。只有 JSX 条件导致结构签名变化时才�
 普通状态变化只更新受影响的动态属性。这个约束是 2048 连续输入不再迟缓
 的关键，禁止退回“每次状态变化删除并重建整棵 LVGL 树”。
 
+动态更新有两层去重：编译器不把 `styles.title` 之类样式属性名误判为同名
+state，只生成值确实可变的属性，并在处理器没有改变任何状态时跳过渲染；
+固件场景层拒绝同值属性写入，只在插入/删除或可见性、禁用、可聚焦、焦点监听
+发生变化后重新计算焦点。播放主题的定时刷新不能反复提交静态面板布局。
+
+Mini App 包目录在启动 Logo 已显示后统一预热。对于版本号、入口尺寸和 CRC
+记录均未变化的包，固件只校验已安装文件一次，不再完整读取 CPK 后又把 CPK
+与安装目录逐字节比较。新安装、升级、记录不匹配或安装文件损坏时仍执行完整
+CPK 校验和原子发布。具体 App 的机器码仍在打开时载入共享 plugin buffer。
+
+首页长按 Menu 打开正在播放后，该次按键手势一直由首页持有到 release；加载
+期间积压的 repeat 不会被新页面误认为强制退出。释放后开始的新 Menu 手势仍
+保留主题面板返回和固件安全退出语义。
+
 ## 5. 布局和组件
 
 React Native 风格属性在构建期映射到 LVGL：
@@ -90,6 +104,7 @@ React Native 风格属性在构建期映射到 LVGL：
 | --- | --- |
 | `View` | Screen/View |
 | `Text` | Label |
+| `Text numberOfLines` | 固定 1–8 行并在溢出时显示省略号 |
 | `Pressable` / `Button` | Button |
 | `ScrollView` | Scroll，当前只支持状态驱动的 `scrollX` / `scrollY` |
 | `Image` | Image |
@@ -99,7 +114,10 @@ React Native 风格属性在构建期映射到 LVGL：
 | `Slider` | Slider |
 | `Switch` | Switch |
 | `CheckBox` | Checkbox |
-| `Modal` | Host-owned View subtree |
+| `Modal` | Host-owned Modal subtree |
+| `FlatList` | 构建期固定容量 Scroll subtree |
+| `NowPlayingArtwork` | 主题专用的宿主动态封面 |
+| `SoundWave` | 主题专用的宿主原生声波 |
 
 `StyleSheet.create` 支持编译期常量样式。Flexbox 包含 row、column、wrap、
 align、justify、grow、padding、margin、尺寸、颜色、边框、圆角和透明度；
@@ -108,15 +126,17 @@ align、justify、grow、padding、margin、尺寸、颜色、边框、圆角和
 `Modal` 是随条件 JSX 创建和释放的宿主子树，Profile v1 不承诺焦点陷阱。
 无限旋转视觉应使用构建期动画资源和 `AnimatedImage`。
 
-`FlatList`、`TextInput` 和 `Picker` 在 Profile v1 中会被编译器拒绝：当前
-Profile 没有动态列表 diff、字符串状态/文字输入法和选项数据模型。Native ABI
-保留的底层 List/Textarea/Dropdown 对象不是开发者 API，不能据此宣称支持。
+`FlatList` 只接受固定数组或有界列表，最大行数在构建期确定；它不是通用动态
+列表 diff。`TextInput` 和 `Picker` 仍会被编译器拒绝。Native ABI 保留的底层
+Textarea/Dropdown 对象不是开发者 API，不能据此宣称支持。
 
 ## 6. 状态和事件
 
-React Profile v1 的状态是生成 C 中的静态 `int32_t`。setter 保留 React
-事件批处理语义：直接 setter 读取本次 render 的闭包快照；同一处理器中的
-函数式更新按调用顺序读取前一次 updater 的结果；处理器结束后统一刷新一次。
+React Profile v1 状态落为生成 C 中的固定内存。支持整数、布尔、字符串枚举、
+127 字节有界字符串、固定对象、固定数组、固定对象数组和有界列表；容量和字段
+布局都必须在编译期确定。setter 保留 React 事件批处理语义：直接 setter 读取
+本次 render 的闭包快照；同一处理器中的函数式更新按顺序读取前次结果；处理器
+结束后统一刷新一次。
 
 支持 UI 事件：
 
@@ -139,32 +159,30 @@ React Profile v1 的状态是生成 C 中的静态 `int32_t`。setter 保留 Rea
 
 ## 7. Host 能力
 
-ABI 1 当前只承诺：
+ABI 1.9 当前承诺（播放主题能力始于 ABI 1.4，文本裁切始于 ABI 1.5，
+双声道峰值始于 ABI 1.6）：
 
 - 原子状态读写；
 - 包资源 stat/read；
 - 请求关闭；
 - 日志；
+- 私有沙箱文件；
+- 有界 Host service dispatcher；
+- 仅供正在播放主题使用的播放快照、归一化双声道峰值、控制、动态封面和原生声波；
+- 平台统一的当前/下一首/下两首封面调度、已提交封面和主题节点自动原子更新；
 - epoch 和 monotonic 时间；
 - Native UI。
 
-旧 ABI3 曾经拥有的文件选择、播放器控制、PCM、音效、设备设置和闹钟接口
-尚未进入 Native ABI 1。它们不能在文档或 Capability Lab 中宣称可用。
-以后增加时只能追加 vtable 尾部字段、提升 minor 并用 capability bit
-协商，不能复活设备端脚本运行时。
+主题播放控制不是普通 Mini App 权限。文件选择、原始 PCM、音效、设备设置和闹钟
+接口尚未进入当前 ABI。以后增加时只能提升 minor 或增加有界服务并同步固件、
+SDK、编译器和模拟器，不能复活设备端脚本运行时。
 
-## 8. 2048 的特殊说明
+## 8. 2048 的说明
 
-React Profile v1 不是任意 TypeScript-to-C 编译器。2048 的棋盘算法通过
-构建器识别的 `@crazypod/game2048` 平台内建生成确定性 C，包括：
-
-- 四方向压缩和一次合并；
-- 计分、随机生成、胜利和无可移动判断；
-- CRC 校验的原生状态记录。
-
-这证明“React UI + 原生领域模块”路径可行，但不能被描述成任意 TypeScript
-业务逻辑都能直接 AOT。通用逻辑能力必须通过扩展 React Profile，或新增
-经过测试、版本化的平台模块实现。
+当前 2048 使用通用的有界 action、固定数组、固定循环和持久化能力。编译器不再
+包含游戏专用包名、状态名或 C 运行时。这证明固定内存业务逻辑可以直接 AOT，
+仍不代表任意 TypeScript 都能翻译为 C。递归、无界循环、动态堆结构和通用
+JavaScript 语义继续被拒绝。
 
 ## 9. 已删除路径
 

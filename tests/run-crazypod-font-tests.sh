@@ -22,14 +22,26 @@ python3 tools/crazypod_font_tool.py collect \
     --input localization/crazypod/pt-BR.json \
     --output "$test_root/crazypod-all.txt"
 
+python3 tools/crazypod_font_tool.py collect \
+    --input "$test_root/crazypod-all.txt" \
+    --input localization/crazypod/media-glyphs.txt \
+    --output "$test_root/crazypod-metadata.txt"
+
 for font in \
     lib/lvgl/src/font/lv_font_crazypod_i18n_8.c \
-    lib/lvgl/src/font/lv_font_crazypod_i18n_10.c \
+    lib/lvgl/src/font/lv_font_crazypod_i18n_10.c
+do
+    python3 tools/crazypod_font_tool.py check \
+        --chars "$test_root/crazypod-all.txt" \
+        --lvgl-c "$font"
+done
+
+for font in \
     lib/lvgl/src/font/lv_font_crazypod_i18n_12.c \
     lib/lvgl/src/font/lv_font_source_han_sans_sc_14_cjk.c \
     lib/lvgl/src/font/lv_font_source_han_sans_sc_16_cjk.c
 do
     python3 tools/crazypod_font_tool.py check \
-        --chars "$test_root/crazypod-all.txt" \
+        --chars "$test_root/crazypod-metadata.txt" \
         --lvgl-c "$font"
 done

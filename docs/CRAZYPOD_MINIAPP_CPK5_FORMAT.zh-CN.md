@@ -20,13 +20,14 @@ icon.bin
 ```json
 {
   "format": 5,
+  "kind": "miniapp",
   "id": "example",
   "name": "Example",
   "version": "1.0.0",
   "versionCode": 10000,
   "runtime": "native-aot",
   "abiMajor": 1,
-  "abiMinor": 1,
+  "abiMinor": 5,
   "reactProfile": 1,
   "target": "ipod6g",
   "entry": "app.arm",
@@ -40,9 +41,14 @@ icon.bin
 模拟器目标必须是 `simulator` 且 entry 必须是 `app.dylib`；真机目标必须是
 `ipod6g` 且 entry 必须是 `app.arm`。二者不可混装。
 
+`kind` 可为 `miniapp` 或 `now-playing-theme`。缺少该字段的旧包按 Mini App
+处理；正在播放主题必须显式声明该字段并至少要求 ABI 1.4。使用
+`Text numberOfLines` 的主题要求 ABI 1.5；使用双声道播放峰值的主题要求 ABI 1.6；
+使用队列、歌词、明确收藏/模式写入、相对跳转或 `MarqueeText` 的主题要求 ABI 1.7。
+
 ## profile.bin
 
-16 字节小端 profile 固定描述 CPK5、Native ABI 1.1 和 React Profile 1。
+16 字节小端 profile 固定描述 CPK5、Native ABI 1.9 和 React Profile 1。
 固件在加载原生二进制前校验该文件。
 
 ## 原生载荷
@@ -67,3 +73,9 @@ icon.bin
 - assets 容器最大 8 MiB；
 - 包安装使用 staging、完整校验和原子发布；
 - CPK4 及更早格式直接拒绝，不做运行时迁移或回退。
+
+## 签名与安全
+
+CPK5 没有可信签名。CRC32 用于发现传输和存储损坏，不能认证作者。包内载荷是
+原生机器码，当前运行时没有恶意代码沙箱。安装器的格式、路径、target 和 ABI
+校验是可靠性边界，不是“不可信代码可安全执行”的证明。

@@ -171,6 +171,9 @@ static void render_now_playing(
     const struct route_state *state)
 {
     if(state->route == MUSIC_ROUTE_NOW_PLAYING) {
+        if(crazypod_now_playing_theme_render(
+               crazypod_shell_product_content(), primary_color()))
+            return;
         const struct crazypod_now_playing_render_context context = {
             .parent = crazypod_shell_product_content(),
             .metadata_font = host.metadata_font,
@@ -296,10 +299,16 @@ void crazypod_route_renderer_render(
             ? 0x0E0E0E : COLOR_WHITE;
     lv_obj_t *content = crazypod_shell_product_content();
 
-    if(state->route == MINIAPP_ROUTE_VIEW &&
-       crazypod_miniapps_feature_surface_attached(content)) {
-        (void)crazypod_miniapps_feature_render(
-            state, content, primary_color());
+    if(crazypod_miniapps_feature_surface_attached(content) &&
+       (state->route == MINIAPP_ROUTE_VIEW ||
+        (state->route == MUSIC_ROUTE_NOW_PLAYING &&
+         crazypod_now_playing_theme_open()))) {
+        if(state->route == MUSIC_ROUTE_NOW_PLAYING)
+            (void)crazypod_now_playing_theme_render(
+                content, primary_color());
+        else
+            (void)crazypod_miniapps_feature_render(
+                state, content, primary_color());
         lv_obj_invalidate(content);
         crazypod_status_bar_set_palette(
             1, foreground, background);

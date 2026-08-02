@@ -17,14 +17,14 @@ cc -std=c99 -Wall -Wextra -Werror \
 
 for app in game2048 capability-lab; do
     node "$repo_root/tools/miniapp-builder/src/cli.mjs" generate \
-        "$repo_root/miniapps/$app" \
+        "$repo_root/miniapps/apps/$app" \
         --out "$test_root/$app.c"
     cc -std=c99 -Wall -Wextra -Werror \
         -I"$repo_root/miniapps/sdk" \
         -c "$test_root/$app.c" \
         -o "$test_root/$app.o"
     node "$repo_root/tools/miniapp-builder/src/cli.mjs" build \
-        "$repo_root/miniapps/$app" \
+        "$repo_root/miniapps/apps/$app" \
         --target simulator \
         --binary "$test_root/$app.o" \
         --out "$test_root/$app.cpk"
@@ -104,14 +104,14 @@ cc -std=c99 -Wall -Wextra -Werror \
 "$test_root/crazypod_cpk_reader_host_test" "$test_root/game2048.cpk"
 
 node "$repo_root/tools/miniapp-builder/src/cli.mjs" generate \
-    "$repo_root/miniapps/native-reference" \
+    "$repo_root/miniapps/apps/native-reference" \
     --out "$test_root/native-reference.c"
 cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/miniapps/sdk" \
     -c "$test_root/native-reference.c" \
     -o "$test_root/native-reference.o"
 node "$repo_root/tools/miniapp-builder/src/cli.mjs" build \
-    "$repo_root/miniapps/native-reference" \
+    "$repo_root/miniapps/apps/native-reference" \
     --target simulator \
     --binary "$test_root/native-reference.o" \
     --out "$test_root/native-reference.cpk"
@@ -157,6 +157,7 @@ cc -std=c99 -Wall -Wextra -Werror \
 
 "$test_root/crazypod_miniapp_installer_lifecycle_host_test" lazy
 "$test_root/crazypod_miniapp_installer_lifecycle_host_test" usb
+"$test_root/crazypod_miniapp_installer_lifecycle_host_test" same
 
 cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-miniapp-input-stubs" \

@@ -12,6 +12,7 @@
 #include "crazypod_wallpaper_crop_controller.h"
 #include "crazypod_customize_catalog.h"
 #include "crazypod_customize_controller.h"
+#include "../now_playing/crazypod_now_playing_feature.h"
 
 static int photo_index_for_path(const char *path)
 {
@@ -49,7 +50,8 @@ bool crazypod_customize_controller_handles(enum crazypod_route route)
         route == DIY_ROUTE_BACKGROUNDS ||
         route == DIY_ROUTE_BACKGROUND_CHOICES ||
         route == DIY_ROUTE_WALLPAPER_FILES ||
-        route == DIY_ROUTE_LAYOUT;
+        route == DIY_ROUTE_LAYOUT ||
+        route == DIY_ROUTE_NOW_PLAYING_THEMES;
 }
 
 struct crazypod_customize_command_result
@@ -73,6 +75,7 @@ crazypod_customize_controller_select(
             CRAZYPOD_CUSTOMIZE_COMMAND_PUSH_ROUTE,
             selected == 2 ? DIY_ROUTE_DETAILS :
             selected == 3 ? DIY_ROUTE_BACKGROUNDS :
+            selected == 4 ? DIY_ROUTE_NOW_PLAYING_THEMES :
                             DIY_ROUTE_LAYOUT,
             -1, 0);
     case DIY_ROUTE_ICONS:
@@ -142,6 +145,12 @@ crazypod_customize_controller_select(
         return result(
             CRAZYPOD_CUSTOMIZE_COMMAND_SHOW_APPEARANCE_CHOICES,
             route, field, crazypod_customize_choice_index(field));
+    case DIY_ROUTE_NOW_PLAYING_THEMES:
+        return result(
+            crazypod_now_playing_theme_select(selected)
+                ? CRAZYPOD_CUSTOMIZE_COMMAND_RENDER
+                : CRAZYPOD_CUSTOMIZE_COMMAND_NONE,
+            route, 0, selected);
     default:
         return result(
             CRAZYPOD_CUSTOMIZE_COMMAND_NONE, route, 0, 0);

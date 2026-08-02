@@ -14,7 +14,7 @@ static const char valid_manifest[] =
     "\"versionCode\":50000,"
     "\"runtime\":\"native-aot\","
     "\"abiMajor\":1,"
-    "\"abiMinor\":3,"
+    "\"abiMinor\":9,"
     "\"reactProfile\":1,"
     "\"target\":\"simulator\","
     "\"entry\":\"app.dylib\","
@@ -22,6 +22,26 @@ static const char valid_manifest[] =
     "\"symbol\":\"2048\","
     "\"summary\":\"Native 2048\","
     "\"accent\":\"#26cff5\""
+    "}";
+
+static const char valid_theme_manifest[] =
+    "{"
+    "\"format\":5,"
+    "\"kind\":\"now-playing-theme\","
+    "\"id\":\"now-playing-neon\","
+    "\"name\":\"Atelier Hi-Fi\","
+    "\"version\":\"1.3.0\","
+    "\"versionCode\":10300,"
+    "\"runtime\":\"native-aot\","
+    "\"abiMajor\":1,"
+    "\"abiMinor\":9,"
+    "\"reactProfile\":1,"
+    "\"target\":\"simulator\","
+    "\"entry\":\"app.dylib\","
+    "\"icon\":\"icon.bin\","
+    "\"symbol\":\"HF\","
+    "\"summary\":\"Skeuomorphic TSX theme\","
+    "\"accent\":\"#d79a55\""
     "}";
 
 static int parse(
@@ -42,6 +62,7 @@ int main(void)
     struct crazypod_miniapp_metadata second;
     char duplicate[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     char bad_target[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
+    char old_theme[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     const char unicode_manifest[] =
         "{"
         "\"format\":5,"
@@ -72,6 +93,17 @@ int main(void)
     assert(strcmp(metadata.target, "simulator") == 0);
     assert(strcmp(metadata.entry, "app.dylib") == 0);
     assert(metadata.accent_rgb == 0x26cff5u);
+    assert(metadata.kind == CRAZYPOD_MINIAPP_KIND_APP);
+
+    assert(parse(valid_theme_manifest, &metadata) == CRAZYPOD_MINIAPP_OK);
+    assert(metadata.kind == CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME);
+    snprintf(old_theme, sizeof(old_theme), "%s", valid_theme_manifest);
+    {
+        char *minor = strstr(old_theme, "\"abiMinor\":9");
+        assert(minor != NULL);
+        minor[strlen("\"abiMinor\":")] = '3';
+    }
+    assert(parse(old_theme, &metadata) == CRAZYPOD_MINIAPP_ERROR_VERSION);
 
     assert(parse(unicode_manifest, &metadata) == CRAZYPOD_MINIAPP_OK);
     assert(strcmp(metadata.name, "计时🚀") == 0);

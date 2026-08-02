@@ -65,6 +65,13 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
 - **Mini Apps:** React-style TypeScript/TSX is AOT-compiled to C and then to
   native `app.arm`; Native ABI 1 drives host-owned LVGL. The device runs no
   JavaScript engine. Reference apps are 2048 and Capability Lab.
+- **Now Playing themes:** installable pure-TSX source packages can replace the
+  playback page after explicit user selection. Firmware keeps the default
+  page, audio engine, cover decoder, and sound-wave renderer. ABI 1.7 exposes
+  bounded queue, favorite, playback-mode, lyrics, seek, and marquee services;
+  ABI 1.8 adds modal-scoped Menu back and coalesced wheel steps. Outer-page
+  Menu and held Menu remain firmware escape paths. ABI 1.9 adds automatic
+  committed-cover binding, atomic theme replacement, and next-two prefetch.
 - **Workouts:** 20 timed activities with pause, resume, history, and summaries.
   CrazyPod records elapsed time only; it does not invent distance, steps, or
   calorie data.
@@ -85,19 +92,23 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
 
 - Settings → Language applies one of nine languages immediately and persists
   it across restarts.
-- The firmware catalog contains 827 translated UI keys.
+- The firmware catalog contains 831 translated UI keys.
 - Generated 8, 10, 12, 14, and 16px font subsets cover the current CJK,
   Hangul, and accented Latin catalog. The non-LVGL LCD text path also decodes
   UTF-8.
 
 ### Mini Apps
 
-The firmware bundles two CPK5 Native AOT reference packages:
+The firmware bundles three CPK5 Native AOT references and one theme demo:
 
 - **2048:** React-style TSX UI, generated native C game logic, Click Wheel
   input and CRC-checked persistent board state.
 - **Capability Lab:** controls, Flex layout, resources, conditional subtrees,
   events and repeated mount/unmount behavior.
+- **Native Reference:** minimum native lifecycle and retained UI path.
+- **Neon Playback:** pure TSX Now Playing theme using firmware playback,
+  dynamic artwork, a theme-drawn progress bar, and bounded PCM-derived peak
+  telemetry for its VU segments.
 
 Fast wheel input never skips visible actionable controls. The host keeps a
 bounded input queue and consumes at most one discrete focus movement per

@@ -1,0 +1,16 @@
+{
+  "manifest": {
+    "kind": "now-playing-theme",
+    "id": "now-playing-neon",
+    "name": "Atelier Hi-Fi",
+    "version": "1.4.0",
+    "versionCode": 10400,
+    "symbol": "HF",
+    "summary": "Skeuomorphic pure-TSX Now Playing theme",
+    "accent": "#d79a55"
+  },
+  "runtime": "native-aot",
+  "source": "App.tsx",
+  "assets": "assets",
+  "iconColor": "#d79a55"
+}

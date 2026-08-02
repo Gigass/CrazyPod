@@ -22,6 +22,7 @@
 #define COLOR_WHITE 0xFFFFFF
 
 static char track_paths[PRESENTATION_BANKS][MAX_PATH];
+static unsigned generations[PRESENTATION_BANKS];
 static fb_data backdrop_pixels[BACKDROP_WIDTH * BACKDROP_HEIGHT]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static fb_data backdrop_scratch[BACKDROP_WIDTH * BACKDROP_HEIGHT]
@@ -222,15 +223,18 @@ static uint32_t contrast_color(int bank)
     return luminance / samples >= 118 ? 0x09090D : COLOR_WHITE;
 }
 
-bool crazypod_now_presentation_matches(const char *track_path)
+bool crazypod_now_presentation_matches(
+    const char *track_path, unsigned generation)
 {
     return track_path != NULL && active_bank >= 0 &&
            valid[active_bank] &&
+           generations[active_bank] == generation &&
            strcmp(track_paths[active_bank], track_path) == 0;
 }
 
 bool crazypod_now_presentation_prepare(
-    const lv_image_dsc_t *artwork, const char *track_path)
+    const lv_image_dsc_t *artwork, const char *track_path,
+    unsigned generation)
 {
     int bank;
 
@@ -244,18 +248,19 @@ bool crazypod_now_presentation_prepare(
     text_colors[bank] = contrast_color(bank);
     snprintf(track_paths[bank], sizeof(track_paths[bank]),
              "%s", track_path);
+    generations[bank] = generation;
     valid[bank] = true;
     active_bank = bank;
     return true;
 }
 
 bool crazypod_now_presentation_get(
-    const char *track_path,
+    const char *track_path, unsigned generation,
     const lv_image_dsc_t **cover,
     const lv_image_dsc_t **backdrop,
     uint32_t *text_color)
 {
-    if(!crazypod_now_presentation_matches(track_path))
+    if(!crazypod_now_presentation_matches(track_path, generation))
         return false;
     if(cover != NULL)
         *cover = &cover_descriptors[active_bank];

@@ -12,12 +12,14 @@
 #include "crazypod_customize_catalog.h"
 
 const char *const crazypod_customize_menu_titles[] = {
-    CP_TR("Presets"), CP_TR("Icons"), CP_TR("Details"), CP_TR("Backgrounds"), CP_TR("Layout")
+    CP_TR("Presets"), CP_TR("Icons"), CP_TR("Details"),
+    CP_TR("Backgrounds"), CP_TR("Themes"),
+    CP_TR("Layout")
 };
 
 const char *const crazypod_customize_menu_symbols[] = {
     LV_SYMBOL_SAVE, LV_SYMBOL_IMAGE, LV_SYMBOL_SETTINGS,
-    LV_SYMBOL_DIRECTORY, LV_SYMBOL_SHUFFLE
+    LV_SYMBOL_DIRECTORY, LV_SYMBOL_AUDIO, LV_SYMBOL_SHUFFLE
 };
 
 const char *const crazypod_customize_preset_actions[] = {

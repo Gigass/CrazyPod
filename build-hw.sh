@@ -58,9 +58,11 @@ verify_stack_alignment() {
 verify_removed_runtime_absent() {
     forbidden='quickjs|mquickjs|crazypod_js|crazypod_script|solid_renderer|ui_command_batch'
     for binary in rockbox.elf \
-        miniapps/native-reference/app.arm \
-        miniapps/capability-lab/app.arm \
-        miniapps/game2048/app.arm; do
+        miniapps/apps/native-reference/app.arm \
+        miniapps/apps/capability-lab/app.arm \
+        miniapps/apps/game2048/app.arm \
+        miniapps/themes/atelier-hifi/app.arm \
+        miniapps/themes/signal-one/app.arm; do
         matches=$("${CROSS_COMPILE}nm" -a "$binary" 2>/dev/null |
             awk '{ print $3 }' |
             grep -E -i "$forbidden" || true)
@@ -120,14 +122,18 @@ require_tools
 npm ci --ignore-scripts --no-audit --no-fund \
     --prefix tools/miniapp-builder
 node tools/miniapp-builder/src/cli.mjs generate \
-    miniapps/native-reference \
-    --out miniapps/native-reference/generated/app.c
+    miniapps/apps/native-reference \
+    --out miniapps/apps/native-reference/generated/app.c
 node tools/miniapp-builder/src/cli.mjs generate \
-    miniapps/capability-lab \
-    --out miniapps/capability-lab/generated/app.c
+    miniapps/apps/capability-lab \
+    --out miniapps/apps/capability-lab/generated/app.c
 node tools/miniapp-builder/src/cli.mjs generate \
-    miniapps/game2048 \
-    --out miniapps/game2048/generated/app.c
+    miniapps/apps/game2048 \
+    --out miniapps/apps/game2048/generated/app.c
+# The ABI 1.5 theme intrinsics come from the standalone Devtool. Keep its
+# generated artifact in sync with the TSX source.
+test -f miniapps/themes/atelier-hifi/generated/app.c
+test -f miniapps/themes/signal-one/generated/app.c
 
 if [ "$CRAZYPOD_BUILD_VARIANT" = "repro" ]; then
     BUILDDIR="build-hw-ipod6g-repro"
@@ -179,27 +185,43 @@ mkdir -p ../dist/miniapps
 find ../dist/miniapps -type f -name 'game2048-*.cpk' -delete
 find ../dist/miniapps -type f -name 'capability-lab-*.cpk' -delete
 find ../dist/miniapps -type f -name 'native-reference-*.cpk' -delete
+find ../dist/miniapps -type f -name 'now-playing-neon-*.cpk' -delete
+find ../dist/miniapps -type f -name 'now-playing-signal-*.cpk' -delete
 GAME2048_PACKAGE="game2048-$(node -p \
-    "require('../miniapps/game2048/crazypod.config.json').manifest.version").cpk"
+    "require('../miniapps/apps/game2048/crazypod.config.json').manifest.version").cpk"
 CAPABILITY_LAB_PACKAGE="capability-lab-$(node -p \
-    "require('../miniapps/capability-lab/crazypod.config.json').manifest.version").cpk"
+    "require('../miniapps/apps/capability-lab/crazypod.config.json').manifest.version").cpk"
 NATIVE_REFERENCE_PACKAGE="native-reference-$(node -p \
-    "require('../miniapps/native-reference/crazypod.config.json').manifest.version").cpk"
+    "require('../miniapps/apps/native-reference/crazypod.config.json').manifest.version").cpk"
+NOW_PLAYING_THEME_PACKAGE="now-playing-neon-$(node -p \
+    "require('../miniapps/themes/atelier-hifi/crazypod.config.json').manifest.version").cpk"
+SIGNAL_THEME_PACKAGE="now-playing-signal-$(node -p \
+    "require('../miniapps/themes/signal-one/crazypod.config.json').manifest.version").cpk"
 node ../tools/miniapp-builder/src/cli.mjs build \
-    ../miniapps/game2048 \
+    ../miniapps/apps/game2048 \
     --target ipod6g \
-    --binary miniapps/game2048/app.arm \
+    --binary miniapps/apps/game2048/app.arm \
     --out "../dist/miniapps/$GAME2048_PACKAGE"
 node ../tools/miniapp-builder/src/cli.mjs build \
-    ../miniapps/capability-lab \
+    ../miniapps/apps/capability-lab \
     --target ipod6g \
-    --binary miniapps/capability-lab/app.arm \
+    --binary miniapps/apps/capability-lab/app.arm \
     --out "../dist/miniapps/$CAPABILITY_LAB_PACKAGE"
 node ../tools/miniapp-builder/src/cli.mjs build \
-    ../miniapps/native-reference \
+    ../miniapps/apps/native-reference \
     --target ipod6g \
-    --binary miniapps/native-reference/app.arm \
+    --binary miniapps/apps/native-reference/app.arm \
     --out "../dist/miniapps/$NATIVE_REFERENCE_PACKAGE"
+node ../tools/miniapp-builder/src/cli.mjs build \
+    ../miniapps/themes/atelier-hifi \
+    --target ipod6g \
+    --binary miniapps/themes/atelier-hifi/app.arm \
+    --out "../dist/miniapps/$NOW_PLAYING_THEME_PACKAGE"
+node ../tools/miniapp-builder/src/cli.mjs build \
+    ../miniapps/themes/signal-one \
+    --target ipod6g \
+    --binary miniapps/themes/signal-one/app.arm \
+    --out "../dist/miniapps/$SIGNAL_THEME_PACKAGE"
 
 PACKAGE_DIR="$(mktemp -d)"
 trap 'rm -rf "$PACKAGE_DIR"' EXIT HUP INT TERM
@@ -239,6 +261,10 @@ cp "../dist/miniapps/$GAME2048_PACKAGE" \
 cp "../dist/miniapps/$CAPABILITY_LAB_PACKAGE" \
    "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
 cp "../dist/miniapps/$NATIVE_REFERENCE_PACKAGE" \
+   "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
+cp "../dist/miniapps/$NOW_PLAYING_THEME_PACKAGE" \
+   "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
+cp "../dist/miniapps/$SIGNAL_THEME_PACKAGE" \
    "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
 for codec in lib/rbcodec/codecs/*.codec; do
     [ -f "$codec" ] || continue

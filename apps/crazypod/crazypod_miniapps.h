@@ -17,6 +17,11 @@
 #define CRAZYPOD_MINIAPP_RUNTIME_SIZE 17
 #define CRAZYPOD_MINIAPP_PATH_SIZE 260
 
+enum crazypod_miniapp_kind {
+    CRAZYPOD_MINIAPP_KIND_APP = 0,
+    CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME
+};
+
 enum crazypod_miniapp_result {
     CRAZYPOD_MINIAPP_OK = 0,
     CRAZYPOD_MINIAPP_ALREADY_INSTALLED = 1,
@@ -52,6 +57,7 @@ struct crazypod_miniapp_metadata {
     uint32_t react_profile;
     uint32_t package_format;
     uint32_t accent_rgb;
+    uint8_t kind;
     uint32_t assets_size;
     uint32_t icon_size;
     uint32_t binary_size;
@@ -131,6 +137,14 @@ int crazypod_miniapps_open_id(const char *id);
 void crazypod_miniapps_close(void);
 bool crazypod_miniapps_is_open(void);
 int crazypod_miniapps_current(void);
+const struct crazypod_miniapp_metadata *
+crazypod_miniapps_current_metadata(void);
+enum crazypod_miniapp_kind crazypod_miniapps_current_kind(void);
+int crazypod_now_playing_themes_count(void);
+const struct crazypod_miniapp_metadata *
+crazypod_now_playing_themes_metadata(int index);
+int crazypod_now_playing_themes_find(const char *id);
+int crazypod_now_playing_themes_open_id(const char *id);
 bool crazypod_miniapps_take_ui_refresh(void);
 
 bool crazypod_miniapps_event(const struct cp_input_event *event);

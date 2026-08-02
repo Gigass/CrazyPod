@@ -35,6 +35,7 @@
 static struct crazypod_app_input_host host;
 static bool play_short_press_pending;
 static bool home_hold_pending;
+static bool home_menu_gesture_owned;
 static long home_hold_deadline;
 static struct crazypod_alpha_jump_state alpha_jump;
 
@@ -147,6 +148,7 @@ void crazypod_app_input_configure(
     if(new_host != NULL) {
         host = *new_host;
         home_hold_pending = false;
+        home_menu_gesture_owned = false;
         crazypod_alpha_jump_reset(&alpha_jump);
     }
 }
@@ -198,6 +200,7 @@ void crazypod_app_input_tick(long now, bool locked)
 
     home_hold_pending = false;
     backlight_on();
+    home_menu_gesture_owned = true;
     host.open_now_playing();
 }
 
@@ -257,6 +260,11 @@ void crazypod_app_input_handle(
         if(base == BUTTON_PLAY &&
            (button & BUTTON_REL) != 0)
             play_short_press_pending = false;
+        return;
+    }
+    if(home_menu_gesture_owned && base == BUTTON_MENU) {
+        if((button & BUTTON_REL) != 0)
+            home_menu_gesture_owned = false;
         return;
     }
     if(base == BUTTON_PLAY) {

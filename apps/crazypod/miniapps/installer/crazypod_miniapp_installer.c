@@ -11,6 +11,7 @@
 
 #include "../../crazypod_miniapps.h"
 #include "../catalog/crazypod_miniapp_registry_loader.h"
+#include "../runtime/crazypod_miniapp_installed_verifier.h"
 #include "../runtime/crazypod_miniapp_verification_cache.h"
 #include "crazypod_cpk_reader.h"
 #include "crazypod_cpk_verifier.h"
@@ -93,6 +94,16 @@ int crazypod_miniapps_install(const char *package_path)
             goto done;
         }
     }
+    if(same_version &&
+       crazypod_miniapp_registry_package_matches(
+           metadata->id, &reader, &installer.verified_metadata) &&
+       crazypod_miniapp_installed_verify(
+           &installer.verified_metadata) == CRAZYPOD_MINIAPP_OK) {
+        crazypod_miniapp_verification_cache_mark(
+            metadata->id, metadata->version_code);
+        result = CRAZYPOD_MINIAPP_ALREADY_INSTALLED;
+        goto done;
+    }
     for(index = 0; index < reader.entry_count; ++index) {
         result = crazypod_cpk_verify_crc(&reader, index);
         if(result != CRAZYPOD_MINIAPP_OK)
@@ -105,14 +116,6 @@ int crazypod_miniapps_install(const char *package_path)
     }
     if(!crazypod_cpk_icon_valid(&reader)) {
         result = CRAZYPOD_MINIAPP_ERROR_FORMAT;
-        goto done;
-    }
-    if(same_version &&
-       crazypod_miniapp_registry_package_matches(
-           metadata->id, &reader, &installer.verified_metadata)) {
-        crazypod_miniapp_verification_cache_mark(
-            metadata->id, metadata->version_code);
-        result = CRAZYPOD_MINIAPP_ALREADY_INSTALLED;
         goto done;
     }
     for(index = 0; index < reader.entry_count; ++index)
@@ -224,9 +227,8 @@ int crazypod_miniapps_init(void)
         return CRAZYPOD_MINIAPP_OK;
 
     /*
-     * Boot only restores interrupted publications and loads the installed
-     * catalog. Package discovery and verification are deliberately deferred
-     * until Mini Apps is opened.
+     * Keep init limited to publication recovery and the installed catalog so
+     * the UI can present the boot screen before prepare scans package inboxes.
      */
     crazypod_miniapp_stage_recover_all();
     result = crazypod_miniapp_registry_rebuild();

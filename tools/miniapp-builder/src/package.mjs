@@ -4,7 +4,7 @@ import { convertAnimation } from "./animations.mjs";
 import { convertPngBuffer } from "./images.mjs";
 
 export const NATIVE_ABI_MAJOR = 1;
-export const NATIVE_ABI_MINOR = 3;
+export const NATIVE_ABI_MINOR = 9;
 export const REACT_PROFILE = 1;
 
 const crcTable = new Uint32Array(256);

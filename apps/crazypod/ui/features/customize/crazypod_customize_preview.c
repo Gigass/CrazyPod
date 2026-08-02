@@ -15,6 +15,7 @@
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_customize_catalog.h"
 #include "crazypod_customize_feature.h"
+#include "../now_playing/crazypod_now_playing_feature.h"
 
 #define COLOR_WHITE 0xFFFFFF
 
@@ -61,6 +62,9 @@ static const char *current_value(const struct route_state *state)
                  crazypod_customize_field_value(field));
         return radius_text;
     }
+    if(state->route == DIY_ROUTE_NOW_PLAYING_THEMES)
+        return crazypod_now_playing_theme_choice_current(state->selected)
+            ? CP_TR("Current selection") : CP_TR("Apply");
     if(state->route == DIY_ROUTE_CHOICES) {
         field = (enum crazypod_appearance_field)state->group;
         current = crazypod_customize_field_value(field);
@@ -132,6 +136,7 @@ static void preview_model_build(
             state->selected == 1 ? CP_TR("16 complete icon themes") :
             state->selected == 2 ? CP_TR("Wave, size, glow and colors") :
             state->selected == 3 ? CP_TR("Home, menu and lock pictures") :
+            state->selected == 4 ? CP_TR("Themes") :
                                    CP_TR("Screen corner radius");
     }
     else if(state->route == DIY_ROUTE_PRESETS) {
@@ -207,6 +212,8 @@ static void preview_model_build(
         model->symbol = LV_SYMBOL_IMAGE;
     else if(state->route == DIY_ROUTE_LAYOUT)
         model->symbol = LV_SYMBOL_SHUFFLE;
+    else if(state->route == DIY_ROUTE_NOW_PLAYING_THEMES)
+        model->symbol = LV_SYMBOL_AUDIO;
     else if(state->route == DIY_ROUTE_DETAILS) {
         if(state->selected == 1)
             model->symbol = LV_SYMBOL_AUDIO;

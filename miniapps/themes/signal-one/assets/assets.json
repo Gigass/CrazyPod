@@ -1,0 +1,14 @@
+[
+  {
+    "id": "signal-console",
+    "type": "rgb565",
+    "file": "signal-console.png",
+    "format": "png"
+  },
+  {
+    "id": "signal-modal",
+    "type": "rgb565",
+    "file": "signal-modal.png",
+    "format": "png"
+  }
+]

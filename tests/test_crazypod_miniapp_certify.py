@@ -51,14 +51,21 @@ class MiniAppCertificationTest(unittest.TestCase):
                 "native-reference-1.0.0.cpk",
                 b"reference",
             )
+            archive.writestr(
+                ".rockbox/crazypod/miniapps/packages/"
+                "now-playing-neon-1.3.1.cpk",
+                b"theme",
+            )
         self.packages = (
             self.root / "game2048-5.0.1.cpk",
             self.root / "capability-lab-5.0.1.cpk",
             self.root / "native-reference-1.0.0.cpk",
+            self.root / "now-playing-neon-1.3.1.cpk",
         )
         self.packages[0].write_bytes(b"game")
         self.packages[1].write_bytes(b"lab")
         self.packages[2].write_bytes(b"reference")
+        self.packages[3].write_bytes(b"theme")
 
     def tearDown(self):
         self.temporary.cleanup()
@@ -87,16 +94,19 @@ class MiniAppCertificationTest(unittest.TestCase):
         self.assertEqual(parsed.release, self.release)
 
     def test_stage_is_atomic_and_hash_checked(self):
-        result = certify.stage_packages(self.volume, self.packages)
         install = self.volume / "MiniApps" / "Install"
+        install.mkdir(parents=True)
+        (install / "._stale.cpk").write_bytes(b"AppleDouble")
+        result = certify.stage_packages(self.volume, self.packages)
         self.assertEqual(
             (install / self.packages[0].name).read_bytes(), b"game"
         )
         self.assertEqual(
             (install / self.packages[1].name).read_bytes(), b"lab"
         )
-        self.assertEqual(len(result), 3)
+        self.assertEqual(len(result), 4)
         self.assertEqual(list(install.glob(".*.tmp-*")), [])
+        self.assertEqual(list(install.glob("._*.cpk")), [])
 
     def test_install_backs_up_and_removes_only_stale_system_packages(self):
         package_directory = (
@@ -127,8 +137,8 @@ class MiniAppCertificationTest(unittest.TestCase):
             (self.volume / ".rockbox/rockbox.ipod").read_bytes(),
             b"firmware",
         )
-        self.assertEqual(result["installedFiles"], 325)
-        self.assertEqual(len(result["packageSha256"]), 3)
+        self.assertEqual(result["installedFiles"], 326)
+        self.assertEqual(len(result["packageSha256"]), 4)
 
     def test_collect_creates_honest_evidence_template(self):
         log = (

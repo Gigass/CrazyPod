@@ -16,6 +16,7 @@
 #define CPK5_REQUIRED_FIELDS \
     (COMMON_REQUIRED_FIELDS | (1u << 12) | (1u << 13) | \
      (1u << 14) | (1u << 15) | (1u << 16))
+#define CPK5_KIND_FIELD (1u << 17)
 
 #if CONFIG_BINFMT == BINFMT_ROCK
 #define NATIVE_TARGET "ipod6g"
@@ -304,6 +305,21 @@ static int read_field(
     uint32_t *bit)
 {
 #define IS_KEY(value) (strcmp(key, value) == 0)
+    if(IS_KEY("kind")) {
+        char value[24];
+
+        *bit = CPK5_KIND_FIELD;
+        if(!read_string(reader, value, sizeof(value)))
+            return false;
+        if(strcmp(value, "miniapp") == 0)
+            metadata->kind = CRAZYPOD_MINIAPP_KIND_APP;
+        else if(strcmp(value, "now-playing-theme") == 0)
+            metadata->kind =
+                CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME;
+        else
+            return false;
+        return true;
+    }
     if(IS_KEY("format")) {
         *bit = 1u << 0;
         return read_uint32(reader, &metadata->package_format);
@@ -430,11 +446,17 @@ int crazypod_miniapp_manifest_parse(
        !crazypod_miniapp_text_valid(metadata->summary, true))
         return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
     if(metadata->package_format == CP_NATIVE_PACKAGE_FORMAT) {
-        if(seen != CPK5_REQUIRED_FIELDS ||
+        if((seen != CPK5_REQUIRED_FIELDS &&
+            seen != (CPK5_REQUIRED_FIELDS | CPK5_KIND_FIELD)) ||
            strcmp(metadata->runtime, "native-aot") != 0 ||
            metadata->abi_version != CP_NATIVE_ABI_MAJOR ||
            metadata->abi_minor > CP_NATIVE_ABI_MINOR ||
            metadata->react_profile != CP_NATIVE_REACT_PROFILE)
+            return CRAZYPOD_MINIAPP_ERROR_VERSION;
+        if(metadata->kind ==
+               CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME &&
+           ((seen & CPK5_KIND_FIELD) == 0 ||
+            metadata->abi_minor < 4u))
             return CRAZYPOD_MINIAPP_ERROR_VERSION;
         if(strcmp(metadata->target, NATIVE_TARGET) != 0 ||
            strcmp(metadata->entry, NATIVE_ENTRY) != 0 ||

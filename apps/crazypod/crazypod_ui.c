@@ -1,7 +1,5 @@
 #include "config.h"
-
 #ifdef IPOD_6G
-
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -625,11 +623,13 @@ void crazypod_ui_run(void)
     lv_screen_load(boot_screen);
     lv_refr_now(display);
     crazypod_present_tick();
+    set_cpu_boost(true);
+    (void)crazypod_miniapps_feature_prepare();
+    crazypod_now_playing_theme_prepare();
     crazypod_now_capsule_refresh_material();
     lv_screen_load(crazypod_desktop_screen());
     lv_refr_now(display);
     crazypod_system_prompts_set_ui_ready();
-    set_cpu_boost(true);
     boost_until = current_tick + HZ / 2;
     crazypod_playback_initialize();
     crazypod_now_playing_navigation_initialize();

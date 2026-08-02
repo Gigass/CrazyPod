@@ -14,6 +14,7 @@
 #include "../../crazypod_videos.h"
 #include "../features/customize/crazypod_customize_feature.h"
 #include "../features/miniapps/crazypod_miniapps_feature.h"
+#include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../features/photos/crazypod_photos_feature.h"
@@ -156,8 +157,10 @@ void crazypod_runtime_services_tick(
         state->route >= PHOTOS_ROUTE_MENU &&
         state->route <= PHOTOS_ROUTE_DETAIL;
     bool miniapp_active = !locked && routed &&
-        state->route == MINIAPP_ROUTE_VIEW &&
-        crazypod_miniapps_feature_is_open();
+        ((state->route == MINIAPP_ROUTE_VIEW &&
+          crazypod_miniapps_feature_is_open()) ||
+         (state->route == MUSIC_ROUTE_NOW_PLAYING &&
+          crazypod_now_playing_theme_open()));
 
     crazypod_music_set_scan_suspended(locked);
     crazypod_artwork_set_lock_suspended(locked);
@@ -187,6 +190,10 @@ void crazypod_runtime_services_tick(
     if(!locked && routed && crazypod_organizer_feature_service(
            state->route, now, HZ))
         render_route(false);
+    if(miniapp_active && crazypod_now_playing_theme_open()) {
+        crazypod_now_playing_artwork_sync();
+        crazypod_miniapps_feature_refresh_now_playing_artwork();
+    }
     service_miniapp(miniapp_active, now, frame_due);
 }
 

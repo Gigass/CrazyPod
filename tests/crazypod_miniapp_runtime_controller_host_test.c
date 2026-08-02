@@ -15,6 +15,7 @@ static int event_count;
 static int tick_count;
 static int push_count;
 static int render_count;
+static uint8_t last_event_steps;
 
 int crazypod_miniapps_init(void)
 {
@@ -40,6 +41,7 @@ bool crazypod_miniapps_event(const struct cp_input_event *event)
 {
     assert(event != NULL);
     ++event_count;
+    last_event_steps = event->steps;
     if(refresh_on_event)
         ui_refresh_requested = true;
     if(close_on_event)
@@ -106,6 +108,7 @@ static void reset_test(void)
     tick_count = 0;
     push_count = 0;
     render_count = 0;
+    last_event_steps = 0;
     crazypod_miniapp_runtime_opened();
 }
 
@@ -131,10 +134,18 @@ int main(void)
 
     reset_test();
     refresh_on_event = true;
-    crazypod_miniapp_runtime_push_wheel(&wheel);
+    crazypod_miniapp_runtime_push_wheel_coalesced(&wheel);
+    {
+        struct cp_input_event accelerated = wheel;
+
+        accelerated.steps = 4;
+        accelerated.repeated = 1;
+        crazypod_miniapp_runtime_push_wheel_coalesced(&accelerated);
+    }
     assert(crazypod_miniapp_runtime_service(
         true, true, 10, 100) == false);
     assert(event_count == 1);
+    assert(last_event_steps == 5);
     assert(tick_count == 1);
     assert(!crazypod_miniapp_runtime_take_render());
 

@@ -27,6 +27,17 @@ static struct crazypod_miniapp_metadata apps[] = {
         .binary_size = 1,
         .binary_path = "app.dylib",
     },
+    {
+        .id = "now-playing-neon",
+        .name = "Atelier Hi-Fi",
+        .version = "1.1.0",
+        .version_code = 10100,
+        .abi_version = CP_NATIVE_ABI_MAJOR,
+        .package_format = CP_NATIVE_PACKAGE_FORMAT,
+        .binary_size = 1,
+        .binary_path = "app.dylib",
+        .kind = CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME,
+    },
 };
 
 static bool native_open;
@@ -202,6 +213,23 @@ int main(void)
     };
 
     crazypod_miniapps_set_ui_host(&host);
+    assert(crazypod_miniapps_count() == 2);
+    assert(crazypod_now_playing_themes_count() == 1);
+    assert(crazypod_miniapps_find("now-playing-neon") == -1);
+    assert(crazypod_now_playing_themes_find("now-playing-neon") == 0);
+    assert(crazypod_now_playing_themes_metadata(0) == &apps[2]);
+    assert(crazypod_miniapps_open_id("now-playing-neon") ==
+           CRAZYPOD_MINIAPP_ERROR_FORMAT);
+    assert(crazypod_now_playing_themes_open_id("now-playing-neon") ==
+           CRAZYPOD_MINIAPP_OK);
+    assert(crazypod_miniapps_current_kind() ==
+           CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME);
+    crazypod_miniapps_close();
+    assert_clean();
+    open_count = 0;
+    close_count = 0;
+    finish_count = 0;
+    scene_reset_count = 0;
     assert(crazypod_miniapps_open_id("game2048") ==
            CRAZYPOD_MINIAPP_OK);
     assert(crazypod_miniapps_open_id("capability-lab") ==

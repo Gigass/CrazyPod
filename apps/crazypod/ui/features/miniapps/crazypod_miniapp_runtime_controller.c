@@ -62,6 +62,13 @@ void crazypod_miniapp_runtime_push_wheel(
     (void)crazypod_miniapp_input_push_wheel(&runtime.input, event);
 }
 
+void crazypod_miniapp_runtime_push_wheel_coalesced(
+    const struct cp_input_event *event)
+{
+    (void)crazypod_miniapp_input_push_wheel_coalesced(
+        &runtime.input, event);
+}
+
 bool crazypod_miniapp_runtime_next_input(
     bool frame_due, struct cp_input_event *event)
 {

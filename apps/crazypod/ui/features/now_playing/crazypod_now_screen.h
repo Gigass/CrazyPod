@@ -9,8 +9,6 @@
 
 #include "../../../crazypod_music.h"
 
-typedef int (*crazypod_now_artwork_slot_provider)(
-    const struct crazypod_track *track);
 typedef uint32_t (*crazypod_now_fallback_color_provider)(
     const struct crazypod_track *track);
 typedef lv_obj_t *(*crazypod_now_artwork_renderer)(
@@ -24,7 +22,9 @@ struct crazypod_now_screen_context {
     bool lyrics_mode;
     const lv_font_t *metadata_font;
     uint32_t primary_color;
-    crazypod_now_artwork_slot_provider artwork_slot;
+    const lv_image_dsc_t *visual_artwork;
+    const char *visual_track_path;
+    unsigned visual_generation;
     crazypod_now_fallback_color_provider fallback_color;
     crazypod_now_artwork_renderer render_artwork;
     void (*boost)(int ticks);

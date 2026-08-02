@@ -108,6 +108,9 @@ bool crazypod_route_actions_confirm_photos(
 void crazypod_route_actions_pop(void)
 {
     if(crazypod_ui_routes_depth() > 0 &&
+       current_route()->route == MUSIC_ROUTE_NOW_PLAYING)
+        crazypod_now_playing_theme_close();
+    if(crazypod_ui_routes_depth() > 0 &&
        current_route()->route == MINIAPP_ROUTE_VIEW &&
        crazypod_miniapps_feature_is_open()) {
         crazypod_miniapps_feature_reset_input();

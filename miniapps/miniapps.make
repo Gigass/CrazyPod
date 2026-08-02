@@ -8,7 +8,8 @@ MINIAPP_LINK_LDS := $(MINIAPP_BUILD)/miniapp.link
 MINIAPP_PLUGIN_LDS := $(APPSDIR)/plugins/plugin.lds
 MINIAPP_CONFIG := $(FIRMDIR)/export/config/$(MODELNAME).h
 
-MINIAPP_NATIVE_APPS := native-reference capability-lab game2048
+MINIAPP_NATIVE_APPS := apps/native-reference apps/capability-lab \
+	apps/game2048 themes/atelier-hifi themes/signal-one
 MINIAPP_NATIVE_OBJS := $(foreach app,$(MINIAPP_NATIVE_APPS), \
 	$(MINIAPP_BUILD)/$(app)/app.o)
 MINIAPP_NATIVE_RUNTIME_OBJ := \

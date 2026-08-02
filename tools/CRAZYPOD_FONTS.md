@@ -30,8 +30,11 @@ glyph shapes. Regional font splitting remains a typography improvement, not a
 coverage fix.
 
 The 14 and 16px files retain their historical
-`lv_font_source_han_sans_sc_*` names. Their current glyph sets were regenerated
-from the complete nine-language manifest. The source font is not committed, so
+`lv_font_source_han_sans_sc_*` names. The current 12, 14, and 16px glyph sets were regenerated
+from the complete nine-language manifest plus
+`localization/crazypod/media-glyphs.txt`. The latter is the real-media metadata
+baseline exercised by the simulator; translation coverage alone cannot prove
+that song titles and artist names render. The source font is not committed, so
 regeneration requires a separately supplied, redistributable source.
 
 macOS system fonts (Arial Unicode, PingFang, Hiragino and Apple SD Gothic Neo)
@@ -54,6 +57,7 @@ python3 tools/crazypod_font_tool.py collect \
   --input localization/crazypod/fr.json \
   --input localization/crazypod/es.json \
   --input localization/crazypod/pt-BR.json \
+  --input localization/crazypod/media-glyphs.txt \
   --output build/fonts/crazypod-all.txt
 ```
 

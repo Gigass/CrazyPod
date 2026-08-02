@@ -53,6 +53,33 @@ bool crazypod_miniapp_input_push_wheel(
     return true;
 }
 
+bool crazypod_miniapp_input_push_wheel_coalesced(
+    struct crazypod_miniapp_input_queue *queue,
+    const struct cp_input_event *event)
+{
+    if(queue == NULL || event == NULL ||
+       event->struct_size < sizeof(*event) ||
+       !wheel_type(event->type) || event->steps == 0)
+        return false;
+
+    if(queue->count > 0) {
+        unsigned last = (queue->head + queue->count - 1u) %
+                        CRAZYPOD_MINIAPP_INPUT_CAPACITY;
+        struct cp_input_event *pending = &queue->events[last];
+
+        if(pending->type == event->type) {
+            unsigned steps = (unsigned)pending->steps + event->steps;
+
+            pending->steps = (uint8_t)(steps > UINT8_MAX
+                ? UINT8_MAX : steps);
+            pending->repeated = pending->repeated || event->repeated;
+            return true;
+        }
+    }
+
+    return crazypod_miniapp_input_push_wheel(queue, event);
+}
+
 bool crazypod_miniapp_input_next(
     struct crazypod_miniapp_input_queue *queue, bool frame_due,
     struct cp_input_event *event)

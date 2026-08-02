@@ -19,6 +19,8 @@ static int active_index = -1;
 static bool active_ui_changed;
 static struct crazypod_miniapp_ui_host ui_host;
 
+static const struct crazypod_miniapp_metadata *current_metadata(void);
+
 void crazypod_miniapps_set_ui_host(
     const struct crazypod_miniapp_ui_host *host)
 {
@@ -43,7 +45,16 @@ int crazypod_miniapps_ui_begin_update(void)
 
 uint32_t crazypod_miniapps_ui_create(uint8_t object_type)
 {
-    uint32_t handle = ui_host.create != NULL
+    const struct crazypod_miniapp_metadata *metadata =
+        current_metadata();
+    uint32_t handle;
+
+    if((object_type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK ||
+        object_type == CP_UI_OBJECT_SOUND_WAVE) &&
+       (metadata == NULL || metadata->kind !=
+            CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME))
+        return CP_NATIVE_UI_HANDLE_NONE;
+    handle = ui_host.create != NULL
         ? ui_host.create(object_type) : CP_NATIVE_UI_HANDLE_NONE;
 
     if(handle != CP_NATIVE_UI_HANDLE_NONE)
@@ -160,18 +171,68 @@ static bool valid_id(const char *id)
 
 int crazypod_miniapps_count(void)
 {
-    return crazypod_miniapp_catalog_count();
+    int count = 0;
+    int index;
+
+    for(index = 0; index < crazypod_miniapp_catalog_count(); ++index) {
+        const struct crazypod_miniapp_metadata *metadata =
+            crazypod_miniapp_catalog_get(index);
+
+        if(metadata != NULL &&
+           metadata->kind == CRAZYPOD_MINIAPP_KIND_APP)
+            ++count;
+    }
+    return count;
+}
+
+static int catalog_index_for_kind(
+    enum crazypod_miniapp_kind kind, int visible_index)
+{
+    int index;
+
+    if(visible_index < 0)
+        return -1;
+    for(index = 0; index < crazypod_miniapp_catalog_count(); ++index) {
+        const struct crazypod_miniapp_metadata *metadata =
+            crazypod_miniapp_catalog_get(index);
+
+        if(metadata != NULL && metadata->kind == kind &&
+           visible_index-- == 0)
+            return index;
+    }
+    return -1;
+}
+
+static int visible_index_for_id(
+    enum crazypod_miniapp_kind kind, const char *id)
+{
+    int visible = 0;
+    int index;
+
+    for(index = 0; index < crazypod_miniapp_catalog_count(); ++index) {
+        const struct crazypod_miniapp_metadata *metadata =
+            crazypod_miniapp_catalog_get(index);
+
+        if(metadata == NULL || metadata->kind != kind)
+            continue;
+        if(strcmp(metadata->id, id) == 0)
+            return visible;
+        ++visible;
+    }
+    return -1;
 }
 
 const struct crazypod_miniapp_metadata *
 crazypod_miniapps_metadata(int index)
 {
-    return crazypod_miniapp_catalog_get(index);
+    return crazypod_miniapp_catalog_get(
+        catalog_index_for_kind(CRAZYPOD_MINIAPP_KIND_APP, index));
 }
 
 int crazypod_miniapps_find(const char *id)
 {
-    return valid_id(id) ? crazypod_miniapp_catalog_find(id) : -1;
+    return valid_id(id)
+        ? visible_index_for_id(CRAZYPOD_MINIAPP_KIND_APP, id) : -1;
 }
 
 static const struct crazypod_miniapp_metadata *current_metadata(void)
@@ -188,7 +249,7 @@ static void finish_active_session(void)
     active_ui_changed = false;
 }
 
-int crazypod_miniapps_open(int index)
+static int open_catalog_index(int index)
 {
     const struct crazypod_miniapp_metadata *metadata;
     int result;
@@ -220,11 +281,55 @@ int crazypod_miniapps_open(int index)
     return CRAZYPOD_MINIAPP_OK;
 }
 
+int crazypod_miniapps_open(int index)
+{
+    return open_catalog_index(
+        catalog_index_for_kind(CRAZYPOD_MINIAPP_KIND_APP, index));
+}
+
 int crazypod_miniapps_open_id(const char *id)
 {
     int index = crazypod_miniapps_find(id);
     return index >= 0 ? crazypod_miniapps_open(index)
                       : CRAZYPOD_MINIAPP_ERROR_FORMAT;
+}
+
+int crazypod_now_playing_themes_count(void)
+{
+    int count = 0;
+    int index;
+
+    for(index = 0; index < crazypod_miniapp_catalog_count(); ++index) {
+        const struct crazypod_miniapp_metadata *metadata =
+            crazypod_miniapp_catalog_get(index);
+
+        if(metadata != NULL && metadata->kind ==
+               CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME)
+            ++count;
+    }
+    return count;
+}
+
+const struct crazypod_miniapp_metadata *
+crazypod_now_playing_themes_metadata(int index)
+{
+    return crazypod_miniapp_catalog_get(catalog_index_for_kind(
+        CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME, index));
+}
+
+int crazypod_now_playing_themes_find(const char *id)
+{
+    return valid_id(id) ? visible_index_for_id(
+        CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME, id) : -1;
+}
+
+int crazypod_now_playing_themes_open_id(const char *id)
+{
+    int index = crazypod_now_playing_themes_find(id);
+
+    return index >= 0 ? open_catalog_index(catalog_index_for_kind(
+        CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME, index))
+        : CRAZYPOD_MINIAPP_ERROR_FORMAT;
 }
 
 void crazypod_miniapps_close(void)
@@ -243,7 +348,29 @@ bool crazypod_miniapps_is_open(void)
 
 int crazypod_miniapps_current(void)
 {
-    return crazypod_miniapps_is_open() ? active_index : -1;
+    const struct crazypod_miniapp_metadata *metadata =
+        crazypod_miniapps_current_metadata();
+
+    return metadata != NULL &&
+        metadata->kind == CRAZYPOD_MINIAPP_KIND_APP
+        ? visible_index_for_id(CRAZYPOD_MINIAPP_KIND_APP, metadata->id)
+        : -1;
+}
+
+const struct crazypod_miniapp_metadata *
+crazypod_miniapps_current_metadata(void)
+{
+    return crazypod_miniapps_is_open() ? current_metadata() : NULL;
+}
+
+enum crazypod_miniapp_kind crazypod_miniapps_current_kind(void)
+{
+    const struct crazypod_miniapp_metadata *metadata =
+        current_metadata();
+
+    return metadata != NULL
+        ? (enum crazypod_miniapp_kind)metadata->kind
+        : CRAZYPOD_MINIAPP_KIND_APP;
 }
 
 bool crazypod_miniapps_take_ui_refresh(void)

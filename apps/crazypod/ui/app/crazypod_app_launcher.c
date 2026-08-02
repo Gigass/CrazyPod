@@ -48,7 +48,12 @@ static void open_music(void)
 void crazypod_app_launcher_open_now_playing(void)
 {
     shuffle_pending = false;
-    open_music();
+    (void)crazypod_music_validate_catalog_async();
+    crazypod_shell_open_product();
+    host.boost(true);
+    /* Home is the parent of this shortcut.  Leave Now Playing as the route
+     * root so Menu closes the product layer instead of revealing Music. */
+    crazypod_ui_routes_clear();
     host.request_now_playing();
 }
 

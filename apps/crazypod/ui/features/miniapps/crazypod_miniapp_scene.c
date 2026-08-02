@@ -26,6 +26,7 @@ static struct {
     uint32_t accent;
     uint32_t focused_handle;
     uint16_t focus_ordinal;
+    bool focus_dirty;
 } scene;
 
 static bool focus_candidate(
@@ -334,12 +335,18 @@ static void materialize_node(
     }
     if(node->object == NULL)
         return;
+    if(node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+        node->artwork_generation = 0;
     if(node->type == CP_UI_OBJECT_SCREEN ||
        node->type == CP_UI_OBJECT_VIEW ||
+       node->type == CP_UI_OBJECT_MODAL ||
        node->type == CP_UI_OBJECT_BUTTON ||
        node->type == CP_UI_OBJECT_SCROLL_VIEW ||
-       node->type == CP_UI_OBJECT_TILEMAP)
+       node->type == CP_UI_OBJECT_TILEMAP ||
+       node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK ||
+       node->type == CP_UI_OBJECT_SOUND_WAVE)
         lv_obj_remove_style_all(node->object);
+    crazypod_miniapp_scene_object_prepare(node);
     if(node->type == CP_UI_OBJECT_SCREEN)
         lv_obj_remove_flag(
             node->object, LV_OBJ_FLAG_SCROLLABLE);
@@ -360,6 +367,9 @@ static void materialize_node(
     for(property = 1; property < CP_UI_PROP_COUNT; ++property)
         if(property_is_set(node, property))
             crazypod_miniapp_scene_property_apply(node, property);
+    if(node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+        (void)crazypod_miniapp_scene_now_playing_artwork_refresh_node(
+            node);
     if(parent_node != NULL) {
         crazypod_miniapp_scene_grid_refresh(parent_node);
         if(parent_node->type == CP_UI_OBJECT_TILE_VIEW &&
@@ -426,10 +436,39 @@ static void delete_materialized_roots(void)
     }
 }
 
+static bool materialized_roots_valid(lv_obj_t *parent)
+{
+    bool found = false;
+    uint32_t index;
+
+    if(parent == NULL || !lv_obj_is_valid(parent))
+        return false;
+    for(index = 0; index < CP_UI_HANDLE_MAX; ++index) {
+        struct crazypod_miniapp_scene_node *node =
+            &scene.nodes[index];
+
+        if(node->state != CRAZYPOD_MINIAPP_SCENE_SLOT_ALIVE ||
+           node->type != CP_UI_OBJECT_SCREEN)
+            continue;
+        found = true;
+        if(node->object == NULL ||
+           !lv_obj_is_valid(node->object) ||
+           lv_obj_get_parent(node->object) != parent)
+            return false;
+    }
+    return found;
+}
+
+bool crazypod_miniapp_scene_attached(lv_obj_t *parent)
+{
+    return scene.parent == parent &&
+        materialized_roots_valid(parent);
+}
+
 void crazypod_miniapp_scene_attach(
     lv_obj_t *parent, uint32_t accent)
 {
-    if(scene.parent == parent) {
+    if(crazypod_miniapp_scene_attached(parent)) {
         scene.accent = accent;
         return;
     }
@@ -438,6 +477,7 @@ void crazypod_miniapp_scene_attach(
     scene.accent = accent;
     materialize_all();
     focus_apply();
+    scene.focus_dirty = false;
 }
 
 void crazypod_miniapp_scene_reset(void)
@@ -460,6 +500,7 @@ void crazypod_miniapp_scene_reset(void)
     scene.parent = NULL;
     scene.focused_handle = CP_UI_HANDLE_NONE;
     scene.focus_ordinal = 0;
+    scene.focus_dirty = false;
 }
 
 bool crazypod_miniapp_scene_has_content(void)
@@ -471,6 +512,39 @@ bool crazypod_miniapp_scene_has_content(void)
            CRAZYPOD_MINIAPP_SCENE_SLOT_ALIVE)
             return true;
     return false;
+}
+
+bool crazypod_miniapp_scene_modal_visible(void)
+{
+    uint32_t index;
+
+    for(index = 0; index < CP_UI_HANDLE_MAX; ++index)
+        if(scene.nodes[index].state ==
+               CRAZYPOD_MINIAPP_SCENE_SLOT_ALIVE &&
+           scene.nodes[index].type == CP_UI_OBJECT_MODAL)
+            return true;
+    return false;
+}
+
+bool crazypod_miniapp_scene_refresh_now_playing_artwork(void)
+{
+    bool changed = false;
+    uint32_t index;
+
+    for(index = 0; index < CP_UI_HANDLE_MAX; ++index) {
+        struct crazypod_miniapp_scene_node *node =
+            &scene.nodes[index];
+
+        if(node->state != CRAZYPOD_MINIAPP_SCENE_SLOT_ALIVE ||
+           node->object == NULL ||
+           !crazypod_miniapp_scene_now_playing_artwork_needs_refresh(
+               node))
+            continue;
+        changed |=
+            crazypod_miniapp_scene_now_playing_artwork_refresh_node(
+                node);
+    }
+    return changed;
 }
 
 static uint32_t scene_reserve(uint8_t object_type)
@@ -531,6 +605,7 @@ static void remove_node(uint32_t handle)
     node->object = NULL;
     node->parent = CP_UI_HANDLE_NONE;
     node->state = CRAZYPOD_MINIAPP_SCENE_SLOT_FREE;
+    scene.focus_dirty = true;
     if(removes_screen) {
         scene.focused_handle = CP_UI_HANDLE_NONE;
         scene.focus_ordinal = 0;
@@ -610,6 +685,7 @@ int crazypod_miniapp_scene_insert(
     }
     materialized = child->object != NULL;
     child->parent = parent_handle;
+    scene.focus_dirty = true;
     if(!materialized)
         materialize_all();
     if(child->object != NULL && parent->object != NULL) {
@@ -650,8 +726,18 @@ int crazypod_miniapp_scene_set_i32(
 
     if(node == NULL || !property_numeric(property))
         return -1;
+    if(property_is_set(node, property) &&
+       node->values[property] == value) {
+        if(property != CP_UI_PROP_REVISION ||
+           !crazypod_miniapp_scene_now_playing_artwork_needs_refresh(node))
+            return 0;
+    }
     node->values[property] = value;
     property_mark(node, property);
+    if(property == CP_UI_PROP_VISIBLE ||
+       property == CP_UI_PROP_DISABLED ||
+       property == CP_UI_PROP_FOCUSABLE)
+        scene.focus_dirty = true;
     crazypod_miniapp_scene_property_apply(node, property);
     return 0;
 }
@@ -668,6 +754,9 @@ int crazypod_miniapp_scene_set_color(
         property != CP_UI_PROP_SHADOW_COLOR &&
         property != CP_UI_PROP_TEXT_COLOR))
         return -1;
+    if(property_is_set(node, property) &&
+       node->values[property] == (int32_t)rgb)
+        return 0;
     node->values[property] = (int32_t)rgb;
     property_mark(node, property);
     crazypod_miniapp_scene_property_apply(node, property);
@@ -703,6 +792,9 @@ int crazypod_miniapp_scene_set_string(
     length = strlen(value);
     if(length >= capacity)
         return -1;
+    if(property_is_set(node, property) &&
+       strcmp(destination, value) == 0)
+        return 0;
     memcpy(destination, value, length + 1);
     property_mark(node, property);
     crazypod_miniapp_scene_property_apply(node, property);
@@ -734,7 +826,12 @@ int crazypod_miniapp_scene_listen(
        event_type < CP_UI_EVENT_SELECT ||
        event_type > CP_UI_EVENT_ANIMATION_COMPLETE)
         return -1;
+    if(node->listeners[event_type - CP_UI_EVENT_SELECT] == handler)
+        return 0;
     node->listeners[event_type - CP_UI_EVENT_SELECT] = handler;
+    if(event_type == CP_UI_EVENT_SELECT ||
+       event_type == CP_UI_EVENT_CHANGE)
+        scene.focus_dirty = true;
     return 0;
 }
 
@@ -787,7 +884,10 @@ int crazypod_miniapp_scene_remove(uint32_t target)
 int crazypod_miniapp_scene_end_update(void)
 {
     materialize_all();
-    focus_apply();
+    if(scene.focus_dirty) {
+        focus_apply();
+        scene.focus_dirty = false;
+    }
     return 0;
 }
 

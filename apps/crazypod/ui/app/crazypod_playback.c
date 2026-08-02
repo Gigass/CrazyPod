@@ -29,8 +29,6 @@
 #include "crazypod_menu_preview.h"
 #include "crazypod_playback.h"
 
-#define NOW_ARTWORK_CACHE_SIZE \
-    CRAZYPOD_COVERFLOW_ARTWORK_SIZE
 #define PREVIOUS_RESTART_THRESHOLD_MS 3000
 
 static struct {
@@ -207,6 +205,7 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
     crazypod_app_launcher_process_pending();
     track = current_track();
     id3 = audio_current_track();
+    crazypod_now_playing_artwork_sync();
     crazypod_now_capsule_update(
         track,
         id3 != NULL ? (uint32_t)id3->elapsed : 0,
@@ -214,21 +213,15 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
     if(crazypod_ui_routes_depth() <= 0 ||
        current_route()->route != MUSIC_ROUTE_NOW_PLAYING)
         return;
+    if(crazypod_now_playing_theme_open())
+        return;
     if(track != NULL &&
        strcmp(
            crazypod_now_playing_feature_rendered_track_path(),
            track->path) != 0) {
-        int slot =
-            crazypod_now_playing_artwork_slot(track);
         enum crazypod_now_playing_overlay overlay =
             crazypod_now_playing_overlay_kind();
 
-        (void)crazypod_artwork_load_priority(
-            slot, track, NOW_ARTWORK_CACHE_SIZE, 0);
-        if(crazypod_artwork_state(
-               slot, track, NOW_ARTWORK_CACHE_SIZE) ==
-           CRAZYPOD_ARTWORK_PENDING)
-            return;
         playback.host.render(false);
         crazypod_now_playing_overlay_restore(overlay);
         return;
@@ -253,6 +246,7 @@ void crazypod_playback_process_artwork(void)
 {
     unsigned generation;
 
+    crazypod_now_playing_artwork_sync();
     crazypod_now_capsule_poll_artwork(current_track());
     if(!crazypod_shell_product_active() ||
        crazypod_ui_routes_depth() <= 0 ||
@@ -263,6 +257,9 @@ void crazypod_playback_process_artwork(void)
         return;
     if(current_route()->route == MUSIC_ROUTE_NOW_PLAYING &&
        crazypod_now_playing_overlay_visible())
+        return;
+    if(current_route()->route == MUSIC_ROUTE_NOW_PLAYING &&
+       crazypod_now_playing_theme_open())
         return;
     if(current_route()->route == MUSIC_ROUTE_NOW_PLAYING) {
         if(!crazypod_now_playing_artwork_changed())
@@ -329,7 +326,8 @@ void crazypod_playback_tick_wave(long now)
         crazypod_ui_routes_depth() > 0 &&
         current_route()->route == MUSIC_ROUTE_NOW_PLAYING;
 
-    crazypod_now_playing_feature_tick_wave(now, active);
+    if(!crazypod_now_playing_theme_open())
+        crazypod_now_playing_feature_tick_wave(now, active);
 }
 
 void crazypod_playback_sync_album_flow(void)

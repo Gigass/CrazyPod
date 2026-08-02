@@ -22,14 +22,14 @@ test("Native 2048 builds as a deterministic CPK5", async () => {
     const binary = path.join(directory, "app.dylib");
     await writeFile(binary, Buffer.from("native-game2048"));
     const first = await buildProject(
-      path.join(repository, "miniapps/game2048"), {
+      path.join(repository, "miniapps/apps/game2048"), {
         output,
         binary,
         target: "simulator",
       });
     const firstBytes = await readFile(output);
     const second = await buildProject(
-      path.join(repository, "miniapps/game2048"), {
+      path.join(repository, "miniapps/apps/game2048"), {
         output,
         binary,
         target: "simulator",
@@ -55,7 +55,7 @@ test("Capability Lab packages a deterministic CPK5 native payload", async () => 
     const binary = path.join(directory, "app.dylib");
     await writeFile(binary, Buffer.from("native-capability-lab"));
     const result = await buildProject(
-      path.join(repository, "miniapps/capability-lab"), {
+      path.join(repository, "miniapps/apps/capability-lab"), {
         output,
         binary,
         target: "simulator",

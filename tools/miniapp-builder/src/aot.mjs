@@ -26,7 +26,7 @@ const objectTypes = Object.freeze({
   Switch: "CP_UI_OBJECT_SWITCH",
   CheckBox: "CP_UI_OBJECT_CHECKBOX",
   Checkbox: "CP_UI_OBJECT_CHECKBOX",
-  Modal: "CP_UI_OBJECT_VIEW",
+  Modal: "CP_UI_OBJECT_MODAL",
 });
 
 const eventProps = Object.freeze({
@@ -53,11 +53,11 @@ const inputProps = Object.freeze({
 
 const integerProps = Object.freeze({
   disabled: "CP_UI_PROP_DISABLED",
-  value: "CP_UI_PROP_VALUE",
   minimumValue: "CP_UI_PROP_MINIMUM",
   minimum: "CP_UI_PROP_MINIMUM",
   maximumValue: "CP_UI_PROP_MAXIMUM",
   maximum: "CP_UI_PROP_MAXIMUM",
+  value: "CP_UI_PROP_VALUE",
   checked: "CP_UI_PROP_CHECKED",
   focusable: "CP_UI_PROP_FOCUSABLE",
   scrollX: "CP_UI_PROP_SCROLL_X",
@@ -1352,11 +1352,16 @@ function nativeManifest(source, target) {
   if (!/^#[0-9a-f]{6}$/i.test(source.accent)) {
     throw new Error("manifest.accent must be #RRGGBB");
   }
+  if (source.kind !== undefined &&
+      !["miniapp", "now-playing-theme"].includes(source.kind)) {
+    throw new Error("manifest.kind must be miniapp or now-playing-theme");
+  }
   if (!["simulator", "ipod6g"].includes(target)) {
     throw new Error("native target must be simulator or ipod6g");
   }
   return {
     format: 5,
+    kind: source.kind === undefined ? "miniapp" : String(source.kind),
     id: source.id,
     name: String(source.name),
     version: String(source.version),

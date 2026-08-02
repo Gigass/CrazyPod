@@ -12,7 +12,10 @@ struct cp_input_event;
 void crazypod_miniapp_scene_reset(void);
 void crazypod_miniapp_scene_attach(
     lv_obj_t *parent, uint32_t accent);
+bool crazypod_miniapp_scene_attached(lv_obj_t *parent);
 bool crazypod_miniapp_scene_has_content(void);
+bool crazypod_miniapp_scene_modal_visible(void);
+bool crazypod_miniapp_scene_refresh_now_playing_artwork(void);
 int crazypod_miniapp_scene_begin_update(void);
 uint32_t crazypod_miniapp_scene_create(uint8_t object_type);
 int crazypod_miniapp_scene_insert(

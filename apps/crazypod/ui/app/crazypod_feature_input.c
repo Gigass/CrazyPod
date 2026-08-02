@@ -3,6 +3,7 @@
 #ifdef IPOD_6G
 
 #include "backlight.h"
+#include "button.h"
 #include "kernel.h"
 #include "timefuncs.h"
 
@@ -11,6 +12,7 @@
 #include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/notes/crazypod_notes_feature.h"
+#include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../features/photos/crazypod_photos_feature.h"
 #include "../features/settings/crazypod_settings_feature.h"
@@ -73,6 +75,24 @@ static bool handle_miniapps_raw(
     (void)context;
     return crazypod_miniapps_feature_handle_input(
         state, event, &input);
+}
+
+static bool handle_now_playing_raw(
+    const struct route_state *state,
+    const struct crazypod_input_event *event,
+    void *context)
+{
+    (void)state;
+    (void)context;
+    if(event->base == BUTTON_MENU && event->repeated) {
+        crazypod_route_actions_pop();
+        return true;
+    }
+    if(!crazypod_now_playing_theme_handle_input(event))
+        return false;
+    backlight_on();
+    host.boost(HZ / 10 > 0 ? HZ / 10 : 1);
+    return true;
 }
 
 static bool handle_settings_pressed(
@@ -179,6 +199,8 @@ static bool handle_music_pressed(
 
 static const struct crazypod_feature_bindings bindings = {
     .raw = {
+        [CRAZYPOD_FEATURE_NOW_PLAYING] =
+            handle_now_playing_raw,
         [CRAZYPOD_FEATURE_PHOTOS] = handle_photos_raw,
         [CRAZYPOD_FEATURE_CUSTOMIZE] =
             handle_customize_raw,

@@ -12,7 +12,6 @@
 #include "settings.h"
 #include "lvgl.h"
 
-#include "../../../crazypod_artwork.h"
 #include "../../../crazypod_lyrics.h"
 #include "../../../crazypod_playlist.h"
 #include "../../presentation/crazypod_marquee.h"
@@ -23,7 +22,6 @@
 #define COLOR_CYAN 0x55D6E7
 #define COLOR_FAVORITE 0xFF375F
 #define COLOR_WHITE 0xFFFFFF
-#define CRAZYPOD_NOW_ARTWORK_CACHE_SIZE CRAZYPOD_COVERFLOW_ARTWORK_SIZE
 #define CRAZYPOD_NOW_LYRICS_COVER_SIZE 108
 #define CRAZYPOD_NOW_SHADE_COLOR 0x05070A
 #define CRAZYPOD_NOW_SHADE_OPA 96
@@ -79,12 +77,8 @@ void crazypod_now_screen_render(
 {
     struct crazypod_now_screen_view *view = &now_view;
     const struct crazypod_track *track = context->track;
-    const lv_image_dsc_t *artwork = NULL;
     const lv_image_dsc_t *lyrics_artwork = NULL;
     const lv_image_dsc_t *presentation_backdrop = NULL;
-    enum crazypod_artwork_state artwork_state =
-        CRAZYPOD_ARTWORK_EMPTY;
-    int artwork_slot = CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT;
     uint32_t content_color = COLOR_WHITE;
     lv_obj_t *backdrop;
     lv_obj_t *shade;
@@ -98,34 +92,24 @@ void crazypod_now_screen_render(
         snprintf(rendered_track_path,
                  sizeof(rendered_track_path),
                  "%s", track->path);
-        artwork_slot = context->artwork_slot(track);
-        artwork = crazypod_artwork_load_priority(
-            artwork_slot, track,
-            CRAZYPOD_NOW_ARTWORK_CACHE_SIZE, 0);
-        artwork_state = crazypod_artwork_state(
-            artwork_slot, track,
-            CRAZYPOD_NOW_ARTWORK_CACHE_SIZE);
-        if(artwork_slot == CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT &&
-           artwork != NULL) {
-            (void)crazypod_artwork_load_priority(
-                CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT,
-                track, CRAZYPOD_NOW_ARTWORK_CACHE_SIZE, 10);
-        }
-        if(artwork != NULL &&
-           !crazypod_now_presentation_matches(track->path)) {
-            context->boost(HZ / 2);
-            (void)crazypod_now_presentation_prepare(
-                artwork, track->path);
-        }
-        else if(artwork_state == CRAZYPOD_ARTWORK_EMPTY &&
-                !crazypod_now_presentation_matches(track->path))
-            crazypod_now_presentation_discard();
     }
-
-    if(track != NULL)
+    if(context->visual_artwork != NULL &&
+       context->visual_track_path != NULL &&
+       !crazypod_now_presentation_matches(
+           context->visual_track_path,
+           context->visual_generation)) {
+        context->boost(HZ / 2);
+        (void)crazypod_now_presentation_prepare(
+            context->visual_artwork,
+            context->visual_track_path,
+            context->visual_generation);
+    }
+    if(context->visual_track_path != NULL)
         (void)crazypod_now_presentation_get(
-            track->path, &lyrics_artwork,
-            &presentation_backdrop, &content_color);
+            context->visual_track_path,
+            context->visual_generation,
+            &lyrics_artwork, &presentation_backdrop,
+            &content_color);
     if(presentation_backdrop != NULL) {
         backdrop = lv_image_create(context->parent);
         lv_image_set_src(backdrop, presentation_backdrop);

@@ -13,7 +13,7 @@
  * objects, Rockbox internals and compiler-runtime state remain host-owned.
  */
 #define CP_NATIVE_ABI_MAJOR 1u
-#define CP_NATIVE_ABI_MINOR 3u
+#define CP_NATIVE_ABI_MINOR 9u
 #define CP_NATIVE_PACKAGE_FORMAT 5u
 #define CP_NATIVE_REACT_PROFILE 1u
 #define CP_NATIVE_BINARY_MAGIC 0x35414d43ul /* CMA5 */
@@ -35,6 +35,105 @@
 
 #define CP_NATIVE_SERVICE_SYSTEM 0u
 #define CP_NATIVE_SYSTEM_INFO 0u
+#define CP_NATIVE_SERVICE_NOW_PLAYING 1u
+#define CP_NATIVE_NOW_PLAYING_SNAPSHOT 0u
+#define CP_NATIVE_NOW_PLAYING_COMMAND 1u
+#define CP_NATIVE_NOW_PLAYING_QUEUE_STATE 2u
+#define CP_NATIVE_NOW_PLAYING_QUEUE_ITEM 3u
+#define CP_NATIVE_NOW_PLAYING_LYRICS_WINDOW 4u
+
+#define CP_NOW_PLAYING_TEXT_CAPACITY 128u
+#define CP_NOW_PLAYING_INFO_COUNT 10u
+
+enum cp_now_playing_command {
+    CP_NOW_PLAYING_COMMAND_TOGGLE = 0,
+    CP_NOW_PLAYING_COMMAND_PREVIOUS,
+    CP_NOW_PLAYING_COMMAND_NEXT,
+    CP_NOW_PLAYING_COMMAND_ADJUST_VOLUME,
+    CP_NOW_PLAYING_COMMAND_SEEK,
+    CP_NOW_PLAYING_COMMAND_TOGGLE_FAVORITE,
+    CP_NOW_PLAYING_COMMAND_CYCLE_MODE,
+    CP_NOW_PLAYING_COMMAND_SET_FAVORITE,
+    CP_NOW_PLAYING_COMMAND_SET_MODE,
+    CP_NOW_PLAYING_COMMAND_SEEK_BY,
+    CP_NOW_PLAYING_COMMAND_PLAY_QUEUE_ITEM
+};
+
+enum cp_now_playing_mode {
+    CP_NOW_PLAYING_MODE_NORMAL = 0,
+    CP_NOW_PLAYING_MODE_SHUFFLE,
+    CP_NOW_PLAYING_MODE_REPEAT_ALL,
+    CP_NOW_PLAYING_MODE_REPEAT_ONE
+};
+
+enum cp_now_playing_status {
+    CP_NOW_PLAYING_STOPPED = 0,
+    CP_NOW_PLAYING_PAUSED,
+    CP_NOW_PLAYING_PLAYING
+};
+
+struct cp_now_playing_snapshot {
+    uint32_t struct_size;
+    uint32_t revision;
+    uint32_t elapsed_ms;
+    uint32_t length_ms;
+    int32_t status;
+    int32_t volume;
+    int32_t repeat_mode;
+    int32_t shuffle;
+    int32_t favorite;
+    char title[CP_NOW_PLAYING_TEXT_CAPACITY];
+    char artist[CP_NOW_PLAYING_TEXT_CAPACITY];
+    char album[CP_NOW_PLAYING_TEXT_CAPACITY];
+    uint32_t level_left;
+    uint32_t level_right;
+};
+
+#define CP_NOW_PLAYING_SNAPSHOT_BASE_SIZE \
+    offsetof(struct cp_now_playing_snapshot, level_left)
+
+struct cp_now_playing_command_request {
+    uint32_t struct_size;
+    uint32_t command;
+    int32_t value;
+};
+
+struct cp_now_playing_queue_state {
+    uint32_t struct_size;
+    uint32_t generation;
+    int32_t count;
+    int32_t current_index;
+};
+
+struct cp_now_playing_queue_item_request {
+    uint32_t struct_size;
+    int32_t index;
+};
+
+struct cp_now_playing_queue_item {
+    uint32_t struct_size;
+    uint32_t generation;
+    int32_t index;
+    int32_t current;
+    char title[CP_NOW_PLAYING_TEXT_CAPACITY];
+    char artist[CP_NOW_PLAYING_TEXT_CAPACITY];
+    char album[CP_NOW_PLAYING_TEXT_CAPACITY];
+};
+
+struct cp_now_playing_lyrics_request {
+    uint32_t struct_size;
+    uint32_t elapsed_ms;
+};
+
+struct cp_now_playing_lyrics_window {
+    uint32_t struct_size;
+    uint32_t revision;
+    int32_t available;
+    int32_t current_line;
+    char previous[CP_NOW_PLAYING_TEXT_CAPACITY];
+    char current[CP_NOW_PLAYING_TEXT_CAPACITY];
+    char next[CP_NOW_PLAYING_TEXT_CAPACITY];
+};
 
 #define CP_UI_HANDLE_MAX CP_NATIVE_UI_HANDLE_MAX
 #define CP_UI_HANDLE_NONE CP_NATIVE_UI_HANDLE_NONE
@@ -111,6 +210,9 @@ enum cp_ui_object_type {
     CP_UI_OBJECT_TABLE,
     CP_UI_OBJECT_TILE_VIEW,
     CP_UI_OBJECT_IMAGE_BUTTON,
+    CP_UI_OBJECT_NOW_PLAYING_ARTWORK,
+    CP_UI_OBJECT_SOUND_WAVE,
+    CP_UI_OBJECT_MODAL,
     CP_UI_OBJECT_TYPE_COUNT
 };
 
@@ -179,6 +281,13 @@ enum cp_ui_property {
     CP_UI_PROP_MARGIN_TOP,
     CP_UI_PROP_MARGIN_BOTTOM,
     CP_UI_PROP_POSITION,
+    CP_UI_PROP_VARIANT,
+    CP_UI_PROP_REVISION,
+    CP_UI_PROP_PHASE,
+    CP_UI_PROP_PLAYING,
+    CP_UI_PROP_WAVE_STYLE,
+    CP_UI_PROP_NUMBER_OF_LINES,
+    CP_UI_PROP_MARQUEE,
     CP_UI_PROP_COUNT
 };
 

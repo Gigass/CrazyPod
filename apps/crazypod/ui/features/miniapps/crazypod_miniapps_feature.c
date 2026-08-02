@@ -67,6 +67,34 @@ bool crazypod_miniapps_feature_render(
     return true;
 }
 
+void crazypod_miniapps_feature_render_active(
+    lv_obj_t *parent, uint32_t primary_color)
+{
+    crazypod_miniapp_screen_render(parent, primary_color);
+}
+
+void crazypod_miniapps_feature_note_opened(void)
+{
+    crazypod_miniapp_runtime_opened();
+}
+
+void crazypod_miniapps_feature_push_wheel(
+    const struct cp_input_event *event)
+{
+    crazypod_miniapp_runtime_push_wheel(event);
+}
+
+void crazypod_miniapps_feature_push_wheel_coalesced(
+    const struct cp_input_event *event)
+{
+    crazypod_miniapp_runtime_push_wheel_coalesced(event);
+}
+
+bool crazypod_miniapps_feature_modal_visible(void)
+{
+    return crazypod_miniapp_scene_modal_visible();
+}
+
 bool crazypod_miniapps_feature_surface_attached(lv_obj_t *parent)
 {
     return crazypod_miniapp_screen_attached(parent);
@@ -199,6 +227,11 @@ bool crazypod_miniapps_feature_exit_prompt_visible(void)
 bool crazypod_miniapps_feature_has_scene_content(void)
 {
     return crazypod_miniapp_scene_has_content();
+}
+
+void crazypod_miniapps_feature_refresh_now_playing_artwork(void)
+{
+    (void)crazypod_miniapp_scene_refresh_now_playing_artwork();
 }
 
 #ifdef SIMULATOR

@@ -1195,7 +1195,7 @@
         "apps/crazypod/crazypod_workouts.c:39"
       ]
     },
-    "Copy a signed CPK to /MiniApps/Install.": {
+    "Copy a CPK to /MiniApps/Install.": {
       "locations": [
         "apps/crazypod/ui/presentation/crazypod_menu_screen.c:141"
       ]
@@ -2799,6 +2799,13 @@
         "apps/crazypod/ui/features/music/crazypod_music_feature.c:166",
         "apps/crazypod/ui/features/music/crazypod_music_root_preview.c:27",
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_feature.c:66"
+      ]
+    },
+    "Themes": {
+      "locations": [
+        "apps/crazypod/ui/features/customize/crazypod_customize_catalog.c:16",
+        "apps/crazypod/ui/features/customize/crazypod_customize_feature.c:139",
+        "apps/crazypod/ui/features/customize/crazypod_customize_preview.c:138"
       ]
     },
     "O": {

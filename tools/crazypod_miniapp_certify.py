@@ -21,8 +21,9 @@ PACKAGES = (
     REPO_ROOT / "dist" / "miniapps" / "game2048-5.0.1.cpk",
     REPO_ROOT / "dist" / "miniapps" / "capability-lab-5.0.1.cpk",
     REPO_ROOT / "dist" / "miniapps" / "native-reference-1.0.0.cpk",
+    REPO_ROOT / "dist" / "miniapps" / "now-playing-neon-1.3.1.cpk",
 )
-RELEASE_ENTRY_COUNT = 325
+RELEASE_ENTRY_COUNT = 326
 MINIMUM_FREE_BYTES = 16 * 1024 * 1024
 REPRO_FILENAMES = (
     "summary.json",
@@ -198,6 +199,15 @@ def copy_stream_atomic(source, destination: Path) -> None:
             temporary.unlink()
 
 
+def remove_appledouble_packages(directory: Path) -> None:
+    """Remove macOS FAT sidecars that otherwise look like installable CPKs."""
+    if not directory.is_dir():
+        return
+    for sidecar in directory.glob("._*.cpk"):
+        if sidecar.is_file():
+            sidecar.unlink()
+
+
 def stage_packages(
     volume_value: str | Path,
     packages: tuple[Path, ...] = PACKAGES,
@@ -218,6 +228,7 @@ def stage_packages(
                 f"staged package verification failed: {destination}"
             )
         staged[str(destination)] = source_hash
+    remove_appledouble_packages(install_directory)
     return staged
 
 
@@ -304,6 +315,7 @@ def install_release(
                     "installed file verification failed: "
                     f"{entry.filename}"
                 )
+    remove_appledouble_packages(package_directory)
     if hasattr(os, "sync"):
         os.sync()
     report["backup"] = str(backup)

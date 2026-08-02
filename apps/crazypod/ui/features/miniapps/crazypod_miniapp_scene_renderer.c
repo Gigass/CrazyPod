@@ -9,10 +9,164 @@
 #include "buflib.h"
 #include "core_alloc.h"
 
+#include "../../../crazypod_appearance.h"
+#include "../../../crazypod_image.h"
 #include "../../../crazypod_miniapps.h"
 #include "../../../crazypod_miniapp_font.h"
+#include "../../../crazypod_soundwave.h"
 #include "../../../miniapps/runtime/crazypod_miniapp_host_system.h"
+#include "../../features/now_playing/crazypod_now_playing_feature.h"
+#include "../../presentation/crazypod_marquee.h"
 #include "crazypod_miniapp_scene_internal.h"
+
+bool crazypod_miniapp_scene_now_playing_artwork_refresh_node(
+    struct crazypod_miniapp_scene_node *node)
+{
+    const lv_image_dsc_t *descriptor;
+    lv_image_dsc_t staged_image;
+    lv_image_dsc_t old_image;
+    lv_obj_t *staged_object;
+    int staged_handle;
+    int old_handle;
+    uint32_t old_size;
+    unsigned generation;
+    int width;
+    int height;
+    size_t pixel_count;
+    size_t byte_count;
+
+    if(node == NULL || node->object == NULL ||
+       node->type != CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+        return false;
+    width = node->values[CP_UI_PROP_WIDTH];
+    height = node->values[CP_UI_PROP_HEIGHT];
+    if(width <= 0 || height <= 0)
+        return false;
+    descriptor = crazypod_now_playing_artwork_committed(
+        NULL, &generation);
+    if(node->artwork_generation == generation)
+        return true;
+    if(descriptor != NULL && descriptor->data != NULL &&
+       descriptor->header.cf == LV_COLOR_FORMAT_RGB565 &&
+       descriptor->header.w > 0 && descriptor->header.h > 0) {
+        const fb_data *source = (const fb_data *)descriptor->data;
+        int source_stride =
+            descriptor->header.stride / sizeof(fb_data);
+        int crop_x = 0;
+        int crop_y = 0;
+        int crop_width = descriptor->header.w;
+        int crop_height = descriptor->header.h;
+        pixel_count = (size_t)width * (size_t)height;
+        byte_count = pixel_count * sizeof(fb_data);
+
+        if((int64_t)crop_width * height >
+           (int64_t)crop_height * width) {
+            crop_width = crop_height * width / height;
+            crop_x = (descriptor->header.w - crop_width) / 2;
+        }
+        else {
+            crop_height = crop_width * height / width;
+            crop_y = (descriptor->header.h - crop_height) / 2;
+        }
+        if(crop_width <= 0 || crop_height <= 0 ||
+           byte_count == 0 || byte_count > UINT32_MAX ||
+           !crazypod_miniapp_host_memory_replace(
+               node->external_size, byte_count))
+            return false;
+        staged_handle = core_alloc_ex(
+            byte_count, &buflib_ops_locked);
+        if(staged_handle <= 0) {
+            (void)crazypod_miniapp_host_memory_replace(
+                byte_count, node->external_size);
+            return false;
+        }
+        memset(&staged_image, 0, sizeof(staged_image));
+        if(!crazypod_image_scale_rgb565(
+               source + crop_y * source_stride + crop_x,
+               crop_width, crop_height, source_stride,
+               core_get_data(staged_handle), width, height) ||
+           !crazypod_image_configure_rgb565(
+               &staged_image, core_get_data(staged_handle),
+               width, height)) {
+            core_free(staged_handle);
+            (void)crazypod_miniapp_host_memory_replace(
+                byte_count, node->external_size);
+            return false;
+        }
+        old_handle = node->resource_handle;
+        old_size = node->external_size;
+        old_image = node->image;
+        node->image = staged_image;
+        staged_object = lv_image_create(node->object);
+        if(staged_object == NULL) {
+            node->image = old_image;
+            core_free(staged_handle);
+            (void)crazypod_miniapp_host_memory_replace(
+                byte_count, old_size);
+            return false;
+        }
+        lv_image_set_src(staged_object, &node->image);
+        lv_obj_set_pos(staged_object, 0, 0);
+        lv_obj_remove_flag(staged_object, LV_OBJ_FLAG_CLICKABLE);
+        while(lv_obj_get_child_count(node->object) > 1u) {
+            lv_obj_t *child = lv_obj_get_child(node->object, 0);
+
+            if(child == staged_object)
+                child = lv_obj_get_child(node->object, 1);
+            lv_obj_delete(child);
+        }
+        node->resource_handle = staged_handle;
+        node->external_size = (uint32_t)byte_count;
+        node->artwork_generation = generation;
+        if(old_handle > 0)
+            core_free(old_handle);
+        lv_obj_set_style_bg_opa(node->object, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(
+            node->object, lv_color_hex(0x121218), 0);
+        lv_obj_set_style_clip_corner(node->object, true, 0);
+        lv_obj_invalidate(node->object);
+        return true;
+    }
+    return false;
+}
+
+bool crazypod_miniapp_scene_now_playing_artwork_needs_refresh(
+    struct crazypod_miniapp_scene_node *node)
+{
+    unsigned generation;
+
+    if(node == NULL ||
+       node->type != CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+        return false;
+    (void)crazypod_now_playing_artwork_committed(
+        NULL, &generation);
+    return node->artwork_generation != generation;
+}
+
+static void draw_sound_wave(lv_event_t *event)
+{
+    struct crazypod_miniapp_scene_node *node =
+        lv_event_get_user_data(event);
+    const struct crazypod_appearance *appearance =
+        crazypod_appearance_get();
+    lv_area_t area;
+    int style;
+
+    if(node == NULL || lv_event_get_code(event) != LV_EVENT_DRAW_MAIN)
+        return;
+    style = node->values[CP_UI_PROP_WAVE_STYLE];
+    if(style < 0 || style >= CRAZYPOD_SOUND_WAVE_STYLE_COUNT)
+        style = appearance->sound_wave_style;
+    lv_obj_get_coords(node->object, &area);
+    crazypod_sound_wave_draw_bar(
+        lv_event_get_layer(event), &area,
+        (enum crazypod_sound_wave_style)style,
+        node->values[CP_UI_PROP_PHASE],
+        node->values[CP_UI_PROP_PLAYING] != 0,
+        crazypod_appearance_color(appearance->primary_color),
+        crazypod_appearance_color(appearance->secondary_color),
+        0xFFFFFF);
+}
 
 static const lv_font_t *font_for_value(int32_t value)
 {
@@ -22,7 +176,7 @@ static const lv_font_t *font_for_value(int32_t value)
     case CP_UI_FONT_LABEL:
         return &crazypod_miniapp_symbol_font;
     case CP_UI_FONT_BODY:
-        return &lv_font_montserrat_12;
+        return &lv_font_crazypod_i18n_12;
     case CP_UI_FONT_CJK:
         return &lv_font_source_han_sans_sc_14_cjk;
     case CP_UI_FONT_TITLE:
@@ -85,7 +239,11 @@ static void apply_text(struct crazypod_miniapp_scene_node *node)
 {
     switch(node->type) {
     case CP_UI_OBJECT_TEXT:
-        lv_label_set_text(node->object, node->text);
+        if(node->values[CP_UI_PROP_MARQUEE])
+            crazypod_marquee_set_text(
+                node->object, node->text, true);
+        else
+            lv_label_set_text(node->object, node->text);
         break;
     case CP_UI_OBJECT_TEXT_INPUT:
         lv_textarea_set_text(node->object, node->text);
@@ -103,6 +261,31 @@ static void apply_text(struct crazypod_miniapp_scene_node *node)
     default:
         break;
     }
+}
+
+static void apply_number_of_lines(
+    struct crazypod_miniapp_scene_node *node)
+{
+    const lv_font_t *font;
+    int32_t lines;
+
+    if(node->type != CP_UI_OBJECT_TEXT)
+        return;
+    lines = node->values[CP_UI_PROP_NUMBER_OF_LINES];
+    if(lines <= 0) {
+        lv_label_set_long_mode(node->object, LV_LABEL_LONG_MODE_WRAP);
+        return;
+    }
+    if(lines > 8)
+        lines = 8;
+    font = lv_obj_get_style_text_font(node->object, LV_PART_MAIN);
+    if(font != NULL && font->line_height > 0)
+        lv_obj_set_height(node->object, font->line_height * lines);
+    if(node->values[CP_UI_PROP_MARQUEE])
+        crazypod_marquee_configure(node->object, true);
+    else
+        lv_label_set_long_mode(
+            node->object, LV_LABEL_LONG_MODE_DOTS);
 }
 
 static void apply_grid(struct crazypod_miniapp_scene_node *node)
@@ -1106,12 +1289,17 @@ void crazypod_miniapp_scene_property_apply(
     case CP_UI_PROP_WIDTH:
         lv_obj_set_width(object, value);
         apply_table_widths(node);
+        if(node->type == CP_UI_OBJECT_TEXT &&
+           node->values[CP_UI_PROP_MARQUEE])
+            crazypod_marquee_configure(object, true);
         if(node->type == CP_UI_OBJECT_CANVAS ||
            node->type == CP_UI_OBJECT_TILEMAP)
             (void)canvas_allocate(node);
         break;
     case CP_UI_PROP_HEIGHT:
         lv_obj_set_height(object, value);
+        if(node->values[CP_UI_PROP_NUMBER_OF_LINES] > 0)
+            apply_number_of_lines(node);
         if(node->type == CP_UI_OBJECT_CANVAS ||
            node->type == CP_UI_OBJECT_TILEMAP)
             (void)canvas_allocate(node);
@@ -1235,9 +1423,36 @@ void crazypod_miniapp_scene_property_apply(
         break;
     case CP_UI_PROP_FONT:
         lv_obj_set_style_text_font(object, font_for_value(value), 0);
+        if(node->values[CP_UI_PROP_NUMBER_OF_LINES] > 0)
+            apply_number_of_lines(node);
+        else if(node->type == CP_UI_OBJECT_TEXT &&
+                node->values[CP_UI_PROP_MARQUEE])
+            crazypod_marquee_configure(object, true);
+        break;
+    case CP_UI_PROP_NUMBER_OF_LINES:
+        apply_number_of_lines(node);
+        break;
+    case CP_UI_PROP_MARQUEE:
+        if(node->type == CP_UI_OBJECT_TEXT) {
+            if(value)
+                crazypod_marquee_configure(object, true);
+            else
+                apply_number_of_lines(node);
+        }
         break;
     case CP_UI_PROP_IMAGE_SOURCE:
         apply_image_source(node);
+        break;
+    case CP_UI_PROP_REVISION:
+        if(node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+            (void)crazypod_miniapp_scene_now_playing_artwork_refresh_node(
+                node);
+        break;
+    case CP_UI_PROP_PHASE:
+    case CP_UI_PROP_PLAYING:
+    case CP_UI_PROP_WAVE_STYLE:
+        if(node->type == CP_UI_OBJECT_SOUND_WAVE)
+            lv_obj_invalidate(object);
         break;
     case CP_UI_PROP_VALUE:
         if(node->type == CP_UI_OBJECT_PROGRESS)
@@ -1319,6 +1534,26 @@ void crazypod_miniapp_scene_property_apply(
     }
 }
 
+static lv_obj_t *create_progress_bar(lv_obj_t *parent)
+{
+    lv_obj_t *object = lv_bar_create(parent);
+
+    if(object == NULL)
+        return NULL;
+    /* CrazyPod disables the stock LVGL themes, so a bare bar otherwise has
+       a transparent indicator even when its value is non-zero. */
+    lv_obj_set_style_bg_color(
+        object, lv_color_hex(0x30343b), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(object, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(object, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(
+        object, lv_color_hex(0x5b9cff), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(object, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(
+        object, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+    return object;
+}
+
 lv_obj_t *crazypod_miniapp_scene_object_create(
     uint8_t type, lv_obj_t *parent, lv_obj_t *root)
 {
@@ -1327,6 +1562,7 @@ lv_obj_t *crazypod_miniapp_scene_object_create(
     case CP_UI_OBJECT_SCREEN:
         return lv_obj_create(parent);
     case CP_UI_OBJECT_VIEW:
+    case CP_UI_OBJECT_MODAL:
     case CP_UI_OBJECT_SCROLL_VIEW:
         return lv_obj_create(parent);
     case CP_UI_OBJECT_TEXT:
@@ -1338,7 +1574,7 @@ lv_obj_t *crazypod_miniapp_scene_object_create(
     case CP_UI_OBJECT_LIST:
         return lv_list_create(parent);
     case CP_UI_OBJECT_PROGRESS:
-        return lv_bar_create(parent);
+        return create_progress_bar(parent);
     case CP_UI_OBJECT_ARC:
         return lv_arc_create(parent);
     case CP_UI_OBJECT_SLIDER:
@@ -1366,8 +1602,28 @@ lv_obj_t *crazypod_miniapp_scene_object_create(
         return lv_tileview_create(parent);
     case CP_UI_OBJECT_IMAGE_BUTTON:
         return lv_imagebutton_create(parent);
+    case CP_UI_OBJECT_NOW_PLAYING_ARTWORK:
+    case CP_UI_OBJECT_SOUND_WAVE:
+        return lv_obj_create(parent);
     default:
         return NULL;
+    }
+}
+
+void crazypod_miniapp_scene_object_prepare(
+    struct crazypod_miniapp_scene_node *node)
+{
+    if(node == NULL || node->object == NULL)
+        return;
+    if(node->type == CP_UI_OBJECT_SOUND_WAVE) {
+        lv_obj_set_style_bg_opa(node->object, LV_OPA_TRANSP, 0);
+        lv_obj_remove_flag(node->object, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(
+            node->object, draw_sound_wave,
+            LV_EVENT_DRAW_MAIN, node);
+    }
+    else if(node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK) {
+        lv_obj_remove_flag(node->object, LV_OBJ_FLAG_CLICKABLE);
     }
 }
 

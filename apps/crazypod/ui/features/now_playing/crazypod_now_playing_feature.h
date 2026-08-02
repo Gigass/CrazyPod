@@ -4,6 +4,7 @@
 #include "lvgl.h"
 
 #include "../../../crazypod_music.h"
+#include "../../navigation/crazypod_input_event.h"
 #include "../../navigation/crazypod_ui_routes.h"
 
 enum crazypod_now_playing_overlay {
@@ -78,6 +79,10 @@ void crazypod_now_playing_prefetch_queue_artwork(
     int queue_index);
 int crazypod_now_playing_artwork_slot(
     const struct crazypod_track *track);
+void crazypod_now_playing_artwork_sync(void);
+const lv_image_dsc_t *crazypod_now_playing_artwork_committed(
+    const char **track_path, unsigned *generation);
+unsigned crazypod_now_playing_artwork_committed_generation(void);
 bool crazypod_now_playing_artwork_changed(void);
 void crazypod_now_playing_feature_render(
     const struct crazypod_now_playing_render_context *context);
@@ -87,5 +92,19 @@ void crazypod_now_playing_feature_reset_screen(void);
 const char *crazypod_now_playing_feature_rendered_track_path(void);
 void crazypod_now_playing_feature_update_playback(
     uint32_t elapsed_ms, uint32_t length_ms);
+
+void crazypod_now_playing_theme_prepare(void);
+int crazypod_now_playing_theme_choice_count(void);
+const char *crazypod_now_playing_theme_choice_title(int index);
+bool crazypod_now_playing_theme_choice_current(int index);
+bool crazypod_now_playing_theme_select(int index);
+bool crazypod_now_playing_theme_enabled(void);
+bool crazypod_now_playing_theme_open(void);
+int crazypod_now_playing_theme_last_error(void);
+bool crazypod_now_playing_theme_render(
+    lv_obj_t *parent, uint32_t accent);
+bool crazypod_now_playing_theme_handle_input(
+    const struct crazypod_input_event *event);
+void crazypod_now_playing_theme_close(void);
 
 #endif

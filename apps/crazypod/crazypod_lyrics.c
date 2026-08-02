@@ -204,10 +204,7 @@ bool crazypod_lyrics_available(void)
     return lyric_count > 0;
 }
 
-void crazypod_lyrics_window(uint32_t elapsed_ms,
-                            const char **previous,
-                            const char **current,
-                            const char **next)
+int crazypod_lyrics_current_line(uint32_t elapsed_ms)
 {
     int index = -1;
     int i;
@@ -217,6 +214,15 @@ void crazypod_lyrics_window(uint32_t elapsed_ms,
             break;
         index = i;
     }
+    return index;
+}
+
+void crazypod_lyrics_window(uint32_t elapsed_ms,
+                            const char **previous,
+                            const char **current,
+                            const char **next)
+{
+    int index = crazypod_lyrics_current_line(elapsed_ms);
     if(previous != NULL)
         *previous = index > 0 ? lyric_lines[index - 1].text : "";
     if(current != NULL)

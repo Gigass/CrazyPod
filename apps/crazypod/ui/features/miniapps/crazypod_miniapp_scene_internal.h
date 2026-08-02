@@ -42,6 +42,7 @@ struct crazypod_miniapp_scene_node {
     int32_t grid_column_descriptors[9];
     int32_t grid_row_descriptors[9];
     lv_image_dsc_t image;
+    unsigned artwork_generation;
     char text[CRAZYPOD_MINIAPP_TEXT_CAPACITY];
     char placeholder[CRAZYPOD_MINIAPP_PLACEHOLDER_CAPACITY];
     char source[CRAZYPOD_MINIAPP_SOURCE_CAPACITY];
@@ -49,6 +50,8 @@ struct crazypod_miniapp_scene_node {
 
 lv_obj_t *crazypod_miniapp_scene_object_create(
     uint8_t type, lv_obj_t *parent, lv_obj_t *root);
+void crazypod_miniapp_scene_object_prepare(
+    struct crazypod_miniapp_scene_node *node);
 void crazypod_miniapp_scene_property_apply(
     struct crazypod_miniapp_scene_node *node,
     uint16_t property);
@@ -66,6 +69,10 @@ bool crazypod_miniapp_scene_data_replace(
     struct crazypod_miniapp_scene_node *node,
     const void *data, size_t size);
 bool crazypod_miniapp_scene_data_apply(
+    struct crazypod_miniapp_scene_node *node);
+bool crazypod_miniapp_scene_now_playing_artwork_needs_refresh(
+    struct crazypod_miniapp_scene_node *node);
+bool crazypod_miniapp_scene_now_playing_artwork_refresh_node(
     struct crazypod_miniapp_scene_node *node);
 
 #endif

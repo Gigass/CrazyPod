@@ -87,7 +87,8 @@ void crazypod_miniapp_screen_reset(void)
 
 bool crazypod_miniapp_screen_attached(lv_obj_t *parent)
 {
-    return parent != NULL && screen_parent == parent;
+    return parent != NULL && screen_parent == parent &&
+        crazypod_miniapp_scene_attached(parent);
 }
 
 void crazypod_miniapp_screen_render(

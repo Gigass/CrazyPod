@@ -896,6 +896,12 @@ INLINE void fill_buf(struct jpeg* p_jpeg)
 }
 
 #ifdef HAVE_ALBUMART
+struct vorbis_base64_reader
+{
+    struct ogg_file ogg;
+    unsigned long encoded_remaining;
+};
+
 static int read_buf_id3_unsync(struct jpeg* p_jpeg, size_t count)
 {
     count = read(p_jpeg->fd, p_jpeg->buf, count);
@@ -904,11 +910,17 @@ static int read_buf_id3_unsync(struct jpeg* p_jpeg, size_t count)
 
 static int read_buf_vorbis_base64(struct jpeg* p_jpeg, size_t count)
 {
-    struct ogg_file* ogg = p_jpeg->custom_param;
+    struct vorbis_base64_reader* reader = p_jpeg->custom_param;
     unsigned char* buf = p_jpeg->buf;
-    count = ogg_file_read(ogg, buf, count);
+    size_t encoded_count;
+
+    (void)count;
+    encoded_count = MIN(reader->encoded_remaining,
+                        (unsigned long)JPEG_READ_BUF_SIZE);
+    count = ogg_file_read(&reader->ogg, buf, encoded_count);
     if (count == (size_t) -1)
         return 0;
+    reader->encoded_remaining -= count;
 
     return base64_decode(buf, count, buf);
 }
@@ -2099,7 +2111,8 @@ int clip_jpeg_fd(int fd, int flags,
     }
     else if (flags & AA_FLAG_VORBIS_BASE64)
     {
-        struct ogg_file* ogg = alloca(sizeof(*ogg));
+        struct vorbis_base64_reader* reader = alloca(sizeof(*reader));
+        struct ogg_file* ogg = &reader->ogg;
         off_t pic_pos = lseek(fd, 0, SEEK_CUR);
 
         // we need 92 bytes for format probing, reuse some available space
@@ -2117,9 +2130,13 @@ int clip_jpeg_fd(int fd, int flags,
         }
         while (!packet_found);
 
+        reader->encoded_remaining = len;
+        /* p_jpeg->len tracks decoded bytes, while the reader separately
+         * limits Ogg input to the exact encoded comment value. */
+        p_jpeg->len = (len / 4) * 3 + (len % 4 ? 3 : 0);
         p_jpeg->read_buf = read_buf_vorbis_base64;
         p_jpeg->skip_bytes_seek = skip_bytes_read_buf;
-        p_jpeg->custom_param = ogg;
+        p_jpeg->custom_param = reader;
     }
 #else
     (void)flags;

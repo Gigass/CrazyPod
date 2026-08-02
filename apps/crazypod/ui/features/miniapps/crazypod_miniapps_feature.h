@@ -6,6 +6,8 @@
 #include "../../navigation/crazypod_ui_routes.h"
 #include "../crazypod_feature.h"
 
+struct cp_input_event;
+
 int crazypod_miniapps_feature_item_count(
     const struct route_state *state);
 const char *crazypod_miniapps_feature_title(
@@ -16,6 +18,14 @@ bool crazypod_miniapps_feature_item_title(
 bool crazypod_miniapps_feature_render(
     const struct route_state *state, lv_obj_t *parent,
     uint32_t primary_color);
+void crazypod_miniapps_feature_render_active(
+    lv_obj_t *parent, uint32_t primary_color);
+void crazypod_miniapps_feature_note_opened(void);
+void crazypod_miniapps_feature_push_wheel(
+    const struct cp_input_event *event);
+void crazypod_miniapps_feature_push_wheel_coalesced(
+    const struct cp_input_event *event);
+bool crazypod_miniapps_feature_modal_visible(void);
 bool crazypod_miniapps_feature_surface_attached(lv_obj_t *parent);
 void crazypod_miniapps_feature_initialize(void);
 bool crazypod_miniapps_feature_handle_input(
@@ -48,6 +58,7 @@ bool crazypod_miniapps_feature_activate(
 unsigned crazypod_miniapps_feature_input_count(void);
 bool crazypod_miniapps_feature_exit_prompt_visible(void);
 bool crazypod_miniapps_feature_has_scene_content(void);
+void crazypod_miniapps_feature_refresh_now_playing_artwork(void);
 #ifdef SIMULATOR
 bool crazypod_miniapps_feature_simulate_long_menu(
     long now, long ticks_per_second);
