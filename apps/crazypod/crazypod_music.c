@@ -588,8 +588,9 @@ static int compare_path_track_indices(const void *left_ptr,
     return compare_text(left->path, right->path);
 }
 
-static void add_track(const char *path, off_t source_size,
-                      time_t source_mtime, int format)
+/* Keep the large metadata frame out of recursive scan_directory frames. */
+static void NO_INLINE add_track(const char *path, off_t source_size,
+                                time_t source_mtime, int format)
 {
     struct mp3entry metadata;
     struct crazypod_track *track;

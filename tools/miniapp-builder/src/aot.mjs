@@ -233,7 +233,58 @@ function resolveStyle(expression, styles) {
   fail(expression, "style must use StyleSheet.create, an object, or an array");
 }
 
-function styleLines(handle, style, node, component) {
+function fontForStyle(style, node, fontAssets) {
+  const size = style.fontSize ?? 12;
+  const family = style.fontFamily ?? "system";
+  const weight = normalizeFontWeight(style.fontWeight, node);
+  const fontStyle = style.fontStyle ?? "normal";
+  const lineHeight = style.lineHeight ?? 0;
+  if (!Number.isInteger(size)) fail(node, "fontSize must be an integer");
+  if (size < 6 || size > 48) {
+    fail(node, "fontSize must be from 6 through 48");
+  }
+  if (typeof family !== "string") fail(node, "fontFamily must be a string");
+  if (!Number.isInteger(lineHeight) ||
+      (lineHeight !== 0 && lineHeight < size)) {
+    fail(node, "lineHeight must be zero or an integer >= fontSize");
+  }
+  if (fontStyle === "italic") {
+    fail(node, "Noto CJK has no true italic; fontStyle italic is unavailable");
+  }
+  if (fontStyle !== "normal") fail(node, "fontStyle must be normal or italic");
+  if (family.startsWith("asset:")) {
+    const id = family.slice("asset:".length);
+    if (!/^[a-z][a-z0-9_.-]{0,30}$/.test(id)) {
+      fail(node, `invalid font asset id ${JSON.stringify(id)}`);
+    }
+    if (fontAssets && !fontAssets.has(id)) {
+      fail(node, `font asset ${id} is not declared in assets.json`);
+    }
+    return { asset: id, size, weight, lineHeight };
+  }
+  const families = {
+    system: "CP_UI_FONT_SYSTEM",
+    serif: "CP_UI_FONT_SERIF",
+    mono: "CP_UI_FONT_MONO",
+    condensed: "CP_UI_FONT_SYSTEM",
+    technical: "CP_UI_FONT_MONO",
+  };
+  if (!families[family]) fail(node, `unsupported fontFamily ${family}`);
+  return { font: families[family], size, weight, lineHeight };
+}
+
+function normalizeFontWeight(value, node) {
+  if (value === undefined || value === "normal") return 400;
+  if (value === "bold") return 700;
+  const weight = typeof value === "string" ? Number(value) : value;
+  if (!Number.isInteger(weight) || weight < 100 || weight > 900 ||
+      weight % 100 !== 0) {
+    fail(node, "fontWeight must be normal, bold, or 100 through 900");
+  }
+  return weight;
+}
+
+function styleLines(handle, style, node, component, fontAssets) {
   const lines = [];
   const flexContainers = new Set([
     "View",
@@ -262,8 +313,32 @@ function styleLines(handle, style, node, component) {
       `    UI_OK(ui->set_i32(${handle}, CP_UI_PROP_FLEX_FLOW, ${flow}));`,
     );
   }
+  if (component === "Text" || style.fontSize !== undefined ||
+      style.fontFamily !== undefined || style.fontWeight !== undefined ||
+      style.fontStyle !== undefined || style.lineHeight !== undefined) {
+    const font = fontForStyle(style, node, fontAssets);
+    lines.push(
+      `    UI_OK(ui->set_i32(${handle}, CP_UI_PROP_FONT_SIZE, ${font.size}));`,
+      `    UI_OK(ui->set_i32(${handle}, CP_UI_PROP_FONT_WEIGHT, ${font.weight}));`,
+      `    UI_OK(ui->set_i32(${handle}, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));`,
+      `    UI_OK(ui->set_i32(${handle}, CP_UI_PROP_LINE_HEIGHT, ${font.lineHeight}));`,
+    );
+    if (font.font) {
+      lines.push(
+        `    UI_OK(ui->set_i32(${handle}, CP_UI_PROP_FONT, ${font.font}));`,
+      );
+    } else {
+      lines.push(
+        `    UI_OK(ui->set_string(${handle}, CP_UI_PROP_FONT_SOURCE, ` +
+        `${cString(font.asset)}));`,
+      );
+    }
+  }
   for (const [name, value] of Object.entries(style)) {
-    if (name === "flexDirection" || name === "flexWrap") continue;
+    if (name === "flexDirection" || name === "flexWrap" ||
+        name === "fontSize" || name === "fontWeight" ||
+        name === "fontFamily" || name === "fontStyle" ||
+        name === "lineHeight") continue;
     if (numericStyles[name]) {
       if (!Number.isInteger(value)) fail(node, `${name} must be an integer`);
       lines.push(
@@ -319,17 +394,6 @@ function styleLines(handle, style, node, component) {
       if (!values[value]) fail(node, `unsupported textAlign ${value}`);
       lines.push(
         `    UI_OK(ui->set_i32(${handle}, CP_UI_PROP_TEXT_ALIGN, ${values[value]}));`,
-      );
-    } else if (name === "fontSize" || name === "fontWeight") {
-      if (name === "fontWeight") continue;
-      const font = value >= 36 ? "CP_UI_FONT_DISPLAY"
-        : value >= 22 ? "CP_UI_FONT_NUMBER"
-          : value >= 16 ? "CP_UI_FONT_TITLE"
-            : value >= 14 ? "CP_UI_FONT_CJK"
-              : value >= 11 ? "CP_UI_FONT_BODY"
-                : "CP_UI_FONT_CAPTION";
-      lines.push(
-        `    UI_OK(ui->set_i32(${handle}, CP_UI_PROP_FONT, ${font}));`,
       );
     } else if (name === "position") {
       const positions = {
@@ -799,6 +863,7 @@ static const char *cp_game2048_text(int32_t exponent)
 export function compileNativeSource(source, {
   filename = "app.tsx",
   manifest,
+  fontAssets = null,
 } = {}) {
   if (!manifest) throw new TypeError("manifest is required");
   const file = ts.createSourceFile(
@@ -942,9 +1007,10 @@ export function compileNativeSource(source, {
       const expression = expressionFromAttribute(styleAttribute);
       render.push(...styleLines(
         handle, resolveStyle(expression, styles), expression, name,
+        fontAssets,
       ));
     } else {
-      render.push(...styleLines(handle, {}, opening, name));
+      render.push(...styleLines(handle, {}, opening, name, fontAssets));
     }
 
     for (const [prop, property] of Object.entries(integerProps)) {
@@ -1321,12 +1387,37 @@ export async function generateNativeProject(
   }
   const sourcePath = path.resolve(project, config.source ?? "src/App.tsx");
   const source = await readFile(sourcePath, "utf8");
+  const fontAssets = new Set();
+  if (config.assets) {
+    const descriptorPath = path.join(
+      path.resolve(project, config.assets), "assets.json",
+    );
+    let descriptor;
+    try {
+      descriptor = JSON.parse(await readFile(descriptorPath, "utf8"));
+    } catch (error) {
+      if (error.code === "ENOENT") descriptor = [];
+      else throw error;
+    }
+    if (!Array.isArray(descriptor)) {
+      throw new Error("assets/assets.json must be an array");
+    }
+    for (const item of descriptor) {
+      if (item?.type === "font" && typeof item.id === "string") {
+        fontAssets.add(item.id);
+      }
+    }
+    if (fontAssets.size > 4) {
+      throw new Error("a package may declare at most 4 fonts");
+    }
+  }
   const destination = path.resolve(
     output ?? path.join(project, ".crazypod/native/app.c"),
   );
   const generated = compileNativeSource(source, {
     filename: sourcePath,
     manifest: config.manifest,
+    fontAssets,
   });
   await mkdir(path.dirname(destination), { recursive: true });
   await writeFile(destination, generated);

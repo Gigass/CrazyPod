@@ -67,7 +67,12 @@ declare module "react-native" {
   export interface TextStyle extends ViewStyle {
     color?: `#${string}`;
     fontSize?: number;
-    fontWeight?: "normal" | "bold" | number | string;
+    lineHeight?: number;
+    fontWeight?: "normal" | "bold" | "100" | "200" | "300" | "400" |
+      "500" | "600" | "700" | "800" | "900" |
+      100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900;
+    fontStyle?: "normal" | "italic";
+    fontFamily?: "system" | "serif" | "mono" | `asset:${string}`;
     textAlign?: "left" | "center" | "right";
   }
 

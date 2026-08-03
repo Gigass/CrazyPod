@@ -7,10 +7,14 @@
 static void verify_constants(void)
 {
     assert(CP_NATIVE_ABI_MAJOR == 1u);
-    assert(CP_NATIVE_ABI_MINOR == 11u);
+    assert(CP_NATIVE_ABI_MINOR == 16u);
+    assert(CP_NATIVE_ABI_REJECTED_MINOR == 14u);
     assert(CP_UI_FONT_CONDENSED_16 > CP_UI_FONT_DISPLAY);
     assert(CP_UI_FONT_SERIF_28 > CP_UI_FONT_CONDENSED_32);
     assert(CP_UI_FONT_TECHNICAL_16 > CP_UI_FONT_TECHNICAL_8);
+    assert(CP_UI_FONT_SYSTEM > CP_UI_FONT_UNIBIT_16);
+    assert(CP_UI_FONT_SERIF == CP_UI_FONT_SYSTEM + 1);
+    assert(CP_UI_FONT_MONO == CP_UI_FONT_SERIF + 1);
     assert(CP_NATIVE_PACKAGE_FORMAT == 5u);
     assert(CP_NATIVE_REACT_PROFILE == 1u);
     assert(CP_NATIVE_CAP_FILES == (1u << 4));
@@ -25,6 +29,12 @@ static void verify_constants(void)
     assert(CP_UI_OBJECT_MODAL == CP_UI_OBJECT_SOUND_WAVE + 1);
     assert(CP_UI_OBJECT_TYPE_COUNT < 256);
     assert(CP_UI_PROP_COUNT < 65536);
+    assert(CP_UI_PROP_IMAGE_SOURCE == CP_UI_PROP_FONT + 1);
+    assert(CP_UI_PROP_FONT_SIZE == CP_UI_PROP_FONT_SOURCE + 1);
+    assert(CP_UI_PROP_FONT_WEIGHT == CP_UI_PROP_FONT_SIZE + 1);
+    assert(CP_UI_PROP_FONT_STYLE == CP_UI_PROP_FONT_WEIGHT + 1);
+    assert(CP_UI_PROP_LINE_HEIGHT == CP_UI_PROP_FONT_STYLE + 1);
+    assert(CP_UI_PROP_COUNT == CP_UI_PROP_LINE_HEIGHT + 1);
 }
 
 static void verify_layout(void)

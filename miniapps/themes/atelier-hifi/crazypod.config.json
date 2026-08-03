@@ -4,8 +4,8 @@
     "artworkSourceSize": 104,
     "id": "now-playing-neon",
     "name": "Atelier Hi-Fi",
-    "version": "1.4.0",
-    "versionCode": 10400,
+    "version": "1.4.1",
+    "versionCode": 10401,
     "symbol": "HF",
     "summary": "Skeuomorphic pure-TSX Now Playing theme",
     "accent": "#d79a55"

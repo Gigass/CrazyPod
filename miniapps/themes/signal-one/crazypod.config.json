@@ -4,8 +4,8 @@
     "artworkSourceSize": 89,
     "id": "now-playing-signal",
     "name": "Signal One",
-    "version": "1.0.0",
-    "versionCode": 10000,
+    "version": "1.0.1",
+    "versionCode": 10001,
     "symbol": "S1",
     "summary": "Precision hi-fi pure-TSX Now Playing theme",
     "accent": "#f36b21"

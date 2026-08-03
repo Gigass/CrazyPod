@@ -10,6 +10,7 @@
 #include "dir.h"
 #include "events.h"
 #include "file.h"
+#include "font.h"
 #include "kernel.h"
 #include "lcd.h"
 #include "misc.h"
@@ -42,6 +43,7 @@
 #include "crazypod_image.h"
 #include "crazypod_icons.h"
 #include "crazypod_lyrics.h"
+#include "crazypod_runtime_font.h"
 #include "crazypod_lcd.h"
 #include "crazypod_music.h"
 #include "crazypod_miniapp_input.h"
@@ -115,7 +117,7 @@
 #define CRAZYPOD_MENU_PANEL_Y CRAZYPOD_STATUS_BAR_HEIGHT
 #define CRAZYPOD_PREVIEW_SETTLE_TICKS \
     ((HZ * 120 / 1000) > 0 ? (HZ * 120 / 1000) : 1)
-#define CRAZYPOD_METADATA_FONT (&lv_font_source_han_sans_sc_14_cjk)
+#define CRAZYPOD_METADATA_FONT (crazypod_runtime_font_at_size(12))
 static bool cpu_is_boosted;
 static long boost_until;
 static struct crazypod_frameclock lvgl_clock;
@@ -600,6 +602,8 @@ void crazypod_ui_run(void)
         display = crazypod_platform_display_init(
             rockbox_tick_ms, &display_host);
     }
+    font_unload_all();
+    (void)crazypod_runtime_font_init();
 
     boot_screen = create_boot_screen();
     {

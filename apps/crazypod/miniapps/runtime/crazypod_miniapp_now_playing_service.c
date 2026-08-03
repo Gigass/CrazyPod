@@ -260,7 +260,7 @@ static int command_call(
         crazypod_playback_previous_or_restart();
         break;
     case CP_NOW_PLAYING_COMMAND_NEXT:
-        audio_next();
+        crazypod_playback_next();
         break;
     case CP_NOW_PLAYING_COMMAND_ADJUST_VOLUME:
         crazypod_now_playing_adjust_volume(command->value);

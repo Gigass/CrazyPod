@@ -27,7 +27,7 @@ FIRMLIB_SRC += $(call preprocess, $(FIRMDIR)/SOURCES)
 FIRMLIB_OBJ := $(call c2obj, $(FIRMLIB_SRC))
 ifneq (,$(findstring -DBOOTLOADER,$(EXTRA_DEFINES)))
 FIRMLIB_OBJ += $(BUILDDIR)/sysfont.o
-else ifneq ($(MODELNAME),ipod6g)
+else
 FIRMLIB_OBJ += $(BUILDDIR)/sysfont.o
 endif
 OTHER_SRC += $(FIRMLIB_SRC)

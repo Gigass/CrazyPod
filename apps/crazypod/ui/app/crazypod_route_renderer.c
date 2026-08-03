@@ -8,6 +8,7 @@
 #include "../../crazypod_appearance.h"
 #include "../../crazypod_books.h"
 #include "../../crazypod_coverflow.h"
+#include "../../crazypod_runtime_font.h"
 #include "../../crazypod_wallpaper.h"
 #include "../features/books/crazypod_books_feature.h"
 #include "../features/customize/crazypod_customize_feature.h"
@@ -71,6 +72,33 @@ static uint32_t secondary_color(void)
 {
     return crazypod_appearance_color(
         crazypod_appearance_get()->secondary_color);
+}
+
+static void render_theme_font_error(void)
+{
+    const char *detail = crazypod_runtime_font_last_error();
+    lv_obj_t *content;
+    lv_obj_t *panel;
+    lv_obj_t *label;
+
+    if(detail == NULL || detail[0] == '\0' ||
+       crazypod_now_playing_theme_last_error() >= 0)
+        return;
+    content = crazypod_shell_product_content();
+    panel = crazypod_ui_widget_box(
+        content, 8, 174, 304, 58, 8,
+        0x26080C, LV_OPA_COVER);
+    label = crazypod_ui_widget_label(
+        panel, "THEME FONT ERROR",
+        &lv_font_montserrat_12, 0xFF453A, LV_OPA_COVER);
+    lv_obj_set_pos(label, 8, 6);
+    lv_obj_set_size(label, 288, 15);
+    label = crazypod_ui_widget_label(
+        panel, detail,
+        &lv_font_montserrat_8, 0xFFFFFF, LV_OPA_COVER);
+    lv_obj_set_pos(label, 8, 25);
+    lv_obj_set_size(label, 288, 27);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
 }
 
 static void create_panel_backgrounds(void)
@@ -182,6 +210,7 @@ static void render_now_playing(
         };
 
         crazypod_now_playing_feature_render(&context);
+        render_theme_font_error();
         return;
     }
     render_menu(state);

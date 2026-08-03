@@ -126,8 +126,16 @@ void lv_text_get_size_attributes(lv_point_t * size_res, const char * text, const
 
     /*Calc. the height and longest line*/
     while(text[line_start] != '\0') {
-        new_line_start += lv_text_get_next_line(
-                              &text[line_start], LV_TEXT_LEN_MAX, font, NULL, attributes);
+        uint32_t advance = lv_text_get_next_line(
+            &text[line_start], LV_TEXT_LEN_MAX, font, NULL, attributes);
+
+        /* A label narrower than its first glyph must still make progress.
+         * Otherwise one wider translated glyph traps layout in this loop. */
+        if(advance == 0)
+            (void)lv_text_encoded_next(&text[line_start], &advance);
+        if(advance == 0)
+            break;
+        new_line_start += advance;
 
         if((unsigned long)size_res->y +
            (unsigned long)letter_height + (unsigned long)attributes->line_space > LV_MAX_OF(int32_t)) {

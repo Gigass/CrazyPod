@@ -264,7 +264,11 @@ def install_release(
             return
         destination = backup / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
+        shutil.copyfile(source, destination)
+        if sha256(destination) != sha256(source):
+            raise CertificationError(
+                f"backup verification failed: {source}"
+            )
         backed_up.add(relative)
 
     package_directory = volume / package_prefix

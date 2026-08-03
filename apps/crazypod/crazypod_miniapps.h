@@ -59,6 +59,7 @@ struct crazypod_miniapp_metadata {
     char target[CRAZYPOD_MINIAPP_RUNTIME_SIZE];
     char entry[CRAZYPOD_MINIAPP_FILE_NAME_SIZE];
     char icon[CRAZYPOD_MINIAPP_FILE_NAME_SIZE];
+    char font_set[384];
     uint32_t version_code;
     uint32_t abi_version;
     uint32_t abi_minor;

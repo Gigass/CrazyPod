@@ -181,6 +181,7 @@ static bool profile_header_valid(
         read_le16(header + 6) == sizeof(header) &&
         read_le16(header + 8) == CP_NATIVE_ABI_MAJOR &&
         read_le16(header + 10) <= CP_NATIVE_ABI_MINOR &&
+        read_le16(header + 10) != CP_NATIVE_ABI_REJECTED_MINOR &&
         read_le16(header + 12) == CP_NATIVE_REACT_PROFILE &&
         read_le16(header + 14) == 0;
     close(fd);

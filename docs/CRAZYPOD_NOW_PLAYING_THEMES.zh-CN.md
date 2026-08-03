@@ -5,7 +5,8 @@
 ABI 1.7 提供播放队列、明确的收藏/播放模式写入、歌词窗口、相对跳转和
 系统跑马灯复用；ABI 1.8 增加可识别的原生 `Modal`、弹窗内 Menu 返回和
 合并后的滚轮 `steps` 增量；ABI 1.9 增加平台统一封面提交和自动刷新，ABI 1.10
-增加主题状态栏，当前 ABI 1.11 增加字体角色与按主题声明的原图封面解码尺寸。
+增加主题状态栏，ABI 1.11 增加字体角色与按主题声明的原图封面解码尺寸，
+ABI 1.13 增加 CPK 私有外挂字体。
 可安装 CPK5 能替换“正在播放”页面，
 默认主题仍是固件现有 C 页面；安装主题不会自动启用，用户必须在“自定义 > 主题”中选择。
 选择“默认”后立即恢复固件页面。
@@ -31,6 +32,11 @@ manifest 必须包含 `"kind": "now-playing-theme"`；新主题还必须用
 `"artworkSourceSize": 16..320` 声明布局实际需要的最大封面边长。全屏封面用
 320，小封面使用真实显示尺寸；ABI 1.11 主题缺失该字段会被拒绝。普通 Mini App 不能导入
 `@crazypod/now-playing`，也不能创建主题专用的封面和声波对象。
+
+主题字体与普通 MiniApp 使用同一资源接口。标准 TTF/OTF/TTC/BDF 源字体在
+`assets.json` 声明为 `type: "font"`，TSX 使用
+`fontFamily: "asset:<资源ID>"`；完整格式、替换与容量限制见
+`CRAZYPOD_MINIAPP_NATIVE_AOT_DEVELOPMENT.zh-CN.md` 的“包内外挂字体”。
 
 ## 平台能力
 

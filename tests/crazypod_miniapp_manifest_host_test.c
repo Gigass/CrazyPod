@@ -14,8 +14,9 @@ static const char valid_manifest[] =
     "\"versionCode\":50000,"
     "\"runtime\":\"native-aot\","
     "\"abiMajor\":1,"
-    "\"abiMinor\":11,"
+    "\"abiMinor\":16,"
     "\"reactProfile\":1,"
+    "\"fontSet\":\"system:400:12,system:700:24\","
     "\"target\":\"simulator\","
     "\"entry\":\"app.dylib\","
     "\"icon\":\"icon.bin\","
@@ -56,7 +57,7 @@ static const char owned_status_theme_manifest[] =
     "\"versionCode\":10000,"
     "\"runtime\":\"native-aot\","
     "\"abiMajor\":1,"
-    "\"abiMinor\":11,"
+    "\"abiMinor\":13,"
     "\"reactProfile\":1,"
     "\"target\":\"simulator\","
     "\"entry\":\"app.dylib\","
@@ -86,6 +87,7 @@ int main(void)
     char bad_target[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     char old_theme[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     char missing_artwork[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
+    char rejected_abi[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     const char unicode_manifest[] =
         "{"
         "\"format\":5,"
@@ -112,11 +114,25 @@ int main(void)
     assert(metadata.abi_version == CP_NATIVE_ABI_MAJOR);
     assert(metadata.abi_minor == CP_NATIVE_ABI_MINOR);
     assert(metadata.react_profile == CP_NATIVE_REACT_PROFILE);
+    assert(strcmp(metadata.font_set,
+                  "system:400:12,system:700:24") == 0);
     assert(strcmp(metadata.runtime, "native-aot") == 0);
     assert(strcmp(metadata.target, "simulator") == 0);
     assert(strcmp(metadata.entry, "app.dylib") == 0);
     assert(metadata.accent_rgb == 0x26cff5u);
     assert(metadata.kind == CRAZYPOD_MINIAPP_KIND_APP);
+    snprintf(rejected_abi, sizeof(rejected_abi), "%s", valid_manifest);
+    {
+        char *minor = strstr(rejected_abi, "\"abiMinor\":16");
+        char *value;
+
+        assert(minor != NULL);
+        value = minor + strlen("\"abiMinor\":");
+        value[0] = '1';
+        value[1] = '4';
+    }
+    assert(parse(rejected_abi, &metadata) ==
+           CRAZYPOD_MINIAPP_ERROR_VERSION);
 
     assert(parse(valid_theme_manifest, &metadata) == CRAZYPOD_MINIAPP_OK);
     assert(metadata.kind == CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME);

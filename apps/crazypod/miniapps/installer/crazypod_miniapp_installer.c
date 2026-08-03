@@ -25,6 +25,7 @@
 #define USER_INSTALL "/MiniApps/Install"
 #define SYSTEM_PACKAGES "/.rockbox/crazypod/miniapps/packages"
 #define SCAN_LIMIT 64
+#define SEMANTIC_FONT_ROOT "/.rockbox/fonts/crazypod-aot"
 
 static struct {
     struct crazypod_miniapp_metadata metadata;
@@ -49,6 +50,70 @@ static bool make_path(
 {
     int length = snprintf(path, capacity, "%s/%s", directory, name);
     return length >= 0 && (size_t)length < capacity;
+}
+
+static bool semantic_font_set_available(const char *font_set)
+{
+    static const char *const locales[] = { "jp", "kr", "sc", "tc" };
+    const char *cursor = font_set;
+
+    while(cursor != NULL && *cursor != '\0') {
+        const char *family;
+        unsigned family_length;
+        unsigned weight = 0;
+        unsigned size = 0;
+        unsigned locale;
+        char path[MAX_PATH];
+
+        if(strncmp(cursor, "system:", 7) == 0) {
+            family = "system";
+            family_length = 7;
+        }
+        else if(strncmp(cursor, "serif:", 6) == 0) {
+            family = "serif";
+            family_length = 6;
+        }
+        else if(strncmp(cursor, "mono:", 5) == 0) {
+            family = "mono";
+            family_length = 5;
+        }
+        else {
+            return false;
+        }
+        cursor += family_length;
+        while(*cursor >= '0' && *cursor <= '9') {
+            weight = weight * 10u + (unsigned)(*cursor++ - '0');
+        }
+        if(*cursor++ != ':' || weight < 100u || weight > 900u ||
+           weight % 100u != 0)
+            return false;
+        while(*cursor >= '0' && *cursor <= '9') {
+            size = size * 10u + (unsigned)(*cursor++ - '0');
+        }
+        if(size < 6u || size > 48u ||
+           (*cursor != '\0' && *cursor != ','))
+            return false;
+        for(locale = 0; locale < sizeof(locales) / sizeof(locales[0]);
+            ++locale) {
+            int length = snprintf(
+                path, sizeof(path), "%s/%s-%s-%u-%u.fnt",
+                SEMANTIC_FONT_ROOT, locales[locale], family, weight, size);
+            int fd;
+
+            if(length < 0 || (size_t)length >= sizeof(path))
+                return false;
+            fd = open(path, O_RDONLY);
+            if(fd < 0)
+                return false;
+            close(fd);
+        }
+        if(*cursor == ',') {
+            cursor++;
+            if(*cursor == '\0')
+                return false;
+        }
+    }
+    return true;
 }
 
 int crazypod_miniapps_install(const char *package_path)
@@ -81,6 +146,10 @@ int crazypod_miniapps_install(const char *package_path)
         installer.manifest, reader.entries[CPK_MANIFEST].size, metadata);
     if(result != CRAZYPOD_MINIAPP_OK)
         goto done;
+    if(!semantic_font_set_available(metadata->font_set)) {
+        result = CRAZYPOD_MINIAPP_ERROR_UNSUPPORTED;
+        goto done;
+    }
     if(metadata->package_format != CP_NATIVE_PACKAGE_FORMAT ||
        reader.entry_count != MINIAPP_CPK_MAX_ENTRIES) {
         result = CRAZYPOD_MINIAPP_ERROR_FORMAT;
@@ -95,10 +164,14 @@ int crazypod_miniapps_install(const char *package_path)
         }
     }
     if(same_version &&
-       crazypod_miniapp_registry_package_matches(
-           metadata->id, &reader, &installer.verified_metadata) &&
+       crazypod_miniapp_registry_installed_metadata(
+           metadata->id, &installer.verified_metadata) &&
        crazypod_miniapp_installed_verify(
            &installer.verified_metadata) == CRAZYPOD_MINIAPP_OK) {
+        /* A versionCode identifies immutable package contents.  Ignore a
+         * second, different package at the same version when the installed
+         * copy is healthy; otherwise scan order lets a stale user-inbox CPK
+         * overwrite a newer system CPK on every boot. */
         crazypod_miniapp_verification_cache_mark(
             metadata->id, metadata->version_code);
         result = CRAZYPOD_MINIAPP_ALREADY_INSTALLED;

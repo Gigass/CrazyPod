@@ -25,6 +25,7 @@ static void write_le32(unsigned char *value, unsigned long number)
 int main(void)
 {
     unsigned char container[72] = { 0 };
+    unsigned char font_container[106] = { 0 };
     struct crazypod_miniapp_metadata metadata = { 0 };
     struct cp_resource_info info = { .struct_size = sizeof(info) };
     char path[] = "/tmp/crazypod-resource-XXXXXX";
@@ -48,6 +49,61 @@ int main(void)
     memcpy(container + 68, payload, sizeof(payload));
     write_le32(container + 12,
                ~crc_32r(container + 16, 52, 0xffffffffu));
+    assert(write(fd, container, sizeof(container)) ==
+           (ssize_t)sizeof(container));
+    close(fd);
+
+    write_le32(font_container, 0x53525043);
+    write_le16(font_container + 4, 1);
+    write_le16(font_container + 6, 1);
+    write_le32(font_container + 8, sizeof(font_container));
+    strcpy((char *)font_container + 16, "headline");
+    font_container[48] = CP_RESOURCE_FONT;
+    write_le32(font_container + 56, 68);
+    write_le32(font_container + 60, 38);
+    memcpy(font_container + 68, "RB12", 4);
+    write_le16(font_container + 72, 8);
+    write_le16(font_container + 74, 8);
+    write_le16(font_container + 76, 7);
+    write_le16(font_container + 78, 0);
+    write_le32(font_container + 80, 65);
+    write_le32(font_container + 84, 65);
+    write_le32(font_container + 88, 1);
+    write_le32(font_container + 92, 1);
+    font_container[104] = 0xff;
+    write_le32(font_container + 64,
+               ~crc_32r(font_container + 68, 38, 0xffffffffu));
+    write_le32(font_container + 12,
+               ~crc_32r(font_container + 16, 52, 0xffffffffu));
+    fd = open(path, O_WRONLY | O_TRUNC);
+    assert(fd >= 0);
+    assert(write(fd, font_container, sizeof(font_container)) ==
+           (ssize_t)sizeof(font_container));
+    close(fd);
+    fd = open(path, O_RDONLY);
+    assert(fd >= 0);
+    assert(crazypod_miniapp_resource_container_valid(
+        fd, 0, sizeof(font_container)));
+    close(fd);
+
+    write_le32(font_container + 84, 66);
+    write_le32(font_container + 64,
+               ~crc_32r(font_container + 68, 38, 0xffffffffu));
+    write_le32(font_container + 12,
+               ~crc_32r(font_container + 16, 52, 0xffffffffu));
+    fd = open(path, O_WRONLY | O_TRUNC);
+    assert(fd >= 0);
+    assert(write(fd, font_container, sizeof(font_container)) ==
+           (ssize_t)sizeof(font_container));
+    close(fd);
+    fd = open(path, O_RDONLY);
+    assert(fd >= 0);
+    assert(!crazypod_miniapp_resource_container_valid(
+        fd, 0, sizeof(font_container)));
+    close(fd);
+
+    fd = open(path, O_WRONLY | O_TRUNC);
+    assert(fd >= 0);
     assert(write(fd, container, sizeof(container)) ==
            (ssize_t)sizeof(container));
     close(fd);

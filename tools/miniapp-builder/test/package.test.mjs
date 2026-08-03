@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  copyFile,
   mkdtemp,
   mkdir,
   readFile,
@@ -100,6 +101,36 @@ test("vertical sprite sheets preserve animation metadata", async () => {
     assert.equal(assets.readUInt16LE(16 + 38), 75);
     assert.equal(assets.readUInt16LE(16 + 34), 2);
     assert.equal(assets.readUInt16LE(16 + 36), 4);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("standard BDF fonts are converted to RB12 package resources", async () => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "crazypod-font-assets-"),
+  );
+  try {
+    const assetsDirectory = path.join(directory, "assets");
+    const repository = path.resolve(import.meta.dirname, "../../..");
+    await mkdir(assetsDirectory);
+    await copyFile(
+      path.join(repository, "fonts/06-Tiny.bdf"),
+      path.join(assetsDirectory, "Tiny.bdf"),
+    );
+    await writeFile(
+      path.join(assetsDirectory, "assets.json"),
+      JSON.stringify([{
+        id: "headline",
+        type: "font",
+        file: "Tiny.bdf",
+      }]),
+    );
+    const assets = await buildAssets(assetsDirectory);
+    const payloadOffset = assets.readUInt32LE(16 + 40);
+    assert.equal(assets.readUInt8(16 + 32), 2);
+    assert.equal(assets.subarray(payloadOffset, payloadOffset + 4)
+      .toString("ascii"), "RB12");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

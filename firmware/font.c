@@ -648,6 +648,12 @@ void font_unload_all(void)
             alloc->refcount = 1; /* force unload */
             font_unload(i);
         }
+        else
+        {
+            /* A reset must leave every slot in the state font_load_ex()
+             * recognizes as available, including zero-initialized slots. */
+            buflib_allocations[i] = -1;
+        }
     }
 }
 

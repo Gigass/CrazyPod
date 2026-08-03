@@ -8,6 +8,9 @@ trap 'rm -rf "$test_root"' EXIT HUP INT TERM
 cd "$repo_root"
 
 python3 tests/test-crazypod-font-tool.py
+tools/build-crazypod-runtime-fonts.sh "$test_root/runtime-fonts"
+python3 tests/test-crazypod-runtime-font.py \
+    "$test_root/runtime-fonts/crazypod-aot"
 
 python3 tools/crazypod_font_tool.py collect \
     --input apps/crazypod/crazypod_l10n.c \
@@ -21,11 +24,6 @@ python3 tools/crazypod_font_tool.py collect \
     --input localization/crazypod/es.json \
     --input localization/crazypod/pt-BR.json \
     --output "$test_root/crazypod-all.txt"
-
-python3 tools/crazypod_font_tool.py collect \
-    --input "$test_root/crazypod-all.txt" \
-    --input localization/crazypod/media-glyphs.txt \
-    --output "$test_root/crazypod-metadata.txt"
 
 for font in \
     lib/lvgl/src/font/lv_font_crazypod_i18n_8.c \
@@ -42,6 +40,6 @@ for font in \
     lib/lvgl/src/font/lv_font_source_han_sans_sc_16_cjk.c
 do
     python3 tools/crazypod_font_tool.py check \
-        --chars "$test_root/crazypod-metadata.txt" \
+        --chars "$test_root/crazypod-all.txt" \
         --lvgl-c "$font"
 done

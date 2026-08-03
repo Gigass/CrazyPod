@@ -19,6 +19,7 @@
 #define CPK5_KIND_FIELD (1u << 17)
 #define CPK5_STATUS_BAR_FIELD (1u << 18)
 #define CPK5_ARTWORK_SOURCE_SIZE_FIELD (1u << 19)
+#define CPK5_FONT_SET_FIELD (1u << 20)
 
 #if CONFIG_BINFMT == BINFMT_ROCK
 #define NATIVE_TARGET "ipod6g"
@@ -349,6 +350,11 @@ static int read_field(
         metadata->artwork_source_size = (uint16_t)value;
         return true;
     }
+    if(IS_KEY("fontSet")) {
+        *bit = CPK5_FONT_SET_FIELD;
+        return read_string(
+            reader, metadata->font_set, sizeof(metadata->font_set));
+    }
     if(IS_KEY("format")) {
         *bit = 1u << 0;
         return read_uint32(reader, &metadata->package_format);
@@ -476,13 +482,15 @@ int crazypod_miniapp_manifest_parse(
         return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
     if(metadata->package_format == CP_NATIVE_PACKAGE_FORMAT) {
         uint32_t optional_fields = CPK5_KIND_FIELD |
-            CPK5_STATUS_BAR_FIELD | CPK5_ARTWORK_SOURCE_SIZE_FIELD;
+            CPK5_STATUS_BAR_FIELD | CPK5_ARTWORK_SOURCE_SIZE_FIELD |
+            CPK5_FONT_SET_FIELD;
 
         if((seen & CPK5_REQUIRED_FIELDS) != CPK5_REQUIRED_FIELDS ||
            (seen & ~(CPK5_REQUIRED_FIELDS | optional_fields)) != 0 ||
            strcmp(metadata->runtime, "native-aot") != 0 ||
            metadata->abi_version != CP_NATIVE_ABI_MAJOR ||
            metadata->abi_minor > CP_NATIVE_ABI_MINOR ||
+           metadata->abi_minor == CP_NATIVE_ABI_REJECTED_MINOR ||
            metadata->react_profile != CP_NATIVE_REACT_PROFILE)
             return CRAZYPOD_MINIAPP_ERROR_VERSION;
         if(metadata->kind ==
@@ -501,6 +509,9 @@ int crazypod_miniapp_manifest_parse(
            (metadata->abi_minor < 11u ||
             metadata->kind !=
                 CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME))
+            return CRAZYPOD_MINIAPP_ERROR_VERSION;
+        if((seen & CPK5_FONT_SET_FIELD) != 0 &&
+           metadata->abi_minor < 16u)
             return CRAZYPOD_MINIAPP_ERROR_VERSION;
         if(metadata->kind ==
                CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME) {

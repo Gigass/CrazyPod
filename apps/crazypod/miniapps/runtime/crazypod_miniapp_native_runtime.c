@@ -16,6 +16,8 @@
 #include "../crazypod_miniapp_storage.h"
 #include "crazypod_miniapp_host_system.h"
 #include "crazypod_miniapp_native_runtime.h"
+
+#include "../../crazypod_runtime_font.h"
 #include "crazypod_miniapp_now_playing_service.h"
 #include "crazypod_miniapp_resource_host.h"
 
@@ -286,6 +288,7 @@ static bool ops_valid(
     if(ops == NULL ||
        ops->abi_major != CP_NATIVE_ABI_MAJOR ||
        ops->abi_minor > CP_NATIVE_ABI_MINOR ||
+       ops->abi_minor == CP_NATIVE_ABI_REJECTED_MINOR ||
        ops->struct_size != sizeof(*ops) ||
        ops->mount == NULL || ops->unmount == NULL ||
        ops->input == NULL || ops->ui_event == NULL ||
@@ -323,6 +326,7 @@ static bool header_valid(
        header->lc_header.target_id != TARGET_ID ||
        header->lc_header.api_version != CP_NATIVE_ABI_MAJOR ||
        header->abi_minor > CP_NATIVE_ABI_MINOR ||
+       header->abi_minor == CP_NATIVE_ABI_REJECTED_MINOR ||
        header->react_profile != CP_NATIVE_REACT_PROFILE ||
        header->host_api_size <
            offsetof(struct cp_native_host_api, file_size) ||
@@ -410,6 +414,7 @@ int crazypod_miniapp_native_open(
         return CRAZYPOD_MINIAPP_ERROR_ABI;
     }
     native.ops = ops;
+    crazypod_runtime_font_error_clear();
     result = native.ops->mount();
     if(result != CP_NATIVE_OK) {
         crazypod_miniapp_native_close();

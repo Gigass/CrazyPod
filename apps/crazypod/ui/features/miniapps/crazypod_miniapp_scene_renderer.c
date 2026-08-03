@@ -12,7 +12,9 @@
 #include "../../../crazypod_appearance.h"
 #include "../../../crazypod_image.h"
 #include "../../../crazypod_miniapps.h"
+#include "../../../crazypod_miniapp_asset_font.h"
 #include "../../../crazypod_miniapp_font.h"
+#include "../../../crazypod_runtime_font.h"
 #include "../../../crazypod_soundwave.h"
 #include "../../../miniapps/runtime/crazypod_miniapp_host_system.h"
 #include "../../features/now_playing/crazypod_now_playing_feature.h"
@@ -300,46 +302,43 @@ static void draw_sound_wave(lv_event_t *event)
         0xFFFFFF);
 }
 
-static const lv_font_t *font_for_value(int32_t value)
+static enum crazypod_font_family family_for_value(int32_t value)
 {
-    extern const lv_font_t lv_font_crazypod_anton_16;
-    extern const lv_font_t lv_font_crazypod_anton_22;
-    extern const lv_font_t lv_font_crazypod_anton_32;
-    extern const lv_font_t lv_font_crazypod_instrument_serif_14;
-    extern const lv_font_t lv_font_crazypod_instrument_serif_28;
-
     switch(value) {
-    case CP_UI_FONT_CAPTION:
-        return &lv_font_montserrat_8;
-    case CP_UI_FONT_LABEL:
-        return &crazypod_miniapp_symbol_font;
-    case CP_UI_FONT_BODY:
-        return &lv_font_crazypod_i18n_12;
-    case CP_UI_FONT_CJK:
-        return &lv_font_source_han_sans_sc_14_cjk;
-    case CP_UI_FONT_TITLE:
-        return &lv_font_source_han_sans_sc_16_cjk;
-    case CP_UI_FONT_NUMBER:
-        return &lv_font_montserrat_24;
-    case CP_UI_FONT_DISPLAY:
-        return &lv_font_montserrat_48;
-    case CP_UI_FONT_CONDENSED_16:
-        return &lv_font_crazypod_anton_16;
-    case CP_UI_FONT_CONDENSED_22:
-        return &lv_font_crazypod_anton_22;
-    case CP_UI_FONT_CONDENSED_32:
-        return &lv_font_crazypod_anton_32;
     case CP_UI_FONT_SERIF_14:
-        return &lv_font_crazypod_instrument_serif_14;
     case CP_UI_FONT_SERIF_28:
-        return &lv_font_crazypod_instrument_serif_28;
+    case CP_UI_FONT_SERIF:
+        return CRAZYPOD_FONT_FAMILY_SERIF;
     case CP_UI_FONT_TECHNICAL_8:
-        return &lv_font_unscii_8;
     case CP_UI_FONT_TECHNICAL_16:
-        return &lv_font_unscii_16;
+    case CP_UI_FONT_MONO:
+        return CRAZYPOD_FONT_FAMILY_MONO;
     default:
-        return &lv_font_montserrat_12;
+        /* Removed design-font IDs remain binary-compatible, but old
+         * packages now use the same Noto system family. */
+        return CRAZYPOD_FONT_FAMILY_SYSTEM;
     }
+}
+
+static const lv_font_t *font_for_value(
+    int32_t value, int32_t size, int32_t weight,
+    int32_t style, int32_t line_height)
+{
+    const lv_font_t *font;
+
+    if(size < 6 || size > 48)
+        size = 12;
+    if(weight < 100 || weight > 900 || weight % 100 != 0)
+        weight = 400;
+    if(line_height < size)
+        line_height = 0;
+    font = crazypod_runtime_font_resolve(
+        family_for_value(value), (unsigned)size, (unsigned)weight,
+        style == CP_UI_FONT_STYLE_ITALIC
+            ? CRAZYPOD_FONT_STYLE_ITALIC
+            : CRAZYPOD_FONT_STYLE_NORMAL,
+        (unsigned)line_height);
+    return font;
 }
 
 static lv_flex_align_t flex_align(int32_t value)
@@ -438,6 +437,39 @@ static void apply_number_of_lines(
     else
         lv_label_set_long_mode(
             node->object, LV_LABEL_LONG_MODE_DOTS);
+}
+
+static void apply_text_font(
+    struct crazypod_miniapp_scene_node *node,
+    const lv_font_t *font)
+{
+    if(font == NULL)
+        return;
+    lv_obj_set_style_text_font(node->object, font, 0);
+    if(node->values[CP_UI_PROP_NUMBER_OF_LINES] > 0)
+        apply_number_of_lines(node);
+    else if(node->type == CP_UI_OBJECT_TEXT &&
+            node->values[CP_UI_PROP_MARQUEE])
+        crazypod_marquee_configure(node->object, true);
+}
+
+bool crazypod_miniapp_scene_text_font_apply(
+    struct crazypod_miniapp_scene_node *node, int32_t value)
+{
+    const lv_font_t *font;
+
+    if(node == NULL)
+        return false;
+    font = font_for_value(
+        value, node->values[CP_UI_PROP_FONT_SIZE],
+        node->values[CP_UI_PROP_FONT_WEIGHT],
+        node->values[CP_UI_PROP_FONT_STYLE],
+        node->values[CP_UI_PROP_LINE_HEIGHT]);
+    if(font == NULL)
+        return false;
+    if(node->object != NULL)
+        apply_text_font(node, font);
+    return true;
 }
 
 static void apply_grid(struct crazypod_miniapp_scene_node *node)
@@ -1135,6 +1167,7 @@ static bool canvas_draw_text(
     int32_t clip_right, int32_t clip_bottom)
 {
     lv_draw_label_dsc_t descriptor;
+    const lv_font_t *font;
     lv_layer_t layer;
     lv_area_t coordinates;
     char text[CRAZYPOD_MINIAPP_TEXT_CAPACITY];
@@ -1153,10 +1186,14 @@ static bool canvas_draw_text(
     layer._clip_area.y1 = clip_top;
     layer._clip_area.x2 = clip_right - 1;
     layer._clip_area.y2 = clip_bottom - 1;
+    font = font_for_value(
+        command->flags, 12, 400, CP_UI_FONT_STYLE_NORMAL, 0);
+    if(font == NULL)
+        return false;
     lv_draw_label_dsc_init(&descriptor);
     descriptor.text = text;
     descriptor.text_length = command->payload_size;
-    descriptor.font = font_for_value(command->flags);
+    descriptor.font = font;
     descriptor.color =
         lv_color_hex(command->color & 0xffffffu);
     descriptor.opa = command->opacity;
@@ -1577,12 +1614,19 @@ void crazypod_miniapp_scene_property_apply(
         lv_obj_set_style_text_letter_space(object, value, 0);
         break;
     case CP_UI_PROP_FONT:
-        lv_obj_set_style_text_font(object, font_for_value(value), 0);
-        if(node->values[CP_UI_PROP_NUMBER_OF_LINES] > 0)
-            apply_number_of_lines(node);
-        else if(node->type == CP_UI_OBJECT_TEXT &&
-                node->values[CP_UI_PROP_MARQUEE])
-            crazypod_marquee_configure(object, true);
+        (void)crazypod_miniapp_scene_text_font_apply(node, value);
+        break;
+    case CP_UI_PROP_FONT_SIZE:
+    case CP_UI_PROP_FONT_WEIGHT:
+    case CP_UI_PROP_FONT_STYLE:
+    case CP_UI_PROP_LINE_HEIGHT:
+        /* The compiler emits the complete typography tuple followed by FONT.
+         * Applying each partial setter used to create three transient font
+         * instances per label and exhausted the host font slots. */
+        break;
+    case CP_UI_PROP_FONT_SOURCE:
+        apply_text_font(
+            node, crazypod_miniapp_asset_font(node->font_source));
         break;
     case CP_UI_PROP_NUMBER_OF_LINES:
         apply_number_of_lines(node);

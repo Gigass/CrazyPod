@@ -13,7 +13,10 @@
  * objects, Rockbox internals and compiler-runtime state remain host-owned.
  */
 #define CP_NATIVE_ABI_MAJOR 1u
-#define CP_NATIVE_ABI_MINOR 11u
+#define CP_NATIVE_ABI_MINOR 16u
+/* ABI 1.14 assigned a new property in the middle of this enum.  Its binary
+ * property values are ambiguous, so packages built for it are not valid. */
+#define CP_NATIVE_ABI_REJECTED_MINOR 14u
 #define CP_NATIVE_PACKAGE_FORMAT 5u
 #define CP_NATIVE_REACT_PROFILE 1u
 #define CP_NATIVE_BINARY_MAGIC 0x35414d43ul /* CMA5 */
@@ -294,6 +297,11 @@ enum cp_ui_property {
     CP_UI_PROP_LETTER_SPACING,
     CP_UI_PROP_TRANSFORM_PIVOT_X,
     CP_UI_PROP_TRANSFORM_PIVOT_Y,
+    CP_UI_PROP_FONT_SOURCE,
+    CP_UI_PROP_FONT_SIZE,
+    CP_UI_PROP_FONT_WEIGHT,
+    CP_UI_PROP_FONT_STYLE,
+    CP_UI_PROP_LINE_HEIGHT,
     CP_UI_PROP_COUNT
 };
 
@@ -358,7 +366,37 @@ enum cp_ui_font {
     CP_UI_FONT_SERIF_28,
     CP_UI_FONT_TECHNICAL_8,
     CP_UI_FONT_TECHNICAL_16,
+    CP_UI_FONT_INTER_16,
+    CP_UI_FONT_TERMINUS_14,
+    CP_UI_FONT_TERMINUS_BOLD_14,
+    CP_UI_FONT_PROFONT_15,
+    CP_UI_FONT_SNAP_20,
+    CP_UI_FONT_JACKASH_16,
+    CP_UI_FONT_NIMBUS_14,
+    CP_UI_FONT_MINCHO_14,
+    CP_UI_FONT_ROCKBOX_MIX_14,
+    CP_UI_FONT_TINY_06,
+    CP_UI_FONT_FIXED_13,
+    CP_UI_FONT_FIXED_BOLD_13,
+    CP_UI_FONT_ATADORE_08,
+    CP_UI_FONT_NAMIL_08,
+    CP_UI_FONT_NEDORE_09,
+    CP_UI_FONT_PROPFONT_08,
+    CP_UI_FONT_ROCKFONT_08,
+    CP_UI_FONT_CLEAN_08,
+    CP_UI_FONT_HELVETICA_16,
+    CP_UI_FONT_HELVETICA_BOLD_16,
+    CP_UI_FONT_SONG_11,
+    CP_UI_FONT_UNIBIT_16,
+    CP_UI_FONT_SYSTEM,
+    CP_UI_FONT_SERIF,
+    CP_UI_FONT_MONO,
     CP_UI_FONT_COUNT
+};
+
+enum cp_ui_font_style {
+    CP_UI_FONT_STYLE_NORMAL = 0,
+    CP_UI_FONT_STYLE_ITALIC
 };
 
 enum cp_ui_animation_easing {

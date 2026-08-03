@@ -114,7 +114,9 @@ make -j"$(detect_jobs)"
 
 codec_dir="lib/rbcodec/codecs"
 sim_codec_dir="simdisk/.rockbox/codecs"
+sim_font_dir="simdisk/.rockbox/fonts"
 codepage_tool="$(cd .. && pwd)/tools/codepages"
+runtime_font_builder="$(cd .. && pwd)/tools/build-crazypod-runtime-fonts.sh"
 codepage_build_dir="$(pwd)/generated-codepages"
 sim_codepage_dir="simdisk/.rockbox/codepages"
 if [ ! -x "$codepage_tool" ]; then
@@ -127,6 +129,11 @@ mkdir -p "$codepage_build_dir" "$sim_codepage_dir"
     "$codepage_tool"
 )
 cp "$codepage_build_dir/936.cp" "$sim_codepage_dir/936.cp"
+if [ ! -x "$runtime_font_builder" ]; then
+    echo "Error: missing CrazyPod runtime font builder." >&2
+    exit 1
+fi
+"$runtime_font_builder" "$(pwd)/$sim_font_dir"
 mkdir -p "$sim_codec_dir"
 find "$sim_codec_dir" -type f -name '*.codec' -delete
 for codec in "$codec_dir"/*.codec; do

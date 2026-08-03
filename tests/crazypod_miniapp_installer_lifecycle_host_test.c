@@ -123,12 +123,11 @@ bool crazypod_miniapp_registry_installed_version(
     return true;
 }
 
-bool crazypod_miniapp_registry_package_matches(
-    const char *id, const struct cpk_reader *reader,
+bool crazypod_miniapp_registry_installed_metadata(
+    const char *id,
     struct crazypod_miniapp_metadata *verified_metadata)
 {
     (void)id;
-    (void)reader;
     if(!installed_same_version)
         return false;
     memset(verified_metadata, 0, sizeof(*verified_metadata));

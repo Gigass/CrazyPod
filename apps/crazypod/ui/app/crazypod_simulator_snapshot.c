@@ -18,6 +18,7 @@
 #include "../../crazypod_music.h"
 #include "../../crazypod_notes.h"
 #include "../../crazypod_organizer.h"
+#include "../../crazypod_runtime_font.h"
 #include "../../crazypod_videos.h"
 #include "../../crazypod_workouts.h"
 #include "../features/books/crazypod_books_feature.h"
@@ -54,6 +55,91 @@ static int item_count(void)
 {
     return crazypod_route_query_item_count(
         current_route(), crazypod_music_search_query());
+}
+
+static void add_runtime_font_probe_label(
+    lv_obj_t *parent, const char *text, const lv_font_t *font,
+    int x, int y, int width, int height, uint32_t color)
+{
+    lv_obj_t *label = lv_label_create(parent);
+
+    lv_label_set_text(label, text);
+    lv_obj_set_pos(label, x, y);
+    lv_obj_set_size(label, width, height);
+    lv_obj_set_style_text_font(label, font, 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(label, LV_OPA_TRANSP, 0);
+}
+
+static bool open_runtime_font_catalog(void)
+{
+    static const struct {
+        const char *name;
+        enum crazypod_font_family family;
+        unsigned weight;
+    } probes[] = {
+        { "SANS 100", CRAZYPOD_FONT_FAMILY_SYSTEM, 100 },
+        { "SANS 200", CRAZYPOD_FONT_FAMILY_SYSTEM, 200 },
+        { "SANS 300", CRAZYPOD_FONT_FAMILY_SYSTEM, 300 },
+        { "SANS 400", CRAZYPOD_FONT_FAMILY_SYSTEM, 400 },
+        { "SANS 500", CRAZYPOD_FONT_FAMILY_SYSTEM, 500 },
+        { "SANS 600", CRAZYPOD_FONT_FAMILY_SYSTEM, 600 },
+        { "SANS 700", CRAZYPOD_FONT_FAMILY_SYSTEM, 700 },
+        { "SANS 800", CRAZYPOD_FONT_FAMILY_SYSTEM, 800 },
+        { "SANS 900", CRAZYPOD_FONT_FAMILY_SYSTEM, 900 },
+        { "SERIF 100", CRAZYPOD_FONT_FAMILY_SERIF, 100 },
+        { "SERIF 200", CRAZYPOD_FONT_FAMILY_SERIF, 200 },
+        { "SERIF 300", CRAZYPOD_FONT_FAMILY_SERIF, 300 },
+        { "SERIF 400", CRAZYPOD_FONT_FAMILY_SERIF, 400 },
+        { "SERIF 500", CRAZYPOD_FONT_FAMILY_SERIF, 500 },
+        { "SERIF 600", CRAZYPOD_FONT_FAMILY_SERIF, 600 },
+        { "SERIF 700", CRAZYPOD_FONT_FAMILY_SERIF, 700 },
+        { "SERIF 800", CRAZYPOD_FONT_FAMILY_SERIF, 800 },
+        { "SERIF 900", CRAZYPOD_FONT_FAMILY_SERIF, 900 },
+        { "MONO 100", CRAZYPOD_FONT_FAMILY_MONO, 100 },
+        { "MONO 200", CRAZYPOD_FONT_FAMILY_MONO, 200 },
+        { "MONO 300", CRAZYPOD_FONT_FAMILY_MONO, 300 },
+        { "MONO 400", CRAZYPOD_FONT_FAMILY_MONO, 400 },
+        { "MONO 500", CRAZYPOD_FONT_FAMILY_MONO, 500 },
+        { "MONO 600", CRAZYPOD_FONT_FAMILY_MONO, 600 },
+        { "MONO 700", CRAZYPOD_FONT_FAMILY_MONO, 700 },
+        { "MONO 800", CRAZYPOD_FONT_FAMILY_MONO, 800 },
+        { "MONO 900", CRAZYPOD_FONT_FAMILY_MONO, 900 },
+    };
+    static const uint32_t colors[] = {
+        0x5ac8fa, 0xf5f5f7, 0xffcc00,
+        0x34c759, 0xff375f, 0xbf5af2,
+    };
+    lv_obj_t *catalog = lv_obj_create(NULL);
+    unsigned index;
+
+    if(!crazypod_runtime_fonts_ready())
+        return false;
+    crazypod_shell_open_product();
+    lv_obj_add_flag(lv_layer_top(), LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(lv_layer_sys(), LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_style_all(catalog);
+    lv_obj_set_pos(catalog, 0, 0);
+    lv_obj_set_size(catalog, 320, 240);
+    lv_obj_set_style_bg_color(catalog, lv_color_hex(0x101114), 0);
+    lv_obj_set_style_bg_opa(catalog, LV_OPA_COVER, 0);
+    lv_screen_load(catalog);
+    add_runtime_font_probe_label(
+        catalog, "一个人的精彩\n萧亚轩 / 红蔷薇",
+        crazypod_runtime_font(), 10, 8, 300, 42, 0xf5f5f7);
+    for(index = 0; index < ARRAYLEN(probes); ++index) {
+        int column = index / 9;
+        int row = index % 9;
+
+        add_runtime_font_probe_label(
+            catalog, probes[index].name,
+            crazypod_runtime_font_resolve(
+                probes[index].family, 12, probes[index].weight,
+                CRAZYPOD_FONT_STYLE_NORMAL, 16),
+            8 + column * 104, 50 + row * 20, 98, 18,
+            colors[index % ARRAYLEN(colors)]);
+    }
+    return true;
 }
 
 static void select_bounded(
@@ -160,6 +246,29 @@ static bool open_now_playing_theme_snapshot(
     return custom
         ? crazypod_now_playing_theme_open()
         : !crazypod_now_playing_theme_open();
+}
+
+static bool cycle_all_now_playing_themes(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    int count = crazypod_now_playing_theme_choice_count();
+    int index;
+
+    if(count <= 1)
+        return false;
+    for(index = 1; index < count; ++index) {
+        if(!crazypod_now_playing_theme_select(index))
+            return false;
+        host->open_root_route(MUSIC_ROUTE_NOW_PLAYING);
+        if(!crazypod_now_playing_theme_open()) {
+            fprintf(stderr,
+                    "CrazyPod theme cycle failed: index=%d error=%d\n",
+                    index, crazypod_now_playing_theme_last_error());
+            return false;
+        }
+        host->render(false);
+    }
+    return true;
 }
 
 static bool open_now_playing_theme_from_home_hold(void)
@@ -673,6 +782,8 @@ bool crazypod_simulator_snapshot_prepare(
     }
     if(screen == NULL || strcmp(screen, "home") == 0)
         return true;
+    if(strcmp(screen, "runtime-font-catalog") == 0)
+        return open_runtime_font_catalog();
     if(strcmp(screen, "power") == 0)
         host->show_power_prompt();
     else if(sscanf(screen, "music-%d", &preview_index) == 1) {
@@ -777,6 +888,8 @@ bool crazypod_simulator_snapshot_prepare(
     else if(strcmp(screen, "now-playing-theme") == 0)
         return open_now_playing_theme_snapshot(
             host, "now-playing-neon");
+    else if(strcmp(screen, "now-playing-theme-cycle-all") == 0)
+        return cycle_all_now_playing_themes(host);
     else if(strcmp(screen, "now-playing-theme-home-hold") == 0)
         return open_now_playing_theme_from_home_hold();
     else if(strcmp(screen, "now-playing-theme-rerender") == 0) {

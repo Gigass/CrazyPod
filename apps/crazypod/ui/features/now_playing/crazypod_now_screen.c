@@ -235,7 +235,7 @@ void crazypod_now_screen_render(
                 context->parent,
                 track != NULL && track->album[0] != '\0'
                     ? track->album : "",
-                &lv_font_montserrat_10,
+                context->metadata_font,
                 content_color, 190);
             lv_obj_set_size(album, 158, 16);
             lv_obj_set_style_text_align(

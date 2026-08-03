@@ -47,6 +47,7 @@ struct crazypod_miniapp_scene_node {
     char text[CRAZYPOD_MINIAPP_TEXT_CAPACITY];
     char placeholder[CRAZYPOD_MINIAPP_PLACEHOLDER_CAPACITY];
     char source[CRAZYPOD_MINIAPP_SOURCE_CAPACITY];
+    char font_source[CRAZYPOD_MINIAPP_SOURCE_CAPACITY];
 };
 
 lv_obj_t *crazypod_miniapp_scene_object_create(
@@ -56,6 +57,8 @@ void crazypod_miniapp_scene_object_prepare(
 void crazypod_miniapp_scene_property_apply(
     struct crazypod_miniapp_scene_node *node,
     uint16_t property);
+bool crazypod_miniapp_scene_text_font_apply(
+    struct crazypod_miniapp_scene_node *node, int32_t value);
 void crazypod_miniapp_scene_node_release(
     struct crazypod_miniapp_scene_node *node);
 void crazypod_miniapp_scene_grid_refresh(

@@ -70,6 +70,7 @@ const styles = StyleSheet.create({
     height: 32,
     color: "#f5f5f7",
     fontSize: 24,
+    fontFamily: "system",
     textAlign: "center",
   },
   button: {
@@ -81,6 +82,84 @@ const styles = StyleSheet.create({
   },
 });
 ```
+
+`TextStyle.fontFamily` 只提供 `system`、`serif`、`mono` 三个内置
+语义字体，未指定时使用 `system`。`fontSize` 是 6–48 的任意整数，
+`fontWeight` 支持 `normal`、`bold` 以及 100–900，还可设置 `lineHeight`
+和整数 `letterSpacing`。`fontSize` 必须是静态值，Devtool 会在安装前按
+实际 `family/weight/size` 组合生成精确的地区化 RB12 字体，不对外公开
+字号档位，也不让 iPod 在运行时栅格化轮廓。字号动画使用 `scaleX/scaleY`。
+
+系统根据语言自动选择 Noto CJK 的 SC、TC、JP 或 KR 字形，主题和
+MiniApp 不得按语言分支选字体。同一文本的回退字形继承相同字号、
+目标字重和行框。Noto CJK 只有 7 个实体字重，其余请求映射到最近字重。
+`fontStyle: "italic"` 因 Noto CJK 没有真斜体而直接构建报错。
+
+CPK 清单会自动记录使用到的字体组合。`crazypod dev` 和
+`crazypod install` 先生成并安装缺失字体，再放入 CPK；固件发现清单声明
+的字体不完整时会拒绝安装，不会静默换成别的字号或字重。
+
+| `fontFamily` | 实际字号 | 风格与建议用途 |
+| --- | ---: | --- |
+| `system` | 声明的 `fontSize` | Noto Sans UI 与媒体元数据 |
+| `serif` | 声明的 `fontSize` | Noto Serif 编辑感标题 |
+| `mono` | 声明的 `fontSize` | Noto Sans Mono 数据与技术文本 |
+
+```tsx
+const styles = StyleSheet.create({
+  title: { fontFamily: "serif", fontSize: 20, fontWeight: "700" },
+  metadata: { fontFamily: "system", fontSize: 16, lineHeight: 20 },
+  meter: { fontFamily: "mono", fontSize: 16, letterSpacing: 1 },
+});
+```
+
+### 包内外挂字体
+
+主题和普通 MiniApp 都可在自己的 CPK 中携带字体。源码必须是标准
+`TTF`、`OTF`、`TTC` 或 `BDF`，不能直接放 Rockbox `.fnt`。在项目的
+`assets/assets.json` 声明资源：
+
+```json
+[
+  {
+    "id": "album-title",
+    "type": "font",
+    "file": "AlbumTitle.otf",
+    "size": 20
+  },
+  {
+    "id": "pixel-label",
+    "type": "font",
+    "file": "PixelLabel.bdf"
+  }
+]
+```
+
+`TTF`/`OTF` 必须设置 6 到 48 的整数像素 `size`。`TTC` 还可设置从 0
+开始的 `face`；`BDF` 使用文件自带的像素尺寸，不能设置 `size` 或 `face`。
+Devtool 在构建时调用 Rockbox `convttf`/`convbdf`，将源字体转换为 BMP 范围的
+RB12 资源；iPod 不解析轮廓字体。
+
+TSX 用资源 ID 引用：
+
+```tsx
+const styles = StyleSheet.create({
+  albumTitle: { fontFamily: "asset:album-title" },
+  label: { fontFamily: "asset:pixel-label" },
+});
+```
+
+同一个 CPK 会话最多加载 4 个包字体，每个转换产物最大 4 MiB；CPK 全部资源
+仍受 8 MiB 总上限约束。包字体实际包含的字形由源文件决定，缺失字形逐字回退
+到同高度的 Noto `system` 字体。RTL 与阿拉伯文塑形不在契约内。
+
+替换字体时保留 `id` 和 `fontFamily: "asset:<id>"`，替换源文件并提高包的
+`version`/`versionCode` 后重新构建、安装。设备按资源 CRC 生成私有字体文件，
+不会误用同 ID 的旧版本，也不会与其他主题或 MiniApp 的字体冲突。
+
+构建机需要 `make`、C 编译器、`pkg-config` 和 FreeType 开发库来构建
+`convttf`。仓库外单独安装 Devtool 时，可用 `CRAZYPOD_CONVTTF` 与
+`CRAZYPOD_CONVBDF` 指向兼容的 Rockbox 转换器。
 
 这些 import 只用于类型检查和源码语义识别，不会打进设备。设备端没有
 React 包。

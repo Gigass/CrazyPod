@@ -175,11 +175,35 @@ void crazypod_playback_toggle(void)
     crazypod_now_playing_overlay_refresh_after_playback();
 }
 
+static bool start_adjacent_from_restored_queue(int direction)
+{
+    int index;
+
+    if((audio_status() & AUDIO_STATUS_PLAY) != 0)
+        return false;
+    index = playlist_next(direction);
+    if(index >= 0) {
+        playlist_start(index, 0, 0);
+        crazypod_state_forget_resume();
+        crazypod_state_mark_dirty();
+    }
+    return true;
+}
+
+void crazypod_playback_next(void)
+{
+    if(crazypod_queue_count() <= 0 ||
+       start_adjacent_from_restored_queue(1))
+        return;
+    audio_next();
+}
+
 void crazypod_playback_previous_or_restart(void)
 {
     const struct mp3entry *id3;
 
-    if(crazypod_queue_count() <= 0)
+    if(crazypod_queue_count() <= 0 ||
+       start_adjacent_from_restored_queue(-1))
         return;
     id3 = audio_current_track();
     if(id3 != NULL &&
@@ -213,7 +237,6 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
     if(crazypod_ui_routes_depth() <= 0 ||
        current_route()->route != MUSIC_ROUTE_NOW_PLAYING)
         return;
-    crazypod_now_playing_overlay_refresh_tick();
     if(crazypod_now_playing_theme_open())
         return;
     if(track != NULL &&
@@ -236,6 +259,7 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
         crazypod_now_playing_overlay_restore(overlay);
         return;
     }
+    crazypod_now_playing_overlay_refresh_tick();
     if(id3 != NULL)
         crazypod_now_playing_feature_update_playback(
             (uint32_t)id3->elapsed,

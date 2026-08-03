@@ -12,6 +12,7 @@ void crazypod_playback_configure(
 void crazypod_playback_initialize(void);
 int crazypod_playback_initial_album_index(void);
 void crazypod_playback_toggle(void);
+void crazypod_playback_next(void);
 void crazypod_playback_previous_or_restart(void);
 void crazypod_playback_update_timer(lv_timer_t *timer);
 void crazypod_playback_process_artwork(void);

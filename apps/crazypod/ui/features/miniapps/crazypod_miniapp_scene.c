@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include "../../../crazypod_miniapp_asset_font.h"
 #include "../../../crazypod_miniapps.h"
 #include "crazypod_miniapp_scene.h"
 #include "crazypod_miniapp_scene_internal.h"
@@ -493,6 +494,7 @@ void crazypod_miniapp_scene_reset(void)
     for(index = 0; index < CP_UI_HANDLE_MAX; ++index)
         crazypod_miniapp_scene_node_release(&scene.nodes[index]);
     delete_materialized_roots();
+    crazypod_miniapp_asset_fonts_reset();
     for(index = 0; index < CP_UI_HANDLE_MAX; ++index) {
         uint16_t generation = scene.nodes[index].generation;
 
@@ -708,6 +710,7 @@ static bool property_numeric(uint16_t property)
     switch(property) {
     case CP_UI_PROP_TEXT:
     case CP_UI_PROP_IMAGE_SOURCE:
+    case CP_UI_PROP_FONT_SOURCE:
     case CP_UI_PROP_PLACEHOLDER:
     case CP_UI_PROP_DATA:
     case CP_UI_PROP_BACKGROUND_COLOR:
@@ -740,6 +743,9 @@ int crazypod_miniapp_scene_set_i32(
        property == CP_UI_PROP_DISABLED ||
        property == CP_UI_PROP_FOCUSABLE)
         scene.focus_dirty = true;
+    if(property == CP_UI_PROP_FONT)
+        return crazypod_miniapp_scene_text_font_apply(node, value)
+            ? 0 : -1;
     crazypod_miniapp_scene_property_apply(node, property);
     return 0;
 }
@@ -776,6 +782,9 @@ int crazypod_miniapp_scene_set_string(
 
     if(node == NULL || value == NULL)
         return -1;
+    if(property == CP_UI_PROP_FONT_SOURCE &&
+       crazypod_miniapp_asset_font(value) == NULL)
+        return -1;
     if(property == CP_UI_PROP_TEXT) {
         destination = node->text;
         capacity = sizeof(node->text);
@@ -787,6 +796,10 @@ int crazypod_miniapp_scene_set_string(
     else if(property == CP_UI_PROP_IMAGE_SOURCE) {
         destination = node->source;
         capacity = sizeof(node->source);
+    }
+    else if(property == CP_UI_PROP_FONT_SOURCE) {
+        destination = node->font_source;
+        capacity = sizeof(node->font_source);
     }
     else {
         return -1;

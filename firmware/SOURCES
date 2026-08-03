@@ -363,6 +363,10 @@ libc/gmtime.c
 /* Display */
 #if defined(IPOD_6G) && !defined(BOOTLOADER)
 /* CrazyPod owns its RGB565 framebuffer and LVGL rendering path. */
+font_cache.c
+font.c
+lru.c
+common/diacritic.c
 #ifdef HAVE_SCREENDUMP
 screendump.c
 #endif

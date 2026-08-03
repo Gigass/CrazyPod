@@ -23,19 +23,44 @@ file. The Latin Extended characters needed by German, French, Spanish and
 Brazilian Portuguese may be included in each regional font, or generated from
 an OFL-licensed Latin font such as Montserrat.
 
-The repository currently uses one shared Noto Sans CJK SC subset at 8, 10, 12,
-14, and 16px. It covers the complete catalog, including Japanese, Traditional
-Chinese, and Korean characters, but it does not provide region-specific Han
-glyph shapes. Regional font splitting remains a typography improvement, not a
-coverage fix.
+The repository uses shared Noto Sans CJK SC subsets at 8, 10, 12, 14, and
+16px for fixed product copy. They cover the complete localization catalog,
+including Japanese, Traditional Chinese, and Korean strings, but they are not
+valid fonts for arbitrary media metadata.
 
 The 14 and 16px files retain their historical
-`lv_font_source_han_sans_sc_*` names. The current 12, 14, and 16px glyph sets were regenerated
-from the complete nine-language manifest plus
-`localization/crazypod/media-glyphs.txt`. The latter is the real-media metadata
-baseline exercised by the simulator; translation coverage alone cannot prove
-that song titles and artist names render. The source font is not committed, so
+`lv_font_source_han_sans_sc_*` names. Their source font is not committed, so
 regeneration requires a separately supplied, redistributable source.
+
+Arbitrary song, artist, album, playlist, book, theme, and Mini App text uses
+the CrazyPod Noto font service. Devtool converts the exact semantic
+`family:weight:size` tuples used by a CPK into regional RB12 bitmap fonts before
+installation. The firmware package includes the 23 tuples used by the system,
+bundled Mini Apps, and bundled themes. Firmware loads glyphs through Rockbox's
+bounded bitmap cache; it does not parse or rasterize Noto outlines. `fontWeight`
+selects 100–900; CJK requests use the nearest available physical Noto weight.
+Locale selects SC, TC, JP, or KR faces with identical line metrics.
+
+The public API exposes only `system`, `serif`, and `mono`. The old 23 Rockbox
+font names remain numeric ABI values for old packages but are no longer a
+development API. Latin, Greek, Cyrillic, CJK, Japanese, and Korean use matched
+Noto faces. RTL and complex-script shaping remain outside the text contract.
+
+ABI 1.16 CPK manifests declare a compiler-generated `fontSet`. Standard
+Devtool staging installs every missing regional font before the CPK. The
+firmware installer rejects a package whose declared files are missing instead
+of substituting another size or weight. `fontSize` is static under AOT; text
+size animation uses transforms.
+
+Native AOT MiniApps and now-playing themes may also package private fonts.
+Their `assets.json` source must be TTF, OTF, TTC, or BDF and the TSX reference
+is `fontFamily: "asset:<resource-id>"`. The Devtool converts package-private
+source fonts to RB12 at build time. Converted
+fonts are structurally validated during package installation, materialized in
+the package's private install directory, and named with the resource CRC so a
+same-ID replacement cannot reuse stale bytes. Each active package may load at
+most four private fonts. Missing glyphs fall through to the Noto system face
+at the asset font's pixel height.
 
 macOS system fonts (Arial Unicode, PingFang, Hiragino and Apple SD Gothic Neo)
 are useful for local coverage diagnosis, but must not be copied into the
@@ -57,7 +82,6 @@ python3 tools/crazypod_font_tool.py collect \
   --input localization/crazypod/fr.json \
   --input localization/crazypod/es.json \
   --input localization/crazypod/pt-BR.json \
-  --input localization/crazypod/media-glyphs.txt \
   --output build/fonts/crazypod-all.txt
 ```
 

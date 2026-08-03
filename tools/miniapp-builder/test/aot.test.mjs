@@ -180,7 +180,7 @@ test("React Profile lowers SafeAreaView and Modal to device-safe root layers", (
   );
 });
 
-test("React Profile maps requested font sizes to the closest host font", () => {
+test("React Profile preserves requested system font sizes", () => {
   const source = `
     import React from "react";
     import { StyleSheet, Text, View } from "react-native";
@@ -202,9 +202,74 @@ test("React Profile maps requested font sizes to the closest host font", () => {
     });
   `;
   const output = compileNativeSource(source, { manifest });
-  for (const font of ["BODY", "CJK", "TITLE", "NUMBER", "DISPLAY"]) {
+  for (const size of [12, 14, 19, 24, 40]) {
+    assert.match(output,
+      new RegExp(`CP_UI_PROP_FONT_SIZE, ${size}\\)`, "g"));
+  }
+  assert.equal((output.match(/CP_UI_FONT_SYSTEM/g) ?? []).length, 5);
+});
+
+test("React Profile maps semantic families and typography to Noto", () => {
+  const source = `
+    import React from "react";
+    import { StyleSheet, Text, View } from "react-native";
+    export default function App() {
+      return <View>
+        <Text style={styles.system}>SYSTEM</Text>
+        <Text style={styles.serif}>SERIF</Text>
+        <Text style={styles.mono}>MONO</Text>
+      </View>;
+    }
+    const styles = StyleSheet.create({
+      system: { fontFamily: "system", fontSize: 22 },
+      serif: { fontFamily: "serif", fontSize: 28, fontWeight: "600" },
+      mono: { fontFamily: "mono", fontSize: 14, lineHeight: 18 },
+    });
+  `;
+  const output = compileNativeSource(source, { manifest });
+  for (const font of ["SYSTEM", "SERIF", "MONO"]) {
     assert.match(output, new RegExp(`CP_UI_FONT_${font}`));
   }
+  assert.match(output, /CP_UI_PROP_FONT_WEIGHT, 600/);
+  assert.match(output, /CP_UI_PROP_LINE_HEIGHT, 18/);
+});
+
+test("React Profile rejects removed fixed host font families", () => {
+  assert.throws(() => compileNativeSource(`
+    import React from "react";
+    import { Text, View } from "react-native";
+    export default function App() {
+      return <View><Text style={{ fontFamily: "helvetica" }}>Font</Text></View>;
+    }
+  `, { manifest }), /unsupported fontFamily helvetica/);
+});
+
+test("React Profile binds declared package fonts by resource id", () => {
+  const source = `
+    import React from "react";
+    import { StyleSheet, Text, View } from "react-native";
+    export default function App() {
+      return <View><Text style={styles.title}>PACKAGE FONT</Text></View>;
+    }
+    const styles = StyleSheet.create({
+      title: { fontFamily: "asset:headline", fontSize: 18 },
+    });
+  `;
+  const output = compileNativeSource(source, {
+    manifest,
+    fontAssets: new Set(["headline"]),
+  });
+  assert.match(
+    output,
+    /set_string\(h1, CP_UI_PROP_FONT_SOURCE, "headline"\)/,
+  );
+  assert.throws(
+    () => compileNativeSource(source, {
+      manifest,
+      fontAssets: new Set(),
+    }),
+    /font asset headline is not declared/,
+  );
 });
 
 test("direct setters keep render-snapshot semantics within one handler", () => {

@@ -120,23 +120,16 @@ bool crazypod_miniapp_registry_installed_version(
     return true;
 }
 
-bool crazypod_miniapp_registry_package_matches(
-    const char *id, const struct cpk_reader *reader,
+bool crazypod_miniapp_registry_installed_metadata(
+    const char *id,
     struct crazypod_miniapp_metadata *verified_metadata)
 {
-    struct install_record record;
     char directory[MAX_PATH];
-    int index;
 
     if(!make_path(directory, sizeof(directory), MINIAPP_ROOT, id) ||
        !crazypod_miniapp_install_directory_validate(
-           directory, id, verified_metadata, &record))
+           directory, id, verified_metadata, NULL))
         return false;
-    for(index = 0; index < reader->entry_count; ++index) {
-        if(record.files[index].size != reader->entries[index].size ||
-           record.files[index].crc32 != reader->entries[index].crc32)
-            return false;
-    }
     return populate_paths(verified_metadata, directory) ==
         CRAZYPOD_MINIAPP_OK;
 }

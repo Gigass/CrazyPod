@@ -1,11 +1,130 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import os from "node:os";
 import path from "node:path";
 import { convertAnimation } from "./animations.mjs";
 import { convertPngBuffer } from "./images.mjs";
 
 export const NATIVE_ABI_MAJOR = 1;
-export const NATIVE_ABI_MINOR = 11;
+export const NATIVE_ABI_MINOR = 15;
 export const REACT_PROFILE = 1;
+
+const execFileAsync = promisify(execFile);
+const FONT_MAX = 4 * 1024 * 1024;
+const FONT_RESOURCE_MAX = 4;
+const FONT_HEADER_SIZE = 36;
+const FONT_LONG_OFFSET_THRESHOLD = 0xffdb;
+
+function validateRockboxFont(data, id) {
+  if (data.length < FONT_HEADER_SIZE ||
+      data.subarray(0, 4).toString("ascii") !== "RB12") {
+    throw new Error(`${id} did not produce a Rockbox RB12 font`);
+  }
+  const maxWidth = data.readUInt16LE(4);
+  const height = data.readUInt16LE(6);
+  const ascent = data.readUInt16LE(8);
+  const depth = data.readUInt16LE(10);
+  const first = data.readUInt32LE(12);
+  const defaultCharacter = data.readUInt32LE(16);
+  const size = data.readUInt32LE(20);
+  const bitsSize = data.readUInt32LE(24);
+  const offsets = data.readUInt32LE(28);
+  const widths = data.readUInt32LE(32);
+  if (data.length > FONT_MAX || maxWidth < 1 || maxWidth > 128 ||
+      height < 1 || height > 64 || ascent > height || depth > 1 ||
+      size < 1 || first > 0xffff || first + size > 0x10000 ||
+      defaultCharacter < first || defaultCharacter >= first + size ||
+      bitsSize < 1 || (offsets !== 0 && offsets !== size) ||
+      (widths !== 0 && widths !== size)) {
+    throw new Error(`${id} produced an unsupported Rockbox font`);
+  }
+  const alignment = bitsSize < FONT_LONG_OFFSET_THRESHOLD ? 2 : 4;
+  const offsetBytes = bitsSize < FONT_LONG_OFFSET_THRESHOLD ? 2 : 4;
+  const tableStart = (FONT_HEADER_SIZE + bitsSize + alignment - 1) &
+    ~(alignment - 1);
+  const expectedSize = tableStart + offsets * offsetBytes + widths;
+  if (expectedSize !== data.length) {
+    throw new Error(`${id} produced an invalid Rockbox font layout`);
+  }
+}
+
+async function ensureTool(tool, makeTarget) {
+  try {
+    await access(tool);
+  } catch {
+    const toolsDirectory = path.dirname(tool);
+    await execFileAsync("make", ["-C", toolsDirectory, makeTarget], {
+      maxBuffer: 1024 * 1024,
+    });
+  }
+}
+
+async function convertFont(source, item) {
+  const extension = path.extname(source).toLowerCase();
+  const repository = path.resolve(import.meta.dirname, "../../..");
+  const toolsDirectory = path.join(repository, "tools");
+  const temporary = await mkdtemp(path.join(os.tmpdir(), "crazypod-font-"));
+  try {
+    let output;
+    if ([".ttf", ".otf", ".ttc"].includes(extension)) {
+      if (!Number.isInteger(item.size) || item.size < 6 || item.size > 48) {
+        throw new Error(`${item.id} outline font requires size from 6 to 48`);
+      }
+      const converter = process.env.CRAZYPOD_CONVTTF ??
+        path.join(toolsDirectory, "convttf");
+      await ensureTool(converter, "convttf");
+      output = path.join(temporary, `${item.id}.fnt`);
+      const args = [
+        "-p", String(item.size), "-s", "32", "-l", "65535",
+        "-o", output,
+      ];
+      if (extension === ".ttc") {
+        const face = item.face ?? 0;
+        if (!Number.isInteger(face) || face < 0 || face > 255) {
+          throw new Error(`${item.id} TTC face must be from 0 to 255`);
+        }
+        args.push("-t", String(face));
+      }
+      args.push(source);
+      await execFileAsync(converter, args, { maxBuffer: 4 * 1024 * 1024 });
+    } else if (extension === ".bdf") {
+      if (item.size !== undefined || item.face !== undefined) {
+        throw new Error(`${item.id} BDF font uses its embedded pixel size`);
+      }
+      const converter = process.env.CRAZYPOD_CONVBDF ??
+        path.join(toolsDirectory, "convbdf");
+      await ensureTool(converter, "convbdf");
+      await execFileAsync(converter, ["-l", "65535", "-f", source], {
+        cwd: temporary,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+      const generated = (await readdir(temporary))
+        .filter((name) => name.endsWith(".fnt"));
+      if (generated.length !== 1) {
+        throw new Error(`${item.id} BDF conversion produced no unique font`);
+      }
+      output = path.join(temporary, generated[0]);
+    } else {
+      throw new Error(
+        `${item.id} font source must be TTF, OTF, TTC, or BDF`,
+      );
+    }
+    const data = await readFile(output);
+    validateRockboxFont(data, item.id);
+    return data;
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}
 
 const crcTable = new Uint32Array(256);
 for (let value = 0; value < 256; value++) {
@@ -59,6 +178,7 @@ export async function buildAssets(directory) {
     ...Object.keys(types), "animation", "tone",
   ]);
   const items = [];
+  let fontCount = 0;
   for (const item of descriptor) {
     if (!/^[a-z][a-z0-9_.-]{0,30}$/.test(item.id) ||
         !sourceTypes.has(item.type) ||
@@ -80,6 +200,12 @@ export async function buildAssets(directory) {
       converted = await convertAnimation(item.file, data, item);
       normalizedType = "sprite";
       data = converted.data;
+    } else if (item.type === "font") {
+      fontCount += 1;
+      if (fontCount > FONT_RESOURCE_MAX) {
+        throw new Error(`a package may declare at most ${FONT_RESOURCE_MAX} fonts`);
+      }
+      data = await convertFont(path.join(directory, item.file), item);
     } else if (
       (item.type === "rgb565" || item.type === "tileset") &&
       (item.format === "png" ||

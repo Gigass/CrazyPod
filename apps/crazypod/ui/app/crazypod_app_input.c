@@ -2,7 +2,6 @@
 
 #ifdef IPOD_6G
 
-#include "audio.h"
 #include "backlight.h"
 #include "button.h"
 #include "kernel.h"
@@ -14,7 +13,6 @@
 #include "sound.h"
 
 #include "../../crazypod_apps.h"
-#include "../../crazypod_playlist.h"
 #include "../../crazypod_screenshot.h"
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/notes/crazypod_notes_feature.h"
@@ -30,6 +28,7 @@
 #include "crazypod_app_launcher.h"
 #include "crazypod_choice_coordinator.h"
 #include "crazypod_menu_preview.h"
+#include "crazypod_playback.h"
 #include "crazypod_route_actions.h"
 
 static struct crazypod_app_input_host host;
@@ -117,8 +116,7 @@ static void wheel_feedback(long button)
 
 static void home_next_track(void)
 {
-    if(crazypod_queue_count() > 0)
-        audio_next();
+    crazypod_playback_next();
 }
 
 static void home_open_selected_app(void)
@@ -395,14 +393,14 @@ void crazypod_app_input_handle(
     else if(base == BUTTON_RIGHT) {
         crazypod_alpha_jump_reset(&alpha_jump);
         if(state->route == MUSIC_ROUTE_NOW_PLAYING)
-            audio_next();
+            crazypod_playback_next();
         else
             crazypod_route_actions_move(1, now);
     }
     else if(base == BUTTON_LEFT) {
         crazypod_alpha_jump_reset(&alpha_jump);
         if(state->route == MUSIC_ROUTE_NOW_PLAYING)
-            audio_prev();
+            crazypod_playback_previous_or_restart();
         else
             crazypod_route_actions_move(-1, now);
     }

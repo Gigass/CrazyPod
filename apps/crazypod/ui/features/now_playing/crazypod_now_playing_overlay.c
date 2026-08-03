@@ -15,6 +15,7 @@
 #include "../../../crazypod_lyrics.h"
 #include "../../../crazypod_music.h"
 #include "../../../crazypod_playlist.h"
+#include "../../../crazypod_runtime_font.h"
 #include "../../../crazypod_state.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_now_playing_feature.h"
@@ -36,9 +37,8 @@
 #define NOW_VOLUME_TRACK_Y 10
 #define NOW_VOLUME_TRACK_WIDTH 6
 #define NOW_VOLUME_TRACK_HEIGHT 84
-#define NOW_VOLUME_HUD_TICKS \
-    ((HZ * 6 / 5) > 0 ? (HZ * 6 / 5) : 1)
-#define CRAZYPOD_METADATA_FONT (&lv_font_source_han_sans_sc_14_cjk)
+#define NOW_VOLUME_HUD_MS 1200
+#define CRAZYPOD_METADATA_FONT (crazypod_runtime_font_at_size(12))
 
 enum now_playing_action {
     NOW_ACTION_QUEUE = 0,
@@ -81,6 +81,7 @@ struct now_volume_hud_view {
     lv_obj_t *root;
     lv_obj_t *fill;
     lv_obj_t *thumb;
+    lv_timer_t *hide_timer;
 };
 
 static struct crazypod_now_playing_overlay_host overlay_host;
@@ -99,7 +100,6 @@ static bool now_favorite_save_failed;
 static uint32_t now_progress_elapsed_ms;
 static uint32_t now_progress_length_ms;
 static long now_progress_follow_after;
-static long now_volume_hide_after;
 static bool now_volume_fading;
 
 static const struct crazypod_track *current_track(void)
@@ -142,13 +142,16 @@ static void clear_now_overlay_objects(void)
 
 static void destroy_now_volume_hud(void)
 {
+    if(now_volume_view.hide_timer != NULL) {
+        lv_timer_delete(now_volume_view.hide_timer);
+        now_volume_view.hide_timer = NULL;
+    }
     if(now_volume_view.root != NULL &&
        lv_obj_is_valid(now_volume_view.root)) {
         lv_anim_delete(now_volume_view.root, NULL);
         lv_obj_delete(now_volume_view.root);
     }
     memset(&now_volume_view, 0, sizeof(now_volume_view));
-    now_volume_hide_after = 0;
     now_volume_fading = false;
 }
 
@@ -175,8 +178,18 @@ static void now_volume_delete_completed(lv_anim_t *animation)
         return;
     lv_obj_delete(root);
     memset(&now_volume_view, 0, sizeof(now_volume_view));
-    now_volume_hide_after = 0;
     now_volume_fading = false;
+}
+
+static void begin_now_volume_hud_fade(void);
+
+static void now_volume_hide_timer(lv_timer_t *timer)
+{
+    if(timer != now_volume_view.hide_timer)
+        return;
+    now_volume_view.hide_timer = NULL;
+    lv_timer_delete(timer);
+    begin_now_volume_hud_fade();
 }
 
 static void animate_now_volume_hud_in(void)
@@ -263,7 +276,7 @@ static void refresh_now_volume_hud(int volume)
         return;
     if(now_volume_view.root == NULL ||
        !lv_obj_is_valid(now_volume_view.root)) {
-        memset(&now_volume_view, 0, sizeof(now_volume_view));
+        destroy_now_volume_hud();
         create_now_volume_hud();
     }
     else if(now_volume_fading) {
@@ -301,7 +314,15 @@ static void refresh_now_volume_hud(int volume)
     lv_obj_set_y(now_volume_view.thumb, thumb_y);
     lv_obj_move_foreground(now_volume_view.root);
     lv_obj_invalidate(now_volume_view.root);
-    now_volume_hide_after = current_tick + NOW_VOLUME_HUD_TICKS;
+    if(now_volume_view.hide_timer == NULL)
+        now_volume_view.hide_timer = lv_timer_create(
+            now_volume_hide_timer, NOW_VOLUME_HUD_MS, NULL);
+    else {
+        lv_timer_set_period(
+            now_volume_view.hide_timer, NOW_VOLUME_HUD_MS);
+        lv_timer_reset(now_volume_view.hide_timer);
+        lv_timer_resume(now_volume_view.hide_timer);
+    }
 }
 
 static void begin_now_volume_hud_fade(void)
@@ -1104,10 +1125,6 @@ void crazypod_now_playing_overlay_refresh_after_playback(void)
 
 void crazypod_now_playing_overlay_refresh_tick(void)
 {
-    if(now_volume_view.root != NULL &&
-       !now_volume_fading &&
-       !TIME_BEFORE(current_tick, now_volume_hide_after))
-        begin_now_volume_hud_fade();
     if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE &&
        now_queue_generation_seen != crazypod_queue_generation())
         refresh_now_queue_popup();

@@ -235,6 +235,7 @@ if [ ! -f ../assets/crazypod/default-home.bmp ]; then
 fi
 mkdir -p "$PACKAGE_DIR/.rockbox/codecs"
 mkdir -p "$PACKAGE_DIR/.rockbox/codepages"
+mkdir -p "$PACKAGE_DIR/.rockbox/fonts"
 mkdir -p "$PACKAGE_DIR/.rockbox/crazypod/icons"
 mkdir -p "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages"
 CODEPAGE_TOOL="$(cd .. && pwd)/tools/codepages"
@@ -250,6 +251,12 @@ mkdir -p "$CODEPAGE_BUILD_DIR"
 )
 cp "$CODEPAGE_BUILD_DIR/936.cp" \
    "$PACKAGE_DIR/.rockbox/codepages/936.cp"
+RUNTIME_FONT_BUILDER="$(cd .. && pwd)/tools/build-crazypod-runtime-fonts.sh"
+if [ ! -x "$RUNTIME_FONT_BUILDER" ]; then
+    echo "Error: missing CrazyPod runtime font builder." >&2
+    exit 1
+fi
+"$RUNTIME_FONT_BUILDER" "$PACKAGE_DIR/.rockbox/fonts"
 cp rockbox.ipod "$PACKAGE_DIR/.rockbox/rockbox.ipod"
 [ ! -f rockbox-info.txt ] || cp rockbox-info.txt "$PACKAGE_DIR/.rockbox/rockbox-info.txt"
 cp -R ../assets/crazypod-icons/. \
@@ -262,10 +269,11 @@ cp "../dist/miniapps/$CAPABILITY_LAB_PACKAGE" \
    "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
 cp "../dist/miniapps/$NATIVE_REFERENCE_PACKAGE" \
    "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
-cp "../dist/miniapps/$NOW_PLAYING_THEME_PACKAGE" \
-   "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
-cp "../dist/miniapps/$SIGNAL_THEME_PACKAGE" \
-   "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
+for theme_package in ../dist/miniapps/now-playing-*.cpk; do
+    [ -f "$theme_package" ] || continue
+    cp "$theme_package" \
+       "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
+done
 for codec in lib/rbcodec/codecs/*.codec; do
     [ -f "$codec" ] || continue
     case "$codec" in
