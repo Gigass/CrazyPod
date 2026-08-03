@@ -470,6 +470,40 @@ static bool scroll_now_playing_theme_panel_repeated(
         crazypod_now_playing_theme_open();
 }
 
+static bool exercise_now_playing_transform_layers(
+    const struct crazypod_simulator_snapshot_host *host,
+    bool playback_mode)
+{
+    const char *theme_id = getenv("CRAZYPOD_SIM_THEME_ID");
+    struct crazypod_input_event select =
+        crazypod_input_event_make(BUTTON_SELECT, 0);
+    struct crazypod_input_event right =
+        crazypod_input_event_make(BUTTON_RIGHT, 0);
+    struct crazypod_input_event wheel =
+        crazypod_input_event_make(BUTTON_SCROLL_FWD, 0);
+
+    if(theme_id == NULL || theme_id[0] == '\0' ||
+       !open_now_playing_theme_snapshot(host, theme_id) ||
+       !crazypod_now_playing_theme_handle_input(&select) ||
+       !crazypod_miniapps_feature_modal_visible())
+        return false;
+    if(playback_mode) {
+        if(!crazypod_now_playing_theme_handle_input(&right) ||
+           !crazypod_now_playing_theme_handle_input(&right) ||
+           !crazypod_now_playing_theme_handle_input(&select) ||
+           !crazypod_now_playing_theme_handle_input(&wheel) ||
+           !crazypod_now_playing_theme_handle_input(&wheel) ||
+           !crazypod_now_playing_theme_handle_input(&wheel))
+            return false;
+    }
+    else if(!crazypod_now_playing_theme_handle_input(&wheel) ||
+            !crazypod_now_playing_theme_handle_input(&wheel))
+        return false;
+    host->render(false);
+    return crazypod_now_playing_theme_open() &&
+        crazypod_miniapps_feature_modal_visible();
+}
+
 static bool return_from_saved_seek_with_menu(
     const struct crazypod_simulator_snapshot_host *host)
 {
@@ -921,6 +955,10 @@ bool crazypod_simulator_snapshot_prepare(
         return open_now_playing_theme_panel(host, false);
     else if(strcmp(screen, "now-playing-theme-panel-repeat") == 0)
         return scroll_now_playing_theme_panel_repeated(host);
+    else if(strcmp(screen, "now-playing-transform-layers") == 0)
+        return exercise_now_playing_transform_layers(host, false);
+    else if(strcmp(screen, "now-playing-transform-mode-layers") == 0)
+        return exercise_now_playing_transform_layers(host, true);
     else if(strcmp(screen, "now-playing-theme-seek-menu-back") == 0)
         return return_from_saved_seek_with_menu(host);
     else if(strcmp(screen, "now-playing-theme-queue") == 0)

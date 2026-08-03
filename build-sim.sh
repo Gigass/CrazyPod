@@ -66,6 +66,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 require_tools
+python3 tests/test-crazypod-lvgl-layer-budget.py
 npm ci --ignore-scripts --no-audit --no-fund \
     --prefix tools/miniapp-builder
 node tools/miniapp-builder/src/cli.mjs generate \

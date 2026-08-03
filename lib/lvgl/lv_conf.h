@@ -17,7 +17,16 @@
 #define LV_DRAW_BUF_STRIDE_ALIGN 1
 #define LV_DRAW_BUF_ALIGN 4
 #define LV_DRAW_LAYER_SIMPLE_BUF_SIZE (8U * 1024U)
-#define LV_DRAW_LAYER_MAX_MEMORY (32U * 1024U)
+/*
+ * A transformed LVGL layer cannot be rendered in chunks.  The old 32 KiB
+ * limit was smaller than a legal on-screen transformed object and made the
+ * draw scheduler retry the impossible allocation forever.  Reserve enough
+ * for a complete 320x240 ARGB layer plus LVGL's five-pixel transform margin
+ * on every edge.  Independent layers are still rendered and released in
+ * sequence, so this is a peak budget rather than a permanent allocation.
+ */
+#define LV_DRAW_LAYER_MAX_MEMORY \
+    ((320U + 10U) * (240U + 10U) * 4U)
 
 #define LV_USE_DRAW_SW 1
 #define LV_DRAW_SW_DRAW_UNIT_CNT 1
