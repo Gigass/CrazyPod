@@ -181,6 +181,8 @@ static void animation_apply(void *context, int32_t value)
     property_mark(node, slot->property);
     crazypod_miniapp_scene_property_apply(
         node, slot->property);
+    if(node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+        crazypod_miniapp_scene_now_playing_artwork_transform_flush(node);
 }
 
 static void animations_cancel(uint32_t handle)
@@ -883,7 +885,17 @@ int crazypod_miniapp_scene_remove(uint32_t target)
 
 int crazypod_miniapp_scene_end_update(void)
 {
+    uint32_t index;
+
     materialize_all();
+    for(index = 0; index < CP_UI_HANDLE_MAX; ++index) {
+        struct crazypod_miniapp_scene_node *node =
+            &scene.nodes[index];
+
+        if(node->state == CRAZYPOD_MINIAPP_SCENE_SLOT_ALIVE &&
+           node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+            crazypod_miniapp_scene_now_playing_artwork_transform_flush(node);
+    }
     if(scene.focus_dirty) {
         focus_apply();
         scene.focus_dirty = false;

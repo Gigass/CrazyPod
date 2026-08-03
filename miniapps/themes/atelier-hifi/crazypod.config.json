@@ -1,6 +1,7 @@
 {
   "manifest": {
     "kind": "now-playing-theme",
+    "artworkSourceSize": 104,
     "id": "now-playing-neon",
     "name": "Atelier Hi-Fi",
     "version": "1.4.0",

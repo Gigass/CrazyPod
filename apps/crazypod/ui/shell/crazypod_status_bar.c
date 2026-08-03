@@ -28,6 +28,7 @@ struct status_bar {
     int rendered_battery_width;
     int rendered_charging;
     int rendered_playing;
+    bool visible;
 };
 
 static struct status_bar status_bars[CRAZYPOD_STATUS_BAR_COUNT];
@@ -71,6 +72,7 @@ void crazypod_status_bar_create(int index, lv_obj_t *screen)
     bar->rendered_battery_width = -1;
     bar->rendered_charging = -1;
     bar->rendered_playing = -1;
+    bar->visible = true;
 }
 
 void crazypod_status_bars_update(void)
@@ -100,6 +102,8 @@ void crazypod_status_bars_update(void)
         struct status_bar *bar = &status_bars[i];
 
         if(bar->time == NULL)
+            continue;
+        if(!bar->visible)
             continue;
         if(bar->rendered_minute != minute) {
             if(!time_formatted) {
@@ -164,6 +168,37 @@ void crazypod_status_bar_foreground(int index)
         return;
     lv_obj_move_foreground(bar->time);
     lv_obj_move_foreground(bar->playing);
+}
+
+void crazypod_status_bar_set_visible(int index, bool visible)
+{
+    struct status_bar *bar = status_bar_at(index);
+    lv_obj_t *objects[4];
+    int i;
+
+    if(bar == NULL || bar->time == NULL)
+        return;
+    if(bar->visible == visible)
+        return;
+    bar->visible = visible;
+    objects[0] = bar->time;
+    objects[1] = bar->battery;
+    objects[2] = bar->battery_cap;
+    objects[3] = NULL;
+    for(i = 0; objects[i] != NULL; ++i) {
+        if(visible)
+            lv_obj_remove_flag(objects[i], LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(objects[i], LV_OBJ_FLAG_HIDDEN);
+    }
+    if(!visible) {
+        lv_obj_add_flag(bar->charge, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(bar->playing, LV_OBJ_FLAG_HIDDEN);
+    }
+    if(visible) {
+        bar->rendered_charging = -1;
+        bar->rendered_playing = -1;
+    }
 }
 
 #endif

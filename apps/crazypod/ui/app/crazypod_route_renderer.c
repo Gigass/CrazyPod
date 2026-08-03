@@ -310,6 +310,9 @@ void crazypod_route_renderer_render(
             (void)crazypod_miniapps_feature_render(
                 state, content, primary_color());
         lv_obj_invalidate(content);
+        crazypod_status_bar_set_visible(
+            1, state->route != MUSIC_ROUTE_NOW_PLAYING ||
+               !crazypod_now_playing_theme_owns_status_bar());
         crazypod_status_bar_set_palette(
             1, foreground, background);
         crazypod_status_bar_foreground(1);
@@ -350,6 +353,9 @@ void crazypod_route_renderer_render(
             LV_OPA_COVER, 0);
         lv_obj_invalidate(content);
     }
+    crazypod_status_bar_set_visible(
+        1, state->route != MUSIC_ROUTE_NOW_PLAYING ||
+           !crazypod_now_playing_theme_owns_status_bar());
     crazypod_status_bar_set_palette(
         1, foreground, background);
     crazypod_status_bar_foreground(1);

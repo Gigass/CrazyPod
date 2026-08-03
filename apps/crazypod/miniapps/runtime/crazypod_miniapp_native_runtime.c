@@ -8,8 +8,11 @@
 #include <string.h>
 
 #include "load_code.h"
+#include "powermgmt.h"
+#include "timefuncs.h"
 
 #include "../../crazypod_miniapps.h"
+#include "../../crazypod_state.h"
 #include "../crazypod_miniapp_storage.h"
 #include "crazypod_miniapp_host_system.h"
 #include "crazypod_miniapp_native_runtime.h"
@@ -162,6 +165,41 @@ static int host_service_call(
        (request_size > 0 && request == NULL) ||
        (response_capacity > 0 && response == NULL))
         return CP_NATIVE_ERROR_ARGUMENT;
+    if(service == CP_NATIVE_SERVICE_SYSTEM &&
+       operation == CP_NATIVE_SYSTEM_STATUS) {
+        int32_t status[CP_NATIVE_SYSTEM_STATUS_COUNT];
+        struct tm *now;
+        int level;
+
+        if(request_size != 0 && request_size != sizeof(int32_t))
+            return CP_NATIVE_ERROR_ARGUMENT;
+        size_t response_size;
+
+        if(response_capacity <
+           CP_NATIVE_SYSTEM_STATUS_LEGACY_COUNT * sizeof(int32_t))
+            return CP_NATIVE_ERROR_LIMIT;
+        now = get_time();
+        level = battery_level();
+        if(level < 0)
+            level = 0;
+        if(level > 100)
+            level = 100;
+        status[0] = now->tm_hour;
+        status[1] = now->tm_min / 10;
+        status[2] = now->tm_min % 10;
+        status[3] = level;
+#if CONFIG_CHARGING >= CHARGING_MONITOR
+        status[4] = charge_state > DISCHARGING ? 1 : 0;
+#else
+        status[4] = 0;
+#endif
+        status[5] = crazypod_state_reduce_motion() ? 1 : 0;
+        response_size = response_capacity >= sizeof(status)
+            ? sizeof(status)
+            : CP_NATIVE_SYSTEM_STATUS_LEGACY_COUNT * sizeof(int32_t);
+        memcpy(response, status, response_size);
+        return (int)response_size;
+    }
     if(service != CP_NATIVE_SERVICE_SYSTEM ||
        operation != CP_NATIVE_SYSTEM_INFO) {
         if(service == CP_NATIVE_SERVICE_NOW_PLAYING &&

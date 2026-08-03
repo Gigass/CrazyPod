@@ -7,12 +7,18 @@
 static void verify_constants(void)
 {
     assert(CP_NATIVE_ABI_MAJOR == 1u);
-    assert(CP_NATIVE_ABI_MINOR == 9u);
+    assert(CP_NATIVE_ABI_MINOR == 11u);
+    assert(CP_UI_FONT_CONDENSED_16 > CP_UI_FONT_DISPLAY);
+    assert(CP_UI_FONT_SERIF_28 > CP_UI_FONT_CONDENSED_32);
+    assert(CP_UI_FONT_TECHNICAL_16 > CP_UI_FONT_TECHNICAL_8);
     assert(CP_NATIVE_PACKAGE_FORMAT == 5u);
     assert(CP_NATIVE_REACT_PROFILE == 1u);
     assert(CP_NATIVE_CAP_FILES == (1u << 4));
     assert(CP_NATIVE_CAP_SERVICES == (1u << 5));
     assert(CP_NATIVE_SERVICE_PAYLOAD_MAX == 1024u);
+    assert(CP_NATIVE_SYSTEM_STATUS == 1u);
+    assert(CP_NATIVE_SYSTEM_STATUS_LEGACY_COUNT == 5u);
+    assert(CP_NATIVE_SYSTEM_STATUS_COUNT == 6u);
     assert(CP_NOW_PLAYING_INFO_COUNT == 10u);
     assert(sizeof(struct cp_native_system_info) == 12u);
     assert(CP_UI_OBJECT_SCREEN == 1);

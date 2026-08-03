@@ -4,7 +4,8 @@
 `Text numberOfLines` 动态元数据裁切，ABI 1.6 提供双声道播放峰值，
 ABI 1.7 提供播放队列、明确的收藏/播放模式写入、歌词窗口、相对跳转和
 系统跑马灯复用；ABI 1.8 增加可识别的原生 `Modal`、弹窗内 Menu 返回和
-合并后的滚轮 `steps` 增量；当前 ABI 1.9 增加平台统一封面提交和自动刷新。
+合并后的滚轮 `steps` 增量；ABI 1.9 增加平台统一封面提交和自动刷新，ABI 1.10
+增加主题状态栏，当前 ABI 1.11 增加字体角色与按主题声明的原图封面解码尺寸。
 可安装 CPK5 能替换“正在播放”页面，
 默认主题仍是固件现有 C 页面；安装主题不会自动启用，用户必须在“自定义 > 主题”中选择。
 选择“默认”后立即恢复固件页面。
@@ -26,7 +27,9 @@ crazypod dev --once
 crazypod build
 ```
 
-manifest 必须包含 `"kind": "now-playing-theme"`。普通 Mini App 不能导入
+manifest 必须包含 `"kind": "now-playing-theme"`；新主题还必须用
+`"artworkSourceSize": 16..320` 声明布局实际需要的最大封面边长。全屏封面用
+320，小封面使用真实显示尺寸；ABI 1.11 主题缺失该字段会被拒绝。普通 Mini App 不能导入
 `@crazypod/now-playing`，也不能创建主题专用的封面和声波对象。
 
 ## 平台能力
@@ -68,6 +71,10 @@ handler 都只代表一格。普通 Mini App 的既有输入路径不变。
 由固件从播放 mixer 计算，只暴露归一化峰值，不暴露 PCM 缓冲区；主题可以据此
 用纯 TSX 绘制真实 VU 律动。`SoundWave` 是由 phase 驱动的原生装饰波形，不做
 频谱分析。主题无权读取原始 PCM，也不自行解码封面。
+
+媒体库和 Cover Flow 始终读写 128px 的 `CV10` 持久缓存。正在播放主题不读取、
+不写入该缓存，而是按 `artworkSourceSize` 从嵌入或外置原图直接解码；因此全屏主题
+不会再把 128px 缓存放大到 320px。
 
 `MarqueeText` 复用固件默认正在播放页的跑马灯引擎，适合标题、歌手、专辑和
 队列项。`refreshNowPlaying` 与 `refreshQueueItem` 仍返回原始文本，普通 `Text`

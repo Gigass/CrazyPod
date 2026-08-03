@@ -19,9 +19,16 @@ LVGL_SRC := \
 	$(LVGL_DIR)/src/font/lv_font_crazypod_i18n_12.c \
 	$(LVGL_DIR)/src/font/lv_font_source_han_sans_sc_14_cjk.c \
 	$(LVGL_DIR)/src/font/lv_font_source_han_sans_sc_16_cjk.c \
+	$(LVGL_DIR)/src/font/lv_font_crazypod_anton_16.c \
+	$(LVGL_DIR)/src/font/lv_font_crazypod_anton_22.c \
+	$(LVGL_DIR)/src/font/lv_font_crazypod_anton_32.c \
+	$(LVGL_DIR)/src/font/lv_font_crazypod_instrument_serif_14.c \
+	$(LVGL_DIR)/src/font/lv_font_crazypod_instrument_serif_28.c \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_16.c \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_24.c \
 	$(LVGL_DIR)/src/font/lv_font_montserrat_48.c \
+	$(LVGL_DIR)/src/font/lv_font_unscii_8.c \
+	$(LVGL_DIR)/src/font/lv_font_unscii_16.c \
 	$(shell find $(LVGL_DIR)/src/indev -maxdepth 1 -type f -name '*.c') \
 	$(LVGL_DIR)/src/layouts/lv_layout.c \
 	$(LVGL_DIR)/src/layouts/flex/lv_flex.c \

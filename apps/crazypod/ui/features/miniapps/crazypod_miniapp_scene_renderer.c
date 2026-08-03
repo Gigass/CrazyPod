@@ -19,6 +19,106 @@
 #include "../../presentation/crazypod_marquee.h"
 #include "crazypod_miniapp_scene_internal.h"
 
+static lv_obj_t *transform_target(
+    struct crazypod_miniapp_scene_node *node)
+{
+    if(node != NULL && node->object != NULL &&
+       node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+        return lv_obj_get_child_count(node->object) > 0u
+            ? lv_obj_get_child(node->object, 0) : NULL;
+    return node != NULL ? node->object : NULL;
+}
+
+static bool artwork_transform_apply(
+    struct crazypod_miniapp_scene_node *node)
+{
+    const fb_data *source;
+    fb_data *output;
+    lv_obj_t *image;
+    int width;
+    int height;
+    int pivot_x;
+    int pivot_y;
+    int scale_x;
+    int scale_y;
+    int angle;
+    int sine;
+    int cosine;
+    int y;
+
+    if(node == NULL ||
+       node->type != CP_UI_OBJECT_NOW_PLAYING_ARTWORK ||
+       node->resource_handle <= 0 || node->secondary_handle <= 0)
+        return false;
+    image = transform_target(node);
+    if(image == NULL)
+        return false;
+    width = node->values[CP_UI_PROP_WIDTH];
+    height = node->values[CP_UI_PROP_HEIGHT];
+    if(width <= 0 || height <= 0)
+        return false;
+    source = core_get_data(node->resource_handle);
+    output = core_get_data(node->secondary_handle);
+    if(source == NULL || output == NULL)
+        return false;
+    pivot_x = node->values[CP_UI_PROP_TRANSFORM_PIVOT_X];
+    pivot_y = node->values[CP_UI_PROP_TRANSFORM_PIVOT_Y];
+    scale_x = node->values[CP_UI_PROP_SCALE_X];
+    scale_y = node->values[CP_UI_PROP_SCALE_Y];
+    if(scale_x <= 0)
+        scale_x = LV_SCALE_NONE;
+    if(scale_y <= 0)
+        scale_y = LV_SCALE_NONE;
+    angle = node->values[CP_UI_PROP_ROTATION] % 3600;
+    if(angle < 0)
+        angle += 3600;
+    if(angle == 0 && scale_x == LV_SCALE_NONE &&
+       scale_y == LV_SCALE_NONE) {
+        memcpy(output, source,
+               (size_t)width * height * sizeof(fb_data));
+    }
+    else {
+        int degrees = (angle + 5) / 10;
+
+        sine = lv_trigo_sin(degrees);
+        cosine = lv_trigo_cos(degrees);
+        for(y = 0; y < height; ++y) {
+            int x;
+
+            for(x = 0; x < width; ++x) {
+                int dx = x - pivot_x;
+                int dy = y - pivot_y;
+                int rotated_x = (int)(
+                    ((int64_t)cosine * dx +
+                     (int64_t)sine * dy) >> LV_TRIGO_SHIFT);
+                int rotated_y = (int)(
+                    ((int64_t)(-sine) * dx +
+                     (int64_t)cosine * dy) >> LV_TRIGO_SHIFT);
+                int source_x = pivot_x +
+                    rotated_x * LV_SCALE_NONE / scale_x;
+                int source_y = pivot_y +
+                    rotated_y * LV_SCALE_NONE / scale_y;
+
+                output[y * width + x] =
+                    source_x >= 0 && source_x < width &&
+                    source_y >= 0 && source_y < height
+                    ? source[source_y * width + source_x]
+                    : LCD_RGBPACK(18, 18, 24);
+            }
+        }
+    }
+    lv_obj_invalidate(image);
+    node->artwork_transform_dirty = false;
+    return true;
+}
+
+void crazypod_miniapp_scene_now_playing_artwork_transform_flush(
+    struct crazypod_miniapp_scene_node *node)
+{
+    if(node != NULL && node->artwork_transform_dirty)
+        (void)artwork_transform_apply(node);
+}
+
 bool crazypod_miniapp_scene_now_playing_artwork_refresh_node(
     struct crazypod_miniapp_scene_node *node)
 {
@@ -27,8 +127,11 @@ bool crazypod_miniapp_scene_now_playing_artwork_refresh_node(
     lv_image_dsc_t old_image;
     lv_obj_t *staged_object;
     int staged_handle;
+    int staged_secondary_handle;
     int old_handle;
+    int old_secondary_handle;
     uint32_t old_size;
+    uint32_t old_secondary_size;
     unsigned generation;
     int width;
     int height;
@@ -70,14 +173,26 @@ bool crazypod_miniapp_scene_now_playing_artwork_refresh_node(
         }
         if(crop_width <= 0 || crop_height <= 0 ||
            byte_count == 0 || byte_count > UINT32_MAX ||
+           byte_count > SIZE_MAX / 2u ||
            !crazypod_miniapp_host_memory_replace(
-               node->external_size, byte_count))
+               (size_t)node->external_size + node->secondary_size,
+               byte_count * 2u))
             return false;
         staged_handle = core_alloc_ex(
             byte_count, &buflib_ops_locked);
         if(staged_handle <= 0) {
             (void)crazypod_miniapp_host_memory_replace(
-                byte_count, node->external_size);
+                byte_count * 2u,
+                (size_t)node->external_size + node->secondary_size);
+            return false;
+        }
+        staged_secondary_handle = core_alloc_ex(
+            byte_count, &buflib_ops_locked);
+        if(staged_secondary_handle <= 0) {
+            core_free(staged_handle);
+            (void)crazypod_miniapp_host_memory_replace(
+                byte_count * 2u,
+                (size_t)node->external_size + node->secondary_size);
             return false;
         }
         memset(&staged_image, 0, sizeof(staged_image));
@@ -86,27 +201,39 @@ bool crazypod_miniapp_scene_now_playing_artwork_refresh_node(
                crop_width, crop_height, source_stride,
                core_get_data(staged_handle), width, height) ||
            !crazypod_image_configure_rgb565(
-               &staged_image, core_get_data(staged_handle),
+               &staged_image, core_get_data(staged_secondary_handle),
                width, height)) {
             core_free(staged_handle);
+            core_free(staged_secondary_handle);
             (void)crazypod_miniapp_host_memory_replace(
-                byte_count, node->external_size);
+                byte_count * 2u,
+                (size_t)node->external_size + node->secondary_size);
             return false;
         }
+        memcpy(core_get_data(staged_secondary_handle),
+               core_get_data(staged_handle), byte_count);
         old_handle = node->resource_handle;
+        old_secondary_handle = node->secondary_handle;
         old_size = node->external_size;
+        old_secondary_size = node->secondary_size;
         old_image = node->image;
         node->image = staged_image;
         staged_object = lv_image_create(node->object);
         if(staged_object == NULL) {
             node->image = old_image;
             core_free(staged_handle);
+            core_free(staged_secondary_handle);
             (void)crazypod_miniapp_host_memory_replace(
-                byte_count, old_size);
+                byte_count * 2u,
+                (size_t)old_size + old_secondary_size);
             return false;
         }
         lv_image_set_src(staged_object, &node->image);
         lv_obj_set_pos(staged_object, 0, 0);
+        lv_obj_set_style_translate_x(
+            staged_object, node->values[CP_UI_PROP_TRANSLATE_X], 0);
+        lv_obj_set_style_translate_y(
+            staged_object, node->values[CP_UI_PROP_TRANSLATE_Y], 0);
         lv_obj_remove_flag(staged_object, LV_OBJ_FLAG_CLICKABLE);
         while(lv_obj_get_child_count(node->object) > 1u) {
             lv_obj_t *child = lv_obj_get_child(node->object, 0);
@@ -117,9 +244,14 @@ bool crazypod_miniapp_scene_now_playing_artwork_refresh_node(
         }
         node->resource_handle = staged_handle;
         node->external_size = (uint32_t)byte_count;
+        node->secondary_handle = staged_secondary_handle;
+        node->secondary_size = (uint32_t)byte_count;
         node->artwork_generation = generation;
+        (void)artwork_transform_apply(node);
         if(old_handle > 0)
             core_free(old_handle);
+        if(old_secondary_handle > 0)
+            core_free(old_secondary_handle);
         lv_obj_set_style_bg_opa(node->object, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(
             node->object, lv_color_hex(0x121218), 0);
@@ -170,6 +302,12 @@ static void draw_sound_wave(lv_event_t *event)
 
 static const lv_font_t *font_for_value(int32_t value)
 {
+    extern const lv_font_t lv_font_crazypod_anton_16;
+    extern const lv_font_t lv_font_crazypod_anton_22;
+    extern const lv_font_t lv_font_crazypod_anton_32;
+    extern const lv_font_t lv_font_crazypod_instrument_serif_14;
+    extern const lv_font_t lv_font_crazypod_instrument_serif_28;
+
     switch(value) {
     case CP_UI_FONT_CAPTION:
         return &lv_font_montserrat_8;
@@ -185,6 +323,20 @@ static const lv_font_t *font_for_value(int32_t value)
         return &lv_font_montserrat_24;
     case CP_UI_FONT_DISPLAY:
         return &lv_font_montserrat_48;
+    case CP_UI_FONT_CONDENSED_16:
+        return &lv_font_crazypod_anton_16;
+    case CP_UI_FONT_CONDENSED_22:
+        return &lv_font_crazypod_anton_22;
+    case CP_UI_FONT_CONDENSED_32:
+        return &lv_font_crazypod_anton_32;
+    case CP_UI_FONT_SERIF_14:
+        return &lv_font_crazypod_instrument_serif_14;
+    case CP_UI_FONT_SERIF_28:
+        return &lv_font_crazypod_instrument_serif_28;
+    case CP_UI_FONT_TECHNICAL_8:
+        return &lv_font_unscii_8;
+    case CP_UI_FONT_TECHNICAL_16:
+        return &lv_font_unscii_16;
     default:
         return &lv_font_montserrat_12;
     }
@@ -1421,6 +1573,9 @@ void crazypod_miniapp_scene_property_apply(
             value == CP_UI_TEXT_ALIGN_RIGHT ? LV_TEXT_ALIGN_RIGHT :
             LV_TEXT_ALIGN_LEFT, 0);
         break;
+    case CP_UI_PROP_LETTER_SPACING:
+        lv_obj_set_style_text_letter_space(object, value, 0);
+        break;
     case CP_UI_PROP_FONT:
         lv_obj_set_style_text_font(object, font_for_value(value), 0);
         if(node->values[CP_UI_PROP_NUMBER_OF_LINES] > 0)
@@ -1489,19 +1644,59 @@ void crazypod_miniapp_scene_property_apply(
         lv_obj_scroll_to_y(object, value, LV_ANIM_OFF);
         break;
     case CP_UI_PROP_TRANSLATE_X:
-        lv_obj_set_style_translate_x(object, value, 0);
+        if(transform_target(node) != NULL)
+            lv_obj_set_style_translate_x(
+                transform_target(node), value, 0);
         break;
     case CP_UI_PROP_TRANSLATE_Y:
-        lv_obj_set_style_translate_y(object, value, 0);
+        if(transform_target(node) != NULL)
+            lv_obj_set_style_translate_y(
+                transform_target(node), value, 0);
         break;
     case CP_UI_PROP_SCALE_X:
-        lv_obj_set_style_transform_scale_x(object, value, 0);
+        if(transform_target(node) != NULL) {
+            if(node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+                node->artwork_transform_dirty = true;
+            else
+                lv_obj_set_style_transform_scale_x(
+                    transform_target(node), value, 0);
+        }
         break;
     case CP_UI_PROP_SCALE_Y:
-        lv_obj_set_style_transform_scale_y(object, value, 0);
+        if(transform_target(node) != NULL) {
+            if(node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+                node->artwork_transform_dirty = true;
+            else
+                lv_obj_set_style_transform_scale_y(
+                    transform_target(node), value, 0);
+        }
         break;
     case CP_UI_PROP_ROTATION:
-        lv_obj_set_style_transform_rotation(object, value, 0);
+        if(transform_target(node) != NULL) {
+            if(node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+                node->artwork_transform_dirty = true;
+            else
+                lv_obj_set_style_transform_rotation(
+                    transform_target(node), value, 0);
+        }
+        break;
+    case CP_UI_PROP_TRANSFORM_PIVOT_X:
+        if(transform_target(node) != NULL) {
+            if(node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+                node->artwork_transform_dirty = true;
+            else
+                lv_obj_set_style_transform_pivot_x(
+                    transform_target(node), value, 0);
+        }
+        break;
+    case CP_UI_PROP_TRANSFORM_PIVOT_Y:
+        if(transform_target(node) != NULL) {
+            if(node->type == CP_UI_OBJECT_NOW_PLAYING_ARTWORK)
+                node->artwork_transform_dirty = true;
+            else
+                lv_obj_set_style_transform_pivot_y(
+                    transform_target(node), value, 0);
+        }
         break;
     case CP_UI_PROP_POSITION:
         if(value == CP_UI_POSITION_ABSOLUTE)

@@ -406,12 +406,16 @@ static bool open_now_playing_theme_media(
     const struct crazypod_simulator_snapshot_host *host,
     unsigned selected_index)
 {
+    const char *theme_id = getenv("CRAZYPOD_SIM_THEME_ID");
+
+    if(theme_id == NULL || theme_id[0] == '\0')
+        theme_id = "now-playing-neon";
     if(crazypod_music_track_count() < 2 ||
        selected_index >= (unsigned)crazypod_music_track_count() ||
        !crazypod_music_play(
            CRAZYPOD_SCOPE_ALL, 0, (int)selected_index) ||
        !open_now_playing_theme_snapshot(
-           host, "now-playing-neon"))
+           host, theme_id))
         return false;
     return crazypod_now_playing_theme_open();
 }

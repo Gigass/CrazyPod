@@ -19,6 +19,8 @@
     (CRAZYPOD_NOW_PREFETCH_SECOND_ARTWORK_SLOT + 1)
 #define CRAZYPOD_ARTWORK_SLOTS \
     (CRAZYPOD_CAPSULE_ARTWORK_SLOT + 1)
+#define CRAZYPOD_ARTWORK_CACHE_SIZE 128
+#define CRAZYPOD_NOW_ARTWORK_MAX_SIZE 320
 #define CRAZYPOD_COVERFLOW_ARTWORK_SIZE 128
 #define CRAZYPOD_PREVIEW_ARTWORK_SIZE 120
 #define CRAZYPOD_CAPSULE_ARTWORK_SIZE 42
@@ -50,6 +52,9 @@ const lv_image_dsc_t *crazypod_artwork_load_priority(
     int slot, const struct crazypod_track *track, int target_size,
     int priority);
 const lv_image_dsc_t *crazypod_artwork_load_cached_priority(
+    int slot, const struct crazypod_track *track, int target_size,
+    int priority);
+const lv_image_dsc_t *crazypod_artwork_load_source_priority(
     int slot, const struct crazypod_track *track, int target_size,
     int priority);
 enum crazypod_artwork_state crazypod_artwork_state(

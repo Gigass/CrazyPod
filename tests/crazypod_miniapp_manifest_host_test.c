@@ -14,7 +14,7 @@ static const char valid_manifest[] =
     "\"versionCode\":50000,"
     "\"runtime\":\"native-aot\","
     "\"abiMajor\":1,"
-    "\"abiMinor\":9,"
+    "\"abiMinor\":11,"
     "\"reactProfile\":1,"
     "\"target\":\"simulator\","
     "\"entry\":\"app.dylib\","
@@ -44,6 +44,28 @@ static const char valid_theme_manifest[] =
     "\"accent\":\"#d79a55\""
     "}";
 
+static const char owned_status_theme_manifest[] =
+    "{"
+    "\"format\":5,"
+    "\"kind\":\"now-playing-theme\","
+    "\"statusBar\":\"theme\","
+    "\"artworkSourceSize\":320,"
+    "\"id\":\"now-playing-owned\","
+    "\"name\":\"Owned Status\","
+    "\"version\":\"1.0.0\","
+    "\"versionCode\":10000,"
+    "\"runtime\":\"native-aot\","
+    "\"abiMajor\":1,"
+    "\"abiMinor\":11,"
+    "\"reactProfile\":1,"
+    "\"target\":\"simulator\","
+    "\"entry\":\"app.dylib\","
+    "\"icon\":\"icon.bin\","
+    "\"symbol\":\"OS\","
+    "\"summary\":\"Theme-owned status bar\","
+    "\"accent\":\"#ffffff\""
+    "}";
+
 static int parse(
     const char *text, struct crazypod_miniapp_metadata *metadata)
 {
@@ -63,6 +85,7 @@ int main(void)
     char duplicate[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     char bad_target[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     char old_theme[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
+    char missing_artwork[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     const char unicode_manifest[] =
         "{"
         "\"format\":5,"
@@ -97,6 +120,25 @@ int main(void)
 
     assert(parse(valid_theme_manifest, &metadata) == CRAZYPOD_MINIAPP_OK);
     assert(metadata.kind == CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME);
+    assert(metadata.status_bar == CRAZYPOD_MINIAPP_STATUS_BAR_SYSTEM);
+    assert(metadata.artwork_source_size ==
+           CRAZYPOD_MINIAPP_ARTWORK_SOURCE_DEFAULT);
+    assert(parse(owned_status_theme_manifest, &metadata) ==
+           CRAZYPOD_MINIAPP_OK);
+    assert(metadata.status_bar == CRAZYPOD_MINIAPP_STATUS_BAR_THEME);
+    assert(metadata.artwork_source_size == 320);
+    snprintf(missing_artwork, sizeof(missing_artwork), "%s",
+             owned_status_theme_manifest);
+    {
+        const char field[] = "\"artworkSourceSize\":320,";
+        char *start = strstr(missing_artwork, field);
+
+        assert(start != NULL);
+        memmove(start, start + strlen(field),
+                strlen(start + strlen(field)) + 1u);
+    }
+    assert(parse(missing_artwork, &metadata) ==
+           CRAZYPOD_MINIAPP_ERROR_VERSION);
     snprintf(old_theme, sizeof(old_theme), "%s", valid_theme_manifest);
     {
         char *minor = strstr(old_theme, "\"abiMinor\":9");

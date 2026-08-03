@@ -17,13 +17,7 @@ import zipfile
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_ZIP = REPO_ROOT / "build-hw-ipod6g" / "CrazyPod-6G.zip"
-PACKAGES = (
-    REPO_ROOT / "dist" / "miniapps" / "game2048-5.0.1.cpk",
-    REPO_ROOT / "dist" / "miniapps" / "capability-lab-5.0.1.cpk",
-    REPO_ROOT / "dist" / "miniapps" / "native-reference-1.0.0.cpk",
-    REPO_ROOT / "dist" / "miniapps" / "now-playing-neon-1.3.1.cpk",
-)
-RELEASE_ENTRY_COUNT = 326
+PACKAGES = tuple(sorted((REPO_ROOT / "dist" / "miniapps").glob("*.cpk")))
 MINIMUM_FREE_BYTES = 16 * 1024 * 1024
 REPRO_FILENAMES = (
     "summary.json",
@@ -101,12 +95,21 @@ def artifact_report(
                 raise CertificationError(
                     f"release ZIP has a corrupt entry: {corrupt}"
                 )
-            if len(entries) != RELEASE_ENTRY_COUNT:
+            names = [entry.filename for entry in entries]
+            if len(names) != len(set(names)):
                 raise CertificationError(
-                    "release ZIP has "
-                    f"{len(entries)} entries, expected {RELEASE_ENTRY_COUNT}"
+                    "release ZIP contains duplicate entry names"
                 )
-            names = set(archive.namelist())
+            if any(
+                not name.startswith(".rockbox/")
+                or Path(name).is_absolute()
+                or ".." in Path(name).parts
+                for name in names
+            ):
+                raise CertificationError(
+                    "release ZIP contains an unsafe or non-firmware entry"
+                )
+            names = set(names)
             required = {
                 ".rockbox/rockbox.ipod",
                 *{

@@ -327,9 +327,6 @@ void crazypod_now_capsule_update_artwork(
             CRAZYPOD_CAPSULE_ARTWORK_SIZE);
         generation = crazypod_artwork_slot_generation(
             CRAZYPOD_CAPSULE_ARTWORK_SLOT);
-        (void)crazypod_artwork_load_priority(
-            CRAZYPOD_NOW_PLAYING_ARTWORK_SLOT, track,
-            CRAZYPOD_COVERFLOW_ARTWORK_SIZE, 8);
         if(state == CRAZYPOD_ARTWORK_PENDING)
             return;
         palette_changed =

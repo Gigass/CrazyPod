@@ -16,10 +16,18 @@
 #define CRAZYPOD_MINIAPP_FILE_NAME_SIZE 17
 #define CRAZYPOD_MINIAPP_RUNTIME_SIZE 17
 #define CRAZYPOD_MINIAPP_PATH_SIZE 260
+#define CRAZYPOD_MINIAPP_ARTWORK_SOURCE_MIN 16
+#define CRAZYPOD_MINIAPP_ARTWORK_SOURCE_DEFAULT 128
+#define CRAZYPOD_MINIAPP_ARTWORK_SOURCE_MAX 320
 
 enum crazypod_miniapp_kind {
     CRAZYPOD_MINIAPP_KIND_APP = 0,
     CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME
+};
+
+enum crazypod_miniapp_status_bar {
+    CRAZYPOD_MINIAPP_STATUS_BAR_SYSTEM = 0,
+    CRAZYPOD_MINIAPP_STATUS_BAR_THEME
 };
 
 enum crazypod_miniapp_result {
@@ -58,6 +66,8 @@ struct crazypod_miniapp_metadata {
     uint32_t package_format;
     uint32_t accent_rgb;
     uint8_t kind;
+    uint8_t status_bar;
+    uint16_t artwork_source_size;
     uint32_t assets_size;
     uint32_t icon_size;
     uint32_t binary_size;

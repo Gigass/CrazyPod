@@ -1356,12 +1356,34 @@ function nativeManifest(source, target) {
       !["miniapp", "now-playing-theme"].includes(source.kind)) {
     throw new Error("manifest.kind must be miniapp or now-playing-theme");
   }
+  if (source.artworkSourceSize !== undefined &&
+      (!Number.isInteger(source.artworkSourceSize) ||
+       source.artworkSourceSize < 16 || source.artworkSourceSize > 320)) {
+    throw new Error(
+      "manifest.artworkSourceSize must be an integer from 16 to 320",
+    );
+  }
+  if (source.kind === "now-playing-theme" &&
+      source.artworkSourceSize === undefined) {
+    throw new Error(
+      "manifest.artworkSourceSize is required for now-playing-theme",
+    );
+  }
+  if (source.kind !== "now-playing-theme" &&
+      source.artworkSourceSize !== undefined) {
+    throw new Error(
+      "manifest.artworkSourceSize requires kind now-playing-theme",
+    );
+  }
   if (!["simulator", "ipod6g"].includes(target)) {
     throw new Error("native target must be simulator or ipod6g");
   }
   return {
     format: 5,
     kind: source.kind === undefined ? "miniapp" : String(source.kind),
+    ...(source.kind === "now-playing-theme"
+      ? { artworkSourceSize: source.artworkSourceSize }
+      : {}),
     id: source.id,
     name: String(source.name),
     version: String(source.version),

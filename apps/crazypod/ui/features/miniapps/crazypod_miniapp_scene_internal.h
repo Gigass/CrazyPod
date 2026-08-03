@@ -30,6 +30,7 @@ struct crazypod_miniapp_scene_node {
     uint16_t generation;
     uint8_t state;
     uint8_t type;
+    bool artwork_transform_dirty;
     int resource_handle;
     uint32_t external_size;
     int secondary_handle;
@@ -73,6 +74,8 @@ bool crazypod_miniapp_scene_data_apply(
 bool crazypod_miniapp_scene_now_playing_artwork_needs_refresh(
     struct crazypod_miniapp_scene_node *node);
 bool crazypod_miniapp_scene_now_playing_artwork_refresh_node(
+    struct crazypod_miniapp_scene_node *node);
+void crazypod_miniapp_scene_now_playing_artwork_transform_flush(
     struct crazypod_miniapp_scene_node *node);
 
 #endif

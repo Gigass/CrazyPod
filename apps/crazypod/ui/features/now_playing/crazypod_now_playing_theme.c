@@ -10,6 +10,7 @@
 #include "button.h"
 #include "file.h"
 
+#include "../../../crazypod_artwork.h"
 #include "../../../crazypod_miniapps.h"
 #include "../miniapps/crazypod_miniapps_feature.h"
 #include "crazypod_now_playing_feature.h"
@@ -23,6 +24,25 @@ static struct {
     bool open_failed;
     int last_error;
 } theme;
+
+static int artwork_source_size(
+    const struct crazypod_miniapp_metadata *metadata)
+{
+    return metadata != NULL && metadata->artwork_source_size > 0
+        ? metadata->artwork_source_size
+        : CRAZYPOD_ARTWORK_CACHE_SIZE;
+}
+
+static const struct crazypod_miniapp_metadata *active_metadata(void)
+{
+    int index;
+
+    if(theme.active_id[0] == '\0')
+        return NULL;
+    index = crazypod_now_playing_themes_find(theme.active_id);
+    return index >= 0
+        ? crazypod_now_playing_themes_metadata(index) : NULL;
+}
 
 static bool write_exact(int fd, const void *buffer, size_t size)
 {
@@ -95,6 +115,8 @@ void crazypod_now_playing_theme_prepare(void)
        (crazypod_miniapps_prepare() < 0 ||
         crazypod_now_playing_themes_find(theme.active_id) < 0))
         theme.active_id[0] = '\0';
+    crazypod_now_playing_artwork_set_source_size(
+        artwork_source_size(active_metadata()));
     theme.prepared = true;
     theme.open_failed = false;
     theme.last_error = CRAZYPOD_MINIAPP_OK;
@@ -148,6 +170,8 @@ bool crazypod_now_playing_theme_select(int index)
     if(crazypod_now_playing_theme_open())
         crazypod_now_playing_theme_close();
     snprintf(theme.active_id, sizeof(theme.active_id), "%s", next);
+    crazypod_now_playing_artwork_set_source_size(
+        artwork_source_size(metadata));
     theme.open_failed = false;
     theme.last_error = CRAZYPOD_MINIAPP_OK;
     return true;
@@ -164,6 +188,17 @@ bool crazypod_now_playing_theme_open(void)
     return crazypod_miniapps_is_open() &&
         crazypod_miniapps_current_kind() ==
             CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME;
+}
+
+bool crazypod_now_playing_theme_owns_status_bar(void)
+{
+    const struct crazypod_miniapp_metadata *metadata;
+
+    if(!crazypod_now_playing_theme_open())
+        return false;
+    metadata = crazypod_miniapps_current_metadata();
+    return metadata != NULL &&
+        metadata->status_bar == CRAZYPOD_MINIAPP_STATUS_BAR_THEME;
 }
 
 int crazypod_now_playing_theme_last_error(void)
@@ -189,6 +224,8 @@ static bool ensure_open(void)
     if(result != CRAZYPOD_MINIAPP_OK) {
         theme.open_failed = true;
         theme.last_error = result;
+        crazypod_now_playing_artwork_set_source_size(
+            CRAZYPOD_ARTWORK_CACHE_SIZE);
         return false;
     }
     theme.last_error = CRAZYPOD_MINIAPP_OK;

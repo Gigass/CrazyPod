@@ -1,6 +1,7 @@
 {
   "manifest": {
     "kind": "now-playing-theme",
+    "artworkSourceSize": 89,
     "id": "now-playing-signal",
     "name": "Signal One",
     "version": "1.0.0",

@@ -18,7 +18,7 @@
 #include "../../../crazypod_playlist.h"
 #include "crazypod_now_playing_feature.h"
 
-#define NOW_ARTWORK_CACHE_SIZE CRAZYPOD_COVERFLOW_ARTWORK_SIZE
+#define NOW_ARTWORK_PLACEHOLDER_SIZE CRAZYPOD_ARTWORK_CACHE_SIZE
 #define NOW_ARTWORK_SLOT_COUNT 3
 
 static const int now_artwork_slots[NOW_ARTWORK_SLOT_COUNT] = {
@@ -26,9 +26,10 @@ static const int now_artwork_slots[NOW_ARTWORK_SLOT_COUNT] = {
     CRAZYPOD_NOW_PREFETCH_ARTWORK_SLOT,
     CRAZYPOD_NOW_PREFETCH_SECOND_ARTWORK_SLOT,
 };
+static int configured_source_size = CRAZYPOD_ARTWORK_CACHE_SIZE;
 
 static fb_data placeholder_pixels[
-    NOW_ARTWORK_CACHE_SIZE * NOW_ARTWORK_CACHE_SIZE]
+    NOW_ARTWORK_PLACEHOLDER_SIZE * NOW_ARTWORK_PLACEHOLDER_SIZE]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static lv_image_dsc_t placeholder_descriptor;
 
@@ -44,6 +45,7 @@ static struct {
     int target_slot;
     int committed_slot;
     int preview_queue_index;
+    int source_size;
 } navigation;
 
 static const struct crazypod_track *current_track(void)
@@ -57,32 +59,49 @@ static const struct crazypod_track *current_track(void)
 
 static void prepare_placeholder(void)
 {
+    int ring_inner = 31 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128;
+    int ring_outer = 42 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128;
+    int stem_left = 66 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128;
+    int stem_right = 72 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128;
+    int stem_top = 42 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128;
+    int stem_bottom = 83 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128;
+    int flag_right = 88 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128;
+    int note_x = 61 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128;
+    int note_y = 87 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128;
+    int note_radius = 10 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128;
     int y;
 
-    for(y = 0; y < NOW_ARTWORK_CACHE_SIZE; ++y) {
+    for(y = 0; y < NOW_ARTWORK_PLACEHOLDER_SIZE; ++y) {
         int x;
 
-        for(x = 0; x < NOW_ARTWORK_CACHE_SIZE; ++x) {
-            int dx = x - NOW_ARTWORK_CACHE_SIZE / 2;
-            int dy = y - NOW_ARTWORK_CACHE_SIZE / 2;
+        for(x = 0; x < NOW_ARTWORK_PLACEHOLDER_SIZE; ++x) {
+            int dx = x - NOW_ARTWORK_PLACEHOLDER_SIZE / 2;
+            int dy = y - NOW_ARTWORK_PLACEHOLDER_SIZE / 2;
             int radius = dx * dx + dy * dy;
-            unsigned shade = 18u + (unsigned)(x + y) / 24u;
+            unsigned shade = 18u +
+                (unsigned)(x + y) * 128u /
+                    (24u * NOW_ARTWORK_PLACEHOLDER_SIZE);
             fb_data color = LCD_RGBPACK(shade, shade, shade + 6u);
 
-            if(radius >= 31 * 31 && radius <= 42 * 42)
+            if(radius >= ring_inner * ring_inner &&
+               radius <= ring_outer * ring_outer)
                 color = LCD_RGBPACK(48, 49, 61);
-            if((x >= 66 && x <= 72 && y >= 42 && y <= 83) ||
-               (x >= 72 && x <= 88 && y >= 42 && y <= 48) ||
-               ((x - 61) * (x - 61) + (y - 87) * (y - 87) <=
-                    10 * 10))
+            if((x >= stem_left && x <= stem_right &&
+                y >= stem_top && y <= stem_bottom) ||
+               (x >= stem_right && x <= flag_right &&
+                y >= stem_top &&
+                y <= 48 * NOW_ARTWORK_PLACEHOLDER_SIZE / 128) ||
+               ((x - note_x) * (x - note_x) +
+                (y - note_y) * (y - note_y) <=
+                    note_radius * note_radius))
                 color = LCD_RGBPACK(173, 177, 195);
-            placeholder_pixels[y * NOW_ARTWORK_CACHE_SIZE + x] =
+            placeholder_pixels[y * NOW_ARTWORK_PLACEHOLDER_SIZE + x] =
                 color;
         }
     }
     (void)crazypod_image_configure_rgb565(
         &placeholder_descriptor, placeholder_pixels,
-        NOW_ARTWORK_CACHE_SIZE, NOW_ARTWORK_CACHE_SIZE);
+        NOW_ARTWORK_PLACEHOLDER_SIZE, NOW_ARTWORK_PLACEHOLDER_SIZE);
 }
 
 static int slot_index_for_path(const char *path)
@@ -199,9 +218,9 @@ static void schedule_prefetch(
     snprintf(navigation.slot_paths[index],
              sizeof(navigation.slot_paths[index]),
              "%s", track->path);
-    (void)crazypod_artwork_load_priority(
+    (void)crazypod_artwork_load_source_priority(
         now_artwork_slots[index], track,
-        NOW_ARTWORK_CACHE_SIZE, priority);
+        navigation.source_size, priority);
 }
 
 int crazypod_now_playing_feature_item_count(
@@ -253,11 +272,22 @@ void crazypod_now_playing_navigation_initialize(void)
     navigation.target_slot = 0;
     navigation.committed_slot = -1;
     navigation.preview_queue_index = -1;
+    navigation.source_size = configured_source_size;
     navigation.committed_generation = 1;
     navigation.committed_generation_seen = 1;
     navigation.committed_source_generation = 0;
     prepare_placeholder();
     navigation.committed_artwork = &placeholder_descriptor;
+}
+
+void crazypod_now_playing_artwork_set_source_size(int source_size)
+{
+    if(source_size < 16)
+        source_size = 16;
+    if(source_size > CRAZYPOD_NOW_ARTWORK_MAX_SIZE)
+        source_size = CRAZYPOD_NOW_ARTWORK_MAX_SIZE;
+    configured_source_size = source_size;
+    navigation.source_size = source_size;
 }
 
 int crazypod_now_playing_artwork_slot(
@@ -304,12 +334,12 @@ void crazypod_now_playing_artwork_sync(void)
        navigation.committed_slot != navigation.target_slot)
         reserved[navigation.committed_slot] = true;
 
-    descriptor = crazypod_artwork_load_priority(
+    descriptor = crazypod_artwork_load_source_priority(
         now_artwork_slots[navigation.target_slot], track,
-        NOW_ARTWORK_CACHE_SIZE, 0);
+        navigation.source_size, 0);
     state = crazypod_artwork_state(
         now_artwork_slots[navigation.target_slot], track,
-        NOW_ARTWORK_CACHE_SIZE);
+        navigation.source_size);
     if(state == CRAZYPOD_ARTWORK_IMAGE && descriptor != NULL)
         commit_target_artwork(track, descriptor);
     else if(state == CRAZYPOD_ARTWORK_EMPTY ||

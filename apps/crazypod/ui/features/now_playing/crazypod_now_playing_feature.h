@@ -80,6 +80,7 @@ void crazypod_now_playing_prefetch_queue_artwork(
 int crazypod_now_playing_artwork_slot(
     const struct crazypod_track *track);
 void crazypod_now_playing_artwork_sync(void);
+void crazypod_now_playing_artwork_set_source_size(int source_size);
 const lv_image_dsc_t *crazypod_now_playing_artwork_committed(
     const char **track_path, unsigned *generation);
 unsigned crazypod_now_playing_artwork_committed_generation(void);
@@ -100,6 +101,7 @@ bool crazypod_now_playing_theme_choice_current(int index);
 bool crazypod_now_playing_theme_select(int index);
 bool crazypod_now_playing_theme_enabled(void);
 bool crazypod_now_playing_theme_open(void);
+bool crazypod_now_playing_theme_owns_status_bar(void);
 int crazypod_now_playing_theme_last_error(void);
 bool crazypod_now_playing_theme_render(
     lv_obj_t *parent, uint32_t accent);

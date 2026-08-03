@@ -213,6 +213,7 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
     if(crazypod_ui_routes_depth() <= 0 ||
        current_route()->route != MUSIC_ROUTE_NOW_PLAYING)
         return;
+    crazypod_now_playing_overlay_refresh_tick();
     if(crazypod_now_playing_theme_open())
         return;
     if(track != NULL &&
@@ -235,7 +236,6 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
         crazypod_now_playing_overlay_restore(overlay);
         return;
     }
-    crazypod_now_playing_overlay_refresh_tick();
     if(id3 != NULL)
         crazypod_now_playing_feature_update_playback(
             (uint32_t)id3->elapsed,

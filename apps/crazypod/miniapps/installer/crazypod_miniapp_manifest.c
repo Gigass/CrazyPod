@@ -17,6 +17,8 @@
     (COMMON_REQUIRED_FIELDS | (1u << 12) | (1u << 13) | \
      (1u << 14) | (1u << 15) | (1u << 16))
 #define CPK5_KIND_FIELD (1u << 17)
+#define CPK5_STATUS_BAR_FIELD (1u << 18)
+#define CPK5_ARTWORK_SOURCE_SIZE_FIELD (1u << 19)
 
 #if CONFIG_BINFMT == BINFMT_ROCK
 #define NATIVE_TARGET "ipod6g"
@@ -320,6 +322,33 @@ static int read_field(
             return false;
         return true;
     }
+    if(IS_KEY("statusBar")) {
+        char value[12];
+
+        *bit = CPK5_STATUS_BAR_FIELD;
+        if(!read_string(reader, value, sizeof(value)))
+            return false;
+        if(strcmp(value, "system") == 0)
+            metadata->status_bar =
+                CRAZYPOD_MINIAPP_STATUS_BAR_SYSTEM;
+        else if(strcmp(value, "theme") == 0)
+            metadata->status_bar =
+                CRAZYPOD_MINIAPP_STATUS_BAR_THEME;
+        else
+            return false;
+        return true;
+    }
+    if(IS_KEY("artworkSourceSize")) {
+        uint32_t value;
+
+        *bit = CPK5_ARTWORK_SOURCE_SIZE_FIELD;
+        if(!read_uint32(reader, &value) ||
+           value < CRAZYPOD_MINIAPP_ARTWORK_SOURCE_MIN ||
+           value > CRAZYPOD_MINIAPP_ARTWORK_SOURCE_MAX)
+            return false;
+        metadata->artwork_source_size = (uint16_t)value;
+        return true;
+    }
     if(IS_KEY("format")) {
         *bit = 1u << 0;
         return read_uint32(reader, &metadata->package_format);
@@ -446,8 +475,11 @@ int crazypod_miniapp_manifest_parse(
        !crazypod_miniapp_text_valid(metadata->summary, true))
         return CRAZYPOD_MINIAPP_ERROR_MANIFEST;
     if(metadata->package_format == CP_NATIVE_PACKAGE_FORMAT) {
-        if((seen != CPK5_REQUIRED_FIELDS &&
-            seen != (CPK5_REQUIRED_FIELDS | CPK5_KIND_FIELD)) ||
+        uint32_t optional_fields = CPK5_KIND_FIELD |
+            CPK5_STATUS_BAR_FIELD | CPK5_ARTWORK_SOURCE_SIZE_FIELD;
+
+        if((seen & CPK5_REQUIRED_FIELDS) != CPK5_REQUIRED_FIELDS ||
+           (seen & ~(CPK5_REQUIRED_FIELDS | optional_fields)) != 0 ||
            strcmp(metadata->runtime, "native-aot") != 0 ||
            metadata->abi_version != CP_NATIVE_ABI_MAJOR ||
            metadata->abi_minor > CP_NATIVE_ABI_MINOR ||
@@ -458,6 +490,27 @@ int crazypod_miniapp_manifest_parse(
            ((seen & CPK5_KIND_FIELD) == 0 ||
             metadata->abi_minor < 4u))
             return CRAZYPOD_MINIAPP_ERROR_VERSION;
+        if((seen & CPK5_STATUS_BAR_FIELD) != 0 &&
+           (metadata->abi_minor < 10u ||
+            (metadata->status_bar ==
+                 CRAZYPOD_MINIAPP_STATUS_BAR_THEME &&
+             metadata->kind !=
+                 CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME)))
+            return CRAZYPOD_MINIAPP_ERROR_VERSION;
+        if((seen & CPK5_ARTWORK_SOURCE_SIZE_FIELD) != 0 &&
+           (metadata->abi_minor < 11u ||
+            metadata->kind !=
+                CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME))
+            return CRAZYPOD_MINIAPP_ERROR_VERSION;
+        if(metadata->kind ==
+               CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME) {
+            if(metadata->abi_minor >= 11u &&
+               (seen & CPK5_ARTWORK_SOURCE_SIZE_FIELD) == 0)
+                return CRAZYPOD_MINIAPP_ERROR_VERSION;
+            if(metadata->artwork_source_size == 0)
+                metadata->artwork_source_size =
+                    CRAZYPOD_MINIAPP_ARTWORK_SOURCE_DEFAULT;
+        }
         if(strcmp(metadata->target, NATIVE_TARGET) != 0 ||
            strcmp(metadata->entry, NATIVE_ENTRY) != 0 ||
            strcmp(metadata->icon, ICON_NAME) != 0)

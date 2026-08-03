@@ -73,3 +73,24 @@ test("Capability Lab packages a deterministic CPK5 native payload", async () => 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("Now Playing theme packages its source artwork size", async () => {
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "crazypod-theme-builder-"),
+  );
+  try {
+    const output = path.join(directory, "atelier-hifi.cpk");
+    const binary = path.join(directory, "app.dylib");
+    await writeFile(binary, Buffer.from("native-theme"));
+    const result = await buildProject(
+      path.join(repository, "miniapps/themes/atelier-hifi"), {
+        output,
+        binary,
+        target: "simulator",
+      });
+    assert.equal(result.manifest.kind, "now-playing-theme");
+    assert.equal(result.manifest.artworkSourceSize, 104);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
