@@ -8,6 +8,7 @@
 #include "dir.h"
 #include "crazypod_cpk_reader.h"
 #include "crazypod_miniapp_install_record.h"
+#include "crazypod_miniapp_package_index.h"
 #include "crazypod_miniapps.h"
 
 struct test_directory {
@@ -26,11 +27,13 @@ static int installed_verify_count;
 static int package_crc_count;
 static int verification_mark_count;
 static bool installed_same_version;
+static bool package_cached[3];
+static struct crazypod_miniapp_metadata catalog_metadata;
 
 DIR *test_opendir(const char *path)
 {
     if(strcmp(path, "/.rockbox/crazypod/miniapps/packages") != 0 &&
-       strcmp(path, "/MiniApps/Install") != 0)
+       strcmp(path, "/MiniApps") != 0)
         return NULL;
     ++open_count;
     test_directory.entry_index = 0;
@@ -58,6 +61,8 @@ struct dirinfo test_dir_get_info(
 
     (void)directory;
     (void)entry;
+    info.size = 100;
+    info.mtime = 123;
     return info;
 }
 
@@ -111,6 +116,67 @@ int crazypod_miniapp_registry_rebuild(void)
 {
     ++registry_rebuild_count;
     return CRAZYPOD_MINIAPP_OK;
+}
+
+int crazypod_miniapp_catalog_find(const char *id)
+{
+    if(strcmp(id, "test") != 0 ||
+       (!installed_same_version && publish_count == 0))
+        return -1;
+    return 0;
+}
+
+const struct crazypod_miniapp_metadata *
+crazypod_miniapp_catalog_get(int index)
+{
+    if(index != 0)
+        return NULL;
+    memset(&catalog_metadata, 0, sizeof(catalog_metadata));
+    snprintf(catalog_metadata.id,
+             sizeof(catalog_metadata.id), "test");
+    catalog_metadata.version_code = 1;
+    return &catalog_metadata;
+}
+
+void crazypod_miniapp_package_index_begin(void)
+{
+}
+
+bool crazypod_miniapp_package_index_lookup(
+    uint8_t source, const char *name,
+    uint64_t size, int64_t mtime,
+    char *id, size_t id_capacity,
+    uint32_t *version_code)
+{
+    assert(source < 3);
+    assert(strcmp(name, "test.cpk") == 0);
+    assert(size == 100);
+    assert(mtime == 123);
+    if(!package_cached[source])
+        return false;
+    snprintf(id, id_capacity, "test");
+    *version_code = 1;
+    return true;
+}
+
+bool crazypod_miniapp_package_index_note(
+    uint8_t source, const char *name,
+    uint64_t size, int64_t mtime,
+    const char *id, uint32_t version_code)
+{
+    assert(source < 3);
+    assert(strcmp(name, "test.cpk") == 0);
+    assert(size == 100);
+    assert(mtime == 123);
+    assert(strcmp(id, "test") == 0);
+    assert(version_code == 1);
+    package_cached[source] = true;
+    return true;
+}
+
+bool crazypod_miniapp_package_index_finish(void)
+{
+    return true;
 }
 
 bool crazypod_miniapp_registry_installed_version(
@@ -245,11 +311,11 @@ static void assert_boot_work(void)
     assert(registry_rebuild_count == 1);
 }
 
-static void assert_lazy_prepare(void)
+static void assert_cold_boot_rescan_prepares_registry(void)
 {
     assert_boot_work();
 
-    assert(crazypod_miniapps_prepare() == CRAZYPOD_MINIAPP_OK);
+    assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
     assert(recovery_count == 1);
     assert(registry_rebuild_count == 2);
     assert(verification_clear_count == 1);
@@ -257,11 +323,19 @@ static void assert_lazy_prepare(void)
     assert(package_open_count == 2);
     assert(publish_count == 2);
 
+    assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
+    assert(registry_rebuild_count == 2);
+    assert(open_count == 4);
+    assert(package_open_count == 2);
+    assert(publish_count == 2);
+    assert(verification_mark_count == 4);
+
+    assert(crazypod_miniapps_prepare() == CRAZYPOD_MINIAPP_OK);
     assert(crazypod_miniapps_prepare() == CRAZYPOD_MINIAPP_OK);
     assert(recovery_count == 1);
     assert(registry_rebuild_count == 2);
-    assert(verification_clear_count == 1);
-    assert(open_count == 2);
+    assert(verification_clear_count == 2);
+    assert(open_count == 4);
     assert(package_open_count == 2);
     assert(publish_count == 2);
 
@@ -270,19 +344,24 @@ static void assert_lazy_prepare(void)
     assert(registry_rebuild_count == 3);
 }
 
-static void assert_usb_rescan_satisfies_prepare(void)
+static void assert_usb_rescan_keeps_entry_immediate(void)
 {
     assert_boot_work();
 
     assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
-    assert(recovery_count == 2);
+    assert(recovery_count == 1);
     assert(registry_rebuild_count == 2);
     assert(package_open_count == 2);
 
     assert(crazypod_miniapps_prepare() == CRAZYPOD_MINIAPP_OK);
-    assert(recovery_count == 2);
+    assert(recovery_count == 1);
     assert(registry_rebuild_count == 2);
+    assert(verification_clear_count == 1);
     assert(package_open_count == 2);
+
+    assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
+    assert(package_open_count == 2);
+    assert(registry_rebuild_count == 2);
 }
 
 static void assert_same_version_fast_path(void)
@@ -290,21 +369,33 @@ static void assert_same_version_fast_path(void)
     assert_boot_work();
     installed_same_version = true;
 
+    assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
+    assert(package_open_count == 2);
+    assert(installed_verify_count == 2);
+    assert(verification_mark_count == 2);
+    assert(package_crc_count == 0);
+    assert(publish_count == 0);
+
     assert(crazypod_miniapps_prepare() == CRAZYPOD_MINIAPP_OK);
     assert(package_open_count == 2);
     assert(installed_verify_count == 2);
     assert(verification_mark_count == 2);
     assert(package_crc_count == 0);
     assert(publish_count == 0);
+
+    assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
+    assert(package_open_count == 2);
+    assert(installed_verify_count == 2);
+    assert(verification_mark_count == 4);
 }
 
 int main(int argc, char **argv)
 {
     assert(argc == 2);
-    if(strcmp(argv[1], "lazy") == 0)
-        assert_lazy_prepare();
+    if(strcmp(argv[1], "boot") == 0)
+        assert_cold_boot_rescan_prepares_registry();
     else if(strcmp(argv[1], "usb") == 0) {
-        assert_usb_rescan_satisfies_prepare();
+        assert_usb_rescan_keeps_entry_immediate();
     } else {
         assert(strcmp(argv[1], "same") == 0);
         assert_same_version_fast_path();

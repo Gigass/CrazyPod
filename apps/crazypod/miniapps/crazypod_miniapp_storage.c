@@ -157,6 +157,20 @@ static bool path_has_prefix(
            (length == 1 && prefix[0] == '/');
 }
 
+static bool path_has_suffix(
+    const char *path, const char *suffix)
+{
+    size_t path_length;
+    size_t suffix_length;
+
+    if(path == NULL || suffix == NULL)
+        return false;
+    path_length = strlen(path);
+    suffix_length = strlen(suffix);
+    return path_length >= suffix_length &&
+        strcmp(path + path_length - suffix_length, suffix) == 0;
+}
+
 static bool user_path_readable(const char *path)
 {
     size_t length;
@@ -171,7 +185,7 @@ static bool user_path_readable(const char *path)
     if(path_has_prefix(path, MINIAPP_SYSTEM_ROOT) ||
        path_has_prefix(path, "/.rockbox") ||
        path_has_prefix(path, "/.crazypod") ||
-       path_has_prefix(path, "/MiniApps/Install"))
+       path_has_suffix(path, ".cpk"))
         return false;
     return true;
 }

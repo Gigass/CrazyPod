@@ -141,7 +141,7 @@ void crazypod_menu_screen_render(
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_FILE,
                 CP_TR("No Mini Apps"),
-                CP_TR("Copy a CPK to /MiniApps/Install."));
+                CP_TR("Copy a CPK directly to /MiniApps."));
         else if(state->route == NOTES_ROUTE_DELETED)
             crazypod_empty_state_render(context->parent,
                 LV_SYMBOL_EDIT,

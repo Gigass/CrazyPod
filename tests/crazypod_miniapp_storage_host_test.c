@@ -108,5 +108,8 @@ int main(void)
                "/.crazypod/private.bin", 0,
                buffer, sizeof(buffer)) ==
            CRAZYPOD_MINIAPP_ERROR_STATE);
+    assert(crazypod_miniapp_user_file_size(
+               "/MiniApps/example.cpk") ==
+           CRAZYPOD_MINIAPP_ERROR_STATE);
     return 0;
 }

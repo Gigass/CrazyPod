@@ -60,6 +60,7 @@ crazypod/miniapps/runtime/crazypod_miniapp_resource_host.c
 crazypod/miniapps/installer/crazypod_miniapp_resource_validator.c
 crazypod/miniapps/installer/crazypod_cpk_reader.c
 crazypod/miniapps/installer/crazypod_miniapp_install_record.c
+crazypod/miniapps/installer/crazypod_miniapp_package_index.c
 crazypod/miniapps/installer/crazypod_cpk_verifier.c
 crazypod/miniapps/installer/crazypod_miniapp_stage.c
 crazypod/miniapps/catalog/crazypod_miniapp_registry_loader.c

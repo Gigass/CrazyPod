@@ -10,6 +10,7 @@
 #include "file.h"
 
 #include "../../crazypod_miniapps.h"
+#include "../catalog/crazypod_miniapp_catalog.h"
 #include "../catalog/crazypod_miniapp_registry_loader.h"
 #include "../runtime/crazypod_miniapp_installed_verifier.h"
 #include "../runtime/crazypod_miniapp_verification_cache.h"
@@ -17,12 +18,12 @@
 #include "crazypod_cpk_verifier.h"
 #include "crazypod_miniapp_install_record.h"
 #include "crazypod_miniapp_manifest.h"
+#include "crazypod_miniapp_package_index.h"
 #include "crazypod_miniapp_stage.h"
 
 #define MINIAPP_ROOT "/.crazypod/miniapps"
 #define DATA_ROOT "/.crazypod/miniapp-data"
 #define USER_ROOT "/MiniApps"
-#define USER_INSTALL "/MiniApps/Install"
 #define SYSTEM_PACKAGES "/.rockbox/crazypod/miniapps/packages"
 #define SCAN_LIMIT 64
 #define SEMANTIC_FONT_ROOT "/.rockbox/fonts/crazypod-aot"
@@ -34,7 +35,6 @@ static struct {
     bool in_progress;
     bool rescan_in_progress;
     bool initialized;
-    bool packages_scanned;
 } installer;
 
 static bool ensure_directory(const char *path)
@@ -226,7 +226,36 @@ static bool has_cpk_extension(const char *name)
            strcmp(name + length - 4, ".cpk") == 0;
 }
 
-static int scan_directory(const char *path)
+static bool cached_package_ready(
+    uint8_t source, const char *name,
+    const struct dirinfo *info)
+{
+    const struct crazypod_miniapp_metadata *metadata;
+    char id[CRAZYPOD_MINIAPP_ID_SIZE];
+    uint32_t version_code;
+    uint64_t size = info->size > 0 ? (uint64_t)info->size : 0;
+    int64_t mtime = info->mtime > 0 ? (int64_t)info->mtime : 0;
+    int index;
+
+    if(!crazypod_miniapp_package_index_lookup(
+           source, name, size, mtime,
+           id, sizeof(id), &version_code))
+        return false;
+    index = crazypod_miniapp_catalog_find(id);
+    metadata = crazypod_miniapp_catalog_get(index);
+    if(metadata == NULL || metadata->version_code < version_code)
+        return false;
+    (void)crazypod_miniapp_package_index_note(
+        source, name, size, mtime,
+        metadata->id, metadata->version_code);
+    crazypod_miniapp_verification_cache_mark(
+        metadata->id, metadata->version_code);
+    return true;
+}
+
+static int scan_directory(
+    const char *path, uint8_t source,
+    bool *publication_changed)
 {
     DIR *directory = opendir(path);
     struct dirent *entry;
@@ -246,7 +275,19 @@ static int scan_directory(const char *path)
            !make_path(package, sizeof(package), path, entry->d_name))
             continue;
         ++scanned;
+        if(cached_package_ready(source, entry->d_name, &info))
+            continue;
         result = crazypod_miniapps_install(package);
+        if(result >= CRAZYPOD_MINIAPP_OK) {
+            (void)crazypod_miniapp_package_index_note(
+                source, entry->d_name,
+                info.size > 0 ? (uint64_t)info.size : 0,
+                info.mtime > 0 ? (int64_t)info.mtime : 0,
+                installer.metadata.id,
+                installer.metadata.version_code);
+            if(result == CRAZYPOD_MINIAPP_OK)
+                *publication_changed = true;
+        }
         if(result < 0 && first_error == CRAZYPOD_MINIAPP_OK)
             first_error = result;
     }
@@ -254,25 +295,29 @@ static int scan_directory(const char *path)
     return first_error;
 }
 
-static int rescan_packages(bool recover_publication)
+static int rescan_packages(void)
 {
     int result;
     int user_result;
+    bool publication_changed = false;
 
     crazypod_miniapp_verification_cache_clear();
     (void)ensure_directory("/.crazypod");
     (void)ensure_directory(MINIAPP_ROOT);
     (void)ensure_directory(DATA_ROOT);
     (void)ensure_directory(USER_ROOT);
-    (void)ensure_directory(USER_INSTALL);
-    if(recover_publication)
-        crazypod_miniapp_stage_recover_all();
+    crazypod_miniapp_package_index_begin();
     installer.rescan_in_progress = true;
-    result = scan_directory(SYSTEM_PACKAGES);
-    user_result = scan_directory(USER_INSTALL);
+    result = scan_directory(
+        SYSTEM_PACKAGES, CRAZYPOD_MINIAPP_PACKAGE_SYSTEM,
+        &publication_changed);
+    user_result = scan_directory(
+        USER_ROOT, CRAZYPOD_MINIAPP_PACKAGE_USER,
+        &publication_changed);
     installer.rescan_in_progress = false;
-    (void)crazypod_miniapp_registry_rebuild();
-    installer.packages_scanned = true;
+    (void)crazypod_miniapp_package_index_finish();
+    if(publication_changed)
+        (void)crazypod_miniapp_registry_rebuild();
     return result < 0 ? result : user_result;
 }
 
@@ -287,7 +332,7 @@ int crazypod_miniapps_rescan(void)
         if(result < 0)
             return result;
     }
-    return rescan_packages(true);
+    return rescan_packages();
 }
 
 int crazypod_miniapps_init(void)
@@ -299,14 +344,12 @@ int crazypod_miniapps_init(void)
     if(installer.initialized)
         return CRAZYPOD_MINIAPP_OK;
 
-    /*
-     * Keep init limited to publication recovery and the installed catalog so
-     * the UI can present the boot screen before prepare scans package inboxes.
-     */
+    /* Keep init limited to publication recovery and the installed catalog.
+     * The UI performs the package scan explicitly after the boot screen is
+     * visible and before the desktop becomes interactive. */
     crazypod_miniapp_stage_recover_all();
     result = crazypod_miniapp_registry_rebuild();
     installer.initialized = true;
-    installer.packages_scanned = false;
     return result;
 }
 
@@ -319,11 +362,9 @@ int crazypod_miniapps_prepare(void)
         if(result < 0)
             return result;
     }
-    if(installer.packages_scanned)
-        return CRAZYPOD_MINIAPP_OK;
     if(crazypod_miniapps_is_open())
         return CRAZYPOD_MINIAPP_ERROR_BUSY;
-    return rescan_packages(false);
+    return CRAZYPOD_MINIAPP_OK;
 }
 
 #endif

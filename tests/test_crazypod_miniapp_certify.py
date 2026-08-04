@@ -94,7 +94,7 @@ class MiniAppCertificationTest(unittest.TestCase):
         self.assertEqual(parsed.release, self.release)
 
     def test_stage_is_atomic_and_hash_checked(self):
-        install = self.volume / "MiniApps" / "Install"
+        install = self.volume / "MiniApps"
         install.mkdir(parents=True)
         (install / "._stale.cpk").write_bytes(b"AppleDouble")
         result = certify.stage_packages(self.volume, self.packages)

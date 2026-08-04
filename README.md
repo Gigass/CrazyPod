@@ -114,7 +114,10 @@ Fast wheel input never skips visible actionable controls. The host keeps a
 bounded input queue and consumes at most one discrete focus movement per
 display frame; reversing direction discards stale queued movement. Acceleration
 is available to applications as a 1–4 step magnitude. Additional CPK5 packages
-can be placed in `/MiniApps/Install`; see
+can be dropped directly into `/MiniApps`. Cold start and USB disconnect scan
+and publish valid packages before Mini Apps or Themes becomes interactive.
+A persistent index skips unchanged CPKs by source, filename, size, timestamp,
+package format, and ABI; only new or changed packages are opened and verified. See
 [miniapps/README.md](miniapps/README.md) for the package and runtime contract,
 or follow the [Chinese Mini App tutorial](miniapps/TUTORIAL.zh-CN.md).
 
@@ -187,7 +190,7 @@ Create these directories at the root of the iPod's storage:
 | Videos | `/Videos/*.mpg` or `/Videos/*.mpeg` |
 | Contacts | `/Contacts/*.vcf` |
 | Calendars | `/Calendars/*.ics` or `/Calendar/*.ics` |
-| Mini App packages | `/MiniApps/Install/*.cpk` |
+| Mini App and theme packages | `/MiniApps/*.cpk` |
 | Theme import | `/.crazypod/import.upodtheme` |
 
 CrazyPod stores settings, notes, reading progress, workout history, caches, and

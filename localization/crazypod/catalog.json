@@ -1195,7 +1195,7 @@
         "apps/crazypod/crazypod_workouts.c:39"
       ]
     },
-    "Copy a CPK to /MiniApps/Install.": {
+    "Copy a CPK directly to /MiniApps.": {
       "locations": [
         "apps/crazypod/ui/presentation/crazypod_menu_screen.c:141"
       ]

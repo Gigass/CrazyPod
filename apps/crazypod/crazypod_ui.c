@@ -628,7 +628,10 @@ void crazypod_ui_run(void)
     lv_refr_now(display);
     crazypod_present_tick();
     set_cpu_boost(true);
-    (void)crazypod_miniapps_feature_prepare();
+    /* Publish Mini Apps and themes while the boot surface is visible.  Entry
+     * points only read the finished registry, so opening either UI is
+     * immediate.  USB disconnect performs the same explicit rescan. */
+    crazypod_miniapps_feature_rescan();
     crazypod_now_playing_theme_prepare();
     crazypod_now_capsule_refresh_material();
     lv_screen_load(crazypod_desktop_screen());

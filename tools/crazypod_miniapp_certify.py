@@ -219,7 +219,7 @@ def stage_packages(
     for package in packages:
         if not package.is_file():
             raise CertificationError(f"missing package: {package}")
-    install_directory = volume / "MiniApps" / "Install"
+    install_directory = volume / "MiniApps"
     install_directory.mkdir(parents=True, exist_ok=True)
     staged: dict[str, str] = {}
     for package in packages:
@@ -441,7 +441,7 @@ def parser() -> argparse.ArgumentParser:
         help="release ZIP to validate (defaults to production build)",
     )
     stage_parser = commands.add_parser(
-        "stage", help="atomically copy all CPK5 files to MiniApps/Install"
+        "stage", help="atomically copy all CPK5 files directly to MiniApps"
     )
     stage_parser.add_argument("volume")
     stage_parser.add_argument(

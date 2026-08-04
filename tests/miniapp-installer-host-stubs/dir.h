@@ -2,6 +2,8 @@
 #define TEST_MINIAPP_INSTALLER_DIR_H
 
 #include <stdbool.h>
+#include <sys/types.h>
+#include <time.h>
 
 #include "config.h"
 
@@ -15,6 +17,10 @@ struct dirent {
 
 struct dirinfo {
     unsigned int attribute;
+    off_t size;
+    time_t mtime;
+    time_t ctime;
+    unsigned int ctime_tenth;
 };
 
 DIR *test_opendir(const char *path);

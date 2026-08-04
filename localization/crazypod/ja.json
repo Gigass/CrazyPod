@@ -225,7 +225,7 @@
   "Convert this video to MPEG-1 or MPEG-2": "この動画をMPEG-1またはMPEG-2に変換してください",
   "Converted MPEG files in /Videos": "/Videos 内の変換済みMPEGファイル",
   "Cooldown": "クールダウン",
-  "Copy a CPK to /MiniApps/Install.": "CPKを /MiniApps/Install にコピーしてください。",
+  "Copy a CPK directly to /MiniApps.": "CPKを /MiniApps に直接コピーしてください。",
   "Copy import.upodtheme to /.crazypod": "import.upodthemeを /.crazypod にコピーしてください",
   "Core": "コア",
   "Could not activate wallpaper": "壁紙を有効にできませんでした",
