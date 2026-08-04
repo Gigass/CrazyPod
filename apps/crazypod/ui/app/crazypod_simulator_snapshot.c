@@ -7,6 +7,8 @@
 #include <string.h>
 
 #include "button.h"
+#include "dir.h"
+#include "file.h"
 #include "kernel.h"
 #include "lvgl.h"
 
@@ -15,6 +17,7 @@
 #include "../../crazypod_l10n.h"
 #include "../../crazypod_lcd.h"
 #include "../../crazypod_miniapps.h"
+#include "../../miniapps/runtime/crazypod_miniapp_native_runtime.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_notes.h"
 #include "../../crazypod_organizer.h"
@@ -218,7 +221,92 @@ static bool open_miniapp_snapshot(
             return false;
         host->render(false);
     }
-    return true;
+    {
+        const char *actions = getenv("CRAZYPOD_SIM_ACTIONS");
+        char buffer[1025];
+        char *cursor;
+        char *save = NULL;
+        unsigned count = 0;
+
+        if(actions == NULL || actions[0] == '\0')
+            return true;
+        if(strlen(actions) >= sizeof(buffer))
+            return false;
+        strlcpy(buffer, actions, sizeof(buffer));
+        cursor = strtok_r(buffer, ",", &save);
+        while(cursor != NULL && count++ < 64u) {
+            char *separator = strchr(cursor, ':');
+            int steps = 1;
+
+            if(separator != NULL) {
+                char *end = NULL;
+                *separator++ = '\0';
+                steps = (int)strtol(separator, &end, 10);
+                if(end == separator || *end != '\0' ||
+                   steps < 1 || steps > 32)
+                    return false;
+            }
+            if(strcmp(cursor, "cw") == 0)
+                event.type = CP_INPUT_WHEEL_CLOCKWISE;
+            else if(strcmp(cursor, "ccw") == 0)
+                event.type = CP_INPUT_WHEEL_COUNTERCLOCKWISE;
+            else if(strcmp(cursor, "left") == 0)
+                event.type = CP_INPUT_LEFT;
+            else if(strcmp(cursor, "right") == 0)
+                event.type = CP_INPUT_RIGHT;
+            else if(strcmp(cursor, "select") == 0)
+                event.type = CP_INPUT_SELECT;
+            else if(strcmp(cursor, "play") == 0)
+                event.type = CP_INPUT_PLAY;
+            else if(strcmp(cursor, "menu") == 0)
+                event.type = CP_INPUT_MENU;
+            else
+                return false;
+            event.steps = (uint8_t)steps;
+            (void)crazypod_miniapps_event(&event);
+            if(!crazypod_miniapps_is_open())
+                return false;
+            host->render(false);
+            cursor = strtok_r(NULL, ",", &save);
+        }
+        return cursor == NULL;
+    }
+}
+
+void crazypod_simulator_snapshot_write_profile(void)
+{
+    struct cp_diagnostics_snapshot snapshot;
+    char line[512];
+    int file;
+    int length;
+
+    if(getenv("CRAZYPOD_SIM_PROFILE") == NULL ||
+       !crazypod_miniapp_native_diagnostics(&snapshot))
+        return;
+    mkdir("/.crazypod");
+    file = open("/.crazypod/scenario-profile.json",
+                O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(file < 0)
+        return;
+    length = snprintf(
+        line, sizeof(line),
+        "{\"format\":1,\"memoryUsed\":%lu,\"memoryHighWater\":%lu,"
+        "\"memoryLimit\":%lu,\"uiHandlesUsed\":%lu,"
+        "\"uiHandlesHighWater\":%lu,\"updateLastMs\":%lu,"
+        "\"updateMaxMs\":%lu,\"logCount\":%lu,\"logDropped\":%lu}\n",
+        (unsigned long)snapshot.memory_used,
+        (unsigned long)snapshot.memory_high_water,
+        (unsigned long)snapshot.memory_limit,
+        (unsigned long)snapshot.ui_handles_used,
+        (unsigned long)snapshot.ui_handles_high_water,
+        (unsigned long)snapshot.update_last_ms,
+        (unsigned long)snapshot.update_max_ms,
+        (unsigned long)snapshot.log_count,
+        (unsigned long)snapshot.log_dropped);
+    if(length > 0)
+        (void)write(file, line,
+            (size_t)length < sizeof(line) ? (size_t)length : sizeof(line) - 1u);
+    close(file);
 }
 
 static bool open_now_playing_theme_snapshot(

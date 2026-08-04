@@ -148,6 +148,24 @@ int crazypod_miniapps_ui_end_update(void)
         : CRAZYPOD_MINIAPP_ERROR_STATE;
 }
 
+uint32_t crazypod_miniapps_ui_handle_count(void)
+{
+    return ui_host.handle_count != NULL
+        ? ui_host.handle_count() : 0;
+}
+
+uint32_t crazypod_miniapps_ui_handle_high_water(void)
+{
+    return ui_host.handle_high_water != NULL
+        ? ui_host.handle_high_water() : 0;
+}
+
+void crazypod_miniapps_ui_reset_handle_high_water(void)
+{
+    if(ui_host.reset_handle_high_water != NULL)
+        ui_host.reset_handle_high_water();
+}
+
 static bool valid_id(const char *id)
 {
     size_t index;

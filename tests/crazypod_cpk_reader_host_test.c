@@ -7,6 +7,7 @@
 
 #include "crazypod_cpk_reader.h"
 #include "crazypod_cpk_verifier.h"
+#include "crazypod_miniapp_manifest.h"
 #include "crazypod_miniapps.h"
 
 static void write_variant(
@@ -29,7 +30,9 @@ static void write_variant(
 int main(int argc, char **argv)
 {
     struct cpk_reader reader;
+    struct crazypod_miniapp_metadata metadata;
     char manifest[CP_NATIVE_MANIFEST_MAX + 1];
+    char parsed_manifest[CP_NATIVE_MANIFEST_MAX + 1];
     char corrupt[512];
     char extracted[512];
     char truncated[512];
@@ -63,6 +66,18 @@ int main(int argc, char **argv)
         CP_NATIVE_MANIFEST_MAX) ==
         CRAZYPOD_MINIAPP_OK);
     manifest[reader.entries[CPK_MANIFEST].size] = '\0';
+    memcpy(parsed_manifest, manifest,
+           reader.entries[CPK_MANIFEST].size + 1u);
+    memset(&metadata, 0, sizeof(metadata));
+    assert(crazypod_miniapp_manifest_parse(
+               parsed_manifest,
+               reader.entries[CPK_MANIFEST].size,
+               &metadata) == CRAZYPOD_MINIAPP_OK);
+    if(metadata.signature[0] != '\0')
+        assert(crazypod_cpk_verify_trust(
+                   &reader, &metadata, manifest,
+                   reader.entries[CPK_MANIFEST].size,
+                   false) == CRAZYPOD_MINIAPP_OK);
     assert(strstr(
         manifest, "\"format\":5") != NULL);
     assert(crazypod_cpk_profile_valid(&reader));

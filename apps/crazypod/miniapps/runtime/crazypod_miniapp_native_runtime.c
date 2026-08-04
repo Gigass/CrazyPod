@@ -8,6 +8,8 @@
 #include <string.h>
 
 #include "load_code.h"
+#include "logf.h"
+#include "misc.h"
 #include "powermgmt.h"
 #include "timefuncs.h"
 
@@ -19,6 +21,10 @@
 
 #include "../../crazypod_runtime_font.h"
 #include "crazypod_miniapp_now_playing_service.h"
+#include "crazypod_miniapp_media_library_service.h"
+#include "crazypod_miniapp_text_prompt_service.h"
+#include "crazypod_miniapp_file_exchange_service.h"
+#include "crazypod_miniapp_alarm_service.h"
 #include "crazypod_miniapp_resource_host.h"
 
 #if CONFIG_BINFMT == BINFMT_ROCK
@@ -43,10 +49,45 @@ static struct {
     bool close_requested;
 } native;
 
+static struct {
+    struct cp_diagnostics_log_entry logs[CP_DIAGNOSTICS_LOG_CAPACITY];
+    uint32_t next_log;
+    uint32_t log_count;
+    uint32_t log_dropped;
+    uint32_t log_sequence;
+    uint32_t update_started_ms;
+    uint32_t update_last_ms;
+    uint32_t update_max_ms;
+} diagnostics;
+
+static size_t bounded_length(const char *text, size_t capacity);
+
 #define CRAZYPOD_NATIVE_CAPABILITIES ( \
     CP_NATIVE_CAP_STATE | CP_NATIVE_CAP_RESOURCES | \
     CP_NATIVE_CAP_REQUEST_CLOSE | CP_NATIVE_CAP_LOG | \
-    CP_NATIVE_CAP_FILES | CP_NATIVE_CAP_SERVICES)
+    CP_NATIVE_CAP_FILES | CP_NATIVE_CAP_SERVICES | \
+    CP_NATIVE_CAP_DIAGNOSTICS | CP_NATIVE_CAP_MEDIA_LIBRARY | \
+    CP_NATIVE_CAP_TEXT_PROMPT | CP_NATIVE_CAP_FILE_EXCHANGE | \
+    CP_NATIVE_CAP_SOUND_EFFECTS | CP_NATIVE_CAP_ALARMS)
+
+static int ui_begin_update(void)
+{
+    diagnostics.update_started_ms =
+        crazypod_miniapp_host_monotonic_ms();
+    return crazypod_miniapps_ui_begin_update();
+}
+
+static int ui_end_update(void)
+{
+    int result = crazypod_miniapps_ui_end_update();
+    uint32_t now = crazypod_miniapp_host_monotonic_ms();
+
+    diagnostics.update_last_ms =
+        now - diagnostics.update_started_ms;
+    if(diagnostics.update_last_ms > diagnostics.update_max_ms)
+        diagnostics.update_max_ms = diagnostics.update_last_ms;
+    return result;
+}
 
 static int ui_animate(
     cp_ui_handle_t target, uint16_t property,
@@ -64,7 +105,7 @@ static const struct cp_native_ui_api ui_api = {
     .abi_major = CP_NATIVE_ABI_MAJOR,
     .abi_minor = CP_NATIVE_ABI_MINOR,
     .struct_size = sizeof(struct cp_native_ui_api),
-    .begin_update = crazypod_miniapps_ui_begin_update,
+    .begin_update = ui_begin_update,
     .create = crazypod_miniapps_ui_create,
     .insert = crazypod_miniapps_ui_insert,
     .set_i32 = crazypod_miniapps_ui_set_i32,
@@ -75,7 +116,7 @@ static const struct cp_native_ui_api ui_api = {
     .animate = ui_animate,
     .commit_drawing = crazypod_miniapps_ui_commit_drawing,
     .remove = crazypod_miniapps_ui_remove,
-    .end_update = crazypod_miniapps_ui_end_update,
+    .end_update = ui_end_update,
 };
 
 static int host_state_read(void *buffer, size_t capacity)
@@ -119,8 +160,73 @@ static int host_request_close(void)
 
 static void host_log(uint8_t level, const char *message)
 {
-    (void)level;
-    (void)message;
+    struct cp_diagnostics_log_entry *entry;
+    size_t length;
+
+    if(message == NULL)
+        return;
+    entry = &diagnostics.logs[diagnostics.next_log];
+    memset(entry, 0, sizeof(*entry));
+    entry->struct_size = sizeof(*entry);
+    entry->sequence = ++diagnostics.log_sequence;
+    entry->monotonic_ms =
+        crazypod_miniapp_host_monotonic_ms();
+    entry->level = level;
+    length = bounded_length(
+        message, CP_DIAGNOSTICS_LOG_TEXT_CAPACITY - 1u);
+    memcpy(entry->message, message, length);
+    entry->message[length] = '\0';
+    diagnostics.next_log =
+        (diagnostics.next_log + 1u) % CP_DIAGNOSTICS_LOG_CAPACITY;
+    if(diagnostics.log_count < CP_DIAGNOSTICS_LOG_CAPACITY)
+        ++diagnostics.log_count;
+    else
+        ++diagnostics.log_dropped;
+    logf("miniapp[%u] %s", (unsigned int)level, entry->message);
+}
+
+static int diagnostics_service_call(
+    uint32_t operation, const void *request, size_t request_size,
+    void *response, size_t response_capacity)
+{
+    if(operation == CP_NATIVE_DIAGNOSTICS_SNAPSHOT) {
+        struct cp_diagnostics_snapshot snapshot;
+
+        if(request_size != 0 ||
+           response_capacity < sizeof(snapshot))
+            return request_size != 0
+                ? CP_NATIVE_ERROR_ARGUMENT : CP_NATIVE_ERROR_LIMIT;
+        (void)crazypod_miniapp_native_diagnostics(&snapshot);
+        memcpy(response, &snapshot, sizeof(snapshot));
+        return (int)sizeof(snapshot);
+    }
+    if(operation == CP_NATIVE_DIAGNOSTICS_LOG_ENTRY) {
+        const struct cp_diagnostics_log_request *log_request = request;
+        uint32_t index;
+
+        if(request_size != sizeof(*log_request) ||
+           log_request->struct_size < sizeof(*log_request))
+            return CP_NATIVE_ERROR_ARGUMENT;
+        if(response_capacity < sizeof(struct cp_diagnostics_log_entry))
+            return CP_NATIVE_ERROR_LIMIT;
+        if(log_request->newest_offset >= diagnostics.log_count)
+            return CP_NATIVE_ERROR_LIMIT;
+        index = (diagnostics.next_log + CP_DIAGNOSTICS_LOG_CAPACITY - 1u -
+                 log_request->newest_offset) %
+            CP_DIAGNOSTICS_LOG_CAPACITY;
+        memcpy(response, &diagnostics.logs[index],
+               sizeof(diagnostics.logs[index]));
+        return (int)sizeof(diagnostics.logs[index]);
+    }
+    if(operation == CP_NATIVE_DIAGNOSTICS_RESET_PEAKS) {
+        if(request_size != 0 || response_capacity != 0)
+            return CP_NATIVE_ERROR_ARGUMENT;
+        crazypod_miniapp_host_memory_reset_high_water();
+        crazypod_miniapps_ui_reset_handle_high_water();
+        diagnostics.update_max_ms = diagnostics.update_last_ms;
+        return CP_NATIVE_OK;
+    }
+    return CP_NATIVE_ERROR_UNSUPPORTED;
 }
 
 static int host_file_size(const char *relative_path)
@@ -202,6 +308,56 @@ static int host_service_call(
         memcpy(response, status, response_size);
         return (int)response_size;
     }
+    if(service == CP_NATIVE_SERVICE_DIAGNOSTICS)
+        return diagnostics_service_call(
+            operation, request, request_size,
+            response, response_capacity);
+    if(service == CP_NATIVE_SERVICE_MEDIA_LIBRARY &&
+       native.metadata != NULL &&
+       (native.metadata->permissions &
+        CRAZYPOD_MINIAPP_PERMISSION_MEDIA_LIBRARY_READ) != 0)
+        return crazypod_miniapp_media_library_service_call(
+            operation, request, request_size,
+            response, response_capacity);
+    if(service == CP_NATIVE_SERVICE_TEXT_PROMPT)
+        return crazypod_miniapp_text_prompt_service_call(
+            operation, request, request_size,
+            response, response_capacity);
+    if(service == CP_NATIVE_SERVICE_FILE_EXCHANGE)
+        return crazypod_miniapp_file_exchange_service_call(
+            native.metadata, operation, request, request_size,
+            response, response_capacity);
+    if(service == CP_NATIVE_SERVICE_SOUND_EFFECTS &&
+       operation == CP_NATIVE_SOUND_EFFECT_PLAY) {
+        const struct cp_sound_effect_request *effect = request;
+        static const struct {
+            unsigned frequency;
+            unsigned duration;
+            unsigned amplitude;
+        } effects[] = {
+            { 900, 20, 3000 }, { 1200, 60, 5000 },
+            { 600, 100, 6000 }, { 300, 160, 7000 },
+        };
+
+        if(native.metadata == NULL ||
+           (native.metadata->permissions &
+            CRAZYPOD_MINIAPP_PERMISSION_SOUND_EFFECTS_PLAY) == 0)
+            return CP_NATIVE_ERROR_UNSUPPORTED;
+        if(effect == NULL || request_size != sizeof(*effect) ||
+           response != NULL || response_capacity != 0 ||
+           effect->struct_size != sizeof(*effect) ||
+           effect->effect >= ARRAYLEN(effects))
+            return CP_NATIVE_ERROR_ARGUMENT;
+        beep_play(effects[effect->effect].frequency,
+                  effects[effect->effect].duration,
+                  effects[effect->effect].amplitude);
+        return CP_NATIVE_OK;
+    }
+    if(service == CP_NATIVE_SERVICE_ALARMS)
+        return crazypod_miniapp_alarm_service_call(
+            native.metadata, crazypod_miniapp_host_epoch_seconds(),
+            operation, request, request_size,
+            response, response_capacity);
     if(service != CP_NATIVE_SERVICE_SYSTEM ||
        operation != CP_NATIVE_SYSTEM_INFO) {
         if(service == CP_NATIVE_SERVICE_NOW_PLAYING &&
@@ -356,6 +512,7 @@ void crazypod_miniapp_native_close(void)
 
     if(native.ops != NULL)
         native.ops->unmount();
+    crazypod_miniapp_text_prompt_reset();
     memset(&native, 0, sizeof(native));
     if(handle != NULL)
         lc_close(handle);
@@ -407,6 +564,8 @@ int crazypod_miniapp_native_open(
 #endif
     native.metadata = metadata;
     native.handle = handle;
+    memset(&diagnostics, 0, sizeof(diagnostics));
+    crazypod_miniapp_text_prompt_reset();
     ops = header->entry(&host_api);
     if(!ops_valid(header, ops, metadata)) {
         memset(&native, 0, sizeof(native));
@@ -456,6 +615,32 @@ bool crazypod_miniapp_native_has_scheduled_work(void)
 {
     return crazypod_miniapp_native_is_open() &&
         native.ops->has_scheduled_work();
+}
+
+bool crazypod_miniapp_native_diagnostics(
+    struct cp_diagnostics_snapshot *snapshot)
+{
+    if(snapshot == NULL)
+        return false;
+    memset(snapshot, 0, sizeof(*snapshot));
+    snapshot->struct_size = sizeof(*snapshot);
+    snapshot->monotonic_ms =
+        crazypod_miniapp_host_monotonic_ms();
+    snapshot->memory_used = (uint32_t)
+        crazypod_miniapp_host_memory_used();
+    snapshot->memory_high_water = (uint32_t)
+        crazypod_miniapp_host_memory_high_water();
+    snapshot->memory_limit = (uint32_t)
+        crazypod_miniapp_host_memory_limit();
+    snapshot->ui_handles_used =
+        crazypod_miniapps_ui_handle_count();
+    snapshot->ui_handles_high_water =
+        crazypod_miniapps_ui_handle_high_water();
+    snapshot->update_last_ms = diagnostics.update_last_ms;
+    snapshot->update_max_ms = diagnostics.update_max_ms;
+    snapshot->log_count = diagnostics.log_count;
+    snapshot->log_dropped = diagnostics.log_dropped;
+    return crazypod_miniapp_native_is_open();
 }
 
 #endif

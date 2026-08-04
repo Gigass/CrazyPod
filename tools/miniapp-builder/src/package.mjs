@@ -7,6 +7,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import os from "node:os";
@@ -14,9 +15,19 @@ import path from "node:path";
 import { convertAnimation } from "./animations.mjs";
 import { convertPngBuffer } from "./images.mjs";
 
-export const NATIVE_ABI_MAJOR = 1;
-export const NATIVE_ABI_MINOR = 15;
-export const REACT_PROFILE = 1;
+const sdkHeader = readFileSync(new URL(
+  "../../../miniapps/sdk/crazypod_miniapp_native.h", import.meta.url,
+), "utf8");
+
+function sdkConstant(name) {
+  const match = sdkHeader.match(new RegExp(`^#define ${name} (\\d+)u$`, "m"));
+  if (!match) throw new Error(`SDK header is missing ${name}`);
+  return Number(match[1]);
+}
+
+export const NATIVE_ABI_MAJOR = sdkConstant("CP_NATIVE_ABI_MAJOR");
+export const NATIVE_ABI_MINOR = sdkConstant("CP_NATIVE_ABI_MINOR");
+export const REACT_PROFILE = sdkConstant("CP_NATIVE_REACT_PROFILE");
 
 const execFileAsync = promisify(execFile);
 const FONT_MAX = 4 * 1024 * 1024;

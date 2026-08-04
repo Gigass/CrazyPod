@@ -569,11 +569,7 @@ void crazypod_ui_run(void)
 
     lcd_set_viewport(NULL);
 #ifdef HAVE_SW_POWEROFF
-    /*
-     * SYS_POWEROFF is a committed shutdown broadcast. CrazyPod owns the
-     * Play-button hold gesture so opening its confirmation UI cannot wake and
-     * reinitialize the iPod LCD through the Rockbox backlight thread.
-     */
+    /* CrazyPod owns Play-hold poweroff instead of Rockbox's LCD path. */
     button_set_sw_poweroff_state(false);
 #endif
     crazypod_present_init(current_tick);
@@ -628,12 +624,7 @@ void crazypod_ui_run(void)
     lv_refr_now(display);
     crazypod_present_tick();
     set_cpu_boost(true);
-    /* Publish Mini Apps and themes while the boot surface is visible.  Entry
-     * points only read the finished registry, so opening either UI is
-     * immediate.  USB disconnect performs the same explicit rescan. */
-    crazypod_miniapps_feature_rescan();
-    crazypod_now_playing_theme_prepare();
-    crazypod_now_capsule_refresh_material();
+    crazypod_runtime_services_start();
     lv_screen_load(crazypod_desktop_screen());
     lv_refr_now(display);
     crazypod_system_prompts_set_ui_ready();
@@ -778,6 +769,7 @@ void crazypod_ui_run(void)
             else {
                 lv_refr_now(display);
                 crazypod_present_tick();
+                crazypod_simulator_snapshot_write_profile();
                 screen_dump();
                 simulator_snapshot_pending = false;
                 if(getenv(

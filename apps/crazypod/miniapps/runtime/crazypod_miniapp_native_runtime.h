@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 struct cp_input_event;
+struct cp_diagnostics_snapshot;
 struct crazypod_miniapp_metadata;
 
 int crazypod_miniapp_native_open(
@@ -18,5 +19,7 @@ bool crazypod_miniapp_native_ui_event(
     uint32_t target, int32_t value);
 bool crazypod_miniapp_native_tick(void);
 bool crazypod_miniapp_native_has_scheduled_work(void);
+bool crazypod_miniapp_native_diagnostics(
+    struct cp_diagnostics_snapshot *snapshot);
 
 #endif

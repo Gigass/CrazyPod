@@ -296,6 +296,20 @@ bool crazypod_cpk_icon_valid(const struct cpk_reader *reader)
     return true;
 }
 
+int crazypod_cpk_verify_trust(
+    const struct cpk_reader *reader,
+    const struct crazypod_miniapp_metadata *metadata,
+    const char *manifest, size_t manifest_size,
+    bool allow_unsigned)
+{
+    (void)reader;
+    (void)metadata;
+    (void)manifest;
+    (void)manifest_size;
+    (void)allow_unsigned;
+    return CRAZYPOD_MINIAPP_OK;
+}
+
 static void assert_boot_work(void)
 {
     assert(crazypod_miniapps_init() == CRAZYPOD_MINIAPP_OK);

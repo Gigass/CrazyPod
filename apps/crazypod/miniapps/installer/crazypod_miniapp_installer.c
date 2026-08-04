@@ -191,6 +191,14 @@ int crazypod_miniapps_install(const char *package_path)
         result = CRAZYPOD_MINIAPP_ERROR_FORMAT;
         goto done;
     }
+    result = crazypod_cpk_verify_trust(
+        &reader, metadata, installer.manifest,
+        reader.entries[CPK_MANIFEST].size,
+        strncmp(package_path, SYSTEM_PACKAGES,
+                strlen(SYSTEM_PACKAGES)) == 0 &&
+        package_path[strlen(SYSTEM_PACKAGES)] == '/');
+    if(result != CRAZYPOD_MINIAPP_OK)
+        goto done;
     for(index = 0; index < reader.entry_count; ++index)
         extracted_size += reader.entries[index].size;
     if(!crazypod_miniapp_stage_has_space(extracted_size)) {

@@ -19,6 +19,27 @@ static int wheel_count;
 static int render_count;
 static enum cp_input_type last_event_type;
 
+bool crazypod_miniapp_text_prompt_visible(void)
+{
+    return false;
+}
+
+void crazypod_miniapp_text_prompt_move(int delta)
+{
+    (void)delta;
+    assert(false);
+}
+
+void crazypod_miniapp_text_prompt_select(void)
+{
+    assert(false);
+}
+
+void crazypod_miniapp_text_prompt_cancel(void)
+{
+    assert(false);
+}
+
 bool crazypod_miniapps_is_open(void)
 {
     return app_open;

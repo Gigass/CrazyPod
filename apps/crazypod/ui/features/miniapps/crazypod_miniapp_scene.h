@@ -44,5 +44,8 @@ bool crazypod_miniapp_scene_input(
     const struct cp_input_event *event);
 uint32_t crazypod_miniapp_scene_listener(
     uint32_t handle, uint8_t event_type);
+uint32_t crazypod_miniapp_scene_handle_count(void);
+uint32_t crazypod_miniapp_scene_handle_high_water(void);
+void crazypod_miniapp_scene_reset_handle_high_water(void);
 
 #endif

@@ -26,6 +26,7 @@ static struct {
     lv_obj_t *parent;
     uint32_t accent;
     uint32_t focused_handle;
+    uint32_t handle_high_water;
     uint16_t focus_ordinal;
     bool focus_dirty;
 } scene;
@@ -106,6 +107,8 @@ static void focus_apply(void)
         focused->values[CP_UI_PROP_FOCUSED] = 1;
         lv_obj_add_state(
             focused->object, LV_STATE_FOCUSED);
+        lv_obj_scroll_to_view_recursive(
+            focused->object, LV_ANIM_OFF);
     }
 }
 
@@ -643,9 +646,38 @@ uint32_t crazypod_miniapp_scene_create(uint8_t object_type)
     if(node == NULL)
         return CP_UI_HANDLE_NONE;
     node->state = CRAZYPOD_MINIAPP_SCENE_SLOT_ALIVE;
+    {
+        uint32_t count = crazypod_miniapp_scene_handle_count();
+
+        if(count > scene.handle_high_water)
+            scene.handle_high_water = count;
+    }
     if(node->type == CP_UI_OBJECT_SCREEN)
         materialize_node(node);
     return handle;
+}
+
+uint32_t crazypod_miniapp_scene_handle_count(void)
+{
+    uint32_t count = 0;
+    uint32_t index;
+
+    for(index = 0; index < CP_UI_HANDLE_MAX; ++index)
+        if(scene.nodes[index].state ==
+           CRAZYPOD_MINIAPP_SCENE_SLOT_ALIVE)
+            ++count;
+    return count;
+}
+
+uint32_t crazypod_miniapp_scene_handle_high_water(void)
+{
+    return scene.handle_high_water;
+}
+
+void crazypod_miniapp_scene_reset_handle_high_water(void)
+{
+    scene.handle_high_water =
+        crazypod_miniapp_scene_handle_count();
 }
 
 static bool parent_cycle(uint32_t child, uint32_t parent)

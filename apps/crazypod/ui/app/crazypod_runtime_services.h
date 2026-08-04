@@ -5,6 +5,7 @@
 
 void crazypod_runtime_services_configure(
     void (*render)(bool transition));
+void crazypod_runtime_services_start(void);
 int crazypod_runtime_services_wait_ticks(void);
 void crazypod_runtime_services_tick(
     long now, bool frame_due, bool locked);

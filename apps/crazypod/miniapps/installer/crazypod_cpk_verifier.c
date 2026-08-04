@@ -11,11 +11,18 @@
 #include "../../crazypod_miniapps.h"
 #include "crazypod_cpk_verifier.h"
 #include "crazypod_miniapp_resource_validator.h"
+#include "crazypod_sha256.h"
 
 #define IO_BUFFER_SIZE 1024u
 #define ICON_BYTES 51216u
 #define ICON_MAGIC 0x35495043u
 #define PROFILE_MAGIC 0x35415043u
+#ifndef TRUST_KEYS_PATH
+#define TRUST_KEYS_PATH "/.crazypod/trusted-miniapp-keys.txt"
+#endif
+#ifndef DEVELOPER_MODE_PATH
+#define DEVELOPER_MODE_PATH "/.crazypod/developer-mode.flag"
+#endif
 
 typedef bool (*sink_fn)(void *context, const void *buffer, size_t size);
 
@@ -183,6 +190,171 @@ int crazypod_cpk_extract_entry(
     if(result != CRAZYPOD_MINIAPP_OK)
         remove(path);
     return result;
+}
+
+static int hex_value(char value)
+{
+    if(value >= '0' && value <= '9') return value - '0';
+    if(value >= 'a' && value <= 'f') return value - 'a' + 10;
+    if(value >= 'A' && value <= 'F') return value - 'A' + 10;
+    return -1;
+}
+
+static bool decode_hex(const char *text, uint8_t *output, size_t size)
+{
+    size_t index;
+
+    for(index = 0; index < size; ++index) {
+        int high = hex_value(text[index * 2u]);
+        int low = hex_value(text[index * 2u + 1u]);
+        if(high < 0 || low < 0)
+            return false;
+        output[index] = (uint8_t)((high << 4) | low);
+    }
+    return true;
+}
+
+static bool trusted_key(
+    const char *key_id, uint8_t key[32])
+{
+    char buffer[4097];
+    off_t size;
+    int file = open(TRUST_KEYS_PATH, O_RDONLY);
+    char *line;
+    char *save = NULL;
+
+    if(file < 0)
+        return false;
+    size = filesize(file);
+    if(size <= 0 || size > 4096 ||
+       !read_at_exact(file, 0, buffer, (size_t)size)) {
+        close(file);
+        return false;
+    }
+    close(file);
+    buffer[size] = '\0';
+    line = strtok_r(buffer, "\n", &save);
+    while(line != NULL) {
+        char *separator = strchr(line, ':');
+        if(separator != NULL && separator - line <= 16 &&
+           strlen(separator + 1) == 64u) {
+            *separator = '\0';
+            if(strcmp(line, key_id) == 0)
+                return decode_hex(separator + 1, key, 32);
+        }
+        line = strtok_r(NULL, "\n", &save);
+    }
+    return false;
+}
+
+static void hmac_frame(
+    struct crazypod_hmac_sha256 *hmac,
+    const char *name, uint32_t size)
+{
+    uint8_t encoded[4] = {
+        (uint8_t)size, (uint8_t)(size >> 8),
+        (uint8_t)(size >> 16), (uint8_t)(size >> 24),
+    };
+    crazypod_hmac_sha256_update(hmac, name, strlen(name) + 1u);
+    crazypod_hmac_sha256_update(hmac, encoded, sizeof(encoded));
+}
+
+static bool hmac_file_entry(
+    const struct cpk_reader *reader, int entry_index,
+    struct crazypod_hmac_sha256 *hmac)
+{
+    const struct cpk_entry *entry = &reader->entries[entry_index];
+    uint8_t buffer[IO_BUFFER_SIZE];
+    uint32_t remaining = entry->size;
+    uint32_t offset = entry->data_offset;
+
+    hmac_frame(hmac, entry->name, entry->size);
+    while(remaining > 0) {
+        uint32_t amount = remaining > sizeof(buffer)
+            ? (uint32_t)sizeof(buffer) : remaining;
+        if(!read_at_exact(reader->fd, offset, buffer, amount))
+            return false;
+        crazypod_hmac_sha256_update(hmac, buffer, amount);
+        offset += amount;
+        remaining -= amount;
+    }
+    return true;
+}
+
+static const char *signature_value(
+    const char *manifest, size_t size)
+{
+    static const char marker[] = "\"signature\":\"";
+    size_t marker_size = sizeof(marker) - 1u;
+    size_t index;
+
+    if(size < marker_size + 64u)
+        return NULL;
+    for(index = 0; index + marker_size + 64u <= size; ++index)
+        if(memcmp(manifest + index, marker, marker_size) == 0)
+            return manifest + index + marker_size;
+    return NULL;
+}
+
+static bool developer_mode_enabled(void)
+{
+    int file = open(DEVELOPER_MODE_PATH, O_RDONLY);
+    if(file < 0)
+        return false;
+    close(file);
+    return true;
+}
+
+int crazypod_cpk_verify_trust(
+    const struct cpk_reader *reader,
+    const struct crazypod_miniapp_metadata *metadata,
+    const char *manifest, size_t manifest_size,
+    bool allow_unsigned)
+{
+    static const char prefix[] = "CPK5-HMAC-SHA256-V1";
+    static const char zeros[64] = {
+        '0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',
+        '0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',
+        '0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',
+        '0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0',
+    };
+    struct crazypod_hmac_sha256 hmac;
+    uint8_t key[32];
+    uint8_t expected[32];
+    uint8_t actual[32];
+    const char *signature;
+    uint8_t difference = 0;
+    int index;
+
+    if(metadata->signature[0] == '\0')
+        return allow_unsigned || developer_mode_enabled()
+            ? CRAZYPOD_MINIAPP_OK : CRAZYPOD_MINIAPP_ERROR_SIGNATURE;
+    signature = signature_value(manifest, manifest_size);
+    if(signature == NULL ||
+       !trusted_key(metadata->signing_key_id, key) ||
+       !decode_hex(metadata->signature, expected, sizeof(expected)))
+        return CRAZYPOD_MINIAPP_ERROR_SIGNATURE;
+    crazypod_hmac_sha256_init(&hmac, key, sizeof(key));
+    memset(key, 0, sizeof(key));
+    crazypod_hmac_sha256_update(&hmac, prefix, sizeof(prefix) - 1u);
+    hmac_frame(&hmac, reader->entries[CPK_MANIFEST].name,
+               reader->entries[CPK_MANIFEST].size);
+    crazypod_hmac_sha256_update(&hmac, manifest,
+                                (size_t)(signature - manifest));
+    crazypod_hmac_sha256_update(&hmac, zeros, sizeof(zeros));
+    crazypod_hmac_sha256_update(
+        &hmac, signature + 64u,
+        manifest_size - (size_t)(signature + 64u - manifest));
+    for(index = CPK_APP; index < reader->entry_count; ++index)
+        if(!hmac_file_entry(reader, index, &hmac))
+            return CRAZYPOD_MINIAPP_ERROR_IO;
+    crazypod_hmac_sha256_final(&hmac, actual);
+    for(index = 0; index < 32; ++index)
+        difference |= actual[index] ^ expected[index];
+    memset(actual, 0, sizeof(actual));
+    memset(expected, 0, sizeof(expected));
+    return difference == 0
+        ? CRAZYPOD_MINIAPP_OK : CRAZYPOD_MINIAPP_ERROR_SIGNATURE;
 }
 
 #endif

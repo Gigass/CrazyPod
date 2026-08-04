@@ -22,5 +22,6 @@ struct crazypod_simulator_snapshot_host {
 bool crazypod_simulator_snapshot_prepare(
     const struct crazypod_simulator_snapshot_host *host);
 long crazypod_simulator_snapshot_settle_ticks(void);
+void crazypod_simulator_snapshot_write_profile(void);
 
 #endif

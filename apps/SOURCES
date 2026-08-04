@@ -62,10 +62,15 @@ crazypod/miniapps/installer/crazypod_cpk_reader.c
 crazypod/miniapps/installer/crazypod_miniapp_install_record.c
 crazypod/miniapps/installer/crazypod_miniapp_package_index.c
 crazypod/miniapps/installer/crazypod_cpk_verifier.c
+crazypod/miniapps/installer/crazypod_sha256.c
 crazypod/miniapps/installer/crazypod_miniapp_stage.c
 crazypod/miniapps/catalog/crazypod_miniapp_registry_loader.c
 crazypod/miniapps/runtime/crazypod_miniapp_native_runtime.c
 crazypod/miniapps/runtime/crazypod_miniapp_now_playing_service.c
+crazypod/miniapps/runtime/crazypod_miniapp_media_library_service.c
+crazypod/miniapps/runtime/crazypod_miniapp_text_prompt_service.c
+crazypod/miniapps/runtime/crazypod_miniapp_file_exchange_service.c
+crazypod/miniapps/runtime/crazypod_miniapp_alarm_service.c
 crazypod/miniapps/runtime/crazypod_miniapp_verification_cache.c
 crazypod/miniapps/installer/crazypod_miniapp_installer.c
 crazypod/miniapps/runtime/crazypod_miniapp_installed_verifier.c

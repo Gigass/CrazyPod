@@ -13,6 +13,7 @@
 #include "crazypod_miniapp_input.h"
 #include "crazypod_miniapp_runtime_controller.h"
 #include "crazypod_miniapp_scene.h"
+#include "../../../miniapps/runtime/crazypod_miniapp_text_prompt_service.h"
 #ifdef SIMULATOR
 #endif
 #include "crazypod_miniapp_screen.h"
@@ -92,7 +93,8 @@ void crazypod_miniapps_feature_push_wheel_coalesced(
 
 bool crazypod_miniapps_feature_modal_visible(void)
 {
-    return crazypod_miniapp_scene_modal_visible();
+    return crazypod_miniapp_scene_modal_visible() ||
+        crazypod_miniapp_text_prompt_visible();
 }
 
 bool crazypod_miniapps_feature_surface_attached(lv_obj_t *parent)
@@ -116,6 +118,11 @@ void crazypod_miniapps_feature_initialize(void)
             crazypod_miniapp_scene_commit_drawing,
         .remove = crazypod_miniapp_scene_remove,
         .end_update = crazypod_miniapp_scene_end_update,
+        .handle_count = crazypod_miniapp_scene_handle_count,
+        .handle_high_water =
+            crazypod_miniapp_scene_handle_high_water,
+        .reset_handle_high_water =
+            crazypod_miniapp_scene_reset_handle_high_water,
         .input = crazypod_miniapp_scene_input,
         .reset = crazypod_miniapp_scene_reset,
     };

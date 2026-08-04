@@ -15,7 +15,7 @@ app.arm（iPod 6G） / app.dylib（模拟器）
         ↓
 CPK5
         ↓ 固件严格校验、安装、原生加载
-Native ABI 1.9
+Native ABI 1.17
         ↓ 句柄和纯数据调用
 宿主持有的 LVGL 9.5
 ```
@@ -29,7 +29,7 @@ JS 源码解析或 UI 命令批处理解释器。`app.arm` 直接执行生成的
 | 合约 | 当前值 |
 | --- | --- |
 | 包格式 | CPK5 |
-| Native ABI | major 1, minor 5 |
+| Native ABI | major 1, minor 17 |
 | React Profile | 1 |
 | 硬件目标 | iPod Classic 6G，target id 71 |
 | UI | LVGL 9.5，宿主持有 |
@@ -116,6 +116,8 @@ React Native 风格属性在构建期映射到 LVGL：
 | `CheckBox` | Checkbox |
 | `Modal` | Host-owned Modal subtree |
 | `FlatList` | 构建期固定容量 Scroll subtree |
+| `Canvas` | 构建期打包、最多 64 条公开绘图命令 |
+| `Tilemap` | 64×64、最多两层和 32 个 sprite 的静态图块图 |
 | `NowPlayingArtwork` | 主题专用的宿主动态封面 |
 | `SoundWave` | 主题专用的宿主原生声波 |
 
@@ -126,8 +128,9 @@ align、justify、grow、padding、margin、尺寸、颜色、边框、圆角和
 `Modal` 是随条件 JSX 创建和释放的宿主子树，Profile v1 不承诺焦点陷阱。
 无限旋转视觉应使用构建期动画资源和 `AnimatedImage`。
 
-`FlatList` 只接受固定数组或有界列表，最大行数在构建期确定；它不是通用动态
-列表 diff。`TextInput` 和 `Picker` 仍会被编译器拒绝。Native ABI 保留的底层
+`FlatList` 只接受固定数组或有界列表，可用 1–16 行固定窗口限制实际句柄；它不是
+通用动态列表 diff。内联 `TextInput` 仍会被编译器拒绝，文本编辑由宿主滚轮弹窗
+完成。Native ABI 保留的其他底层
 Textarea/Dropdown 对象不是开发者 API，不能据此宣称支持。
 
 ## 6. 状态和事件
@@ -159,22 +162,24 @@ React Profile v1 状态落为生成 C 中的固定内存。支持整数、布尔
 
 ## 7. Host 能力
 
-ABI 1.9 当前承诺（播放主题能力始于 ABI 1.4，文本裁切始于 ABI 1.5，
+ABI 1.17 当前承诺（播放主题能力始于 ABI 1.4，文本裁切始于 ABI 1.5，
 双声道峰值始于 ABI 1.6）：
 
 - 原子状态读写；
 - 包资源 stat/read；
 - 请求关闭；
-- 日志；
+- 有界诊断快照和日志环；
 - 私有沙箱文件；
 - 有界 Host service dispatcher；
 - 仅供正在播放主题使用的播放快照、归一化双声道峰值、控制、动态封面和原生声波；
 - 平台统一的当前/下一首/下两首封面调度、已提交封面和主题节点自动原子更新；
 - epoch 和 monotonic 时间；
+- 只读分页媒体库、宿主滚轮文本输入；
+- 权限约束的用户文本导入/导出、四种短音效、最多八个持久化闹钟；
 - Native UI。
 
-主题播放控制不是普通 Mini App 权限。文件选择、原始 PCM、音效、设备设置和闹钟
-接口尚未进入当前 ABI。以后增加时只能提升 minor 或增加有界服务并同步固件、
+主题播放控制不是普通 Mini App 权限。文件选择、原始 PCM、设备设置和任意后台程序
+不属于当前 ABI。以后增加时只能提升 minor 或增加有界服务并同步固件、
 SDK、编译器和模拟器，不能复活设备端脚本运行时。
 
 ## 8. 2048 的说明

@@ -9,6 +9,7 @@
 #include "../../../crazypod_miniapps.h"
 #include "crazypod_miniapp_input.h"
 #include "crazypod_miniapp_runtime_controller.h"
+#include "../../../miniapps/runtime/crazypod_miniapp_text_prompt_service.h"
 
 static struct {
     bool menu_holding;
@@ -152,6 +153,28 @@ static bool handle_exit_prompt(
     return true;
 }
 
+static bool handle_text_prompt(
+    const struct crazypod_input_event *input, int boost_ticks,
+    const struct crazypod_miniapp_input_actions *actions)
+{
+    if(input->release || input->repeated)
+        return true;
+    if(input->base == BUTTON_SCROLL_FWD)
+        crazypod_miniapp_text_prompt_move(
+            crazypod_input_wheel_steps(input, 4));
+    else if(input->base == BUTTON_SCROLL_BACK)
+        crazypod_miniapp_text_prompt_move(
+            -crazypod_input_wheel_steps(input, 4));
+    else if(input->base == BUTTON_SELECT)
+        crazypod_miniapp_text_prompt_select();
+    else if(input->base == BUTTON_MENU)
+        crazypod_miniapp_text_prompt_cancel();
+    else
+        return true;
+    request_render(boost_ticks, actions);
+    return true;
+}
+
 bool crazypod_miniapp_input_handle(
     const struct crazypod_input_event *input, long now,
     long menu_hold_ticks, int boost_ticks,
@@ -163,6 +186,8 @@ bool crazypod_miniapp_input_handle(
         return false;
 
     actions->wake_display();
+    if(crazypod_miniapp_text_prompt_visible())
+        return handle_text_prompt(input, boost_ticks, actions);
     if(state.exit_prompt_visible)
         return handle_exit_prompt(input, boost_ticks, actions);
 

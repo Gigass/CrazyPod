@@ -20,6 +20,9 @@
 #define CPK5_STATUS_BAR_FIELD (1u << 18)
 #define CPK5_ARTWORK_SOURCE_SIZE_FIELD (1u << 19)
 #define CPK5_FONT_SET_FIELD (1u << 20)
+#define CPK5_PERMISSIONS_FIELD (1u << 21)
+#define CPK5_SIGNING_KEY_FIELD (1u << 22)
+#define CPK5_SIGNATURE_FIELD (1u << 23)
 
 #if CONFIG_BINFMT == BINFMT_ROCK
 #define NATIVE_TARGET "ipod6g"
@@ -302,6 +305,44 @@ static bool parse_rgb(const char *text, uint32_t *color)
     return true;
 }
 
+static bool parse_permissions(char *text, uint32_t *permissions)
+{
+    char *cursor = text;
+    uint32_t result = 0;
+
+    if(text[0] == '\0')
+        return false;
+    while(*cursor != '\0') {
+        char *separator = strchr(cursor, ',');
+        uint32_t permission;
+
+        if(separator != NULL)
+            *separator = '\0';
+        if(strcmp(cursor, "media-library.read") == 0)
+            permission = CRAZYPOD_MINIAPP_PERMISSION_MEDIA_LIBRARY_READ;
+        else if(strcmp(cursor, "user-files.read") == 0)
+            permission = CRAZYPOD_MINIAPP_PERMISSION_USER_FILES_READ;
+        else if(strcmp(cursor, "user-files.export") == 0)
+            permission = CRAZYPOD_MINIAPP_PERMISSION_USER_FILES_EXPORT;
+        else if(strcmp(cursor, "sound-effects.play") == 0)
+            permission = CRAZYPOD_MINIAPP_PERMISSION_SOUND_EFFECTS_PLAY;
+        else if(strcmp(cursor, "alarms.schedule") == 0)
+            permission = CRAZYPOD_MINIAPP_PERMISSION_ALARMS_SCHEDULE;
+        else
+            return false;
+        if((result & permission) != 0)
+            return false;
+        result |= permission;
+        if(separator == NULL)
+            break;
+        cursor = separator + 1;
+        if(*cursor == '\0')
+            return false;
+    }
+    *permissions = result;
+    return true;
+}
+
 static int read_field(
     struct json_reader *reader, const char *key,
     struct crazypod_miniapp_metadata *metadata,
@@ -354,6 +395,32 @@ static int read_field(
         *bit = CPK5_FONT_SET_FIELD;
         return read_string(
             reader, metadata->font_set, sizeof(metadata->font_set));
+    }
+    if(IS_KEY("permissions")) {
+        char value[128];
+
+        *bit = CPK5_PERMISSIONS_FIELD;
+        if(!read_string(reader, value, sizeof(value)))
+            return false;
+        return parse_permissions(value, &metadata->permissions);
+    }
+    if(IS_KEY("signingKeyId")) {
+        *bit = CPK5_SIGNING_KEY_FIELD;
+        return read_string(reader, metadata->signing_key_id,
+                           sizeof(metadata->signing_key_id));
+    }
+    if(IS_KEY("signature")) {
+        size_t index;
+
+        *bit = CPK5_SIGNATURE_FIELD;
+        if(!read_string(reader, metadata->signature,
+                        sizeof(metadata->signature)) ||
+           strlen(metadata->signature) != 64u)
+            return false;
+        for(index = 0; index < 64u; ++index)
+            if(hex_digit(metadata->signature[index]) < 0)
+                return false;
+        return true;
     }
     if(IS_KEY("format")) {
         *bit = 1u << 0;
@@ -483,7 +550,8 @@ int crazypod_miniapp_manifest_parse(
     if(metadata->package_format == CP_NATIVE_PACKAGE_FORMAT) {
         uint32_t optional_fields = CPK5_KIND_FIELD |
             CPK5_STATUS_BAR_FIELD | CPK5_ARTWORK_SOURCE_SIZE_FIELD |
-            CPK5_FONT_SET_FIELD;
+            CPK5_FONT_SET_FIELD | CPK5_PERMISSIONS_FIELD |
+            CPK5_SIGNING_KEY_FIELD | CPK5_SIGNATURE_FIELD;
 
         if((seen & CPK5_REQUIRED_FIELDS) != CPK5_REQUIRED_FIELDS ||
            (seen & ~(CPK5_REQUIRED_FIELDS | optional_fields)) != 0 ||
@@ -512,6 +580,15 @@ int crazypod_miniapp_manifest_parse(
             return CRAZYPOD_MINIAPP_ERROR_VERSION;
         if((seen & CPK5_FONT_SET_FIELD) != 0 &&
            metadata->abi_minor < 16u)
+            return CRAZYPOD_MINIAPP_ERROR_VERSION;
+        if((seen & CPK5_PERMISSIONS_FIELD) != 0 &&
+           metadata->abi_minor < 17u)
+            return CRAZYPOD_MINIAPP_ERROR_VERSION;
+        if(((seen & CPK5_SIGNING_KEY_FIELD) != 0) !=
+           ((seen & CPK5_SIGNATURE_FIELD) != 0) ||
+           ((seen & CPK5_SIGNING_KEY_FIELD) != 0 &&
+            (metadata->abi_minor < 17u ||
+             metadata->signing_key_id[0] == '\0')))
             return CRAZYPOD_MINIAPP_ERROR_VERSION;
         if(metadata->kind ==
                CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME) {

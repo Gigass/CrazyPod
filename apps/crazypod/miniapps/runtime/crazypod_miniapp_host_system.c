@@ -13,6 +13,7 @@
 static struct {
     size_t external_limit;
     size_t external_used;
+    size_t external_high_water;
     bool active;
 } session_memory;
 
@@ -49,6 +50,10 @@ bool crazypod_miniapp_host_memory_reserve(size_t size)
            session_memory.external_used)
         return false;
     session_memory.external_used += size;
+    if(session_memory.external_used >
+       session_memory.external_high_water)
+        session_memory.external_high_water =
+            session_memory.external_used;
     return true;
 }
 
@@ -64,6 +69,10 @@ bool crazypod_miniapp_host_memory_replace(
     if(new_size > session_memory.external_limit - retained)
         return false;
     session_memory.external_used = retained + new_size;
+    if(session_memory.external_used >
+       session_memory.external_high_water)
+        session_memory.external_high_water =
+            session_memory.external_used;
     return true;
 }
 
@@ -80,11 +89,28 @@ size_t crazypod_miniapp_host_memory_used(void)
     return session_memory.external_used;
 }
 
+size_t crazypod_miniapp_host_memory_high_water(void)
+{
+    return session_memory.external_high_water;
+}
+
+size_t crazypod_miniapp_host_memory_limit(void)
+{
+    return session_memory.external_limit;
+}
+
+void crazypod_miniapp_host_memory_reset_high_water(void)
+{
+    session_memory.external_high_water =
+        session_memory.external_used;
+}
+
 void crazypod_miniapp_host_session_finish(void)
 {
     session_memory.active = false;
     session_memory.external_limit = 0;
     session_memory.external_used = 0;
+    session_memory.external_high_water = 0;
 }
 
 #endif

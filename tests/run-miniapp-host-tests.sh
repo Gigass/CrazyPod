@@ -15,6 +15,15 @@ cc -std=c99 -Wall -Wextra -Werror \
 
 "$test_root/crazypod_miniapp_native_abi_host_test"
 
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/miniapp-host-stubs" \
+    -I"$repo_root/apps/crazypod/miniapps/installer" \
+    "$repo_root/apps/crazypod/miniapps/installer/crazypod_sha256.c" \
+    "$repo_root/tests/crazypod_sha256_host_test.c" \
+    -o "$test_root/crazypod_sha256_host_test"
+
+"$test_root/crazypod_sha256_host_test"
+
 for app in game2048 capability-lab; do
     node "$repo_root/tools/miniapp-builder/src/cli.mjs" generate \
         "$repo_root/miniapps/apps/$app" \
@@ -23,12 +32,52 @@ for app in game2048 capability-lab; do
         -I"$repo_root/miniapps/sdk" \
         -c "$test_root/$app.c" \
         -o "$test_root/$app.o"
-    node "$repo_root/tools/miniapp-builder/src/cli.mjs" build \
+node "$repo_root/tools/miniapp-builder/src/cli.mjs" build \
         "$repo_root/miniapps/apps/$app" \
         --target simulator \
         --binary "$test_root/$app.o" \
         --out "$test_root/$app.cpk"
 done
+
+python3 - "$test_root/game2048.cpk" \
+    "$test_root/game2048-signed.cpk" \
+    "$test_root/trusted-miniapp-keys.txt" <<'PY'
+import hashlib
+import hmac
+import json
+import struct
+import sys
+import zipfile
+
+source, output, trust_path = sys.argv[1:]
+secret = bytes(range(32))
+key_id = hashlib.sha256(secret).hexdigest()[:16]
+with zipfile.ZipFile(source) as archive:
+    entries = [(info.filename, archive.read(info.filename))
+               for info in archive.infolist()]
+manifest = json.loads(entries[0][1])
+manifest["signingKeyId"] = key_id
+manifest["signature"] = "0" * 64
+
+def encoded_manifest(value):
+    return json.dumps(value, ensure_ascii=False,
+                      separators=(",", ":")).encode()
+
+def frame(name, data):
+    return name.encode() + b"\0" + struct.pack("<I", len(data)) + data
+
+normalized = encoded_manifest(manifest)
+message = b"CPK5-HMAC-SHA256-V1" + frame("manifest.json", normalized)
+for name, data in entries[1:]:
+    message += frame(name, data)
+manifest["signature"] = hmac.new(secret, message, hashlib.sha256).hexdigest()
+entries[0] = (entries[0][0], encoded_manifest(manifest))
+with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
+    for name, data in entries:
+        archive.writestr(name, data)
+with open(trust_path, "w", encoding="ascii") as trust:
+    trust.write(f"{key_id}:{secret.hex()}\n")
+PY
 
 cc -std=c99 -Wall -Wextra -Werror \
     -I"$test_root" \
@@ -92,16 +141,22 @@ cc -std=c99 -Wall -Wextra -Werror \
 "$test_root/crazypod_miniapp_resource_host_test"
 
 cc -std=c99 -Wall -Wextra -Werror \
+    -DTRUST_KEYS_PATH="\"$test_root/trusted-miniapp-keys.txt\"" \
+    -DDEVELOPER_MODE_PATH="\"$test_root/developer-mode.flag\"" \
     -I"$repo_root/tests/miniapp-host-stubs" \
     -I"$repo_root/apps/crazypod/miniapps/installer" \
     -I"$repo_root/apps/crazypod" \
     "$repo_root/apps/crazypod/miniapps/installer/crazypod_cpk_reader.c" \
     "$repo_root/apps/crazypod/miniapps/installer/crazypod_cpk_verifier.c" \
+    "$repo_root/apps/crazypod/miniapps/installer/crazypod_miniapp_manifest.c" \
+    "$repo_root/apps/crazypod/miniapps/installer/crazypod_sha256.c" \
     "$repo_root/apps/crazypod/miniapps/installer/crazypod_miniapp_resource_validator.c" \
     "$repo_root/tests/crazypod_cpk_reader_host_test.c" \
     -o "$test_root/crazypod_cpk_reader_host_test"
 
 "$test_root/crazypod_cpk_reader_host_test" "$test_root/game2048.cpk"
+"$test_root/crazypod_cpk_reader_host_test" \
+    "$test_root/game2048-signed.cpk"
 
 node "$repo_root/tools/miniapp-builder/src/cli.mjs" generate \
     "$repo_root/miniapps/apps/native-reference" \

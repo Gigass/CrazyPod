@@ -7,7 +7,7 @@
 static void verify_constants(void)
 {
     assert(CP_NATIVE_ABI_MAJOR == 1u);
-    assert(CP_NATIVE_ABI_MINOR == 16u);
+    assert(CP_NATIVE_ABI_MINOR == 17u);
     assert(CP_NATIVE_ABI_REJECTED_MINOR == 14u);
     assert(CP_UI_FONT_CONDENSED_16 > CP_UI_FONT_DISPLAY);
     assert(CP_UI_FONT_SERIF_28 > CP_UI_FONT_CONDENSED_32);
@@ -19,6 +19,8 @@ static void verify_constants(void)
     assert(CP_NATIVE_REACT_PROFILE == 1u);
     assert(CP_NATIVE_CAP_FILES == (1u << 4));
     assert(CP_NATIVE_CAP_SERVICES == (1u << 5));
+    assert(CP_NATIVE_CAP_DIAGNOSTICS == (1u << 6));
+    assert(CP_NATIVE_SERVICE_DIAGNOSTICS == 2u);
     assert(CP_NATIVE_SERVICE_PAYLOAD_MAX == 1024u);
     assert(CP_NATIVE_SYSTEM_STATUS == 1u);
     assert(CP_NATIVE_SYSTEM_STATUS_LEGACY_COUNT == 5u);
@@ -70,6 +72,9 @@ static void verify_layout(void)
     assert(sizeof(struct cp_now_playing_queue_item) == 400u);
     assert(sizeof(struct cp_now_playing_lyrics_request) == 8u);
     assert(sizeof(struct cp_now_playing_lyrics_window) == 400u);
+    assert(sizeof(struct cp_diagnostics_snapshot) == 44u);
+    assert(sizeof(struct cp_diagnostics_log_request) == 8u);
+    assert(sizeof(struct cp_diagnostics_log_entry) == 144u);
     assert(CP_NATIVE_HOST_V1_SIZE ==
            sizeof(struct cp_native_host_api));
     assert(CP_NATIVE_UI_V1_SIZE ==

@@ -13,6 +13,9 @@ bool crazypod_miniapp_host_memory_replace(
     size_t old_size, size_t new_size);
 void crazypod_miniapp_host_memory_release(size_t size);
 size_t crazypod_miniapp_host_memory_used(void);
+size_t crazypod_miniapp_host_memory_high_water(void);
+size_t crazypod_miniapp_host_memory_limit(void);
+void crazypod_miniapp_host_memory_reset_high_water(void);
 void crazypod_miniapp_host_session_finish(void);
 
 #endif

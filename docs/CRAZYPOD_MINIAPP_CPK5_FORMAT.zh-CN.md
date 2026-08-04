@@ -27,14 +27,17 @@ icon.bin
   "versionCode": 10000,
   "runtime": "native-aot",
   "abiMajor": 1,
-  "abiMinor": 5,
+  "abiMinor": 17,
   "reactProfile": 1,
   "target": "ipod6g",
   "entry": "app.arm",
   "icon": "icon.bin",
   "symbol": "EX",
   "summary": "Native AOT example",
-  "accent": "#ff9f43"
+  "accent": "#ff9f43",
+  "permissions": "user-files.export",
+  "signingKeyId": "0123456789abcdef",
+  "signature": "0000000000000000000000000000000000000000000000000000000000000000"
 }
 ```
 
@@ -48,7 +51,7 @@ icon.bin
 
 ## profile.bin
 
-16 字节小端 profile 固定描述 CPK5、Native ABI 1.9 和 React Profile 1。
+16 字节小端 profile 固定描述 CPK5、Native ABI 1.17 和 React Profile 1。
 固件在加载原生二进制前校验该文件。
 
 ## 原生载荷
@@ -76,6 +79,8 @@ icon.bin
 
 ## 签名与安全
 
-CPK5 没有可信签名。CRC32 用于发现传输和存储损坏，不能认证作者。包内载荷是
-原生机器码，当前运行时没有恶意代码沙箱。安装器的格式、路径、target 和 ABI
-校验是可靠性边界，不是“不可信代码可安全执行”的证明。
+CRC32 用于发现传输和存储损坏。ABI 1.17 用户包还必须通过 HMAC-SHA256：固件从
+`/.crazypod/trusted-miniapp-keys.txt` 读取对应共享密钥，并在安装前验证五个条目。
+只有显式存在 `/.crazypod/developer-mode.flag` 时才接受未签名用户包；固件内置系统
+路径中的包按固件信任。HMAC 是个人设备共享密钥，不是公开作者身份；密钥泄漏即
+获得签名权。包内载荷仍是原生机器码，没有恶意代码沙箱。

@@ -12,6 +12,8 @@
 #include "../../crazypod_music.h"
 #include "../../crazypod_photos.h"
 #include "../../crazypod_videos.h"
+#include "../../miniapps/runtime/crazypod_miniapp_alarm_service.h"
+#include "../../miniapps/runtime/crazypod_miniapp_host_system.h"
 #include "../features/customize/crazypod_customize_feature.h"
 #include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
@@ -21,6 +23,7 @@
 #include "../navigation/crazypod_ui_routes.h"
 #include "../shell/crazypod_desktop.h"
 #include "../shell/crazypod_lock_screen.h"
+#include "../shell/crazypod_now_capsule.h"
 #include "../shell/crazypod_shell.h"
 #include "../shell/crazypod_system_prompts.h"
 #include "crazypod_route_actions.h"
@@ -71,6 +74,14 @@ void crazypod_runtime_services_configure(
     void (*render)(bool transition))
 {
     render_route = render;
+}
+
+void crazypod_runtime_services_start(void)
+{
+    crazypod_miniapps_feature_rescan();
+    crazypod_miniapp_alarm_initialize();
+    crazypod_now_playing_theme_prepare();
+    crazypod_now_capsule_refresh_material();
 }
 
 int crazypod_runtime_services_wait_ticks(void)
@@ -160,7 +171,10 @@ void crazypod_runtime_services_tick(
         ((state->route == MINIAPP_ROUTE_VIEW &&
           crazypod_miniapps_feature_is_open()) ||
          (state->route == MUSIC_ROUTE_NOW_PLAYING &&
-          crazypod_now_playing_theme_open()));
+         crazypod_now_playing_theme_open()));
+
+    crazypod_miniapp_alarm_tick(
+        crazypod_miniapp_host_epoch_seconds());
 
     crazypod_music_set_scan_suspended(locked);
     crazypod_artwork_set_lock_suspended(locked);

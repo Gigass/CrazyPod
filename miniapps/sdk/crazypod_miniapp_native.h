@@ -13,7 +13,7 @@
  * objects, Rockbox internals and compiler-runtime state remain host-owned.
  */
 #define CP_NATIVE_ABI_MAJOR 1u
-#define CP_NATIVE_ABI_MINOR 16u
+#define CP_NATIVE_ABI_MINOR 17u
 /* ABI 1.14 assigned a new property in the middle of this enum.  Its binary
  * property values are ambiguous, so packages built for it are not valid. */
 #define CP_NATIVE_ABI_REJECTED_MINOR 14u
@@ -47,6 +47,146 @@
 #define CP_NATIVE_NOW_PLAYING_QUEUE_STATE 2u
 #define CP_NATIVE_NOW_PLAYING_QUEUE_ITEM 3u
 #define CP_NATIVE_NOW_PLAYING_LYRICS_WINDOW 4u
+
+#define CP_NATIVE_SERVICE_DIAGNOSTICS 2u
+#define CP_NATIVE_DIAGNOSTICS_SNAPSHOT 0u
+#define CP_NATIVE_DIAGNOSTICS_LOG_ENTRY 1u
+#define CP_NATIVE_DIAGNOSTICS_RESET_PEAKS 2u
+#define CP_DIAGNOSTICS_LOG_CAPACITY 16u
+#define CP_DIAGNOSTICS_LOG_TEXT_CAPACITY 128u
+
+#define CP_NATIVE_SERVICE_MEDIA_LIBRARY 3u
+#define CP_NATIVE_MEDIA_LIBRARY_PAGE 0u
+#define CP_MEDIA_LIBRARY_PAGE_CAPACITY 2u
+#define CP_MEDIA_LIBRARY_TEXT_CAPACITY 128u
+
+enum cp_media_library_kind {
+    CP_MEDIA_LIBRARY_TRACKS = 0,
+    CP_MEDIA_LIBRARY_ARTISTS,
+    CP_MEDIA_LIBRARY_ALBUMS,
+    CP_MEDIA_LIBRARY_PLAYLISTS,
+    CP_MEDIA_LIBRARY_ARTIST_TRACKS,
+    CP_MEDIA_LIBRARY_ALBUM_TRACKS,
+    CP_MEDIA_LIBRARY_PLAYLIST_TRACKS,
+    CP_MEDIA_LIBRARY_SEARCH_TRACKS
+};
+
+struct cp_media_library_page_request {
+    uint32_t struct_size;
+    uint32_t kind;
+    uint32_t offset;
+    uint32_t limit;
+    int32_t group_index;
+    char query[CP_MEDIA_LIBRARY_TEXT_CAPACITY];
+};
+
+struct cp_media_library_item {
+    uint32_t struct_size;
+    int32_t index;
+    int32_t value;
+    int32_t auxiliary;
+    char primary[CP_MEDIA_LIBRARY_TEXT_CAPACITY];
+    char secondary[CP_MEDIA_LIBRARY_TEXT_CAPACITY];
+    char tertiary[CP_MEDIA_LIBRARY_TEXT_CAPACITY];
+};
+
+struct cp_media_library_page {
+    uint32_t struct_size;
+    uint32_t generation;
+    uint32_t total;
+    uint32_t offset;
+    uint32_t count;
+    struct cp_media_library_item items[CP_MEDIA_LIBRARY_PAGE_CAPACITY];
+};
+
+#define CP_NATIVE_SERVICE_TEXT_PROMPT 4u
+#define CP_NATIVE_TEXT_PROMPT_START 0u
+#define CP_NATIVE_TEXT_PROMPT_POLL 1u
+#define CP_NATIVE_TEXT_PROMPT_CANCEL 2u
+#define CP_TEXT_PROMPT_TITLE_CAPACITY 64u
+#define CP_TEXT_PROMPT_VALUE_CAPACITY 128u
+
+struct cp_text_prompt_request {
+    uint32_t struct_size;
+    uint32_t maximum_bytes;
+    char title[CP_TEXT_PROMPT_TITLE_CAPACITY];
+    char initial_value[CP_TEXT_PROMPT_VALUE_CAPACITY];
+};
+
+struct cp_text_prompt_result {
+    uint32_t struct_size;
+    int32_t active;
+    int32_t completed;
+    int32_t accepted;
+    char value[CP_TEXT_PROMPT_VALUE_CAPACITY];
+};
+
+#define CP_NATIVE_SERVICE_FILE_EXCHANGE 5u
+#define CP_NATIVE_FILE_EXCHANGE_STAT 0u
+#define CP_NATIVE_FILE_EXCHANGE_READ_TEXT 1u
+#define CP_NATIVE_FILE_EXCHANGE_EXPORT_TEXT 2u
+#define CP_FILE_EXCHANGE_PATH_CAPACITY 192u
+#define CP_FILE_EXCHANGE_NAME_CAPACITY 97u
+#define CP_FILE_EXCHANGE_TEXT_CAPACITY 128u
+
+struct cp_file_exchange_read_request {
+    uint32_t struct_size;
+    uint32_t offset;
+    char path[CP_FILE_EXCHANGE_PATH_CAPACITY];
+};
+
+struct cp_file_exchange_text_result {
+    uint32_t struct_size;
+    uint32_t size;
+    uint32_t eof;
+    char text[CP_FILE_EXCHANGE_TEXT_CAPACITY];
+};
+
+struct cp_file_exchange_export_request {
+    uint32_t struct_size;
+    char filename[CP_FILE_EXCHANGE_NAME_CAPACITY];
+    char text[CP_FILE_EXCHANGE_TEXT_CAPACITY];
+};
+
+struct cp_file_exchange_export_result {
+    uint32_t struct_size;
+    char path[CP_FILE_EXCHANGE_PATH_CAPACITY];
+};
+
+#define CP_NATIVE_SERVICE_SOUND_EFFECTS 6u
+#define CP_NATIVE_SOUND_EFFECT_PLAY 0u
+struct cp_sound_effect_request {
+    uint32_t struct_size;
+    uint32_t effect;
+};
+
+#define CP_NATIVE_SERVICE_ALARMS 7u
+#define CP_NATIVE_ALARM_SCHEDULE 0u
+#define CP_NATIVE_ALARM_CANCEL 1u
+#define CP_NATIVE_ALARM_LIST 2u
+#define CP_ALARM_CAPACITY 8u
+#define CP_ALARM_LABEL_CAPACITY 64u
+
+struct cp_alarm_request {
+    uint32_t struct_size;
+    uint32_t alarm_id;
+    uint32_t epoch_seconds;
+    char label[CP_ALARM_LABEL_CAPACITY];
+};
+
+struct cp_alarm_entry {
+    uint32_t struct_size;
+    uint32_t alarm_id;
+    uint32_t epoch_seconds;
+    int32_t active;
+    char label[CP_ALARM_LABEL_CAPACITY];
+};
+
+struct cp_alarm_list {
+    uint32_t struct_size;
+    uint32_t count;
+    struct cp_alarm_entry entries[CP_ALARM_CAPACITY];
+};
 
 #define CP_NOW_PLAYING_TEXT_CAPACITY 128u
 #define CP_NOW_PLAYING_INFO_COUNT 10u
@@ -139,6 +279,34 @@ struct cp_now_playing_lyrics_window {
     char previous[CP_NOW_PLAYING_TEXT_CAPACITY];
     char current[CP_NOW_PLAYING_TEXT_CAPACITY];
     char next[CP_NOW_PLAYING_TEXT_CAPACITY];
+};
+
+struct cp_diagnostics_snapshot {
+    uint32_t struct_size;
+    uint32_t monotonic_ms;
+    uint32_t memory_used;
+    uint32_t memory_high_water;
+    uint32_t memory_limit;
+    uint32_t ui_handles_used;
+    uint32_t ui_handles_high_water;
+    uint32_t update_last_ms;
+    uint32_t update_max_ms;
+    uint32_t log_count;
+    uint32_t log_dropped;
+};
+
+struct cp_diagnostics_log_request {
+    uint32_t struct_size;
+    uint32_t newest_offset;
+};
+
+struct cp_diagnostics_log_entry {
+    uint32_t struct_size;
+    uint32_t sequence;
+    uint32_t monotonic_ms;
+    uint8_t level;
+    uint8_t reserved[3];
+    char message[CP_DIAGNOSTICS_LOG_TEXT_CAPACITY];
 };
 
 #define CP_UI_HANDLE_MAX CP_NATIVE_UI_HANDLE_MAX
@@ -572,7 +740,13 @@ enum cp_native_host_capability {
     CP_NATIVE_CAP_REQUEST_CLOSE = 1u << 2,
     CP_NATIVE_CAP_LOG = 1u << 3,
     CP_NATIVE_CAP_FILES = 1u << 4,
-    CP_NATIVE_CAP_SERVICES = 1u << 5
+    CP_NATIVE_CAP_SERVICES = 1u << 5,
+    CP_NATIVE_CAP_DIAGNOSTICS = 1u << 6,
+    CP_NATIVE_CAP_MEDIA_LIBRARY = 1u << 7,
+    CP_NATIVE_CAP_TEXT_PROMPT = 1u << 8,
+    CP_NATIVE_CAP_FILE_EXCHANGE = 1u << 9,
+    CP_NATIVE_CAP_SOUND_EFFECTS = 1u << 10,
+    CP_NATIVE_CAP_ALARMS = 1u << 11
 };
 
 struct cp_native_host_api {

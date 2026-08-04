@@ -20,6 +20,12 @@
 #define CRAZYPOD_MINIAPP_ARTWORK_SOURCE_DEFAULT 128
 #define CRAZYPOD_MINIAPP_ARTWORK_SOURCE_MAX 320
 
+#define CRAZYPOD_MINIAPP_PERMISSION_MEDIA_LIBRARY_READ (1u << 0)
+#define CRAZYPOD_MINIAPP_PERMISSION_USER_FILES_READ (1u << 1)
+#define CRAZYPOD_MINIAPP_PERMISSION_USER_FILES_EXPORT (1u << 2)
+#define CRAZYPOD_MINIAPP_PERMISSION_SOUND_EFFECTS_PLAY (1u << 3)
+#define CRAZYPOD_MINIAPP_PERMISSION_ALARMS_SCHEDULE (1u << 4)
+
 enum crazypod_miniapp_kind {
     CRAZYPOD_MINIAPP_KIND_APP = 0,
     CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME
@@ -60,12 +66,15 @@ struct crazypod_miniapp_metadata {
     char entry[CRAZYPOD_MINIAPP_FILE_NAME_SIZE];
     char icon[CRAZYPOD_MINIAPP_FILE_NAME_SIZE];
     char font_set[384];
+    char signing_key_id[17];
+    char signature[65];
     uint32_t version_code;
     uint32_t abi_version;
     uint32_t abi_minor;
     uint32_t react_profile;
     uint32_t package_format;
     uint32_t accent_rgb;
+    uint32_t permissions;
     uint8_t kind;
     uint8_t status_bar;
     uint16_t artwork_source_size;
@@ -102,6 +111,9 @@ struct crazypod_miniapp_ui_host {
         uint32_t target, const void *data, size_t size);
     int (*remove)(uint32_t target);
     int (*end_update)(void);
+    uint32_t (*handle_count)(void);
+    uint32_t (*handle_high_water)(void);
+    void (*reset_handle_high_water)(void);
     bool (*input)(const struct cp_input_event *event);
     void (*reset)(void);
 };
@@ -132,6 +144,9 @@ int crazypod_miniapps_ui_commit_drawing(
     uint32_t target, const void *data, size_t size);
 int crazypod_miniapps_ui_remove(uint32_t target);
 int crazypod_miniapps_ui_end_update(void);
+uint32_t crazypod_miniapps_ui_handle_count(void);
+uint32_t crazypod_miniapps_ui_handle_high_water(void);
+void crazypod_miniapps_ui_reset_handle_high_water(void);
 
 int crazypod_miniapps_init(void);
 int crazypod_miniapps_prepare(void);
