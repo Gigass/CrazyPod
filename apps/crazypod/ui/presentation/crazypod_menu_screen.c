@@ -277,7 +277,8 @@ void crazypod_menu_screen_render(
         label = make_label(row_box, title, context->metadata_font,
                            COLOR_WHITE, selected ? 255 : 195);
         lv_obj_set_width(label, text_width);
-        crazypod_ui_widget_align_row_label(label, text_x);
+        crazypod_ui_widget_align_row_label(
+            label, text_x, CRAZYPOD_UI_ROW_LABEL_TEXT);
         crazypod_marquee_configure(label, selected);
 
         marker = make_label(row_box,
@@ -286,7 +287,8 @@ void crazypod_menu_screen_render(
                             selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET,
                             &lv_font_montserrat_8,
                             COLOR_WHITE, selected ? 205 : 90);
-        crazypod_ui_widget_align_row_label(marker, 128);
+        crazypod_ui_widget_align_row_label(
+            marker, 128, CRAZYPOD_UI_ROW_LABEL_MARKER);
         crazypod_menu_list_bind_row(row, row_box, label, marker);
     }
 

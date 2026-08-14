@@ -149,6 +149,27 @@ void crazypod_miniapp_alarm_tick(uint32_t epoch_seconds)
         store_dirty = false;
 }
 
+uint32_t crazypod_miniapp_alarm_next_epoch(void)
+{
+    uint32_t next = 0;
+    unsigned index;
+
+    for(index = 0; index < CP_ALARM_CAPACITY; ++index) {
+        const struct alarm_record *record = &alarms.records[index];
+
+        if(record->active == 0)
+            continue;
+        if(next == 0 || record->epoch_seconds < next)
+            next = record->epoch_seconds;
+    }
+    return next;
+}
+
+bool crazypod_miniapp_alarm_save_pending(void)
+{
+    return store_dirty;
+}
+
 static int schedule_alarm(
     const struct crazypod_miniapp_metadata *metadata,
     uint32_t now, const struct cp_alarm_request *request,

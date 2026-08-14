@@ -11,5 +11,6 @@ void crazypod_state_forget_resume(void);
 unsigned long crazypod_state_take_resume_elapsed(void);
 void crazypod_state_save(bool force);
 void crazypod_state_tick(void);
+int crazypod_state_wait_ticks(void);
 
 #endif

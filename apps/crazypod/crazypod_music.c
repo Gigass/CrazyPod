@@ -37,7 +37,7 @@
     CRAZYPOD_STATE_DIRECTORY "/favorites.tmp"
 #define CRAZYPOD_FAVORITES_NAME CP_TR("My Favorites")
 #define CRAZYPOD_MUSIC_CACHE_MAGIC 0x43504d4cu
-#define CRAZYPOD_MUSIC_CACHE_VERSION 4u
+#define CRAZYPOD_MUSIC_CACHE_VERSION 5u
 
 struct music_source_fingerprint {
     uint32_t file_count;
@@ -1207,8 +1207,6 @@ void crazypod_music_scan(void)
            sizeof(scan_fingerprint));
     scan_directory("/Music", 0, true);
     if(!scan_abort_requested)
-        scan_directory("/iPod_Control/Music", 0, true);
-    if(!scan_abort_requested)
         scan_directory("/Podcasts", 0, true);
     if(!scan_abort_requested)
         scan_directory(ROCKBOX_DIR "/albumart", 0, false);
@@ -1272,8 +1270,6 @@ static void validation_thread(void)
     memset(&fingerprint, 0, sizeof(fingerprint));
     complete = validate_directory(
         "/Music", 0, &fingerprint, true) &&
-        validate_directory(
-            "/iPod_Control/Music", 0, &fingerprint, true) &&
         validate_directory(
             "/Podcasts", 0, &fingerprint, true) &&
         validate_directory(
@@ -1707,6 +1703,21 @@ bool crazypod_music_play(enum crazypod_music_scope scope, int group_index,
     if(start < 0)
         start = 0;
     crazypod_queue_replace(queue_build_paths, count, start);
+    return true;
+}
+
+bool crazypod_music_shuffle_all(unsigned int seed)
+{
+    int count = track_count;
+    int i;
+
+    if(!catalog_ready || count <= 0)
+        return false;
+    if(count > CRAZYPOD_QUEUE_CAPACITY)
+        count = CRAZYPOD_QUEUE_CAPACITY;
+    for(i = 0; i < count; ++i)
+        queue_build_paths[i] = tracks[i].path;
+    crazypod_queue_replace_shuffled(queue_build_paths, count, seed);
     return true;
 }
 

@@ -1,0 +1,6 @@
+#ifndef TEST_CRAZYPOD_PLAYLIST_FILE_H
+#define TEST_CRAZYPOD_PLAYLIST_FILE_H
+
+#define MAX_PATH 256
+
+#endif

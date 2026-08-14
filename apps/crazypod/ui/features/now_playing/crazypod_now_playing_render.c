@@ -11,6 +11,7 @@
 #include "../../../crazypod_artwork.h"
 #include "../../../crazypod_artwork_palette.h"
 #include "../../../crazypod_playlist.h"
+#include "../../../crazypod_runtime_font.h"
 #include "../../../crazypod_soundwave.h"
 #include "crazypod_now_playing_feature.h"
 #include "crazypod_now_presentation.h"
@@ -179,6 +180,12 @@ void crazypod_now_playing_feature_render(
             .track = track,
             .lyrics_mode = crazypod_now_playing_lyrics_mode(),
             .metadata_font = context->metadata_font,
+            .lyrics_context_font = crazypod_runtime_font_resolve(
+                CRAZYPOD_FONT_FAMILY_SYSTEM, 12, 400,
+                CRAZYPOD_FONT_STYLE_NORMAL, 16),
+            .lyrics_current_font = crazypod_runtime_font_resolve(
+                CRAZYPOD_FONT_FAMILY_SYSTEM, 16, 700,
+                CRAZYPOD_FONT_STYLE_NORMAL, 20),
             .primary_color = primary_color(),
             .visual_artwork = visual_artwork,
             .visual_track_path = visual_track_path,

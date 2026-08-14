@@ -2,10 +2,11 @@
   "manifest": {
     "kind": "now-playing-theme",
     "artworkSourceSize": 104,
+    "statusBar": "theme",
     "id": "now-playing-neon",
     "name": "Atelier Hi-Fi",
-    "version": "1.4.1",
-    "versionCode": 10401,
+    "version": "1.4.6",
+    "versionCode": 10406,
     "symbol": "HF",
     "summary": "Skeuomorphic pure-TSX Now Playing theme",
     "accent": "#d79a55"

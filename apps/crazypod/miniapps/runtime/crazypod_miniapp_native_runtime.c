@@ -7,6 +7,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#ifdef SIMULATOR
+#include <stdio.h>
+#endif
+
 #include "load_code.h"
 #include "logf.h"
 #include "misc.h"
@@ -576,6 +580,11 @@ int crazypod_miniapp_native_open(
     crazypod_runtime_font_error_clear();
     result = native.ops->mount();
     if(result != CP_NATIVE_OK) {
+#ifdef SIMULATOR
+        fprintf(stderr,
+                "CrazyPod miniapp mount failed: result=%d font=%s\n",
+                result, crazypod_runtime_font_last_error());
+#endif
         crazypod_miniapp_native_close();
         return CRAZYPOD_MINIAPP_ERROR_STATE;
     }

@@ -73,11 +73,10 @@ int main(int argc, char **argv)
                parsed_manifest,
                reader.entries[CPK_MANIFEST].size,
                &metadata) == CRAZYPOD_MINIAPP_OK);
-    if(metadata.signature[0] != '\0')
-        assert(crazypod_cpk_verify_trust(
-                   &reader, &metadata, manifest,
-                   reader.entries[CPK_MANIFEST].size,
-                   false) == CRAZYPOD_MINIAPP_OK);
+    assert(crazypod_cpk_verify_trust(
+               &reader, &metadata, manifest,
+               reader.entries[CPK_MANIFEST].size,
+               false) == CRAZYPOD_MINIAPP_OK);
     assert(strstr(
         manifest, "\"format\":5") != NULL);
     assert(crazypod_cpk_profile_valid(&reader));

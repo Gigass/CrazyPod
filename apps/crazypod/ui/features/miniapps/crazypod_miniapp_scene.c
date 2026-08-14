@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include "kernel.h"
 #include "../../../crazypod_miniapp_asset_font.h"
 #include "../../../crazypod_miniapps.h"
 #include "crazypod_miniapp_scene.h"
@@ -133,13 +134,15 @@ static void property_mark(
         (uint64_t)1u << (property & 63u);
 }
 
-static bool property_is_set(
+bool crazypod_miniapp_scene_property_is_set(
     const struct crazypod_miniapp_scene_node *node,
     uint16_t property)
 {
     return (node->property_mask[property >> 6] &
             ((uint64_t)1u << (property & 63u))) != 0;
 }
+
+#define property_is_set crazypod_miniapp_scene_property_is_set
 
 static void animation_deleted(lv_anim_t *animation)
 {
@@ -421,6 +424,21 @@ static void materialize_all(void)
     }
 }
 
+static void adaptive_lyrics_refresh_all(void)
+{
+    uint32_t index;
+
+    for(index = 0; index < CP_UI_HANDLE_MAX; ++index) {
+        struct crazypod_miniapp_scene_node *node =
+            &scene.nodes[index];
+
+        if(node->state == CRAZYPOD_MINIAPP_SCENE_SLOT_ALIVE &&
+           node->values[CP_UI_PROP_ADAPTIVE_LYRICS] != 0)
+            crazypod_miniapp_scene_adaptive_lyrics_refresh(
+                node, current_tick);
+    }
+}
+
 static void delete_materialized_roots(void)
 {
     uint32_t index;
@@ -482,6 +500,7 @@ void crazypod_miniapp_scene_attach(
     scene.parent = parent;
     scene.accent = accent;
     materialize_all();
+    adaptive_lyrics_refresh_all();
     focus_apply();
     scene.focus_dirty = false;
 }
@@ -749,6 +768,9 @@ static bool property_numeric(uint16_t property)
     case CP_UI_PROP_BORDER_COLOR:
     case CP_UI_PROP_SHADOW_COLOR:
     case CP_UI_PROP_TEXT_COLOR:
+    case CP_UI_PROP_WAVE_PRIMARY_COLOR:
+    case CP_UI_PROP_WAVE_SECONDARY_COLOR:
+    case CP_UI_PROP_WAVE_HIGHLIGHT_COLOR:
         return false;
     default:
         return true;
@@ -792,7 +814,10 @@ int crazypod_miniapp_scene_set_color(
        (property != CP_UI_PROP_BACKGROUND_COLOR &&
         property != CP_UI_PROP_BORDER_COLOR &&
         property != CP_UI_PROP_SHADOW_COLOR &&
-        property != CP_UI_PROP_TEXT_COLOR))
+        property != CP_UI_PROP_TEXT_COLOR &&
+        property != CP_UI_PROP_WAVE_PRIMARY_COLOR &&
+        property != CP_UI_PROP_WAVE_SECONDARY_COLOR &&
+        property != CP_UI_PROP_WAVE_HIGHLIGHT_COLOR))
         return -1;
     if(property_is_set(node, property) &&
        node->values[property] == (int32_t)rgb)
@@ -933,6 +958,7 @@ int crazypod_miniapp_scene_end_update(void)
     uint32_t index;
 
     materialize_all();
+    adaptive_lyrics_refresh_all();
     for(index = 0; index < CP_UI_HANDLE_MAX; ++index) {
         struct crazypod_miniapp_scene_node *node =
             &scene.nodes[index];

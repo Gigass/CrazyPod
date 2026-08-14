@@ -2,6 +2,7 @@
 
 #ifdef IPOD_6G
 
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -31,7 +32,7 @@
 #define QUEUE_PATH STATE_DIRECTORY "/queue.m3u8"
 #define QUEUE_TEMP_PATH STATE_DIRECTORY "/queue.tmp"
 #define STATE_MAGIC 0x43505354u
-#define STATE_VERSION 10u
+#define STATE_VERSION 11u
 #define STATE_SAVE_INTERVAL (30 * HZ)
 #define STATE_SAVE_RETRY_INTERVAL (30 * HZ)
 #define STATE_SAVE_MAX_RETRY_SHIFT 3
@@ -325,6 +326,44 @@ struct crazypod_state_disk_v9 {
     uint32_t checksum;
 };
 
+struct crazypod_state_disk_v10 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t usb_charging;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t menu_count;
+    uint32_t menu_enabled_mask;
+    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    int32_t reduce_motion;
+    int32_t storage_mode;
+    int32_t language;
+    uint32_t checksum;
+};
+
 struct crazypod_state_disk {
     uint32_t magic;
     uint32_t version;
@@ -360,6 +399,7 @@ struct crazypod_state_disk {
     int32_t reduce_motion;
     int32_t storage_mode;
     int32_t language;
+    int32_t poweroff;
     uint32_t checksum;
 };
 
@@ -473,6 +513,14 @@ static uint32_t state_v9_checksum(const struct crazypod_state_disk_v9 *state)
         offsetof(struct crazypod_state_disk_v9, checksum));
 }
 
+static uint32_t state_v10_checksum(
+    const struct crazypod_state_disk_v10 *state)
+{
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v10, checksum));
+}
+
 static bool read_exact(int fd, void *buffer, size_t size)
 {
     unsigned char *bytes = buffer;
@@ -532,12 +580,14 @@ static void copy_current_eq_settings(struct crazypod_state_disk *state)
     }
 }
 
-static bool load_header(struct crazypod_state_disk *state)
+static bool load_header(
+    struct crazypod_state_disk *state, bool *migrated)
 {
     int fd = open(STATE_PATH, O_RDONLY);
     uint32_t header[3];
     bool valid = false;
 
+    *migrated = false;
     if(fd < 0)
         return false;
     if(!read_exact(fd, header, sizeof(header)) ||
@@ -552,6 +602,21 @@ static bool load_header(struct crazypod_state_disk *state)
        header[2] == sizeof(*state)) {
         valid = read_exact(fd, state, sizeof(*state)) &&
                 state->checksum == state_checksum(state);
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 10u &&
+            header[2] == sizeof(struct crazypod_state_disk_v10)) {
+        struct crazypod_state_disk_v10 state_v10;
+
+        valid = read_exact(fd, &state_v10, sizeof(state_v10)) &&
+                state_v10.checksum == state_v10_checksum(&state_v10);
+        if(valid) {
+            memcpy(state, &state_v10,
+                   offsetof(struct crazypod_state_disk_v10, checksum));
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+        }
     }
     else if(header[0] == STATE_MAGIC &&
             header[1] == 9u &&
@@ -797,6 +862,10 @@ static bool load_header(struct crazypod_state_disk *state)
             copy_current_eq_settings(state);
         }
     }
+    if(valid && header[1] < STATE_VERSION) {
+        state->poweroff = global_settings.poweroff;
+        *migrated = true;
+    }
     close(fd);
 
     return valid;
@@ -809,6 +878,33 @@ static int clamp_int(int value, int minimum, int maximum)
     if(value > maximum)
         return maximum;
     return value;
+}
+
+static void apply_runtime_settings(void)
+{
+    sound_set_volume(global_status.volume);
+    sound_settings_apply();
+    crazypod_eq_settings_apply();
+#ifdef HAVE_BACKLIGHT_BRIGHTNESS
+    backlight_set_brightness(global_settings.brightness);
+#endif
+    backlight_set_timeout(global_settings.backlight_timeout);
+#if CONFIG_CHARGING
+    backlight_set_timeout_plugged(
+        global_settings.backlight_timeout_plugged);
+#endif
+    lcd_set_sleep_after_backlight_off(
+        global_settings.lcd_sleep_after_backlight_off);
+    storage_set_storage_mode(global_settings.storage_mode);
+    set_poweroff_timeout(global_settings.poweroff);
+    reset_poweroff_timer();
+    if(global_settings.sleeptimer_on_startup)
+        set_sleeptimer_duration(global_settings.sleeptimer_duration);
+    set_keypress_restarts_sleep_timer(
+        global_settings.keypress_restarts_sleeptimer);
+#ifdef HAVE_USB_CHARGING_ENABLE
+    usb_charging_enable(global_settings.usb_charging);
+#endif
 }
 
 static void clamp_and_apply_settings(const struct crazypod_state_disk *state)
@@ -850,6 +946,7 @@ static void clamp_and_apply_settings(const struct crazypod_state_disk *state)
         global_settings.lcd_sleep_after_backlight_off = 1;
     global_settings.storage_mode =
         clamp_int(state->storage_mode, 0, 2);
+    global_settings.poweroff = clamp_int(state->poweroff, 0, 60);
     global_settings.sleeptimer_duration =
         clamp_int(state->sleeptimer_duration, 0, 300);
     global_settings.sleeptimer_on_startup =
@@ -883,27 +980,7 @@ static void clamp_and_apply_settings(const struct crazypod_state_disk *state)
                       CRAZYPOD_EQ_GAIN_MAX);
     }
 
-    sound_set_volume(volume);
-    sound_settings_apply();
-    crazypod_eq_settings_apply();
-#ifdef HAVE_BACKLIGHT_BRIGHTNESS
-    backlight_set_brightness(global_settings.brightness);
-#endif
-    backlight_set_timeout(global_settings.backlight_timeout);
-#if CONFIG_CHARGING
-    backlight_set_timeout_plugged(
-        global_settings.backlight_timeout_plugged);
-#endif
-    lcd_set_sleep_after_backlight_off(
-        global_settings.lcd_sleep_after_backlight_off);
-    storage_set_storage_mode(global_settings.storage_mode);
-    if(global_settings.sleeptimer_on_startup)
-        set_sleeptimer_duration(global_settings.sleeptimer_duration);
-    set_keypress_restarts_sleep_timer(
-        global_settings.keypress_restarts_sleeptimer);
-#ifdef HAVE_USB_CHARGING_ENABLE
-    usb_charging_enable(global_settings.usb_charging);
-#endif
+    apply_runtime_settings();
 }
 
 void crazypod_state_load(void)
@@ -913,6 +990,7 @@ void crazypod_state_load(void)
     unsigned queue_count = 0;
     char line[MAX_PATH];
     int fd;
+    bool migrated;
 
     resume_elapsed = 0;
     last_saved_elapsed = 0;
@@ -930,8 +1008,11 @@ void crazypod_state_load(void)
     storage_set_storage_mode(global_settings.storage_mode);
 
     crazypod_apps_reset();
-    if(!load_header(&state))
+    if(!load_header(&state, &migrated)) {
+        apply_runtime_settings();
         return;
+    }
+    state_dirty = migrated;
 
     reduce_motion = state.reduce_motion != 0;
     crazypod_language_set(crazypod_language_valid(state.language)
@@ -971,6 +1052,8 @@ void crazypod_state_load(void)
     saved_queue_hash = queue_hash;
     saved_queue_count = queue_count;
     saved_queue_snapshot_valid = true;
+    if(migrated)
+        crazypod_state_save(true);
 }
 
 void crazypod_state_mark_dirty(void)
@@ -1133,6 +1216,7 @@ void crazypod_state_save(bool force)
     state.reduce_motion = reduce_motion ? 1 : 0;
     state.storage_mode = global_settings.storage_mode;
     state.language = crazypod_language_current();
+    state.poweroff = global_settings.poweroff;
     state.checksum = state_checksum(&state);
 
     fd = open(STATE_TEMP_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);
@@ -1179,6 +1263,36 @@ void crazypod_state_tick(void)
         }
         crazypod_state_save(false);
     }
+}
+
+int crazypod_state_wait_ticks(void)
+{
+    long deadline;
+    long retry_deadline;
+    long remaining;
+    int status = audio_status();
+    bool playback_running =
+        (status & AUDIO_STATUS_PLAY) != 0 &&
+        (status & AUDIO_STATUS_PAUSE) == 0;
+    bool save_pending = state_dirty ||
+        crazypod_queue_generation() != saved_queue_generation;
+
+    if(!playback_running && !save_pending)
+        return TIMEOUT_BLOCK;
+
+    deadline = last_save_tick + STATE_SAVE_INTERVAL;
+    retry_deadline = last_save_attempt_tick +
+        state_save_retry_interval();
+    if(TIME_AFTER(retry_deadline, deadline))
+        deadline = retry_deadline;
+    if(TIME_AFTER(current_tick, deadline))
+        return 1;
+    remaining = deadline - current_tick + 1;
+    if(remaining <= 0)
+        return 1;
+    if(remaining > INT_MAX)
+        return INT_MAX;
+    return (int)remaining;
 }
 
 #endif

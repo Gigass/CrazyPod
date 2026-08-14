@@ -11,6 +11,7 @@
 #include "../../crazypod_frameclock.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_photos.h"
+#include "../../crazypod_state.h"
 #include "../../crazypod_videos.h"
 #include "../../miniapps/runtime/crazypod_miniapp_alarm_service.h"
 #include "../../miniapps/runtime/crazypod_miniapp_host_system.h"
@@ -29,6 +30,7 @@
 #include "crazypod_route_actions.h"
 #include "crazypod_miniapp_repro.h"
 #include "crazypod_runtime_services.h"
+#include "crazypod_screen_off_policy.h"
 
 #if defined(SIMULATOR) || \
     defined(CRAZYPOD_REPRO_DIAGNOSTICS)
@@ -39,6 +41,7 @@
 #endif
 
 static void (*render_route)(bool transition);
+static bool screen_off_idle;
 
 #define CRAZYPOD_STATIC_WAIT_TICKS \
     (HZ > 0 ? HZ : 1)
@@ -48,8 +51,6 @@ static void (*render_route)(bool transition);
     ((HZ / 10) > 0 ? (HZ / 10) : 1)
 #define CRAZYPOD_MEDIA_WAIT_TICKS \
     ((HZ / 20) > 0 ? (HZ / 20) : 1)
-#define CRAZYPOD_SCREEN_OFF_WAIT_TICKS \
-    ((HZ / 2) > 0 ? (HZ / 2) : 1)
 #define CRAZYPOD_FRAME_WAIT_TICKS \
     ((HZ / CRAZYPOD_TARGET_FPS) > 0 \
         ? (HZ / CRAZYPOD_TARGET_FPS) : 1)
@@ -78,19 +79,18 @@ void crazypod_runtime_services_configure(
 
 void crazypod_runtime_services_start(void)
 {
+    screen_off_idle = false;
     crazypod_miniapps_feature_rescan();
     crazypod_miniapp_alarm_initialize();
     crazypod_now_playing_theme_prepare();
     crazypod_now_capsule_refresh_material();
 }
 
-int crazypod_runtime_services_wait_ticks(void)
+static int runtime_wait_ticks(void)
 {
     int status;
 
     if(crazypod_lock_screen_is_locked()) {
-        if(!is_backlight_on(true))
-            return CRAZYPOD_SCREEN_OFF_WAIT_TICKS;
         return crazypod_lock_screen_motion_active()
             ? CRAZYPOD_FRAME_WAIT_TICKS
             : CRAZYPOD_STATIC_WAIT_TICKS;
@@ -112,6 +112,22 @@ int crazypod_runtime_services_wait_ticks(void)
        (status & AUDIO_STATUS_PAUSE) == 0)
         return CRAZYPOD_PLAYBACK_WAIT_TICKS;
     return active_route_wait_ticks();
+}
+
+static int screen_off_wait_ticks(void)
+{
+    uint32_t now = crazypod_miniapp_host_epoch_seconds();
+
+    if(crazypod_miniapp_alarm_save_pending())
+        return HZ > 0 ? HZ : 1;
+    return crazypod_screen_off_alarm_wait(
+        now, crazypod_miniapp_alarm_next_epoch(), HZ);
+}
+
+static void screen_off_alarm_tick(void)
+{
+    crazypod_miniapp_alarm_tick(
+        crazypod_miniapp_host_epoch_seconds());
 }
 
 static void service_miniapp(
@@ -209,6 +225,38 @@ void crazypod_runtime_services_tick(
         crazypod_miniapps_feature_refresh_now_playing_artwork();
     }
     service_miniapp(miniapp_active, now, frame_due);
+}
+
+int crazypod_runtime_services_prepare_wait(
+    long now, bool *screen_off)
+{
+    bool active = crazypod_lock_screen_is_locked() &&
+        !is_backlight_on(true);
+
+    *screen_off = active;
+    if(!active) {
+        screen_off_idle = false;
+        return runtime_wait_ticks();
+    }
+    if(!screen_off_idle) {
+        crazypod_runtime_services_tick(now, false, true);
+        crazypod_state_save(false);
+        screen_off_idle = true;
+    }
+    return crazypod_screen_off_shorter_wait(
+        screen_off_wait_ticks(), crazypod_state_wait_ticks());
+}
+
+bool crazypod_runtime_services_screen_off_tick(void)
+{
+    if(!crazypod_lock_screen_is_locked() ||
+       is_backlight_on(true)) {
+        screen_off_idle = false;
+        return false;
+    }
+    screen_off_alarm_tick();
+    crazypod_state_tick();
+    return true;
 }
 
 #endif

@@ -2,6 +2,17 @@ declare module "react" {
   export type Dispatch<T> = (value: T | ((previous: T) => T)) => void;
 
   export function useState<T>(initial: T): [T, Dispatch<T>];
+  export function boundedText(capacity: number, initial: string): string;
+  export function callHostService(
+    operation: number,
+    version: number,
+    request: readonly number[],
+    setResponse: (index: number, value: number) => void,
+    setResult: (value: number) => void,
+  ): void;
+  export function useEffect(
+    callback: () => void, dependencies: readonly number[],
+  ): void;
   export function useFixedArray(
     length: number, initial: number,
   ): [readonly number[], (index: number, value: number) => void];
@@ -83,6 +94,11 @@ declare module "react-native" {
     style?: StyleProp<ViewStyle>;
     disabled?: boolean;
     focusable?: boolean;
+    /**
+     * Now-playing themes only. Exactly three Text children are laid out as
+     * previous/current/next lyrics using the native adaptive four-line grid.
+     */
+    adaptiveLyrics?: boolean;
     onPress?: (event: NativeEvent) => void;
     onSelect?: (event: NativeEvent) => void;
     onLongPress?: (event: NativeEvent) => void;
@@ -101,6 +117,7 @@ declare module "react-native" {
 
   export interface TextProps extends ViewProps {
     children?: JSX.Element | string | number;
+    style?: StyleProp<TextStyle>;
     numberOfLines?: number;
   }
 
@@ -146,6 +163,20 @@ declare module "react-native" {
 declare module "@crazypod/now-playing" {
   import type { Component, TextProps, ViewProps } from "react-native";
 
+  export enum SoundWaveStyle {
+    Torrent = 0,
+    RadialSpectrum = 1,
+    LiquidRibbon = 2,
+    VinylGroove = 3,
+    MiniLEDMeter = 4,
+    ParticlePulse = 5,
+  }
+
+  export enum SoundWaveVariant {
+    Bar = 0,
+    Ball = 1,
+  }
+
   export interface NowPlayingArtworkProps extends ViewProps {
     variant?: number;
     /** Compatibility hint for ABI 8 themes; ABI 9 refreshes automatically. */
@@ -155,7 +186,11 @@ declare module "@crazypod/now-playing" {
   export interface SoundWaveProps extends ViewProps {
     phase?: number;
     playing?: boolean;
-    waveStyle?: number;
+    waveStyle?: SoundWaveStyle;
+    variant?: SoundWaveVariant;
+    primaryColor?: `#${string}`;
+    secondaryColor?: `#${string}`;
+    highlightColor?: `#${string}`;
   }
 
   export const NowPlayingArtwork: Component<NowPlayingArtworkProps>;
@@ -207,6 +242,15 @@ declare module "@crazypod/now-playing" {
   ): void;
   export function refreshLyricsWindow(
     elapsedMs: number,
+    setPrevious: (value: string) => void,
+    setCurrent: (value: string) => void,
+    setNext: (value: string) => void,
+    setInfo: (index: number, value: number) => void,
+    setResult: (value: number) => void,
+  ): void;
+  export function refreshLyricsContext(
+    elapsedMs: number,
+    anchor: number,
     setPrevious: (value: string) => void,
     setCurrent: (value: string) => void,
     setNext: (value: string) => void,

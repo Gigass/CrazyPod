@@ -1195,9 +1195,7 @@ static void handle_sleep_timer(void)
 #endif
         ) {
             DEBUGF("Sleep timer timeout. Stopping...\n");
-#ifndef IPOD_6G
             audio_pause();
-#endif
             set_sleep_timer(0);
             backlight_off(); /* Nighty, nighty... */
         }
@@ -1225,11 +1223,7 @@ void handle_auto_poweroff(void)
 {
 #ifndef BOOTLOADER
     long timeout = poweroff_timeout*60*HZ;
-#ifdef IPOD_6G
-    int audio_stat = 0;
-#else
     int audio_stat = audio_status();
-#endif
     long tick = current_tick;
 
     /*

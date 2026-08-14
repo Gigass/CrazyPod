@@ -9,6 +9,7 @@
 
 #include "lvgl.h"
 
+#include "crazypod_state.h"
 #include "crazypod_soundwave.h"
 
 #define SOUND_WAVE_POINT_SLOTS 6
@@ -251,11 +252,18 @@ static void draw_torrent(lv_layer_t *layer, const lv_area_t *area,
         secondary_cycles, secondary_amp);
     draw_polyline(layer, 1, count, 2, secondary,
                   playing ? 179 : 76);
-    count = build_wave_points(
-        area, 2, point_step, phase * 17 + 240,
-        highlight_cycles, highlight_amp);
-    draw_polyline(layer, 2, count, 1, highlight,
-                  playing ? 151 : 55);
+    /*
+     * The high-frequency highlight reads as a needle when its crest crosses
+     * the two main curves on the 320x240 bar. Keep it for the compact ball,
+     * where it supplies useful separation, but not for the full-width wave.
+     */
+    if(ball) {
+        count = build_wave_points(
+            area, 2, point_step, phase * 17 + 240,
+            highlight_cycles, highlight_amp);
+        draw_polyline(layer, 2, count, 1, highlight,
+                      playing ? 151 : 55);
+    }
 }
 
 static void draw_mirrored_spectrum(
@@ -487,43 +495,85 @@ static void draw_vinyl_groove_bar(
 {
     int width = area_width(area);
     int height = area_height(area);
+    int column_count = clamp_int(width / 10, 21, 29);
     int center_y = area->y1 + height / 2;
-    int spacing = clamp_int(height / 5, 5, 7);
-    int amplitude = playing ? clamp_int(height / 8, 2, 4) : 0;
-    int groove;
+    int maximum_half_height = clamp_int(height * 36 / 100, 5, 12);
+    int center_gap = height >= 24 ? 2 : 1;
+    int focus;
+    int index;
 
-    for(groove = 0; groove < 3; ++groove) {
-        int point_count = 0;
-        int offset = (groove - 1) * spacing;
-        int x;
-        uint32_t color = groove == 0 ? highlight :
-            (groove == 1 ? primary : secondary);
-        lv_opa_t opacity = playing
-            ? (groove == 1 ? 210 : 92)
-            : (groove == 1 ? 96 : 45);
+    if(crazypod_state_reduce_motion())
+        phase = 0;
+    focus = positive_mod(phase, column_count);
 
-        for(x = 0; x < width; x += 3) {
-            int taper = wave_taper(x, width);
-            int coarse = wave_sin(x * 4 + phase * 7);
-            int detail = wave_sin(
-                x * 11 - phase * 5 + groove * 37);
-            int mixed = (coarse * 3 + detail) / 4;
-            int vertical =
-                ((mixed * amplitude >> LV_TRIGO_SHIFT) *
-                 taper >> LV_TRIGO_SHIFT);
+    draw_line_segment(
+        layer, area->x1 + 2, center_y,
+        area->x2 - 2, center_y, 1,
+        primary, playing ? 31 : 22, false);
 
-            if(groove != 1)
-                vertical = vertical * 2 / 3;
-            append_wave_point(
-                groove, &point_count,
-                area->x1 + x, center_y + offset + vertical);
+    for(index = 0; index < column_count; ++index) {
+        int progress = index * 32767 / (column_count - 1);
+        int envelope = wave_sin(progress * 180 / 32767);
+        int upper_motion = wave_abs(
+            wave_sin(index * 31 + phase * 16));
+        int lower_motion = wave_abs(
+            wave_sin(index * 47 - phase * 11 + 73));
+        int pulse = wave_abs(
+            wave_sin(index * 19 + phase * 7 + 41));
+        int upper_level =
+            (upper_motion * 72 + pulse * 28) / 100;
+        int lower_level =
+            (lower_motion * 68 + pulse * 32) / 100;
+        int upper_height;
+        int lower_height;
+        int distance = wave_abs(index - focus);
+        int x = area->x1 +
+            index * (width - 1) / (column_count - 1);
+        int column_width = width >= 240 ? 3 : 2;
+        bool focused;
+        uint32_t upper_color;
+        uint32_t lower_color;
+        lv_opa_t upper_opacity;
+        lv_opa_t lower_opacity;
+
+        if(distance > column_count / 2)
+            distance = column_count - distance;
+        focused = playing && distance <= 1;
+        if(playing) {
+            upper_height = 2 + maximum_half_height *
+                (6553 + upper_level * 80 / 100) /
+                32767 * envelope / 32767;
+            lower_height = 2 + maximum_half_height *
+                (6553 + lower_level * 80 / 100) /
+                32767 * envelope / 32767;
         }
-        append_wave_point(
-            groove, &point_count,
-            area->x2, center_y + offset);
-        draw_polyline(
-            layer, groove, point_count,
-            groove == 1 ? 2 : 1, color, opacity);
+        else {
+            upper_height = 1 + 2 * envelope / 32767;
+            lower_height = upper_height;
+        }
+        upper_height = clamp_int(
+            upper_height, 1, maximum_half_height);
+        lower_height = clamp_int(
+            lower_height, 1, maximum_half_height);
+        upper_color = focused ? highlight :
+            (index % 5 == 0 ? secondary : primary);
+        lower_color = focused ? highlight :
+            (index % 5 == 0 ? primary : secondary);
+        upper_opacity = focused ? 235 :
+            (playing ? (lv_opa_t)(112 + envelope * 75 / 32767) : 72);
+        lower_opacity = focused ? 196 :
+            (playing ? (lv_opa_t)(82 + envelope * 67 / 32767) : 54);
+
+        draw_rect(
+            layer, x - column_width / 2,
+            center_y - center_gap - upper_height,
+            column_width, upper_height,
+            LV_RADIUS_CIRCLE, upper_color, upper_opacity);
+        draw_rect(
+            layer, x - column_width / 2,
+            center_y + center_gap,
+            column_width, lower_height,
+            LV_RADIUS_CIRCLE, lower_color, lower_opacity);
     }
 }
 

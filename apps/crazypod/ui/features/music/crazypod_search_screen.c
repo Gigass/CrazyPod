@@ -134,14 +134,16 @@ void crazypod_search_screen_render(
                            COLOR_WHITE,
                            selected ? 255 : 150);
         lv_obj_set_width(label, 104);
-        crazypod_ui_widget_align_row_label(label, 14);
+        crazypod_ui_widget_align_row_label(
+            label, 14, CRAZYPOD_UI_ROW_LABEL_TEXT);
         lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
 
         marker = make_label(row_box,
                             selected ? LV_SYMBOL_PLAY : "",
                             &lv_font_montserrat_8,
                             COLOR_WHITE, selected ? 205 : 75);
-        crazypod_ui_widget_align_row_label(marker, 128);
+        crazypod_ui_widget_align_row_label(
+            marker, 128, CRAZYPOD_UI_ROW_LABEL_MARKER);
         crazypod_menu_list_bind_row(row, row_box, label, marker);
     }
 

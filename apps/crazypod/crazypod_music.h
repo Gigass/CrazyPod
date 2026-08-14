@@ -98,6 +98,7 @@ const struct crazypod_track *crazypod_music_search_track(const char *query,
 
 bool crazypod_music_play(enum crazypod_music_scope scope, int group_index,
                          int selected_index);
+bool crazypod_music_shuffle_all(unsigned int seed);
 bool crazypod_music_play_track(int library_index);
 bool crazypod_music_play_search(const char *query, int selected_index);
 

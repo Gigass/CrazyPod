@@ -2,12 +2,12 @@
 
 #ifdef IPOD_6G
 
+#include "kernel.h"
 #include "timefuncs.h"
 
 #include "../../crazypod_music.h"
 #include "../../crazypod_organizer.h"
 #include "../../crazypod_photos.h"
-#include "../../crazypod_playlist.h"
 #include "../../crazypod_state.h"
 #include "../../crazypod_videos.h"
 #include "../features/books/crazypod_books_feature.h"
@@ -59,8 +59,8 @@ void crazypod_app_launcher_open_now_playing(void)
 
 static void start_shuffle(void)
 {
-    crazypod_queue_set_shuffle(true);
-    crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0);
+    if(!crazypod_music_shuffle_all((unsigned int)current_tick))
+        return;
     crazypod_state_forget_resume();
     crazypod_state_mark_dirty();
     host.request_now_playing();

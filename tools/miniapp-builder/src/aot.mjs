@@ -62,6 +62,28 @@ const integerProps = Object.freeze({
   focusable: "CP_UI_PROP_FOCUSABLE",
   scrollX: "CP_UI_PROP_SCROLL_X",
   scrollY: "CP_UI_PROP_SCROLL_Y",
+  variant: "CP_UI_PROP_VARIANT",
+  phase: "CP_UI_PROP_PHASE",
+  playing: "CP_UI_PROP_PLAYING",
+  waveStyle: "CP_UI_PROP_WAVE_STYLE",
+  adaptiveLyrics: "CP_UI_PROP_ADAPTIVE_LYRICS",
+});
+
+const colorProps = Object.freeze({
+  primaryColor: "CP_UI_PROP_WAVE_PRIMARY_COLOR",
+  secondaryColor: "CP_UI_PROP_WAVE_SECONDARY_COLOR",
+  highlightColor: "CP_UI_PROP_WAVE_HIGHLIGHT_COLOR",
+});
+
+const nativeConstants = Object.freeze({
+  "SoundWaveStyle.Torrent": "CP_UI_SOUND_WAVE_TORRENT",
+  "SoundWaveStyle.RadialSpectrum": "CP_UI_SOUND_WAVE_RADIAL_SPECTRUM",
+  "SoundWaveStyle.LiquidRibbon": "CP_UI_SOUND_WAVE_LIQUID_RIBBON",
+  "SoundWaveStyle.VinylGroove": "CP_UI_SOUND_WAVE_VINYL_GROOVE",
+  "SoundWaveStyle.MiniLEDMeter": "CP_UI_SOUND_WAVE_MINI_LED_METER",
+  "SoundWaveStyle.ParticlePulse": "CP_UI_SOUND_WAVE_PARTICLE_PULSE",
+  "SoundWaveVariant.Bar": "CP_UI_SOUND_WAVE_BAR",
+  "SoundWaveVariant.Ball": "CP_UI_SOUND_WAVE_BALL",
 });
 
 const stringProps = Object.freeze({
@@ -430,6 +452,13 @@ function compileCExpression(node, states, locals = new Map()) {
   }
   if (node.kind === ts.SyntaxKind.TrueKeyword) return "1";
   if (node.kind === ts.SyntaxKind.FalseKeyword) return "0";
+  if (ts.isPropertyAccessExpression(node) &&
+      ts.isIdentifier(node.expression)) {
+    const constant = nativeConstants[
+      `${node.expression.text}.${node.name.text}`
+    ];
+    if (constant) return constant;
+  }
   if (ts.isIdentifier(node)) {
     if (states.has(node.text)) {
       const state = states.get(node.text);
@@ -1045,6 +1074,19 @@ export function compileNativeSource(source, {
           `        UI_OK(ui->set_string(${retained}, ${property}, ${value}));`,
         );
       }
+    }
+    for (const [prop, property] of Object.entries(colorProps)) {
+      const attribute = attributes.get(prop);
+      if (!attribute) continue;
+      const expression = expressionFromAttribute(attribute);
+      const value = literal(expression);
+      if (typeof value !== "string" || !/^#[0-9a-f]{6}$/i.test(value)) {
+        fail(expression, `${prop} must be a static #RRGGBB color`);
+      }
+      render.push(
+        `    UI_OK(ui->set_color(${handle}, ${property}, ` +
+        `0x${value.slice(1).toLowerCase()}u));`,
+      );
     }
     for (const [prop, eventType] of Object.entries(eventProps)) {
       const attribute = attributes.get(prop);

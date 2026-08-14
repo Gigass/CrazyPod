@@ -2,10 +2,11 @@
   "manifest": {
     "kind": "now-playing-theme",
     "artworkSourceSize": 89,
+    "statusBar": "theme",
     "id": "now-playing-signal",
     "name": "Signal One",
-    "version": "1.0.1",
-    "versionCode": 10001,
+    "version": "1.0.7",
+    "versionCode": 10007,
     "symbol": "S1",
     "summary": "Precision hi-fi pure-TSX Now Playing theme",
     "accent": "#f36b21"

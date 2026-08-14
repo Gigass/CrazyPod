@@ -10,12 +10,14 @@ CP_NATIVE_MINIAPP_HEADER;
 
 static const struct cp_native_host_api *host;
 static cp_ui_handle_t native_root;
-static cp_ui_handle_t native_handles[95];
+static cp_ui_handle_t native_handles[89];
 static uint32_t rendered_structure_key;
 static char state_title[128];
 static char state_artist[128];
 static char state_album[128];
 static int32_t state_info[10];
+static int32_t state_systemRequest[1];
+static int32_t state_system[6];
 static int32_t state_result;
 static int32_t state_panel;
 static int32_t state_action;
@@ -35,12 +37,17 @@ static char state_queueTitle2[128];
 static char state_queueArtist2[128];
 static char state_queueAlbum2[128];
 static int32_t state_queueItem2[3];
-static char state_lyricPrevious[128];
-static char state_lyricCurrent[128];
-static char state_lyricNext[128];
-static int32_t state_lyricInfo[3];
+static char state_lyricPrevious[768];
+static char state_lyricCurrent[768];
+static char state_lyricNext[768];
+static int32_t state_lyricInfo[6];
+static int32_t state_lyricAnchor;
+static int32_t state_lyricBrowseTicks;
+static int32_t state_lyricsEnabled;
+static int32_t state_lyricFrame;
 static uint32_t cp_interval_last_0;
 static uint32_t cp_interval_last_1;
+static uint32_t cp_interval_last_2;
 
 
 static int32_t cp_helper_cycleForward(int32_t value, int32_t steps, int32_t count);
@@ -50,12 +57,12 @@ static int32_t cp_helper_cycleBackward(int32_t value, int32_t steps, int32_t cou
 static int32_t cp_helper_queueBackward(int32_t value, int32_t steps);
 static int32_t cp_helper_seekBackward(int32_t value, int32_t steps);
 static int32_t cp_helper_playbackMode(int32_t repeat, int32_t shuffle);
+static int32_t cp_helper_volumePercent(int32_t value);
 static int32_t cp_helper_progressWidth(int32_t elapsed, int32_t length);
-static int32_t cp_helper_audioLevel(int32_t left, int32_t right);
 
 static int32_t cp_helper_cycleForward(int32_t value, int32_t steps, int32_t count)
 {
-    return (((value + steps)) % count);
+    return ((count <= 0) ? 0 : (((value + steps) >= count) ? (count - 1) : (value + steps)));
 }
 
 static int32_t cp_helper_queueForward(int32_t value, int32_t steps, int32_t count)
@@ -70,7 +77,7 @@ static int32_t cp_helper_seekForward(int32_t value, int32_t length, int32_t step
 
 static int32_t cp_helper_cycleBackward(int32_t value, int32_t steps, int32_t count)
 {
-    return ((((value + count) - ((steps % count)))) % count);
+    return (((count <= 0) || (value <= steps)) ? 0 : (value - steps));
 }
 
 static int32_t cp_helper_queueBackward(int32_t value, int32_t steps)
@@ -88,21 +95,45 @@ static int32_t cp_helper_playbackMode(int32_t repeat, int32_t shuffle)
     return ((shuffle == 1) ? 1 : ((repeat == 1) ? 2 : ((repeat == 2) ? 3 : 0)));
 }
 
+static int32_t cp_helper_volumePercent(int32_t value)
+{
+    return ((value <= (-60)) ? 0 : ((value >= 12) ? 100 : ((((value + 60)) * 100) / 72)));
+}
+
 static int32_t cp_helper_progressWidth(int32_t elapsed, int32_t length)
 {
     return ((length <= 0) ? 0 : ((elapsed >= length) ? 228 : ((length > 9000000) ? ((((elapsed / 1000)) * 228) / ((length / 1000))) : ((elapsed * 228) / length))));
 }
 
-static int32_t cp_helper_audioLevel(int32_t left, int32_t right)
-{
-    return ((left > right) ? left : right);
-}
 
 static bool cp_string_equal(const char *left, const char *right);
 static void cp_string_assign(
     char *target, size_t capacity, const char *source);
 static size_t cp_string_length(const char *value, size_t capacity);
+static bool cp_string_contains(const char *value, const char *query);
 
+static bool cp_effect_active_0;
+static int32_t cp_effect_dep_0_0;
+
+static void cp_effect_cleanup_0(void)
+{
+    if(!cp_effect_active_0)
+        return;
+
+    cp_effect_active_0 = false;
+}
+
+static void cp_effect_update_0(bool force)
+{
+    bool changed = force;
+    changed = changed || cp_effect_dep_0_0 != state_lyricInfo[2];
+    if(!changed)
+        return;
+    cp_effect_cleanup_0();
+    cp_effect_dep_0_0 = state_lyricInfo[2];
+        state_lyricFrame = 0;
+    cp_effect_active_0 = true;
+}
 
 
 #define UI_OK(call) do { int result_ = (call); if(result_ != CP_NATIVE_OK) return result_; } while(0)
@@ -176,6 +207,28 @@ static size_t cp_string_length(const char *value, size_t capacity)
     return length;
 }
 
+static bool cp_string_contains(const char *value, const char *query)
+{
+    const char *candidate;
+    const char *left;
+    const char *right;
+    if(value == NULL || query == NULL)
+        return false;
+    if(*query == '\0')
+        return true;
+    for(candidate = value; *candidate != '\0'; ++candidate) {
+        left = candidate;
+        right = query;
+        while(*left != '\0' && *right != '\0' && *left == *right) {
+            ++left;
+            ++right;
+        }
+        if(*right == '\0')
+            return true;
+    }
+    return false;
+}
+
 static void cp_i32_append(
     char *buffer, size_t capacity, size_t *cursor, int32_t value)
 {
@@ -187,10 +240,10 @@ static void cp_i32_append(
 static uint32_t cp_structure_key(void)
 {
     uint32_t key = 5381u;
+    key = key * 33u + ((state_lyricsEnabled == 1) ? 1u : 0u);
     key = key * 33u + ((state_panel == 1) ? 1u : 0u);
     key = key * 33u + ((state_panel == 2) ? 1u : 0u);
     key = key * 33u + ((state_panel == 3) ? 1u : 0u);
-    key = key * 33u + ((state_panel == 4) ? 1u : 0u);
     key = key * 33u + ((state_panel == 5) ? 1u : 0u);
     return key;
 }
@@ -203,367 +256,296 @@ static int cp_update_dynamic(void)
     (void)text_buffer;
     (void)text_cursor;
     UI_OK(ui->begin_update());
-    if(native_handles[9] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[9], CP_UI_PROP_TEXT, (cp_string_equal(state_title, "") ? "No Track" : state_title)));
+    if(native_handles[3] != CP_NATIVE_UI_HANDLE_NONE) {
+        text_cursor = 0;
+        text_buffer[0] = '\0';
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_system[0]);
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, ":");
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_system[1]);
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_system[2]);
+        UI_OK(ui->set_string(native_handles[3], CP_UI_PROP_TEXT, text_buffer));
     }
-    if(native_handles[10] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[10], CP_UI_PROP_TEXT, (cp_string_equal(state_artist, "") ? "Unknown Artist" : state_artist)));
+    if(native_handles[4] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_string(native_handles[4], CP_UI_PROP_TEXT, ((state_info[3] == 2) ? "PLAYING" : ((state_info[3] == 1) ? "PAUSED" : "STOPPED"))));
     }
-    if(native_handles[11] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[11], CP_UI_PROP_TEXT, (cp_string_equal(state_album, "") ? "Local Library" : state_album)));
+    if(native_handles[5] != CP_NATIVE_UI_HANDLE_NONE) {
+        text_cursor = 0;
+        text_buffer[0] = '\0';
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, ((state_system[4] == 1) ? "CHG" : "BAT"));
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, " ");
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_system[3]);
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "%");
+        UI_OK(ui->set_string(native_handles[5], CP_UI_PROP_TEXT, text_buffer));
     }
     if(native_handles[13] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[13], CP_UI_PROP_TEXT, ((state_info[3] == 2) ? "PLAY" : ((state_info[3] == 1) ? "PAUSE" : "STOP"))));
+        UI_OK(ui->set_string(native_handles[13], CP_UI_PROP_TEXT, (cp_string_equal(state_title, "") ? "No Track" : state_title)));
     }
     if(native_handles[14] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[14], CP_UI_PROP_TEXT, ((state_info[6] == 1) ? "SHUF" : ((state_info[5] == 2) ? "RPT1" : ((state_info[5] == 1) ? "RPTA" : "NORM")))));
+        UI_OK(ui->set_string(native_handles[14], CP_UI_PROP_TEXT, (cp_string_equal(state_artist, "") ? "Unknown Artist" : state_artist)));
     }
     if(native_handles[15] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[15], CP_UI_PROP_TEXT, ((state_info[7] == 1) ? "FAV" : "---")));
+        UI_OK(ui->set_string(native_handles[15], CP_UI_PROP_TEXT, (cp_string_equal(state_album, "") ? "Local Library" : state_album)));
     }
-    if(native_handles[16] != CP_NATIVE_UI_HANDLE_NONE) {
-        text_cursor = 0;
-        text_buffer[0] = '\0';
-        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "V ");
-        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_info[4]);
-        UI_OK(ui->set_string(native_handles[16], CP_UI_PROP_TEXT, text_buffer));
+    if(native_handles[17] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_string(native_handles[17], CP_UI_PROP_TEXT, ((state_info[3] == 2) ? "PLAY" : ((state_info[3] == 1) ? "PAUSE" : "STOP"))));
     }
     if(native_handles[18] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_i32(native_handles[18], CP_UI_PROP_WIDTH, cp_helper_progressWidth(state_info[1], state_info[2])));
+        UI_OK(ui->set_string(native_handles[18], CP_UI_PROP_TEXT, ((state_info[6] == 1) ? "×" : ((state_info[5] == 2) ? "1×" : ((state_info[5] == 1) ? "∞" : "→")))));
+    }
+    if(native_handles[19] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_string(native_handles[19], CP_UI_PROP_TEXT, ((state_info[7] == 1) ? "BANK ●" : "BANK ○")));
     }
     if(native_handles[20] != CP_NATIVE_UI_HANDLE_NONE) {
-        if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 25)) {
-            UI_OK(ui->set_color(native_handles[20], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[20], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[20], CP_UI_PROP_OPACITY, 255));
-        } else {
-            UI_OK(ui->set_color(native_handles[20], CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-            UI_OK(ui->set_i32(native_handles[20], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[20], CP_UI_PROP_OPACITY, 143));
-        }
-    }
-    if(native_handles[21] != CP_NATIVE_UI_HANDLE_NONE) {
-        if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 55)) {
-            UI_OK(ui->set_color(native_handles[21], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[21], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[21], CP_UI_PROP_OPACITY, 255));
-        } else {
-            UI_OK(ui->set_color(native_handles[21], CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-            UI_OK(ui->set_i32(native_handles[21], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[21], CP_UI_PROP_OPACITY, 143));
-        }
-    }
-    if(native_handles[22] != CP_NATIVE_UI_HANDLE_NONE) {
-        if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 90)) {
-            UI_OK(ui->set_color(native_handles[22], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[22], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[22], CP_UI_PROP_OPACITY, 255));
-        } else {
-            UI_OK(ui->set_color(native_handles[22], CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-            UI_OK(ui->set_i32(native_handles[22], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[22], CP_UI_PROP_OPACITY, 143));
-        }
-    }
-    if(native_handles[23] != CP_NATIVE_UI_HANDLE_NONE) {
-        if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 140)) {
-            UI_OK(ui->set_color(native_handles[23], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[23], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[23], CP_UI_PROP_OPACITY, 255));
-        } else {
-            UI_OK(ui->set_color(native_handles[23], CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-            UI_OK(ui->set_i32(native_handles[23], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[23], CP_UI_PROP_OPACITY, 143));
-        }
-    }
-    if(native_handles[24] != CP_NATIVE_UI_HANDLE_NONE) {
-        if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 210)) {
-            UI_OK(ui->set_color(native_handles[24], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[24], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[24], CP_UI_PROP_OPACITY, 255));
-        } else {
-            UI_OK(ui->set_color(native_handles[24], CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-            UI_OK(ui->set_i32(native_handles[24], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[24], CP_UI_PROP_OPACITY, 143));
-        }
-    }
-    if(native_handles[25] != CP_NATIVE_UI_HANDLE_NONE) {
-        if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 320)) {
-            UI_OK(ui->set_color(native_handles[25], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[25], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[25], CP_UI_PROP_OPACITY, 255));
-        } else {
-            UI_OK(ui->set_color(native_handles[25], CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-            UI_OK(ui->set_i32(native_handles[25], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[25], CP_UI_PROP_OPACITY, 143));
-        }
-    }
-    if(native_handles[26] != CP_NATIVE_UI_HANDLE_NONE) {
-        if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 470)) {
-            UI_OK(ui->set_color(native_handles[26], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[26], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[26], CP_UI_PROP_OPACITY, 255));
-        } else {
-            UI_OK(ui->set_color(native_handles[26], CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-            UI_OK(ui->set_i32(native_handles[26], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[26], CP_UI_PROP_OPACITY, 143));
-        }
-    }
-    if(native_handles[27] != CP_NATIVE_UI_HANDLE_NONE) {
-        if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 650)) {
-            UI_OK(ui->set_color(native_handles[27], CP_UI_PROP_BACKGROUND_COLOR, 0xe7411bu));
-            UI_OK(ui->set_i32(native_handles[27], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[27], CP_UI_PROP_OPACITY, 255));
-        } else {
-            UI_OK(ui->set_color(native_handles[27], CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-            UI_OK(ui->set_i32(native_handles[27], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[27], CP_UI_PROP_OPACITY, 143));
-        }
-    }
-    if(native_handles[28] != CP_NATIVE_UI_HANDLE_NONE) {
-        if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 850)) {
-            UI_OK(ui->set_color(native_handles[28], CP_UI_PROP_BACKGROUND_COLOR, 0xe7411bu));
-            UI_OK(ui->set_i32(native_handles[28], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[28], CP_UI_PROP_OPACITY, 255));
-        } else {
-            UI_OK(ui->set_color(native_handles[28], CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-            UI_OK(ui->set_i32(native_handles[28], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_i32(native_handles[28], CP_UI_PROP_OPACITY, 143));
-        }
-    }
-    if(native_handles[34] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 0) {
-            UI_OK(ui->set_color(native_handles[34], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[34], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[34], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-        } else {
-            UI_OK(ui->set_color(native_handles[34], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(native_handles[34], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[34], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-        }
-    }
-    if(native_handles[35] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 0) {
-            UI_OK(ui->set_color(native_handles[35], CP_UI_PROP_TEXT_COLOR, 0x171816u));
-        } else {
-            UI_OK(ui->set_color(native_handles[35], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-        }
-    }
-    if(native_handles[36] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 1) {
-            UI_OK(ui->set_color(native_handles[36], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[36], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[36], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-        } else {
-            UI_OK(ui->set_color(native_handles[36], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(native_handles[36], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[36], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-        }
-    }
-    if(native_handles[37] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 1) {
-            UI_OK(ui->set_color(native_handles[37], CP_UI_PROP_TEXT_COLOR, 0x171816u));
-        } else {
-            UI_OK(ui->set_color(native_handles[37], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-        }
-    }
-    if(native_handles[37] != CP_NATIVE_UI_HANDLE_NONE) {
         text_cursor = 0;
         text_buffer[0] = '\0';
-        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "02");
-        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, ((state_info[7] == 1) ? "REMOVE FAVORITE" : "ADD FAVORITE"));
-        UI_OK(ui->set_string(native_handles[37], CP_UI_PROP_TEXT, text_buffer));
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "L");
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, cp_helper_volumePercent(state_info[4]));
+        UI_OK(ui->set_string(native_handles[20], CP_UI_PROP_TEXT, text_buffer));
     }
-    if(native_handles[38] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 2) {
-            UI_OK(ui->set_color(native_handles[38], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[38], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[38], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-        } else {
-            UI_OK(ui->set_color(native_handles[38], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(native_handles[38], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[38], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-        }
+    if(native_handles[22] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_i32(native_handles[22], CP_UI_PROP_WIDTH, cp_helper_progressWidth(state_info[1], state_info[2])));
+    }
+    if(native_handles[24] != CP_NATIVE_UI_HANDLE_NONE) {
+        text_cursor = 0;
+        text_buffer[0] = '\0';
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, (state_info[1] / 1000));
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "s / ");
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, (state_info[2] / 1000));
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "s");
+        UI_OK(ui->set_string(native_handles[24], CP_UI_PROP_TEXT, text_buffer));
+    }
+    if(native_handles[28] != CP_NATIVE_UI_HANDLE_NONE) {
+        text_cursor = 0;
+        text_buffer[0] = '\0';
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "LYRICS / ");
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, ((state_lyricInfo[5] == 1) ? "TIMECODE" : "PLAIN TEXT"));
+        UI_OK(ui->set_string(native_handles[28], CP_UI_PROP_TEXT, text_buffer));
+    }
+    if(native_handles[30] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_string(native_handles[30], CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricPrevious : "")));
+    }
+    if(native_handles[31] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_string(native_handles[31], CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricCurrent : ((state_lyricInfo[4] == 3) ? "NO LYRICS FILE" : ((state_lyricInfo[4] == 4) ? "INVALID LYRICS FILE" : ((state_lyricInfo[4] == 5) ? "LYRICS FILE TOO LARGE" : "NO LYRICS AVAILABLE"))))));
+    }
+    if(native_handles[32] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_string(native_handles[32], CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricNext : "")));
+    }
+    if(native_handles[33] != CP_NATIVE_UI_HANDLE_NONE) {
+        text_cursor = 0;
+        text_buffer[0] = '\0';
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "WHEEL BROWSE · ");
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, (state_lyricInfo[2] + 1));
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "/");
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_lyricInfo[3]);
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, " · MENU CLOSE");
+        UI_OK(ui->set_string(native_handles[33], CP_UI_PROP_TEXT, text_buffer));
     }
     if(native_handles[39] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 2) {
-            UI_OK(ui->set_color(native_handles[39], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        if(state_action == 0) {
+            UI_OK(ui->set_color(native_handles[39], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(native_handles[39], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[39], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
         } else {
-            UI_OK(ui->set_color(native_handles[39], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_color(native_handles[39], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(native_handles[39], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[39], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
         }
     }
     if(native_handles[40] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 3) {
-            UI_OK(ui->set_color(native_handles[40], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[40], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[40], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+        if(state_action == 0) {
+            UI_OK(ui->set_color(native_handles[40], CP_UI_PROP_TEXT_COLOR, 0x171816u));
         } else {
-            UI_OK(ui->set_color(native_handles[40], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(native_handles[40], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[40], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_color(native_handles[40], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
         }
     }
     if(native_handles[41] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 3) {
-            UI_OK(ui->set_color(native_handles[41], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        if(state_action == 1) {
+            UI_OK(ui->set_color(native_handles[41], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(native_handles[41], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[41], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
         } else {
-            UI_OK(ui->set_color(native_handles[41], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_color(native_handles[41], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(native_handles[41], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[41], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
         }
     }
     if(native_handles[42] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 4) {
-            UI_OK(ui->set_color(native_handles[42], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[42], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[42], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+        if(state_action == 1) {
+            UI_OK(ui->set_color(native_handles[42], CP_UI_PROP_TEXT_COLOR, 0x171816u));
         } else {
-            UI_OK(ui->set_color(native_handles[42], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(native_handles[42], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[42], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_color(native_handles[42], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
         }
     }
+    if(native_handles[42] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_string(native_handles[42], CP_UI_PROP_TEXT, ((state_info[7] == 1) ? "CLEAR MEMORY" : "STORE MEMORY")));
+    }
     if(native_handles[43] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 4) {
-            UI_OK(ui->set_color(native_handles[43], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        if(state_action == 2) {
+            UI_OK(ui->set_color(native_handles[43], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(native_handles[43], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[43], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
         } else {
-            UI_OK(ui->set_color(native_handles[43], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_color(native_handles[43], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(native_handles[43], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[43], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
         }
     }
     if(native_handles[44] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 5) {
-            UI_OK(ui->set_color(native_handles[44], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[44], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[44], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+        if(state_action == 2) {
+            UI_OK(ui->set_color(native_handles[44], CP_UI_PROP_TEXT_COLOR, 0x171816u));
         } else {
-            UI_OK(ui->set_color(native_handles[44], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(native_handles[44], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[44], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_color(native_handles[44], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
         }
     }
     if(native_handles[45] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_action == 5) {
-            UI_OK(ui->set_color(native_handles[45], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        if(state_action == 3) {
+            UI_OK(ui->set_color(native_handles[45], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(native_handles[45], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[45], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
         } else {
-            UI_OK(ui->set_color(native_handles[45], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_color(native_handles[45], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(native_handles[45], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[45], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
         }
     }
-    if(native_handles[49] != CP_NATIVE_UI_HANDLE_NONE) {
+    if(native_handles[46] != CP_NATIVE_UI_HANDLE_NONE) {
+        if(state_action == 3) {
+            UI_OK(ui->set_color(native_handles[46], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        } else {
+            UI_OK(ui->set_color(native_handles[46], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+        }
+    }
+    if(native_handles[46] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_string(native_handles[46], CP_UI_PROP_TEXT, ((state_lyricsEnabled == 1) ? "HIDE TEXT MONITOR" : "SHOW TEXT MONITOR")));
+    }
+    if(native_handles[47] != CP_NATIVE_UI_HANDLE_NONE) {
+        if(state_action == 4) {
+            UI_OK(ui->set_color(native_handles[47], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(native_handles[47], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[47], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+        } else {
+            UI_OK(ui->set_color(native_handles[47], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(native_handles[47], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[47], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+        }
+    }
+    if(native_handles[48] != CP_NATIVE_UI_HANDLE_NONE) {
+        if(state_action == 4) {
+            UI_OK(ui->set_color(native_handles[48], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        } else {
+            UI_OK(ui->set_color(native_handles[48], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+        }
+    }
+    if(native_handles[52] != CP_NATIVE_UI_HANDLE_NONE) {
         text_cursor = 0;
         text_buffer[0] = '\0';
         cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "QUEUE /");
         cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, ((state_queueInfo[1] > 0) ? (state_queueSelected + 1) : 0));
         cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, " OF ");
         cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_queueInfo[1]);
-        UI_OK(ui->set_string(native_handles[49], CP_UI_PROP_TEXT, text_buffer));
-    }
-    if(native_handles[52] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[52], CP_UI_PROP_TEXT, state_queueTitle0));
-    }
-    if(native_handles[53] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[53], CP_UI_PROP_TEXT, state_queueArtist0));
+        UI_OK(ui->set_string(native_handles[52], CP_UI_PROP_TEXT, text_buffer));
     }
     if(native_handles[55] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[55], CP_UI_PROP_TEXT, state_queueTitle1));
+        UI_OK(ui->set_string(native_handles[55], CP_UI_PROP_TEXT, state_queueTitle0));
     }
     if(native_handles[56] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[56], CP_UI_PROP_TEXT, state_queueArtist1));
+        UI_OK(ui->set_string(native_handles[56], CP_UI_PROP_TEXT, state_queueArtist0));
     }
     if(native_handles[58] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[58], CP_UI_PROP_TEXT, state_queueTitle2));
+        UI_OK(ui->set_string(native_handles[58], CP_UI_PROP_TEXT, ((state_queueInfo[1] > 0) ? state_queueTitle1 : "NO SIGNAL / QUEUE EMPTY")));
     }
     if(native_handles[59] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[59], CP_UI_PROP_TEXT, state_queueArtist2));
+        UI_OK(ui->set_string(native_handles[59], CP_UI_PROP_TEXT, state_queueArtist1));
     }
-    if(native_handles[66] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_mode == 0) {
-            UI_OK(ui->set_color(native_handles[66], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[66], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[66], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-        } else {
-            UI_OK(ui->set_color(native_handles[66], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(native_handles[66], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[66], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-        }
+    if(native_handles[61] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_string(native_handles[61], CP_UI_PROP_TEXT, state_queueTitle2));
     }
-    if(native_handles[67] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_mode == 0) {
-            UI_OK(ui->set_color(native_handles[67], CP_UI_PROP_TEXT_COLOR, 0x171816u));
-        } else {
-            UI_OK(ui->set_color(native_handles[67], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-        }
-    }
-    if(native_handles[68] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_mode == 1) {
-            UI_OK(ui->set_color(native_handles[68], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[68], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[68], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-        } else {
-            UI_OK(ui->set_color(native_handles[68], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(native_handles[68], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[68], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-        }
+    if(native_handles[62] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_string(native_handles[62], CP_UI_PROP_TEXT, state_queueArtist2));
     }
     if(native_handles[69] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_mode == 1) {
-            UI_OK(ui->set_color(native_handles[69], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        if(state_mode == 0) {
+            UI_OK(ui->set_color(native_handles[69], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(native_handles[69], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[69], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
         } else {
-            UI_OK(ui->set_color(native_handles[69], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_color(native_handles[69], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(native_handles[69], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[69], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
         }
     }
     if(native_handles[70] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_mode == 2) {
-            UI_OK(ui->set_color(native_handles[70], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[70], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[70], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+        if(state_mode == 0) {
+            UI_OK(ui->set_color(native_handles[70], CP_UI_PROP_TEXT_COLOR, 0x171816u));
         } else {
-            UI_OK(ui->set_color(native_handles[70], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(native_handles[70], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[70], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_color(native_handles[70], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
         }
     }
     if(native_handles[71] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_mode == 2) {
-            UI_OK(ui->set_color(native_handles[71], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        if(state_mode == 1) {
+            UI_OK(ui->set_color(native_handles[71], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(native_handles[71], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[71], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
         } else {
-            UI_OK(ui->set_color(native_handles[71], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_color(native_handles[71], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(native_handles[71], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[71], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
         }
     }
     if(native_handles[72] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_mode == 3) {
-            UI_OK(ui->set_color(native_handles[72], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(native_handles[72], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[72], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+        if(state_mode == 1) {
+            UI_OK(ui->set_color(native_handles[72], CP_UI_PROP_TEXT_COLOR, 0x171816u));
         } else {
-            UI_OK(ui->set_color(native_handles[72], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(native_handles[72], CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(native_handles[72], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_color(native_handles[72], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
         }
     }
     if(native_handles[73] != CP_NATIVE_UI_HANDLE_NONE) {
-        if(state_mode == 3) {
-            UI_OK(ui->set_color(native_handles[73], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        if(state_mode == 2) {
+            UI_OK(ui->set_color(native_handles[73], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(native_handles[73], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[73], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
         } else {
-            UI_OK(ui->set_color(native_handles[73], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_color(native_handles[73], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(native_handles[73], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[73], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
         }
     }
-    if(native_handles[80] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[80], CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricPrevious : "")));
+    if(native_handles[74] != CP_NATIVE_UI_HANDLE_NONE) {
+        if(state_mode == 2) {
+            UI_OK(ui->set_color(native_handles[74], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        } else {
+            UI_OK(ui->set_color(native_handles[74], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+        }
     }
-    if(native_handles[81] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[81], CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricCurrent : "No lyrics available")));
+    if(native_handles[75] != CP_NATIVE_UI_HANDLE_NONE) {
+        if(state_mode == 3) {
+            UI_OK(ui->set_color(native_handles[75], CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(native_handles[75], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[75], CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+        } else {
+            UI_OK(ui->set_color(native_handles[75], CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(native_handles[75], CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(native_handles[75], CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+        }
     }
-    if(native_handles[82] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_string(native_handles[82], CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricNext : "")));
+    if(native_handles[76] != CP_NATIVE_UI_HANDLE_NONE) {
+        if(state_mode == 3) {
+            UI_OK(ui->set_color(native_handles[76], CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        } else {
+            UI_OK(ui->set_color(native_handles[76], CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+        }
     }
-    if(native_handles[91] != CP_NATIVE_UI_HANDLE_NONE) {
-        UI_OK(ui->set_i32(native_handles[91], CP_UI_PROP_WIDTH, ((cp_helper_progressWidth(state_seekDraft, state_info[2]) * 198) / 228)));
+    if(native_handles[85] != CP_NATIVE_UI_HANDLE_NONE) {
+        UI_OK(ui->set_i32(native_handles[85], CP_UI_PROP_WIDTH, ((cp_helper_progressWidth(state_seekDraft, state_info[2]) * 198) / 228)));
     }
-    if(native_handles[92] != CP_NATIVE_UI_HANDLE_NONE) {
+    if(native_handles[86] != CP_NATIVE_UI_HANDLE_NONE) {
         text_cursor = 0;
         text_buffer[0] = '\0';
         cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, (state_seekDraft / 1000));
         cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "s / ");
         cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, (state_info[2] / 1000));
         cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "s");
-        UI_OK(ui->set_string(native_handles[92], CP_UI_PROP_TEXT, text_buffer));
+        UI_OK(ui->set_string(native_handles[86], CP_UI_PROP_TEXT, text_buffer));
     }
     UI_OK(ui->end_update());
     return CP_NATIVE_OK;
@@ -580,6 +562,7 @@ static int cp_render(void)
     (void)cp_string_equal;
     (void)cp_string_assign;
     (void)cp_string_length;
+    (void)cp_string_contains;
     uint32_t structure_key = cp_structure_key();
     size_t index;
     if(native_root != CP_NATIVE_UI_HANDLE_NONE &&
@@ -589,7 +572,7 @@ static int cp_render(void)
         UI_OK(ui->remove(native_root));
         native_root = CP_NATIVE_UI_HANDLE_NONE;
     }
-    for(index = 0; index < 95; ++index)
+    for(index = 0; index < 89; ++index)
         native_handles[index] = CP_NATIVE_UI_HANDLE_NONE;
     UI_OK(ui->begin_update());
     cp_ui_handle_t h0 = ui->create(CP_UI_OBJECT_SCREEN);
@@ -612,1039 +595,947 @@ static int cp_render(void)
     UI_OK(ui->set_i32(h1, CP_UI_PROP_WIDTH, 320));
     UI_OK(ui->set_i32(h1, CP_UI_PROP_HEIGHT, 240));
     UI_OK(ui->set_string(h1, CP_UI_PROP_IMAGE_SOURCE, "signal-console"));
-    cp_ui_handle_t h2 = ui->create(CP_UI_OBJECT_NOW_PLAYING_ARTWORK);
+    cp_ui_handle_t h2 = ui->create(CP_UI_OBJECT_VIEW);
     if(h2 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[2] = h2;
     UI_OK(ui->insert(h2, h0, 0));
+    UI_OK(ui->set_i32(h2, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+    UI_OK(ui->set_i32(h2, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
     UI_OK(ui->set_i32(h2, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h2, CP_UI_PROP_X, 26));
-    UI_OK(ui->set_i32(h2, CP_UI_PROP_Y, 40));
-    UI_OK(ui->set_i32(h2, CP_UI_PROP_WIDTH, 89));
-    UI_OK(ui->set_i32(h2, CP_UI_PROP_HEIGHT, 89));
+    UI_OK(ui->set_i32(h2, CP_UI_PROP_X, 18));
+    UI_OK(ui->set_i32(h2, CP_UI_PROP_Y, 6));
+    UI_OK(ui->set_i32(h2, CP_UI_PROP_WIDTH, 284));
+    UI_OK(ui->set_i32(h2, CP_UI_PROP_HEIGHT, 16));
+    UI_OK(ui->set_color(h2, CP_UI_PROP_BACKGROUND_COLOR, 0xd4d0c8u));
+    UI_OK(ui->set_i32(h2, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+    UI_OK(ui->set_color(h2, CP_UI_PROP_BORDER_COLOR, 0x878780u));
+    UI_OK(ui->set_i32(h2, CP_UI_PROP_BORDER_WIDTH, 1));
     UI_OK(ui->set_i32(h2, CP_UI_PROP_RADIUS, 3));
-    UI_OK(ui->set_i32(h2, CP_UI_PROP_VARIANT, 2));
-    cp_ui_handle_t h3 = ui->create(CP_UI_OBJECT_VIEW);
+    UI_OK(ui->set_i32(h2, CP_UI_PROP_OPACITY, 245));
+    cp_ui_handle_t h3 = ui->create(CP_UI_OBJECT_TEXT);
     if(h3 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[3] = h3;
     UI_OK(ui->insert(h3, h0, 0));
-    UI_OK(ui->set_i32(h3, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-    UI_OK(ui->set_i32(h3, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+    UI_OK(ui->set_i32(h3, CP_UI_PROP_FONT_SIZE, 11));
+    UI_OK(ui->set_i32(h3, CP_UI_PROP_FONT_WEIGHT, 400));
+    UI_OK(ui->set_i32(h3, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+    UI_OK(ui->set_i32(h3, CP_UI_PROP_LINE_HEIGHT, 0));
+    UI_OK(ui->set_i32(h3, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
     UI_OK(ui->set_i32(h3, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h3, CP_UI_PROP_X, 24));
-    UI_OK(ui->set_i32(h3, CP_UI_PROP_Y, 38));
-    UI_OK(ui->set_i32(h3, CP_UI_PROP_WIDTH, 93));
-    UI_OK(ui->set_i32(h3, CP_UI_PROP_HEIGHT, 93));
-    UI_OK(ui->set_color(h3, CP_UI_PROP_BORDER_COLOR, 0x8b8a85u));
-    UI_OK(ui->set_i32(h3, CP_UI_PROP_BORDER_WIDTH, 1));
-    UI_OK(ui->set_i32(h3, CP_UI_PROP_RADIUS, 4));
-    UI_OK(ui->set_i32(h3, CP_UI_PROP_OPACITY, 179));
+    UI_OK(ui->set_i32(h3, CP_UI_PROP_X, 27));
+    UI_OK(ui->set_i32(h3, CP_UI_PROP_Y, 8));
+    UI_OK(ui->set_i32(h3, CP_UI_PROP_WIDTH, 52));
+    UI_OK(ui->set_i32(h3, CP_UI_PROP_HEIGHT, 13));
+    UI_OK(ui->set_color(h3, CP_UI_PROP_TEXT_COLOR, 0x555651u));
+    text_cursor = 0;
+    text_buffer[0] = '\0';
+    cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_system[0]);
+    cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, ":");
+    cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_system[1]);
+    cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_system[2]);
+    UI_OK(ui->set_string(h3, CP_UI_PROP_TEXT, text_buffer));
     cp_ui_handle_t h4 = ui->create(CP_UI_OBJECT_TEXT);
     if(h4 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[4] = h4;
     UI_OK(ui->insert(h4, h0, 0));
-    UI_OK(ui->set_i32(h4, CP_UI_PROP_FONT_SIZE, 6));
+    UI_OK(ui->set_i32(h4, CP_UI_PROP_FONT_SIZE, 11));
     UI_OK(ui->set_i32(h4, CP_UI_PROP_FONT_WEIGHT, 400));
     UI_OK(ui->set_i32(h4, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
     UI_OK(ui->set_i32(h4, CP_UI_PROP_LINE_HEIGHT, 0));
     UI_OK(ui->set_i32(h4, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
     UI_OK(ui->set_i32(h4, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h4, CP_UI_PROP_X, 27));
-    UI_OK(ui->set_i32(h4, CP_UI_PROP_Y, 136));
-    UI_OK(ui->set_i32(h4, CP_UI_PROP_WIDTH, 88));
-    UI_OK(ui->set_i32(h4, CP_UI_PROP_HEIGHT, 9));
-    UI_OK(ui->set_color(h4, CP_UI_PROP_TEXT_COLOR, 0xa9aaa7u));
+    UI_OK(ui->set_i32(h4, CP_UI_PROP_X, 112));
+    UI_OK(ui->set_i32(h4, CP_UI_PROP_Y, 8));
+    UI_OK(ui->set_i32(h4, CP_UI_PROP_WIDTH, 96));
+    UI_OK(ui->set_i32(h4, CP_UI_PROP_HEIGHT, 13));
+    UI_OK(ui->set_color(h4, CP_UI_PROP_TEXT_COLOR, 0xd94d0bu));
     UI_OK(ui->set_i32(h4, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-    UI_OK(ui->set_string(h4, CP_UI_PROP_TEXT, "SIGNAL / SOURCE"));
+    UI_OK(ui->set_string(h4, CP_UI_PROP_TEXT, ((state_info[3] == 2) ? "PLAYING" : ((state_info[3] == 1) ? "PAUSED" : "STOPPED"))));
     cp_ui_handle_t h5 = ui->create(CP_UI_OBJECT_TEXT);
     if(h5 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[5] = h5;
     UI_OK(ui->insert(h5, h0, 0));
-    UI_OK(ui->set_i32(h5, CP_UI_PROP_FONT_SIZE, 7));
+    UI_OK(ui->set_i32(h5, CP_UI_PROP_FONT_SIZE, 11));
     UI_OK(ui->set_i32(h5, CP_UI_PROP_FONT_WEIGHT, 400));
     UI_OK(ui->set_i32(h5, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
     UI_OK(ui->set_i32(h5, CP_UI_PROP_LINE_HEIGHT, 0));
-    UI_OK(ui->set_i32(h5, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
+    UI_OK(ui->set_i32(h5, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
     UI_OK(ui->set_i32(h5, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h5, CP_UI_PROP_X, 136));
-    UI_OK(ui->set_i32(h5, CP_UI_PROP_Y, 31));
-    UI_OK(ui->set_i32(h5, CP_UI_PROP_WIDTH, 104));
-    UI_OK(ui->set_i32(h5, CP_UI_PROP_HEIGHT, 10));
+    UI_OK(ui->set_i32(h5, CP_UI_PROP_X, 239));
+    UI_OK(ui->set_i32(h5, CP_UI_PROP_Y, 10));
+    UI_OK(ui->set_i32(h5, CP_UI_PROP_WIDTH, 54));
+    UI_OK(ui->set_i32(h5, CP_UI_PROP_HEIGHT, 8));
     UI_OK(ui->set_color(h5, CP_UI_PROP_TEXT_COLOR, 0x555651u));
-    UI_OK(ui->set_string(h5, CP_UI_PROP_TEXT, "SIGNAL ONE"));
-    cp_ui_handle_t h6 = ui->create(CP_UI_OBJECT_VIEW);
+    UI_OK(ui->set_i32(h5, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_RIGHT));
+    text_cursor = 0;
+    text_buffer[0] = '\0';
+    cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, ((state_system[4] == 1) ? "CHG" : "BAT"));
+    cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, " ");
+    cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_system[3]);
+    cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "%");
+    UI_OK(ui->set_string(h5, CP_UI_PROP_TEXT, text_buffer));
+    cp_ui_handle_t h6 = ui->create(CP_UI_OBJECT_NOW_PLAYING_ARTWORK);
     if(h6 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[6] = h6;
     UI_OK(ui->insert(h6, h0, 0));
-    UI_OK(ui->set_i32(h6, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-    UI_OK(ui->set_i32(h6, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
     UI_OK(ui->set_i32(h6, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h6, CP_UI_PROP_X, 138));
-    UI_OK(ui->set_i32(h6, CP_UI_PROP_Y, 50));
-    UI_OK(ui->set_i32(h6, CP_UI_PROP_WIDTH, 154));
-    UI_OK(ui->set_i32(h6, CP_UI_PROP_HEIGHT, 94));
-    cp_ui_handle_t h7 = ui->create(CP_UI_OBJECT_TEXT);
+    UI_OK(ui->set_i32(h6, CP_UI_PROP_X, 26));
+    UI_OK(ui->set_i32(h6, CP_UI_PROP_Y, 40));
+    UI_OK(ui->set_i32(h6, CP_UI_PROP_WIDTH, 89));
+    UI_OK(ui->set_i32(h6, CP_UI_PROP_HEIGHT, 89));
+    UI_OK(ui->set_i32(h6, CP_UI_PROP_RADIUS, 3));
+    UI_OK(ui->set_i32(h6, CP_UI_PROP_VARIANT, 2));
+    cp_ui_handle_t h7 = ui->create(CP_UI_OBJECT_VIEW);
     if(h7 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[7] = h7;
-    UI_OK(ui->insert(h7, h6, 0));
-    UI_OK(ui->set_i32(h7, CP_UI_PROP_FONT_SIZE, 6));
-    UI_OK(ui->set_i32(h7, CP_UI_PROP_FONT_WEIGHT, 400));
-    UI_OK(ui->set_i32(h7, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-    UI_OK(ui->set_i32(h7, CP_UI_PROP_LINE_HEIGHT, 0));
-    UI_OK(ui->set_i32(h7, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+    UI_OK(ui->insert(h7, h0, 0));
+    UI_OK(ui->set_i32(h7, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+    UI_OK(ui->set_i32(h7, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
     UI_OK(ui->set_i32(h7, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h7, CP_UI_PROP_X, 0));
-    UI_OK(ui->set_i32(h7, CP_UI_PROP_Y, 0));
-    UI_OK(ui->set_i32(h7, CP_UI_PROP_WIDTH, 94));
-    UI_OK(ui->set_i32(h7, CP_UI_PROP_HEIGHT, 10));
-    UI_OK(ui->set_color(h7, CP_UI_PROP_TEXT_COLOR, 0x9b9e98u));
-    UI_OK(ui->set_string(h7, CP_UI_PROP_TEXT, "NOW PLAYING"));
-    cp_ui_handle_t h8 = ui->create(CP_UI_OBJECT_VIEW);
+    UI_OK(ui->set_i32(h7, CP_UI_PROP_X, 24));
+    UI_OK(ui->set_i32(h7, CP_UI_PROP_Y, 38));
+    UI_OK(ui->set_i32(h7, CP_UI_PROP_WIDTH, 93));
+    UI_OK(ui->set_i32(h7, CP_UI_PROP_HEIGHT, 93));
+    UI_OK(ui->set_color(h7, CP_UI_PROP_BORDER_COLOR, 0x8b8a85u));
+    UI_OK(ui->set_i32(h7, CP_UI_PROP_BORDER_WIDTH, 1));
+    UI_OK(ui->set_i32(h7, CP_UI_PROP_RADIUS, 4));
+    UI_OK(ui->set_i32(h7, CP_UI_PROP_OPACITY, 179));
+    cp_ui_handle_t h8 = ui->create(CP_UI_OBJECT_TEXT);
     if(h8 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[8] = h8;
-    UI_OK(ui->insert(h8, h6, 0));
-    UI_OK(ui->set_i32(h8, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-    UI_OK(ui->set_i32(h8, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+    UI_OK(ui->insert(h8, h0, 0));
+    UI_OK(ui->set_i32(h8, CP_UI_PROP_FONT_SIZE, 11));
+    UI_OK(ui->set_i32(h8, CP_UI_PROP_FONT_WEIGHT, 400));
+    UI_OK(ui->set_i32(h8, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+    UI_OK(ui->set_i32(h8, CP_UI_PROP_LINE_HEIGHT, 0));
+    UI_OK(ui->set_i32(h8, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
     UI_OK(ui->set_i32(h8, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h8, CP_UI_PROP_X, 142));
-    UI_OK(ui->set_i32(h8, CP_UI_PROP_Y, 1));
-    UI_OK(ui->set_i32(h8, CP_UI_PROP_WIDTH, 5));
-    UI_OK(ui->set_i32(h8, CP_UI_PROP_HEIGHT, 5));
-    UI_OK(ui->set_color(h8, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-    UI_OK(ui->set_i32(h8, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-    UI_OK(ui->set_i32(h8, CP_UI_PROP_RADIUS, 3));
+    UI_OK(ui->set_i32(h8, CP_UI_PROP_X, 27));
+    UI_OK(ui->set_i32(h8, CP_UI_PROP_Y, 136));
+    UI_OK(ui->set_i32(h8, CP_UI_PROP_WIDTH, 88));
+    UI_OK(ui->set_i32(h8, CP_UI_PROP_HEIGHT, 9));
+    UI_OK(ui->set_color(h8, CP_UI_PROP_TEXT_COLOR, 0xa9aaa7u));
+    UI_OK(ui->set_i32(h8, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+    UI_OK(ui->set_string(h8, CP_UI_PROP_TEXT, "SIGNAL / SOURCE"));
     cp_ui_handle_t h9 = ui->create(CP_UI_OBJECT_TEXT);
     if(h9 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[9] = h9;
-    UI_OK(ui->insert(h9, h6, 0));
-    UI_OK(ui->set_i32(h9, CP_UI_PROP_NUMBER_OF_LINES, 1));
-    UI_OK(ui->set_i32(h9, CP_UI_PROP_MARQUEE, 1));
-    UI_OK(ui->set_i32(h9, CP_UI_PROP_FONT_SIZE, 14));
-    UI_OK(ui->set_i32(h9, CP_UI_PROP_FONT_WEIGHT, 700));
+    UI_OK(ui->insert(h9, h0, 0));
+    UI_OK(ui->set_i32(h9, CP_UI_PROP_FONT_SIZE, 11));
+    UI_OK(ui->set_i32(h9, CP_UI_PROP_FONT_WEIGHT, 400));
     UI_OK(ui->set_i32(h9, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
     UI_OK(ui->set_i32(h9, CP_UI_PROP_LINE_HEIGHT, 0));
     UI_OK(ui->set_i32(h9, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
     UI_OK(ui->set_i32(h9, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h9, CP_UI_PROP_X, 0));
-    UI_OK(ui->set_i32(h9, CP_UI_PROP_Y, 14));
-    UI_OK(ui->set_i32(h9, CP_UI_PROP_WIDTH, 148));
-    UI_OK(ui->set_i32(h9, CP_UI_PROP_HEIGHT, 17));
-    UI_OK(ui->set_color(h9, CP_UI_PROP_TEXT_COLOR, 0xf2f0e9u));
-    UI_OK(ui->set_string(h9, CP_UI_PROP_TEXT, (cp_string_equal(state_title, "") ? "No Track" : state_title)));
-    cp_ui_handle_t h10 = ui->create(CP_UI_OBJECT_TEXT);
+    UI_OK(ui->set_i32(h9, CP_UI_PROP_X, 136));
+    UI_OK(ui->set_i32(h9, CP_UI_PROP_Y, 31));
+    UI_OK(ui->set_i32(h9, CP_UI_PROP_WIDTH, 104));
+    UI_OK(ui->set_i32(h9, CP_UI_PROP_HEIGHT, 10));
+    UI_OK(ui->set_color(h9, CP_UI_PROP_TEXT_COLOR, 0x555651u));
+    UI_OK(ui->set_string(h9, CP_UI_PROP_TEXT, "SIGNAL ONE"));
+    cp_ui_handle_t h10 = ui->create(CP_UI_OBJECT_VIEW);
     if(h10 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[10] = h10;
-    UI_OK(ui->insert(h10, h6, 0));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_NUMBER_OF_LINES, 1));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_MARQUEE, 1));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_FONT_SIZE, 11));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_FONT_WEIGHT, 400));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_LINE_HEIGHT, 0));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+    UI_OK(ui->insert(h10, h0, 0));
+    UI_OK(ui->set_i32(h10, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+    UI_OK(ui->set_i32(h10, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
     UI_OK(ui->set_i32(h10, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_X, 0));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_Y, 36));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_WIDTH, 148));
-    UI_OK(ui->set_i32(h10, CP_UI_PROP_HEIGHT, 14));
-    UI_OK(ui->set_color(h10, CP_UI_PROP_TEXT_COLOR, 0xd0d1ccu));
-    UI_OK(ui->set_string(h10, CP_UI_PROP_TEXT, (cp_string_equal(state_artist, "") ? "Unknown Artist" : state_artist)));
+    UI_OK(ui->set_i32(h10, CP_UI_PROP_X, 138));
+    UI_OK(ui->set_i32(h10, CP_UI_PROP_Y, 50));
+    UI_OK(ui->set_i32(h10, CP_UI_PROP_WIDTH, 154));
+    UI_OK(ui->set_i32(h10, CP_UI_PROP_HEIGHT, 94));
     cp_ui_handle_t h11 = ui->create(CP_UI_OBJECT_TEXT);
     if(h11 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[11] = h11;
-    UI_OK(ui->insert(h11, h6, 0));
-    UI_OK(ui->set_i32(h11, CP_UI_PROP_NUMBER_OF_LINES, 1));
-    UI_OK(ui->set_i32(h11, CP_UI_PROP_MARQUEE, 1));
-    UI_OK(ui->set_i32(h11, CP_UI_PROP_FONT_SIZE, 9));
+    UI_OK(ui->insert(h11, h10, 0));
+    UI_OK(ui->set_i32(h11, CP_UI_PROP_FONT_SIZE, 11));
     UI_OK(ui->set_i32(h11, CP_UI_PROP_FONT_WEIGHT, 400));
     UI_OK(ui->set_i32(h11, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
     UI_OK(ui->set_i32(h11, CP_UI_PROP_LINE_HEIGHT, 0));
     UI_OK(ui->set_i32(h11, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
     UI_OK(ui->set_i32(h11, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
     UI_OK(ui->set_i32(h11, CP_UI_PROP_X, 0));
-    UI_OK(ui->set_i32(h11, CP_UI_PROP_Y, 54));
-    UI_OK(ui->set_i32(h11, CP_UI_PROP_WIDTH, 148));
-    UI_OK(ui->set_i32(h11, CP_UI_PROP_HEIGHT, 12));
-    UI_OK(ui->set_color(h11, CP_UI_PROP_TEXT_COLOR, 0x92958fu));
-    UI_OK(ui->set_string(h11, CP_UI_PROP_TEXT, (cp_string_equal(state_album, "") ? "Local Library" : state_album)));
+    UI_OK(ui->set_i32(h11, CP_UI_PROP_Y, 0));
+    UI_OK(ui->set_i32(h11, CP_UI_PROP_WIDTH, 94));
+    UI_OK(ui->set_i32(h11, CP_UI_PROP_HEIGHT, 10));
+    UI_OK(ui->set_color(h11, CP_UI_PROP_TEXT_COLOR, 0x9b9e98u));
+    UI_OK(ui->set_string(h11, CP_UI_PROP_TEXT, "NOW PLAYING"));
     cp_ui_handle_t h12 = ui->create(CP_UI_OBJECT_VIEW);
     if(h12 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[12] = h12;
-    UI_OK(ui->insert(h12, h6, 0));
+    UI_OK(ui->insert(h12, h10, 0));
     UI_OK(ui->set_i32(h12, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
     UI_OK(ui->set_i32(h12, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
     UI_OK(ui->set_i32(h12, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h12, CP_UI_PROP_X, 0));
-    UI_OK(ui->set_i32(h12, CP_UI_PROP_Y, 71));
-    UI_OK(ui->set_i32(h12, CP_UI_PROP_WIDTH, 148));
-    UI_OK(ui->set_i32(h12, CP_UI_PROP_HEIGHT, 1));
-    UI_OK(ui->set_color(h12, CP_UI_PROP_BACKGROUND_COLOR, 0x595b58u));
+    UI_OK(ui->set_i32(h12, CP_UI_PROP_X, 142));
+    UI_OK(ui->set_i32(h12, CP_UI_PROP_Y, 1));
+    UI_OK(ui->set_i32(h12, CP_UI_PROP_WIDTH, 5));
+    UI_OK(ui->set_i32(h12, CP_UI_PROP_HEIGHT, 5));
+    UI_OK(ui->set_color(h12, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
     UI_OK(ui->set_i32(h12, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+    UI_OK(ui->set_i32(h12, CP_UI_PROP_RADIUS, 3));
     cp_ui_handle_t h13 = ui->create(CP_UI_OBJECT_TEXT);
     if(h13 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[13] = h13;
-    UI_OK(ui->insert(h13, h6, 0));
-    UI_OK(ui->set_i32(h13, CP_UI_PROP_FONT_SIZE, 7));
-    UI_OK(ui->set_i32(h13, CP_UI_PROP_FONT_WEIGHT, 400));
+    UI_OK(ui->insert(h13, h10, 0));
+    UI_OK(ui->set_i32(h13, CP_UI_PROP_NUMBER_OF_LINES, 1));
+    UI_OK(ui->set_i32(h13, CP_UI_PROP_MARQUEE, 1));
+    UI_OK(ui->set_i32(h13, CP_UI_PROP_FONT_SIZE, 14));
+    UI_OK(ui->set_i32(h13, CP_UI_PROP_FONT_WEIGHT, 700));
     UI_OK(ui->set_i32(h13, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
     UI_OK(ui->set_i32(h13, CP_UI_PROP_LINE_HEIGHT, 0));
-    UI_OK(ui->set_i32(h13, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+    UI_OK(ui->set_i32(h13, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
     UI_OK(ui->set_i32(h13, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
     UI_OK(ui->set_i32(h13, CP_UI_PROP_X, 0));
-    UI_OK(ui->set_i32(h13, CP_UI_PROP_Y, 78));
-    UI_OK(ui->set_i32(h13, CP_UI_PROP_WIDTH, 34));
-    UI_OK(ui->set_i32(h13, CP_UI_PROP_HEIGHT, 9));
-    UI_OK(ui->set_color(h13, CP_UI_PROP_TEXT_COLOR, 0xf36b21u));
-    UI_OK(ui->set_string(h13, CP_UI_PROP_TEXT, ((state_info[3] == 2) ? "PLAY" : ((state_info[3] == 1) ? "PAUSE" : "STOP"))));
+    UI_OK(ui->set_i32(h13, CP_UI_PROP_Y, 14));
+    UI_OK(ui->set_i32(h13, CP_UI_PROP_WIDTH, 148));
+    UI_OK(ui->set_i32(h13, CP_UI_PROP_HEIGHT, 17));
+    UI_OK(ui->set_color(h13, CP_UI_PROP_TEXT_COLOR, 0xf2f0e9u));
+    UI_OK(ui->set_string(h13, CP_UI_PROP_TEXT, (cp_string_equal(state_title, "") ? "No Track" : state_title)));
     cp_ui_handle_t h14 = ui->create(CP_UI_OBJECT_TEXT);
     if(h14 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[14] = h14;
-    UI_OK(ui->insert(h14, h6, 0));
-    UI_OK(ui->set_i32(h14, CP_UI_PROP_FONT_SIZE, 7));
+    UI_OK(ui->insert(h14, h10, 0));
+    UI_OK(ui->set_i32(h14, CP_UI_PROP_NUMBER_OF_LINES, 1));
+    UI_OK(ui->set_i32(h14, CP_UI_PROP_MARQUEE, 1));
+    UI_OK(ui->set_i32(h14, CP_UI_PROP_FONT_SIZE, 11));
     UI_OK(ui->set_i32(h14, CP_UI_PROP_FONT_WEIGHT, 400));
     UI_OK(ui->set_i32(h14, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
     UI_OK(ui->set_i32(h14, CP_UI_PROP_LINE_HEIGHT, 0));
     UI_OK(ui->set_i32(h14, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
     UI_OK(ui->set_i32(h14, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h14, CP_UI_PROP_X, 39));
-    UI_OK(ui->set_i32(h14, CP_UI_PROP_Y, 78));
-    UI_OK(ui->set_i32(h14, CP_UI_PROP_WIDTH, 34));
-    UI_OK(ui->set_i32(h14, CP_UI_PROP_HEIGHT, 9));
-    UI_OK(ui->set_color(h14, CP_UI_PROP_TEXT_COLOR, 0xbfc1bcu));
-    UI_OK(ui->set_string(h14, CP_UI_PROP_TEXT, ((state_info[6] == 1) ? "SHUF" : ((state_info[5] == 2) ? "RPT1" : ((state_info[5] == 1) ? "RPTA" : "NORM")))));
+    UI_OK(ui->set_i32(h14, CP_UI_PROP_X, 0));
+    UI_OK(ui->set_i32(h14, CP_UI_PROP_Y, 36));
+    UI_OK(ui->set_i32(h14, CP_UI_PROP_WIDTH, 148));
+    UI_OK(ui->set_i32(h14, CP_UI_PROP_HEIGHT, 14));
+    UI_OK(ui->set_color(h14, CP_UI_PROP_TEXT_COLOR, 0xd0d1ccu));
+    UI_OK(ui->set_string(h14, CP_UI_PROP_TEXT, (cp_string_equal(state_artist, "") ? "Unknown Artist" : state_artist)));
     cp_ui_handle_t h15 = ui->create(CP_UI_OBJECT_TEXT);
     if(h15 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[15] = h15;
-    UI_OK(ui->insert(h15, h6, 0));
-    UI_OK(ui->set_i32(h15, CP_UI_PROP_FONT_SIZE, 7));
+    UI_OK(ui->insert(h15, h10, 0));
+    UI_OK(ui->set_i32(h15, CP_UI_PROP_NUMBER_OF_LINES, 1));
+    UI_OK(ui->set_i32(h15, CP_UI_PROP_MARQUEE, 1));
+    UI_OK(ui->set_i32(h15, CP_UI_PROP_FONT_SIZE, 11));
     UI_OK(ui->set_i32(h15, CP_UI_PROP_FONT_WEIGHT, 400));
     UI_OK(ui->set_i32(h15, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
     UI_OK(ui->set_i32(h15, CP_UI_PROP_LINE_HEIGHT, 0));
     UI_OK(ui->set_i32(h15, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
     UI_OK(ui->set_i32(h15, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h15, CP_UI_PROP_X, 78));
-    UI_OK(ui->set_i32(h15, CP_UI_PROP_Y, 78));
-    UI_OK(ui->set_i32(h15, CP_UI_PROP_WIDTH, 24));
-    UI_OK(ui->set_i32(h15, CP_UI_PROP_HEIGHT, 9));
-    UI_OK(ui->set_color(h15, CP_UI_PROP_TEXT_COLOR, 0xbfc1bcu));
-    UI_OK(ui->set_string(h15, CP_UI_PROP_TEXT, ((state_info[7] == 1) ? "FAV" : "---")));
-    cp_ui_handle_t h16 = ui->create(CP_UI_OBJECT_TEXT);
+    UI_OK(ui->set_i32(h15, CP_UI_PROP_X, 0));
+    UI_OK(ui->set_i32(h15, CP_UI_PROP_Y, 54));
+    UI_OK(ui->set_i32(h15, CP_UI_PROP_WIDTH, 148));
+    UI_OK(ui->set_i32(h15, CP_UI_PROP_HEIGHT, 13));
+    UI_OK(ui->set_color(h15, CP_UI_PROP_TEXT_COLOR, 0xb8bbb4u));
+    UI_OK(ui->set_string(h15, CP_UI_PROP_TEXT, (cp_string_equal(state_album, "") ? "Local Library" : state_album)));
+    cp_ui_handle_t h16 = ui->create(CP_UI_OBJECT_VIEW);
     if(h16 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[16] = h16;
-    UI_OK(ui->insert(h16, h6, 0));
-    UI_OK(ui->set_i32(h16, CP_UI_PROP_FONT_SIZE, 7));
-    UI_OK(ui->set_i32(h16, CP_UI_PROP_FONT_WEIGHT, 400));
-    UI_OK(ui->set_i32(h16, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-    UI_OK(ui->set_i32(h16, CP_UI_PROP_LINE_HEIGHT, 0));
-    UI_OK(ui->set_i32(h16, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+    UI_OK(ui->insert(h16, h10, 0));
+    UI_OK(ui->set_i32(h16, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+    UI_OK(ui->set_i32(h16, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
     UI_OK(ui->set_i32(h16, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h16, CP_UI_PROP_X, 112));
-    UI_OK(ui->set_i32(h16, CP_UI_PROP_Y, 78));
-    UI_OK(ui->set_i32(h16, CP_UI_PROP_WIDTH, 36));
-    UI_OK(ui->set_i32(h16, CP_UI_PROP_HEIGHT, 9));
-    UI_OK(ui->set_color(h16, CP_UI_PROP_TEXT_COLOR, 0xbfc1bcu));
-    UI_OK(ui->set_i32(h16, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_RIGHT));
-    text_cursor = 0;
-    text_buffer[0] = '\0';
-    cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "V ");
-    cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_info[4]);
-    UI_OK(ui->set_string(h16, CP_UI_PROP_TEXT, text_buffer));
-    cp_ui_handle_t h17 = ui->create(CP_UI_OBJECT_VIEW);
+    UI_OK(ui->set_i32(h16, CP_UI_PROP_X, 0));
+    UI_OK(ui->set_i32(h16, CP_UI_PROP_Y, 71));
+    UI_OK(ui->set_i32(h16, CP_UI_PROP_WIDTH, 148));
+    UI_OK(ui->set_i32(h16, CP_UI_PROP_HEIGHT, 1));
+    UI_OK(ui->set_color(h16, CP_UI_PROP_BACKGROUND_COLOR, 0x595b58u));
+    UI_OK(ui->set_i32(h16, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+    cp_ui_handle_t h17 = ui->create(CP_UI_OBJECT_TEXT);
     if(h17 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[17] = h17;
-    UI_OK(ui->insert(h17, h0, 0));
-    UI_OK(ui->set_i32(h17, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-    UI_OK(ui->set_i32(h17, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+    UI_OK(ui->insert(h17, h10, 0));
+    UI_OK(ui->set_i32(h17, CP_UI_PROP_FONT_SIZE, 11));
+    UI_OK(ui->set_i32(h17, CP_UI_PROP_FONT_WEIGHT, 400));
+    UI_OK(ui->set_i32(h17, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+    UI_OK(ui->set_i32(h17, CP_UI_PROP_LINE_HEIGHT, 0));
+    UI_OK(ui->set_i32(h17, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
     UI_OK(ui->set_i32(h17, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h17, CP_UI_PROP_X, 61));
-    UI_OK(ui->set_i32(h17, CP_UI_PROP_Y, 193));
-    UI_OK(ui->set_i32(h17, CP_UI_PROP_WIDTH, 228));
-    UI_OK(ui->set_i32(h17, CP_UI_PROP_HEIGHT, 3));
-    UI_OK(ui->set_color(h17, CP_UI_PROP_BACKGROUND_COLOR, 0x9f9e97u));
-    UI_OK(ui->set_i32(h17, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-    UI_OK(ui->set_i32(h17, CP_UI_PROP_RADIUS, 2));
-    cp_ui_handle_t h18 = ui->create(CP_UI_OBJECT_VIEW);
+    UI_OK(ui->set_i32(h17, CP_UI_PROP_X, 0));
+    UI_OK(ui->set_i32(h17, CP_UI_PROP_Y, 78));
+    UI_OK(ui->set_i32(h17, CP_UI_PROP_WIDTH, 34));
+    UI_OK(ui->set_i32(h17, CP_UI_PROP_HEIGHT, 9));
+    UI_OK(ui->set_color(h17, CP_UI_PROP_TEXT_COLOR, 0xf36b21u));
+    UI_OK(ui->set_string(h17, CP_UI_PROP_TEXT, ((state_info[3] == 2) ? "PLAY" : ((state_info[3] == 1) ? "PAUSE" : "STOP"))));
+    cp_ui_handle_t h18 = ui->create(CP_UI_OBJECT_TEXT);
     if(h18 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[18] = h18;
-    UI_OK(ui->insert(h18, h17, 0));
-    UI_OK(ui->set_i32(h18, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-    UI_OK(ui->set_i32(h18, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-    UI_OK(ui->set_i32(h18, CP_UI_PROP_HEIGHT, 3));
-    UI_OK(ui->set_color(h18, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-    UI_OK(ui->set_i32(h18, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-    UI_OK(ui->set_i32(h18, CP_UI_PROP_RADIUS, 2));
-    UI_OK(ui->set_i32(h18, CP_UI_PROP_WIDTH, cp_helper_progressWidth(state_info[1], state_info[2])));
-    cp_ui_handle_t h19 = ui->create(CP_UI_OBJECT_VIEW);
+    UI_OK(ui->insert(h18, h10, 0));
+    UI_OK(ui->set_i32(h18, CP_UI_PROP_FONT_SIZE, 11));
+    UI_OK(ui->set_i32(h18, CP_UI_PROP_FONT_WEIGHT, 400));
+    UI_OK(ui->set_i32(h18, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+    UI_OK(ui->set_i32(h18, CP_UI_PROP_LINE_HEIGHT, 0));
+    UI_OK(ui->set_i32(h18, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+    UI_OK(ui->set_i32(h18, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+    UI_OK(ui->set_i32(h18, CP_UI_PROP_X, 39));
+    UI_OK(ui->set_i32(h18, CP_UI_PROP_Y, 78));
+    UI_OK(ui->set_i32(h18, CP_UI_PROP_WIDTH, 34));
+    UI_OK(ui->set_i32(h18, CP_UI_PROP_HEIGHT, 9));
+    UI_OK(ui->set_color(h18, CP_UI_PROP_TEXT_COLOR, 0xbfc1bcu));
+    UI_OK(ui->set_string(h18, CP_UI_PROP_TEXT, ((state_info[6] == 1) ? "×" : ((state_info[5] == 2) ? "1×" : ((state_info[5] == 1) ? "∞" : "→")))));
+    cp_ui_handle_t h19 = ui->create(CP_UI_OBJECT_TEXT);
     if(h19 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[19] = h19;
-    UI_OK(ui->insert(h19, h0, 0));
-    UI_OK(ui->set_i32(h19, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-    UI_OK(ui->set_i32(h19, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_ROW));
+    UI_OK(ui->insert(h19, h10, 0));
+    UI_OK(ui->set_i32(h19, CP_UI_PROP_FONT_SIZE, 11));
+    UI_OK(ui->set_i32(h19, CP_UI_PROP_FONT_WEIGHT, 400));
+    UI_OK(ui->set_i32(h19, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+    UI_OK(ui->set_i32(h19, CP_UI_PROP_LINE_HEIGHT, 0));
+    UI_OK(ui->set_i32(h19, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
     UI_OK(ui->set_i32(h19, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h19, CP_UI_PROP_X, 62));
-    UI_OK(ui->set_i32(h19, CP_UI_PROP_Y, 204));
-    UI_OK(ui->set_i32(h19, CP_UI_PROP_WIDTH, 226));
-    UI_OK(ui->set_i32(h19, CP_UI_PROP_HEIGHT, 4));
-    cp_ui_handle_t h20 = ui->create(CP_UI_OBJECT_VIEW);
+    UI_OK(ui->set_i32(h19, CP_UI_PROP_X, 68));
+    UI_OK(ui->set_i32(h19, CP_UI_PROP_Y, 76));
+    UI_OK(ui->set_i32(h19, CP_UI_PROP_WIDTH, 53));
+    UI_OK(ui->set_i32(h19, CP_UI_PROP_HEIGHT, 13));
+    UI_OK(ui->set_color(h19, CP_UI_PROP_TEXT_COLOR, 0xf2f0e9u));
+    UI_OK(ui->set_i32(h19, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_RIGHT));
+    UI_OK(ui->set_string(h19, CP_UI_PROP_TEXT, ((state_info[7] == 1) ? "BANK ●" : "BANK ○")));
+    cp_ui_handle_t h20 = ui->create(CP_UI_OBJECT_TEXT);
     if(h20 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[20] = h20;
-    UI_OK(ui->insert(h20, h19, 0));
-    if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 25)) {
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h20, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_OPACITY, 255));
-    } else {
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h20, CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h20, CP_UI_PROP_OPACITY, 143));
-    }
+    UI_OK(ui->insert(h20, h10, 0));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_FONT_SIZE, 11));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_FONT_WEIGHT, 400));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_LINE_HEIGHT, 0));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_X, 125));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_Y, 78));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_WIDTH, 23));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_HEIGHT, 11));
+    UI_OK(ui->set_color(h20, CP_UI_PROP_TEXT_COLOR, 0xbfc1bcu));
+    UI_OK(ui->set_i32(h20, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_RIGHT));
+    text_cursor = 0;
+    text_buffer[0] = '\0';
+    cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "L");
+    cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, cp_helper_volumePercent(state_info[4]));
+    UI_OK(ui->set_string(h20, CP_UI_PROP_TEXT, text_buffer));
     cp_ui_handle_t h21 = ui->create(CP_UI_OBJECT_VIEW);
     if(h21 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[21] = h21;
-    UI_OK(ui->insert(h21, h19, 0));
-    if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 55)) {
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h21, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_OPACITY, 255));
-    } else {
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h21, CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h21, CP_UI_PROP_OPACITY, 143));
-    }
+    UI_OK(ui->insert(h21, h0, 0));
+    UI_OK(ui->set_i32(h21, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+    UI_OK(ui->set_i32(h21, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+    UI_OK(ui->set_i32(h21, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+    UI_OK(ui->set_i32(h21, CP_UI_PROP_X, 61));
+    UI_OK(ui->set_i32(h21, CP_UI_PROP_Y, 187));
+    UI_OK(ui->set_i32(h21, CP_UI_PROP_WIDTH, 228));
+    UI_OK(ui->set_i32(h21, CP_UI_PROP_HEIGHT, 3));
+    UI_OK(ui->set_color(h21, CP_UI_PROP_BACKGROUND_COLOR, 0x9f9e97u));
+    UI_OK(ui->set_i32(h21, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+    UI_OK(ui->set_i32(h21, CP_UI_PROP_RADIUS, 2));
     cp_ui_handle_t h22 = ui->create(CP_UI_OBJECT_VIEW);
     if(h22 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[22] = h22;
-    UI_OK(ui->insert(h22, h19, 0));
-    if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 90)) {
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h22, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_OPACITY, 255));
-    } else {
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h22, CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h22, CP_UI_PROP_OPACITY, 143));
-    }
-    cp_ui_handle_t h23 = ui->create(CP_UI_OBJECT_VIEW);
+    UI_OK(ui->insert(h22, h21, 0));
+    UI_OK(ui->set_i32(h22, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+    UI_OK(ui->set_i32(h22, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+    UI_OK(ui->set_i32(h22, CP_UI_PROP_HEIGHT, 3));
+    UI_OK(ui->set_color(h22, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+    UI_OK(ui->set_i32(h22, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+    UI_OK(ui->set_i32(h22, CP_UI_PROP_RADIUS, 2));
+    UI_OK(ui->set_i32(h22, CP_UI_PROP_WIDTH, cp_helper_progressWidth(state_info[1], state_info[2])));
+    cp_ui_handle_t h23 = ui->create(CP_UI_OBJECT_TEXT);
     if(h23 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[23] = h23;
-    UI_OK(ui->insert(h23, h19, 0));
-    if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 140)) {
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h23, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_OPACITY, 255));
-    } else {
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h23, CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h23, CP_UI_PROP_OPACITY, 143));
-    }
-    cp_ui_handle_t h24 = ui->create(CP_UI_OBJECT_VIEW);
+    UI_OK(ui->insert(h23, h0, 0));
+    UI_OK(ui->set_i32(h23, CP_UI_PROP_FONT_SIZE, 11));
+    UI_OK(ui->set_i32(h23, CP_UI_PROP_FONT_WEIGHT, 400));
+    UI_OK(ui->set_i32(h23, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+    UI_OK(ui->set_i32(h23, CP_UI_PROP_LINE_HEIGHT, 0));
+    UI_OK(ui->set_i32(h23, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+    UI_OK(ui->set_i32(h23, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+    UI_OK(ui->set_i32(h23, CP_UI_PROP_X, 61));
+    UI_OK(ui->set_i32(h23, CP_UI_PROP_Y, 198));
+    UI_OK(ui->set_i32(h23, CP_UI_PROP_WIDTH, 70));
+    UI_OK(ui->set_i32(h23, CP_UI_PROP_HEIGHT, 11));
+    UI_OK(ui->set_color(h23, CP_UI_PROP_TEXT_COLOR, 0x6d6e69u));
+    UI_OK(ui->set_string(h23, CP_UI_PROP_TEXT, "POSITION"));
+    cp_ui_handle_t h24 = ui->create(CP_UI_OBJECT_TEXT);
     if(h24 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[24] = h24;
-    UI_OK(ui->insert(h24, h19, 0));
-    if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 210)) {
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h24, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_OPACITY, 255));
-    } else {
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h24, CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h24, CP_UI_PROP_OPACITY, 143));
-    }
-    cp_ui_handle_t h25 = ui->create(CP_UI_OBJECT_VIEW);
+    UI_OK(ui->insert(h24, h0, 0));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_FONT_SIZE, 11));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_FONT_WEIGHT, 400));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_LINE_HEIGHT, 0));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_X, 183));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_Y, 198));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_WIDTH, 106));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_HEIGHT, 11));
+    UI_OK(ui->set_color(h24, CP_UI_PROP_TEXT_COLOR, 0x6d6e69u));
+    UI_OK(ui->set_i32(h24, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_RIGHT));
+    text_cursor = 0;
+    text_buffer[0] = '\0';
+    cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, (state_info[1] / 1000));
+    cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "s / ");
+    cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, (state_info[2] / 1000));
+    cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "s");
+    UI_OK(ui->set_string(h24, CP_UI_PROP_TEXT, text_buffer));
+    cp_ui_handle_t h25 = ui->create(CP_UI_OBJECT_TEXT);
     if(h25 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
     native_handles[25] = h25;
-    UI_OK(ui->insert(h25, h19, 0));
-    if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 320)) {
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h25, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_OPACITY, 255));
-    } else {
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h25, CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h25, CP_UI_PROP_OPACITY, 143));
-    }
-    cp_ui_handle_t h26 = ui->create(CP_UI_OBJECT_VIEW);
-    if(h26 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-    native_handles[26] = h26;
-    UI_OK(ui->insert(h26, h19, 0));
-    if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 470)) {
+    UI_OK(ui->insert(h25, h0, 0));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_FONT_SIZE, 11));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_FONT_WEIGHT, 400));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_LINE_HEIGHT, 0));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_X, 34));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_Y, 222));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_WIDTH, 252));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_HEIGHT, 8));
+    UI_OK(ui->set_color(h25, CP_UI_PROP_TEXT_COLOR, 0x6d6e69u));
+    UI_OK(ui->set_i32(h25, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+    UI_OK(ui->set_string(h25, CP_UI_PROP_TEXT, "MENU / OPTIONS       PLAY / PAUSE       WHEEL / VOLUME"));
+    if(state_lyricsEnabled == 1) {
+        cp_ui_handle_t h26 = ui->create(CP_UI_OBJECT_MODAL);
+        if(h26 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
+        native_handles[26] = h26;
+        UI_OK(ui->insert(h26, h0, 0));
+        UI_OK(ui->set_i32(h26, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h26, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h26, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h26, CP_UI_PROP_WIDTH, 320));
+        UI_OK(ui->set_i32(h26, CP_UI_PROP_HEIGHT, 240));
         UI_OK(ui->set_i32(h26, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
         UI_OK(ui->set_i32(h26, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h26, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+        UI_OK(ui->set_color(h26, CP_UI_PROP_BACKGROUND_COLOR, 0x242522u));
         UI_OK(ui->set_i32(h26, CP_UI_PROP_BACKGROUND_OPACITY, 255));
         UI_OK(ui->set_i32(h26, CP_UI_PROP_OPACITY, 255));
-    } else {
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h26, CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h26, CP_UI_PROP_OPACITY, 143));
-    }
-    cp_ui_handle_t h27 = ui->create(CP_UI_OBJECT_VIEW);
-    if(h27 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-    native_handles[27] = h27;
-    UI_OK(ui->insert(h27, h19, 0));
-    if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 650)) {
+        cp_ui_handle_t h27 = ui->create(CP_UI_OBJECT_VIEW);
+        if(h27 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
+        native_handles[27] = h27;
+        UI_OK(ui->insert(h27, h26, 0));
         UI_OK(ui->set_i32(h27, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
         UI_OK(ui->set_i32(h27, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h27, CP_UI_PROP_BACKGROUND_COLOR, 0xe7411bu));
+        UI_OK(ui->set_i32(h27, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h27, CP_UI_PROP_X, 16));
+        UI_OK(ui->set_i32(h27, CP_UI_PROP_Y, 36));
+        UI_OK(ui->set_i32(h27, CP_UI_PROP_WIDTH, 288));
+        UI_OK(ui->set_i32(h27, CP_UI_PROP_HEIGHT, 190));
+        UI_OK(ui->set_color(h27, CP_UI_PROP_BACKGROUND_COLOR, 0xc9c5bdu));
         UI_OK(ui->set_i32(h27, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_OPACITY, 255));
-    } else {
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h27, CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h27, CP_UI_PROP_OPACITY, 143));
-    }
-    cp_ui_handle_t h28 = ui->create(CP_UI_OBJECT_VIEW);
-    if(h28 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-    native_handles[28] = h28;
-    UI_OK(ui->insert(h28, h19, 0));
-    if((state_info[3] == 2) && (cp_helper_audioLevel(state_info[8], state_info[9]) >= 850)) {
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h28, CP_UI_PROP_BACKGROUND_COLOR, 0xe7411bu));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_OPACITY, 255));
-    } else {
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_WIDTH, 21));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_HEIGHT, 3));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_MARGIN_RIGHT, 4));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_RADIUS, 2));
-        UI_OK(ui->set_color(h28, CP_UI_PROP_BACKGROUND_COLOR, 0x565753u));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h28, CP_UI_PROP_OPACITY, 143));
-    }
-    cp_ui_handle_t h29 = ui->create(CP_UI_OBJECT_TEXT);
-    if(h29 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-    native_handles[29] = h29;
-    UI_OK(ui->insert(h29, h0, 0));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_FONT_SIZE, 6));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_FONT_WEIGHT, 400));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_LINE_HEIGHT, 0));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_X, 34));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_Y, 222));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_WIDTH, 252));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_HEIGHT, 8));
-    UI_OK(ui->set_color(h29, CP_UI_PROP_TEXT_COLOR, 0x6d6e69u));
-    UI_OK(ui->set_i32(h29, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-    UI_OK(ui->set_string(h29, CP_UI_PROP_TEXT, "MENU / OPTIONS       PLAY / PAUSE       WHEEL / VOLUME"));
-    if(state_panel == 1) {
-        cp_ui_handle_t h30 = ui->create(CP_UI_OBJECT_MODAL);
+        UI_OK(ui->set_color(h27, CP_UI_PROP_BORDER_COLOR, 0xf36b21u));
+        UI_OK(ui->set_i32(h27, CP_UI_PROP_BORDER_WIDTH, 1));
+        UI_OK(ui->set_i32(h27, CP_UI_PROP_PADDING, 12));
+        cp_ui_handle_t h28 = ui->create(CP_UI_OBJECT_TEXT);
+        if(h28 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
+        native_handles[28] = h28;
+        UI_OK(ui->insert(h28, h27, 0));
+        UI_OK(ui->set_i32(h28, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h28, CP_UI_PROP_FONT_WEIGHT, 700));
+        UI_OK(ui->set_i32(h28, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h28, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h28, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
+        UI_OK(ui->set_i32(h28, CP_UI_PROP_WIDTH, 262));
+        UI_OK(ui->set_i32(h28, CP_UI_PROP_HEIGHT, 14));
+        UI_OK(ui->set_color(h28, CP_UI_PROP_TEXT_COLOR, 0x555651u));
+        UI_OK(ui->set_i32(h28, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+        UI_OK(ui->set_i32(h28, CP_UI_PROP_MARGIN_BOTTOM, 4));
+        text_cursor = 0;
+        text_buffer[0] = '\0';
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "LYRICS / ");
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, ((state_lyricInfo[5] == 1) ? "TIMECODE" : "PLAIN TEXT"));
+        UI_OK(ui->set_string(h28, CP_UI_PROP_TEXT, text_buffer));
+        cp_ui_handle_t h29 = ui->create(CP_UI_OBJECT_VIEW);
+        if(h29 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
+        native_handles[29] = h29;
+        UI_OK(ui->insert(h29, h27, 0));
+        UI_OK(ui->set_i32(h29, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h29, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+        UI_OK(ui->set_i32(h29, CP_UI_PROP_WIDTH, 262));
+        UI_OK(ui->set_i32(h29, CP_UI_PROP_HEIGHT, 96));
+        UI_OK(ui->set_i32(h29, CP_UI_PROP_ADAPTIVE_LYRICS, 1));
+        cp_ui_handle_t h30 = ui->create(CP_UI_OBJECT_TEXT);
         if(h30 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[30] = h30;
-        UI_OK(ui->insert(h30, h0, 0));
-        UI_OK(ui->set_i32(h30, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h30, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h30, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h30, CP_UI_PROP_WIDTH, 320));
-        UI_OK(ui->set_i32(h30, CP_UI_PROP_HEIGHT, 240));
-        UI_OK(ui->set_i32(h30, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h30, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_color(h30, CP_UI_PROP_BACKGROUND_COLOR, 0xc9c5bdu));
-        UI_OK(ui->set_i32(h30, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h30, CP_UI_PROP_OPACITY, 255));
-        cp_ui_handle_t h31 = ui->create(CP_UI_OBJECT_IMAGE);
+        UI_OK(ui->insert(h30, h29, 0));
+        UI_OK(ui->set_i32(h30, CP_UI_PROP_FONT_SIZE, 12));
+        UI_OK(ui->set_i32(h30, CP_UI_PROP_FONT_WEIGHT, 400));
+        UI_OK(ui->set_i32(h30, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h30, CP_UI_PROP_LINE_HEIGHT, 16));
+        UI_OK(ui->set_i32(h30, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+        UI_OK(ui->set_color(h30, CP_UI_PROP_TEXT_COLOR, 0x777a75u));
+        UI_OK(ui->set_i32(h30, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+        UI_OK(ui->set_string(h30, CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricPrevious : "")));
+        cp_ui_handle_t h31 = ui->create(CP_UI_OBJECT_TEXT);
         if(h31 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[31] = h31;
-        UI_OK(ui->insert(h31, h30, 0));
-        UI_OK(ui->set_i32(h31, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h31, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h31, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h31, CP_UI_PROP_WIDTH, 320));
-        UI_OK(ui->set_i32(h31, CP_UI_PROP_HEIGHT, 240));
-        UI_OK(ui->set_string(h31, CP_UI_PROP_IMAGE_SOURCE, "signal-modal"));
+        UI_OK(ui->insert(h31, h29, 0));
+        UI_OK(ui->set_i32(h31, CP_UI_PROP_FONT_SIZE, 16));
+        UI_OK(ui->set_i32(h31, CP_UI_PROP_FONT_WEIGHT, 700));
+        UI_OK(ui->set_i32(h31, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h31, CP_UI_PROP_LINE_HEIGHT, 20));
+        UI_OK(ui->set_i32(h31, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+        UI_OK(ui->set_color(h31, CP_UI_PROP_TEXT_COLOR, 0xd74f10u));
+        UI_OK(ui->set_i32(h31, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+        UI_OK(ui->set_string(h31, CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricCurrent : ((state_lyricInfo[4] == 3) ? "NO LYRICS FILE" : ((state_lyricInfo[4] == 4) ? "INVALID LYRICS FILE" : ((state_lyricInfo[4] == 5) ? "LYRICS FILE TOO LARGE" : "NO LYRICS AVAILABLE"))))));
         cp_ui_handle_t h32 = ui->create(CP_UI_OBJECT_TEXT);
         if(h32 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[32] = h32;
-        UI_OK(ui->insert(h32, h30, 0));
-        UI_OK(ui->set_i32(h32, CP_UI_PROP_FONT_SIZE, 8));
-        UI_OK(ui->set_i32(h32, CP_UI_PROP_FONT_WEIGHT, 700));
+        UI_OK(ui->insert(h32, h29, 0));
+        UI_OK(ui->set_i32(h32, CP_UI_PROP_FONT_SIZE, 12));
+        UI_OK(ui->set_i32(h32, CP_UI_PROP_FONT_WEIGHT, 400));
         UI_OK(ui->set_i32(h32, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h32, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h32, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
-        UI_OK(ui->set_i32(h32, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h32, CP_UI_PROP_X, 47));
-        UI_OK(ui->set_i32(h32, CP_UI_PROP_Y, 34));
-        UI_OK(ui->set_i32(h32, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h32, CP_UI_PROP_HEIGHT, 11));
-        UI_OK(ui->set_color(h32, CP_UI_PROP_TEXT_COLOR, 0x555651u));
-        UI_OK(ui->set_string(h32, CP_UI_PROP_TEXT, "NOW PLAYING / CONTROL"));
-        cp_ui_handle_t h33 = ui->create(CP_UI_OBJECT_VIEW);
+        UI_OK(ui->set_i32(h32, CP_UI_PROP_LINE_HEIGHT, 16));
+        UI_OK(ui->set_i32(h32, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+        UI_OK(ui->set_color(h32, CP_UI_PROP_TEXT_COLOR, 0x777a75u));
+        UI_OK(ui->set_i32(h32, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+        UI_OK(ui->set_string(h32, CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricNext : "")));
+        cp_ui_handle_t h33 = ui->create(CP_UI_OBJECT_TEXT);
         if(h33 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[33] = h33;
-        UI_OK(ui->insert(h33, h30, 0));
-        UI_OK(ui->set_i32(h33, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h33, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h33, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h33, CP_UI_PROP_X, 49));
-        UI_OK(ui->set_i32(h33, CP_UI_PROP_Y, 56));
-        UI_OK(ui->set_i32(h33, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h33, CP_UI_PROP_HEIGHT, 128));
+        UI_OK(ui->insert(h33, h27, 0));
+        UI_OK(ui->set_i32(h33, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h33, CP_UI_PROP_FONT_WEIGHT, 400));
+        UI_OK(ui->set_i32(h33, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h33, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h33, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+        UI_OK(ui->set_i32(h33, CP_UI_PROP_WIDTH, 262));
+        UI_OK(ui->set_i32(h33, CP_UI_PROP_HEIGHT, 13));
+        UI_OK(ui->set_color(h33, CP_UI_PROP_TEXT_COLOR, 0x555651u));
+        UI_OK(ui->set_i32(h33, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+        text_cursor = 0;
+        text_buffer[0] = '\0';
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "WHEEL BROWSE · ");
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, (state_lyricInfo[2] + 1));
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "/");
+        cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_lyricInfo[3]);
+        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, " · MENU CLOSE");
+        UI_OK(ui->set_string(h33, CP_UI_PROP_TEXT, text_buffer));
+    } else {
         cp_ui_handle_t h34 = ui->create(CP_UI_OBJECT_VIEW);
         if(h34 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[34] = h34;
-        UI_OK(ui->insert(h34, h33, 0));
-        if(state_action == 0) {
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h34, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h34, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
-        } else {
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h34, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h34, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h34, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
-        }
-        cp_ui_handle_t h35 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->insert(h34, h0, 0));
+        UI_OK(ui->set_i32(h34, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h34, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+        UI_OK(ui->set_i32(h34, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h34, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h34, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h34, CP_UI_PROP_WIDTH, 0));
+        UI_OK(ui->set_i32(h34, CP_UI_PROP_HEIGHT, 0));
+        UI_OK(ui->set_color(h34, CP_UI_PROP_BACKGROUND_COLOR, 0x000000u));
+        UI_OK(ui->set_i32(h34, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+        UI_OK(ui->set_i32(h34, CP_UI_PROP_OPACITY, 0));
+    }
+    if(state_panel == 1) {
+        cp_ui_handle_t h35 = ui->create(CP_UI_OBJECT_MODAL);
         if(h35 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[35] = h35;
-        UI_OK(ui->insert(h35, h34, 0));
-        if(state_action == 0) {
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h35, CP_UI_PROP_TEXT_COLOR, 0x171816u));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_MARGIN_LEFT, 8));
-        } else {
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h35, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-            UI_OK(ui->set_i32(h35, CP_UI_PROP_MARGIN_LEFT, 8));
-        }
-        UI_OK(ui->set_string(h35, CP_UI_PROP_TEXT, "01  QUEUE"));
-        cp_ui_handle_t h36 = ui->create(CP_UI_OBJECT_VIEW);
+        UI_OK(ui->insert(h35, h0, 0));
+        UI_OK(ui->set_i32(h35, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h35, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h35, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h35, CP_UI_PROP_WIDTH, 320));
+        UI_OK(ui->set_i32(h35, CP_UI_PROP_HEIGHT, 240));
+        UI_OK(ui->set_i32(h35, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h35, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+        UI_OK(ui->set_color(h35, CP_UI_PROP_BACKGROUND_COLOR, 0xc9c5bdu));
+        UI_OK(ui->set_i32(h35, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+        UI_OK(ui->set_i32(h35, CP_UI_PROP_OPACITY, 255));
+        cp_ui_handle_t h36 = ui->create(CP_UI_OBJECT_IMAGE);
         if(h36 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[36] = h36;
-        UI_OK(ui->insert(h36, h33, 0));
-        if(state_action == 1) {
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h36, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h36, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
-        } else {
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h36, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h36, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h36, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
-        }
+        UI_OK(ui->insert(h36, h35, 0));
+        UI_OK(ui->set_i32(h36, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h36, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h36, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h36, CP_UI_PROP_WIDTH, 320));
+        UI_OK(ui->set_i32(h36, CP_UI_PROP_HEIGHT, 240));
+        UI_OK(ui->set_string(h36, CP_UI_PROP_IMAGE_SOURCE, "signal-modal"));
         cp_ui_handle_t h37 = ui->create(CP_UI_OBJECT_TEXT);
         if(h37 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[37] = h37;
-        UI_OK(ui->insert(h37, h36, 0));
-        if(state_action == 1) {
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h37, CP_UI_PROP_TEXT_COLOR, 0x171816u));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_MARGIN_LEFT, 8));
-        } else {
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h37, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-            UI_OK(ui->set_i32(h37, CP_UI_PROP_MARGIN_LEFT, 8));
-        }
-        text_cursor = 0;
-        text_buffer[0] = '\0';
-        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "02");
-        cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, ((state_info[7] == 1) ? "REMOVE FAVORITE" : "ADD FAVORITE"));
-        UI_OK(ui->set_string(h37, CP_UI_PROP_TEXT, text_buffer));
+        UI_OK(ui->insert(h37, h35, 0));
+        UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT_WEIGHT, 700));
+        UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h37, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h37, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
+        UI_OK(ui->set_i32(h37, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h37, CP_UI_PROP_X, 47));
+        UI_OK(ui->set_i32(h37, CP_UI_PROP_Y, 34));
+        UI_OK(ui->set_i32(h37, CP_UI_PROP_WIDTH, 222));
+        UI_OK(ui->set_i32(h37, CP_UI_PROP_HEIGHT, 11));
+        UI_OK(ui->set_color(h37, CP_UI_PROP_TEXT_COLOR, 0x555651u));
+        UI_OK(ui->set_string(h37, CP_UI_PROP_TEXT, "NOW PLAYING / CONTROL"));
         cp_ui_handle_t h38 = ui->create(CP_UI_OBJECT_VIEW);
         if(h38 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[38] = h38;
-        UI_OK(ui->insert(h38, h33, 0));
-        if(state_action == 2) {
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h38, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h38, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
-        } else {
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h38, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h38, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h38, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
-        }
-        cp_ui_handle_t h39 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->insert(h38, h35, 0));
+        UI_OK(ui->set_i32(h38, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h38, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+        UI_OK(ui->set_i32(h38, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h38, CP_UI_PROP_X, 49));
+        UI_OK(ui->set_i32(h38, CP_UI_PROP_Y, 56));
+        UI_OK(ui->set_i32(h38, CP_UI_PROP_WIDTH, 222));
+        UI_OK(ui->set_i32(h38, CP_UI_PROP_HEIGHT, 128));
+        cp_ui_handle_t h39 = ui->create(CP_UI_OBJECT_VIEW);
         if(h39 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[39] = h39;
         UI_OK(ui->insert(h39, h38, 0));
-        if(state_action == 2) {
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h39, CP_UI_PROP_TEXT_COLOR, 0x171816u));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_MARGIN_LEFT, 8));
+        if(state_action == 0) {
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h39, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h39, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         } else {
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h39, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-            UI_OK(ui->set_i32(h39, CP_UI_PROP_MARGIN_LEFT, 8));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h39, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h39, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h39, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         }
-        UI_OK(ui->set_string(h39, CP_UI_PROP_TEXT, "03  PLAYBACK MODE"));
-        cp_ui_handle_t h40 = ui->create(CP_UI_OBJECT_VIEW);
+        cp_ui_handle_t h40 = ui->create(CP_UI_OBJECT_TEXT);
         if(h40 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[40] = h40;
-        UI_OK(ui->insert(h40, h33, 0));
-        if(state_action == 3) {
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h40, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h40, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+        UI_OK(ui->insert(h40, h39, 0));
+        if(state_action == 0) {
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h40, CP_UI_PROP_TEXT_COLOR, 0x171816u));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_MARGIN_LEFT, 8));
         } else {
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h40, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h40, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h40, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h40, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_i32(h40, CP_UI_PROP_MARGIN_LEFT, 8));
         }
-        cp_ui_handle_t h41 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_string(h40, CP_UI_PROP_TEXT, "QUEUE BUS"));
+        cp_ui_handle_t h41 = ui->create(CP_UI_OBJECT_VIEW);
         if(h41 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[41] = h41;
-        UI_OK(ui->insert(h41, h40, 0));
-        if(state_action == 3) {
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h41, CP_UI_PROP_TEXT_COLOR, 0x171816u));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_MARGIN_LEFT, 8));
+        UI_OK(ui->insert(h41, h38, 0));
+        if(state_action == 1) {
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h41, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h41, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         } else {
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h41, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-            UI_OK(ui->set_i32(h41, CP_UI_PROP_MARGIN_LEFT, 8));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h41, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h41, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h41, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         }
-        UI_OK(ui->set_string(h41, CP_UI_PROP_TEXT, "04  LYRICS"));
-        cp_ui_handle_t h42 = ui->create(CP_UI_OBJECT_VIEW);
+        cp_ui_handle_t h42 = ui->create(CP_UI_OBJECT_TEXT);
         if(h42 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[42] = h42;
-        UI_OK(ui->insert(h42, h33, 0));
-        if(state_action == 4) {
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h42, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h42, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+        UI_OK(ui->insert(h42, h41, 0));
+        if(state_action == 1) {
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h42, CP_UI_PROP_TEXT_COLOR, 0x171816u));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_MARGIN_LEFT, 8));
         } else {
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h42, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h42, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h42, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h42, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_i32(h42, CP_UI_PROP_MARGIN_LEFT, 8));
         }
-        cp_ui_handle_t h43 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_string(h42, CP_UI_PROP_TEXT, ((state_info[7] == 1) ? "CLEAR MEMORY" : "STORE MEMORY")));
+        cp_ui_handle_t h43 = ui->create(CP_UI_OBJECT_VIEW);
         if(h43 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[43] = h43;
-        UI_OK(ui->insert(h43, h42, 0));
-        if(state_action == 4) {
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h43, CP_UI_PROP_TEXT_COLOR, 0x171816u));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_MARGIN_LEFT, 8));
+        UI_OK(ui->insert(h43, h38, 0));
+        if(state_action == 2) {
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h43, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h43, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         } else {
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h43, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-            UI_OK(ui->set_i32(h43, CP_UI_PROP_MARGIN_LEFT, 8));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h43, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h43, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h43, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         }
-        UI_OK(ui->set_string(h43, CP_UI_PROP_TEXT, "05  SEEK"));
-        cp_ui_handle_t h44 = ui->create(CP_UI_OBJECT_VIEW);
+        cp_ui_handle_t h44 = ui->create(CP_UI_OBJECT_TEXT);
         if(h44 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[44] = h44;
-        UI_OK(ui->insert(h44, h33, 0));
-        if(state_action == 5) {
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h44, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h44, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+        UI_OK(ui->insert(h44, h43, 0));
+        if(state_action == 2) {
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h44, CP_UI_PROP_TEXT_COLOR, 0x171816u));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_MARGIN_LEFT, 8));
         } else {
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h44, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h44, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h44, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h44, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_i32(h44, CP_UI_PROP_MARGIN_LEFT, 8));
         }
-        cp_ui_handle_t h45 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_string(h44, CP_UI_PROP_TEXT, "ROUTING MODE"));
+        cp_ui_handle_t h45 = ui->create(CP_UI_OBJECT_VIEW);
         if(h45 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[45] = h45;
-        UI_OK(ui->insert(h45, h44, 0));
-        if(state_action == 5) {
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h45, CP_UI_PROP_TEXT_COLOR, 0x171816u));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_MARGIN_LEFT, 8));
+        UI_OK(ui->insert(h45, h38, 0));
+        if(state_action == 3) {
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h45, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h45, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         } else {
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h45, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-            UI_OK(ui->set_i32(h45, CP_UI_PROP_MARGIN_LEFT, 8));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h45, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h45, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h45, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         }
-        UI_OK(ui->set_string(h45, CP_UI_PROP_TEXT, "06  CLOSE"));
-    } else {
-        cp_ui_handle_t h46 = ui->create(CP_UI_OBJECT_VIEW);
+        cp_ui_handle_t h46 = ui->create(CP_UI_OBJECT_TEXT);
         if(h46 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[46] = h46;
-        UI_OK(ui->insert(h46, h0, 0));
-        UI_OK(ui->set_i32(h46, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h46, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h46, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h46, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h46, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h46, CP_UI_PROP_WIDTH, 0));
-        UI_OK(ui->set_i32(h46, CP_UI_PROP_HEIGHT, 0));
-        UI_OK(ui->set_color(h46, CP_UI_PROP_BACKGROUND_COLOR, 0x000000u));
-        UI_OK(ui->set_i32(h46, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h46, CP_UI_PROP_OPACITY, 0));
-    }
-    if(state_panel == 2) {
-        cp_ui_handle_t h47 = ui->create(CP_UI_OBJECT_MODAL);
+        UI_OK(ui->insert(h46, h45, 0));
+        if(state_action == 3) {
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h46, CP_UI_PROP_TEXT_COLOR, 0x171816u));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_MARGIN_LEFT, 8));
+        } else {
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h46, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_i32(h46, CP_UI_PROP_MARGIN_LEFT, 8));
+        }
+        UI_OK(ui->set_string(h46, CP_UI_PROP_TEXT, ((state_lyricsEnabled == 1) ? "HIDE TEXT MONITOR" : "SHOW TEXT MONITOR")));
+        cp_ui_handle_t h47 = ui->create(CP_UI_OBJECT_VIEW);
         if(h47 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[47] = h47;
-        UI_OK(ui->insert(h47, h0, 0));
-        UI_OK(ui->set_i32(h47, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h47, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h47, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h47, CP_UI_PROP_WIDTH, 320));
-        UI_OK(ui->set_i32(h47, CP_UI_PROP_HEIGHT, 240));
-        UI_OK(ui->set_i32(h47, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h47, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_color(h47, CP_UI_PROP_BACKGROUND_COLOR, 0xc9c5bdu));
-        UI_OK(ui->set_i32(h47, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h47, CP_UI_PROP_OPACITY, 255));
-        cp_ui_handle_t h48 = ui->create(CP_UI_OBJECT_IMAGE);
+        UI_OK(ui->insert(h47, h38, 0));
+        if(state_action == 4) {
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h47, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h47, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+        } else {
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h47, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h47, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h47, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+        }
+        cp_ui_handle_t h48 = ui->create(CP_UI_OBJECT_TEXT);
         if(h48 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[48] = h48;
         UI_OK(ui->insert(h48, h47, 0));
-        UI_OK(ui->set_i32(h48, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h48, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h48, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h48, CP_UI_PROP_WIDTH, 320));
-        UI_OK(ui->set_i32(h48, CP_UI_PROP_HEIGHT, 240));
-        UI_OK(ui->set_string(h48, CP_UI_PROP_IMAGE_SOURCE, "signal-modal"));
-        cp_ui_handle_t h49 = ui->create(CP_UI_OBJECT_TEXT);
+        if(state_action == 4) {
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h48, CP_UI_PROP_TEXT_COLOR, 0x171816u));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_MARGIN_LEFT, 8));
+        } else {
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h48, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_i32(h48, CP_UI_PROP_MARGIN_LEFT, 8));
+        }
+        UI_OK(ui->set_string(h48, CP_UI_PROP_TEXT, "TIME TRIM"));
+    } else {
+        cp_ui_handle_t h49 = ui->create(CP_UI_OBJECT_VIEW);
         if(h49 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[49] = h49;
-        UI_OK(ui->insert(h49, h47, 0));
-        UI_OK(ui->set_i32(h49, CP_UI_PROP_FONT_SIZE, 8));
-        UI_OK(ui->set_i32(h49, CP_UI_PROP_FONT_WEIGHT, 700));
-        UI_OK(ui->set_i32(h49, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h49, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h49, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
+        UI_OK(ui->insert(h49, h0, 0));
+        UI_OK(ui->set_i32(h49, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h49, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
         UI_OK(ui->set_i32(h49, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h49, CP_UI_PROP_X, 47));
-        UI_OK(ui->set_i32(h49, CP_UI_PROP_Y, 34));
-        UI_OK(ui->set_i32(h49, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h49, CP_UI_PROP_HEIGHT, 11));
-        UI_OK(ui->set_color(h49, CP_UI_PROP_TEXT_COLOR, 0x555651u));
+        UI_OK(ui->set_i32(h49, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h49, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h49, CP_UI_PROP_WIDTH, 0));
+        UI_OK(ui->set_i32(h49, CP_UI_PROP_HEIGHT, 0));
+        UI_OK(ui->set_color(h49, CP_UI_PROP_BACKGROUND_COLOR, 0x000000u));
+        UI_OK(ui->set_i32(h49, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+        UI_OK(ui->set_i32(h49, CP_UI_PROP_OPACITY, 0));
+    }
+    if(state_panel == 2) {
+        cp_ui_handle_t h50 = ui->create(CP_UI_OBJECT_MODAL);
+        if(h50 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
+        native_handles[50] = h50;
+        UI_OK(ui->insert(h50, h0, 0));
+        UI_OK(ui->set_i32(h50, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h50, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h50, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h50, CP_UI_PROP_WIDTH, 320));
+        UI_OK(ui->set_i32(h50, CP_UI_PROP_HEIGHT, 240));
+        UI_OK(ui->set_i32(h50, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h50, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+        UI_OK(ui->set_color(h50, CP_UI_PROP_BACKGROUND_COLOR, 0xc9c5bdu));
+        UI_OK(ui->set_i32(h50, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+        UI_OK(ui->set_i32(h50, CP_UI_PROP_OPACITY, 255));
+        cp_ui_handle_t h51 = ui->create(CP_UI_OBJECT_IMAGE);
+        if(h51 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
+        native_handles[51] = h51;
+        UI_OK(ui->insert(h51, h50, 0));
+        UI_OK(ui->set_i32(h51, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h51, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h51, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h51, CP_UI_PROP_WIDTH, 320));
+        UI_OK(ui->set_i32(h51, CP_UI_PROP_HEIGHT, 240));
+        UI_OK(ui->set_string(h51, CP_UI_PROP_IMAGE_SOURCE, "signal-modal"));
+        cp_ui_handle_t h52 = ui->create(CP_UI_OBJECT_TEXT);
+        if(h52 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
+        native_handles[52] = h52;
+        UI_OK(ui->insert(h52, h50, 0));
+        UI_OK(ui->set_i32(h52, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h52, CP_UI_PROP_FONT_WEIGHT, 700));
+        UI_OK(ui->set_i32(h52, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h52, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h52, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
+        UI_OK(ui->set_i32(h52, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h52, CP_UI_PROP_X, 47));
+        UI_OK(ui->set_i32(h52, CP_UI_PROP_Y, 34));
+        UI_OK(ui->set_i32(h52, CP_UI_PROP_WIDTH, 222));
+        UI_OK(ui->set_i32(h52, CP_UI_PROP_HEIGHT, 11));
+        UI_OK(ui->set_color(h52, CP_UI_PROP_TEXT_COLOR, 0x555651u));
         text_cursor = 0;
         text_buffer[0] = '\0';
         cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "QUEUE /");
         cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, ((state_queueInfo[1] > 0) ? (state_queueSelected + 1) : 0));
         cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, " OF ");
         cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, state_queueInfo[1]);
-        UI_OK(ui->set_string(h49, CP_UI_PROP_TEXT, text_buffer));
-        cp_ui_handle_t h50 = ui->create(CP_UI_OBJECT_VIEW);
-        if(h50 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[50] = h50;
-        UI_OK(ui->insert(h50, h47, 0));
-        UI_OK(ui->set_i32(h50, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h50, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h50, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h50, CP_UI_PROP_X, 49));
-        UI_OK(ui->set_i32(h50, CP_UI_PROP_Y, 56));
-        UI_OK(ui->set_i32(h50, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h50, CP_UI_PROP_HEIGHT, 119));
-        cp_ui_handle_t h51 = ui->create(CP_UI_OBJECT_VIEW);
-        if(h51 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[51] = h51;
-        UI_OK(ui->insert(h51, h50, 0));
-        UI_OK(ui->set_i32(h51, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h51, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h51, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h51, CP_UI_PROP_HEIGHT, 36));
-        UI_OK(ui->set_color(h51, CP_UI_PROP_BACKGROUND_COLOR, 0x373836u));
-        UI_OK(ui->set_i32(h51, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_color(h51, CP_UI_PROP_BORDER_COLOR, 0x4d4e4au));
-        UI_OK(ui->set_i32(h51, CP_UI_PROP_BORDER_WIDTH, 1));
-        UI_OK(ui->set_i32(h51, CP_UI_PROP_RADIUS, 3));
-        UI_OK(ui->set_i32(h51, CP_UI_PROP_MARGIN_BOTTOM, 3));
-        cp_ui_handle_t h52 = ui->create(CP_UI_OBJECT_TEXT);
-        if(h52 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[52] = h52;
-        UI_OK(ui->insert(h52, h51, 0));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_NUMBER_OF_LINES, 1));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_MARQUEE, 1));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_FONT_SIZE, 10));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_FONT_WEIGHT, 400));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_WIDTH, 208));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_HEIGHT, 13));
-        UI_OK(ui->set_color(h52, CP_UI_PROP_TEXT_COLOR, 0xe3e2dcu));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_MARGIN_LEFT, 7));
-        UI_OK(ui->set_i32(h52, CP_UI_PROP_MARGIN_TOP, 3));
-        UI_OK(ui->set_string(h52, CP_UI_PROP_TEXT, state_queueTitle0));
-        cp_ui_handle_t h53 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_string(h52, CP_UI_PROP_TEXT, text_buffer));
+        cp_ui_handle_t h53 = ui->create(CP_UI_OBJECT_VIEW);
         if(h53 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[53] = h53;
-        UI_OK(ui->insert(h53, h51, 0));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_NUMBER_OF_LINES, 1));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_MARQUEE, 1));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_FONT_SIZE, 8));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_FONT_WEIGHT, 400));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_WIDTH, 208));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_HEIGHT, 11));
-        UI_OK(ui->set_color(h53, CP_UI_PROP_TEXT_COLOR, 0x9a9c97u));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_MARGIN_LEFT, 7));
-        UI_OK(ui->set_i32(h53, CP_UI_PROP_MARGIN_TOP, 1));
-        UI_OK(ui->set_string(h53, CP_UI_PROP_TEXT, state_queueArtist0));
+        UI_OK(ui->insert(h53, h50, 0));
+        UI_OK(ui->set_i32(h53, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h53, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+        UI_OK(ui->set_i32(h53, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h53, CP_UI_PROP_X, 49));
+        UI_OK(ui->set_i32(h53, CP_UI_PROP_Y, 56));
+        UI_OK(ui->set_i32(h53, CP_UI_PROP_WIDTH, 222));
+        UI_OK(ui->set_i32(h53, CP_UI_PROP_HEIGHT, 119));
         cp_ui_handle_t h54 = ui->create(CP_UI_OBJECT_VIEW);
         if(h54 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[54] = h54;
-        UI_OK(ui->insert(h54, h50, 0));
+        UI_OK(ui->insert(h54, h53, 0));
         UI_OK(ui->set_i32(h54, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
         UI_OK(ui->set_i32(h54, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
         UI_OK(ui->set_i32(h54, CP_UI_PROP_WIDTH, 222));
         UI_OK(ui->set_i32(h54, CP_UI_PROP_HEIGHT, 36));
-        UI_OK(ui->set_color(h54, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+        UI_OK(ui->set_color(h54, CP_UI_PROP_BACKGROUND_COLOR, 0x373836u));
         UI_OK(ui->set_i32(h54, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_color(h54, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+        UI_OK(ui->set_color(h54, CP_UI_PROP_BORDER_COLOR, 0x4d4e4au));
         UI_OK(ui->set_i32(h54, CP_UI_PROP_BORDER_WIDTH, 1));
         UI_OK(ui->set_i32(h54, CP_UI_PROP_RADIUS, 3));
         UI_OK(ui->set_i32(h54, CP_UI_PROP_MARGIN_BOTTOM, 3));
@@ -1654,45 +1545,45 @@ static int cp_render(void)
         UI_OK(ui->insert(h55, h54, 0));
         UI_OK(ui->set_i32(h55, CP_UI_PROP_NUMBER_OF_LINES, 1));
         UI_OK(ui->set_i32(h55, CP_UI_PROP_MARQUEE, 1));
-        UI_OK(ui->set_i32(h55, CP_UI_PROP_FONT_SIZE, 10));
+        UI_OK(ui->set_i32(h55, CP_UI_PROP_FONT_SIZE, 11));
         UI_OK(ui->set_i32(h55, CP_UI_PROP_FONT_WEIGHT, 400));
         UI_OK(ui->set_i32(h55, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
         UI_OK(ui->set_i32(h55, CP_UI_PROP_LINE_HEIGHT, 0));
         UI_OK(ui->set_i32(h55, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
         UI_OK(ui->set_i32(h55, CP_UI_PROP_WIDTH, 208));
         UI_OK(ui->set_i32(h55, CP_UI_PROP_HEIGHT, 13));
-        UI_OK(ui->set_color(h55, CP_UI_PROP_TEXT_COLOR, 0x171816u));
+        UI_OK(ui->set_color(h55, CP_UI_PROP_TEXT_COLOR, 0xe3e2dcu));
         UI_OK(ui->set_i32(h55, CP_UI_PROP_MARGIN_LEFT, 7));
         UI_OK(ui->set_i32(h55, CP_UI_PROP_MARGIN_TOP, 3));
-        UI_OK(ui->set_string(h55, CP_UI_PROP_TEXT, state_queueTitle1));
+        UI_OK(ui->set_string(h55, CP_UI_PROP_TEXT, state_queueTitle0));
         cp_ui_handle_t h56 = ui->create(CP_UI_OBJECT_TEXT);
         if(h56 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[56] = h56;
         UI_OK(ui->insert(h56, h54, 0));
         UI_OK(ui->set_i32(h56, CP_UI_PROP_NUMBER_OF_LINES, 1));
         UI_OK(ui->set_i32(h56, CP_UI_PROP_MARQUEE, 1));
-        UI_OK(ui->set_i32(h56, CP_UI_PROP_FONT_SIZE, 8));
+        UI_OK(ui->set_i32(h56, CP_UI_PROP_FONT_SIZE, 11));
         UI_OK(ui->set_i32(h56, CP_UI_PROP_FONT_WEIGHT, 400));
         UI_OK(ui->set_i32(h56, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
         UI_OK(ui->set_i32(h56, CP_UI_PROP_LINE_HEIGHT, 0));
         UI_OK(ui->set_i32(h56, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
         UI_OK(ui->set_i32(h56, CP_UI_PROP_WIDTH, 208));
         UI_OK(ui->set_i32(h56, CP_UI_PROP_HEIGHT, 11));
-        UI_OK(ui->set_color(h56, CP_UI_PROP_TEXT_COLOR, 0x592512u));
+        UI_OK(ui->set_color(h56, CP_UI_PROP_TEXT_COLOR, 0x9a9c97u));
         UI_OK(ui->set_i32(h56, CP_UI_PROP_MARGIN_LEFT, 7));
         UI_OK(ui->set_i32(h56, CP_UI_PROP_MARGIN_TOP, 1));
-        UI_OK(ui->set_string(h56, CP_UI_PROP_TEXT, state_queueArtist1));
+        UI_OK(ui->set_string(h56, CP_UI_PROP_TEXT, state_queueArtist0));
         cp_ui_handle_t h57 = ui->create(CP_UI_OBJECT_VIEW);
         if(h57 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[57] = h57;
-        UI_OK(ui->insert(h57, h50, 0));
+        UI_OK(ui->insert(h57, h53, 0));
         UI_OK(ui->set_i32(h57, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
         UI_OK(ui->set_i32(h57, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
         UI_OK(ui->set_i32(h57, CP_UI_PROP_WIDTH, 222));
         UI_OK(ui->set_i32(h57, CP_UI_PROP_HEIGHT, 36));
-        UI_OK(ui->set_color(h57, CP_UI_PROP_BACKGROUND_COLOR, 0x373836u));
+        UI_OK(ui->set_color(h57, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
         UI_OK(ui->set_i32(h57, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_color(h57, CP_UI_PROP_BORDER_COLOR, 0x4d4e4au));
+        UI_OK(ui->set_color(h57, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
         UI_OK(ui->set_i32(h57, CP_UI_PROP_BORDER_WIDTH, 1));
         UI_OK(ui->set_i32(h57, CP_UI_PROP_RADIUS, 3));
         UI_OK(ui->set_i32(h57, CP_UI_PROP_MARGIN_BOTTOM, 3));
@@ -1702,651 +1593,563 @@ static int cp_render(void)
         UI_OK(ui->insert(h58, h57, 0));
         UI_OK(ui->set_i32(h58, CP_UI_PROP_NUMBER_OF_LINES, 1));
         UI_OK(ui->set_i32(h58, CP_UI_PROP_MARQUEE, 1));
-        UI_OK(ui->set_i32(h58, CP_UI_PROP_FONT_SIZE, 10));
+        UI_OK(ui->set_i32(h58, CP_UI_PROP_FONT_SIZE, 11));
         UI_OK(ui->set_i32(h58, CP_UI_PROP_FONT_WEIGHT, 400));
         UI_OK(ui->set_i32(h58, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
         UI_OK(ui->set_i32(h58, CP_UI_PROP_LINE_HEIGHT, 0));
         UI_OK(ui->set_i32(h58, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
         UI_OK(ui->set_i32(h58, CP_UI_PROP_WIDTH, 208));
         UI_OK(ui->set_i32(h58, CP_UI_PROP_HEIGHT, 13));
-        UI_OK(ui->set_color(h58, CP_UI_PROP_TEXT_COLOR, 0xe3e2dcu));
+        UI_OK(ui->set_color(h58, CP_UI_PROP_TEXT_COLOR, 0x171816u));
         UI_OK(ui->set_i32(h58, CP_UI_PROP_MARGIN_LEFT, 7));
         UI_OK(ui->set_i32(h58, CP_UI_PROP_MARGIN_TOP, 3));
-        UI_OK(ui->set_string(h58, CP_UI_PROP_TEXT, state_queueTitle2));
+        UI_OK(ui->set_string(h58, CP_UI_PROP_TEXT, ((state_queueInfo[1] > 0) ? state_queueTitle1 : "NO SIGNAL / QUEUE EMPTY")));
         cp_ui_handle_t h59 = ui->create(CP_UI_OBJECT_TEXT);
         if(h59 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[59] = h59;
         UI_OK(ui->insert(h59, h57, 0));
         UI_OK(ui->set_i32(h59, CP_UI_PROP_NUMBER_OF_LINES, 1));
         UI_OK(ui->set_i32(h59, CP_UI_PROP_MARQUEE, 1));
-        UI_OK(ui->set_i32(h59, CP_UI_PROP_FONT_SIZE, 8));
+        UI_OK(ui->set_i32(h59, CP_UI_PROP_FONT_SIZE, 11));
         UI_OK(ui->set_i32(h59, CP_UI_PROP_FONT_WEIGHT, 400));
         UI_OK(ui->set_i32(h59, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
         UI_OK(ui->set_i32(h59, CP_UI_PROP_LINE_HEIGHT, 0));
         UI_OK(ui->set_i32(h59, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
         UI_OK(ui->set_i32(h59, CP_UI_PROP_WIDTH, 208));
         UI_OK(ui->set_i32(h59, CP_UI_PROP_HEIGHT, 11));
-        UI_OK(ui->set_color(h59, CP_UI_PROP_TEXT_COLOR, 0x9a9c97u));
+        UI_OK(ui->set_color(h59, CP_UI_PROP_TEXT_COLOR, 0x592512u));
         UI_OK(ui->set_i32(h59, CP_UI_PROP_MARGIN_LEFT, 7));
         UI_OK(ui->set_i32(h59, CP_UI_PROP_MARGIN_TOP, 1));
-        UI_OK(ui->set_string(h59, CP_UI_PROP_TEXT, state_queueArtist2));
-        cp_ui_handle_t h60 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_string(h59, CP_UI_PROP_TEXT, state_queueArtist1));
+        cp_ui_handle_t h60 = ui->create(CP_UI_OBJECT_VIEW);
         if(h60 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[60] = h60;
-        UI_OK(ui->insert(h60, h47, 0));
-        UI_OK(ui->set_i32(h60, CP_UI_PROP_FONT_SIZE, 6));
-        UI_OK(ui->set_i32(h60, CP_UI_PROP_FONT_WEIGHT, 400));
-        UI_OK(ui->set_i32(h60, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h60, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h60, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-        UI_OK(ui->set_i32(h60, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h60, CP_UI_PROP_X, 49));
-        UI_OK(ui->set_i32(h60, CP_UI_PROP_Y, 178));
+        UI_OK(ui->insert(h60, h53, 0));
+        UI_OK(ui->set_i32(h60, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h60, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
         UI_OK(ui->set_i32(h60, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h60, CP_UI_PROP_HEIGHT, 9));
-        UI_OK(ui->set_color(h60, CP_UI_PROP_TEXT_COLOR, 0x9ea09au));
-        UI_OK(ui->set_i32(h60, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-        UI_OK(ui->set_string(h60, CP_UI_PROP_TEXT, "SELECT PLAYS / MENU RETURNS"));
-    } else {
-        cp_ui_handle_t h61 = ui->create(CP_UI_OBJECT_VIEW);
+        UI_OK(ui->set_i32(h60, CP_UI_PROP_HEIGHT, 36));
+        UI_OK(ui->set_color(h60, CP_UI_PROP_BACKGROUND_COLOR, 0x373836u));
+        UI_OK(ui->set_i32(h60, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+        UI_OK(ui->set_color(h60, CP_UI_PROP_BORDER_COLOR, 0x4d4e4au));
+        UI_OK(ui->set_i32(h60, CP_UI_PROP_BORDER_WIDTH, 1));
+        UI_OK(ui->set_i32(h60, CP_UI_PROP_RADIUS, 3));
+        UI_OK(ui->set_i32(h60, CP_UI_PROP_MARGIN_BOTTOM, 3));
+        cp_ui_handle_t h61 = ui->create(CP_UI_OBJECT_TEXT);
         if(h61 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[61] = h61;
-        UI_OK(ui->insert(h61, h0, 0));
-        UI_OK(ui->set_i32(h61, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h61, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h61, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h61, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h61, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h61, CP_UI_PROP_WIDTH, 0));
-        UI_OK(ui->set_i32(h61, CP_UI_PROP_HEIGHT, 0));
-        UI_OK(ui->set_color(h61, CP_UI_PROP_BACKGROUND_COLOR, 0x000000u));
-        UI_OK(ui->set_i32(h61, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h61, CP_UI_PROP_OPACITY, 0));
-    }
-    if(state_panel == 3) {
-        cp_ui_handle_t h62 = ui->create(CP_UI_OBJECT_MODAL);
+        UI_OK(ui->insert(h61, h60, 0));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_NUMBER_OF_LINES, 1));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_MARQUEE, 1));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_FONT_WEIGHT, 400));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_WIDTH, 208));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_HEIGHT, 13));
+        UI_OK(ui->set_color(h61, CP_UI_PROP_TEXT_COLOR, 0xe3e2dcu));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_MARGIN_LEFT, 7));
+        UI_OK(ui->set_i32(h61, CP_UI_PROP_MARGIN_TOP, 3));
+        UI_OK(ui->set_string(h61, CP_UI_PROP_TEXT, state_queueTitle2));
+        cp_ui_handle_t h62 = ui->create(CP_UI_OBJECT_TEXT);
         if(h62 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[62] = h62;
-        UI_OK(ui->insert(h62, h0, 0));
-        UI_OK(ui->set_i32(h62, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h62, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h62, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h62, CP_UI_PROP_WIDTH, 320));
-        UI_OK(ui->set_i32(h62, CP_UI_PROP_HEIGHT, 240));
-        UI_OK(ui->set_i32(h62, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h62, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_color(h62, CP_UI_PROP_BACKGROUND_COLOR, 0xc9c5bdu));
-        UI_OK(ui->set_i32(h62, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h62, CP_UI_PROP_OPACITY, 255));
-        cp_ui_handle_t h63 = ui->create(CP_UI_OBJECT_IMAGE);
+        UI_OK(ui->insert(h62, h60, 0));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_NUMBER_OF_LINES, 1));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_MARQUEE, 1));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_FONT_WEIGHT, 400));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_WIDTH, 208));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_HEIGHT, 11));
+        UI_OK(ui->set_color(h62, CP_UI_PROP_TEXT_COLOR, 0x9a9c97u));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_MARGIN_LEFT, 7));
+        UI_OK(ui->set_i32(h62, CP_UI_PROP_MARGIN_TOP, 1));
+        UI_OK(ui->set_string(h62, CP_UI_PROP_TEXT, state_queueArtist2));
+        cp_ui_handle_t h63 = ui->create(CP_UI_OBJECT_TEXT);
         if(h63 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[63] = h63;
-        UI_OK(ui->insert(h63, h62, 0));
+        UI_OK(ui->insert(h63, h50, 0));
+        UI_OK(ui->set_i32(h63, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h63, CP_UI_PROP_FONT_WEIGHT, 400));
+        UI_OK(ui->set_i32(h63, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h63, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h63, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
         UI_OK(ui->set_i32(h63, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h63, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h63, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h63, CP_UI_PROP_WIDTH, 320));
-        UI_OK(ui->set_i32(h63, CP_UI_PROP_HEIGHT, 240));
-        UI_OK(ui->set_string(h63, CP_UI_PROP_IMAGE_SOURCE, "signal-modal"));
-        cp_ui_handle_t h64 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_i32(h63, CP_UI_PROP_X, 49));
+        UI_OK(ui->set_i32(h63, CP_UI_PROP_Y, 178));
+        UI_OK(ui->set_i32(h63, CP_UI_PROP_WIDTH, 222));
+        UI_OK(ui->set_i32(h63, CP_UI_PROP_HEIGHT, 9));
+        UI_OK(ui->set_color(h63, CP_UI_PROP_TEXT_COLOR, 0x9ea09au));
+        UI_OK(ui->set_i32(h63, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+        UI_OK(ui->set_string(h63, CP_UI_PROP_TEXT, "SELECT PLAYS / MENU RETURNS"));
+    } else {
+        cp_ui_handle_t h64 = ui->create(CP_UI_OBJECT_VIEW);
         if(h64 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[64] = h64;
-        UI_OK(ui->insert(h64, h62, 0));
-        UI_OK(ui->set_i32(h64, CP_UI_PROP_FONT_SIZE, 8));
-        UI_OK(ui->set_i32(h64, CP_UI_PROP_FONT_WEIGHT, 700));
-        UI_OK(ui->set_i32(h64, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h64, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h64, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
+        UI_OK(ui->insert(h64, h0, 0));
+        UI_OK(ui->set_i32(h64, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h64, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
         UI_OK(ui->set_i32(h64, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h64, CP_UI_PROP_X, 47));
-        UI_OK(ui->set_i32(h64, CP_UI_PROP_Y, 34));
-        UI_OK(ui->set_i32(h64, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h64, CP_UI_PROP_HEIGHT, 11));
-        UI_OK(ui->set_color(h64, CP_UI_PROP_TEXT_COLOR, 0x555651u));
-        UI_OK(ui->set_string(h64, CP_UI_PROP_TEXT, "PLAYBACK / MODE"));
-        cp_ui_handle_t h65 = ui->create(CP_UI_OBJECT_VIEW);
+        UI_OK(ui->set_i32(h64, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h64, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h64, CP_UI_PROP_WIDTH, 0));
+        UI_OK(ui->set_i32(h64, CP_UI_PROP_HEIGHT, 0));
+        UI_OK(ui->set_color(h64, CP_UI_PROP_BACKGROUND_COLOR, 0x000000u));
+        UI_OK(ui->set_i32(h64, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+        UI_OK(ui->set_i32(h64, CP_UI_PROP_OPACITY, 0));
+    }
+    if(state_panel == 3) {
+        cp_ui_handle_t h65 = ui->create(CP_UI_OBJECT_MODAL);
         if(h65 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[65] = h65;
-        UI_OK(ui->insert(h65, h62, 0));
+        UI_OK(ui->insert(h65, h0, 0));
+        UI_OK(ui->set_i32(h65, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h65, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h65, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h65, CP_UI_PROP_WIDTH, 320));
+        UI_OK(ui->set_i32(h65, CP_UI_PROP_HEIGHT, 240));
         UI_OK(ui->set_i32(h65, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
         UI_OK(ui->set_i32(h65, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h65, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h65, CP_UI_PROP_X, 49));
-        UI_OK(ui->set_i32(h65, CP_UI_PROP_Y, 68));
-        UI_OK(ui->set_i32(h65, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h65, CP_UI_PROP_HEIGHT, 92));
-        cp_ui_handle_t h66 = ui->create(CP_UI_OBJECT_VIEW);
+        UI_OK(ui->set_color(h65, CP_UI_PROP_BACKGROUND_COLOR, 0xc9c5bdu));
+        UI_OK(ui->set_i32(h65, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+        UI_OK(ui->set_i32(h65, CP_UI_PROP_OPACITY, 255));
+        cp_ui_handle_t h66 = ui->create(CP_UI_OBJECT_IMAGE);
         if(h66 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[66] = h66;
         UI_OK(ui->insert(h66, h65, 0));
-        if(state_mode == 0) {
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h66, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h66, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
-        } else {
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h66, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h66, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h66, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
-        }
+        UI_OK(ui->set_i32(h66, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h66, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h66, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h66, CP_UI_PROP_WIDTH, 320));
+        UI_OK(ui->set_i32(h66, CP_UI_PROP_HEIGHT, 240));
+        UI_OK(ui->set_string(h66, CP_UI_PROP_IMAGE_SOURCE, "signal-modal"));
         cp_ui_handle_t h67 = ui->create(CP_UI_OBJECT_TEXT);
         if(h67 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[67] = h67;
-        UI_OK(ui->insert(h67, h66, 0));
-        if(state_mode == 0) {
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h67, CP_UI_PROP_TEXT_COLOR, 0x171816u));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_MARGIN_LEFT, 8));
-        } else {
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h67, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-            UI_OK(ui->set_i32(h67, CP_UI_PROP_MARGIN_LEFT, 8));
-        }
-        UI_OK(ui->set_string(h67, CP_UI_PROP_TEXT, "01  NORMAL"));
+        UI_OK(ui->insert(h67, h65, 0));
+        UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT_WEIGHT, 700));
+        UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h67, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h67, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
+        UI_OK(ui->set_i32(h67, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h67, CP_UI_PROP_X, 47));
+        UI_OK(ui->set_i32(h67, CP_UI_PROP_Y, 34));
+        UI_OK(ui->set_i32(h67, CP_UI_PROP_WIDTH, 222));
+        UI_OK(ui->set_i32(h67, CP_UI_PROP_HEIGHT, 11));
+        UI_OK(ui->set_color(h67, CP_UI_PROP_TEXT_COLOR, 0x555651u));
+        UI_OK(ui->set_string(h67, CP_UI_PROP_TEXT, "PLAYBACK / MODE"));
         cp_ui_handle_t h68 = ui->create(CP_UI_OBJECT_VIEW);
         if(h68 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[68] = h68;
         UI_OK(ui->insert(h68, h65, 0));
-        if(state_mode == 1) {
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h68, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h68, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
-        } else {
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h68, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h68, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h68, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
-        }
-        cp_ui_handle_t h69 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_i32(h68, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h68, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+        UI_OK(ui->set_i32(h68, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h68, CP_UI_PROP_X, 49));
+        UI_OK(ui->set_i32(h68, CP_UI_PROP_Y, 68));
+        UI_OK(ui->set_i32(h68, CP_UI_PROP_WIDTH, 222));
+        UI_OK(ui->set_i32(h68, CP_UI_PROP_HEIGHT, 92));
+        cp_ui_handle_t h69 = ui->create(CP_UI_OBJECT_VIEW);
         if(h69 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[69] = h69;
         UI_OK(ui->insert(h69, h68, 0));
-        if(state_mode == 1) {
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h69, CP_UI_PROP_TEXT_COLOR, 0x171816u));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_MARGIN_LEFT, 8));
+        if(state_mode == 0) {
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h69, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h69, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         } else {
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h69, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-            UI_OK(ui->set_i32(h69, CP_UI_PROP_MARGIN_LEFT, 8));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h69, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h69, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h69, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         }
-        UI_OK(ui->set_string(h69, CP_UI_PROP_TEXT, "02  SHUFFLE"));
-        cp_ui_handle_t h70 = ui->create(CP_UI_OBJECT_VIEW);
+        cp_ui_handle_t h70 = ui->create(CP_UI_OBJECT_TEXT);
         if(h70 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[70] = h70;
-        UI_OK(ui->insert(h70, h65, 0));
-        if(state_mode == 2) {
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h70, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h70, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+        UI_OK(ui->insert(h70, h69, 0));
+        if(state_mode == 0) {
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h70, CP_UI_PROP_TEXT_COLOR, 0x171816u));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_MARGIN_LEFT, 8));
         } else {
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h70, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h70, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h70, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h70, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_i32(h70, CP_UI_PROP_MARGIN_LEFT, 8));
         }
-        cp_ui_handle_t h71 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_string(h70, CP_UI_PROP_TEXT, "DIRECT"));
+        cp_ui_handle_t h71 = ui->create(CP_UI_OBJECT_VIEW);
         if(h71 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[71] = h71;
-        UI_OK(ui->insert(h71, h70, 0));
-        if(state_mode == 2) {
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h71, CP_UI_PROP_TEXT_COLOR, 0x171816u));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_MARGIN_LEFT, 8));
+        UI_OK(ui->insert(h71, h68, 0));
+        if(state_mode == 1) {
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h71, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h71, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         } else {
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h71, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-            UI_OK(ui->set_i32(h71, CP_UI_PROP_MARGIN_LEFT, 8));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h71, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h71, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h71, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         }
-        UI_OK(ui->set_string(h71, CP_UI_PROP_TEXT, "03  REPEAT ALL"));
-        cp_ui_handle_t h72 = ui->create(CP_UI_OBJECT_VIEW);
+        cp_ui_handle_t h72 = ui->create(CP_UI_OBJECT_TEXT);
         if(h72 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[72] = h72;
-        UI_OK(ui->insert(h72, h65, 0));
-        if(state_mode == 3) {
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h72, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h72, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+        UI_OK(ui->insert(h72, h71, 0));
+        if(state_mode == 1) {
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h72, CP_UI_PROP_TEXT_COLOR, 0x171816u));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_MARGIN_LEFT, 8));
         } else {
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_WIDTH, 222));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_HEIGHT, 19));
-            UI_OK(ui->set_color(h72, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-            UI_OK(ui->set_color(h72, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_BORDER_WIDTH, 1));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_RADIUS, 3));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_MARGIN_BOTTOM, 2));
-            UI_OK(ui->set_i32(h72, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h72, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_i32(h72, CP_UI_PROP_MARGIN_LEFT, 8));
         }
-        cp_ui_handle_t h73 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_string(h72, CP_UI_PROP_TEXT, "RANDOM BUS"));
+        cp_ui_handle_t h73 = ui->create(CP_UI_OBJECT_VIEW);
         if(h73 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[73] = h73;
-        UI_OK(ui->insert(h73, h72, 0));
-        if(state_mode == 3) {
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h73, CP_UI_PROP_TEXT_COLOR, 0x171816u));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_MARGIN_LEFT, 8));
+        UI_OK(ui->insert(h73, h68, 0));
+        if(state_mode == 2) {
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h73, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h73, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         } else {
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_FONT_SIZE, 9));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_FONT_WEIGHT, 400));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_LINE_HEIGHT, 0));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_WIDTH, 206));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_HEIGHT, 11));
-            UI_OK(ui->set_color(h73, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
-            UI_OK(ui->set_i32(h73, CP_UI_PROP_MARGIN_LEFT, 8));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h73, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h73, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h73, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
         }
-        UI_OK(ui->set_string(h73, CP_UI_PROP_TEXT, "04  REPEAT ONE"));
         cp_ui_handle_t h74 = ui->create(CP_UI_OBJECT_TEXT);
         if(h74 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[74] = h74;
-        UI_OK(ui->insert(h74, h62, 0));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT_SIZE, 6));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT_WEIGHT, 400));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_X, 49));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_Y, 178));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_HEIGHT, 9));
-        UI_OK(ui->set_color(h74, CP_UI_PROP_TEXT_COLOR, 0x9ea09au));
-        UI_OK(ui->set_i32(h74, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-        UI_OK(ui->set_string(h74, CP_UI_PROP_TEXT, "SELECT APPLIES / MENU RETURNS"));
-    } else {
+        UI_OK(ui->insert(h74, h73, 0));
+        if(state_mode == 2) {
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h74, CP_UI_PROP_TEXT_COLOR, 0x171816u));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_MARGIN_LEFT, 8));
+        } else {
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h74, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_i32(h74, CP_UI_PROP_MARGIN_LEFT, 8));
+        }
+        UI_OK(ui->set_string(h74, CP_UI_PROP_TEXT, "LOOP PROGRAM"));
         cp_ui_handle_t h75 = ui->create(CP_UI_OBJECT_VIEW);
         if(h75 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[75] = h75;
-        UI_OK(ui->insert(h75, h0, 0));
-        UI_OK(ui->set_i32(h75, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h75, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h75, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h75, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h75, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h75, CP_UI_PROP_WIDTH, 0));
-        UI_OK(ui->set_i32(h75, CP_UI_PROP_HEIGHT, 0));
-        UI_OK(ui->set_color(h75, CP_UI_PROP_BACKGROUND_COLOR, 0x000000u));
-        UI_OK(ui->set_i32(h75, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h75, CP_UI_PROP_OPACITY, 0));
-    }
-    if(state_panel == 4) {
-        cp_ui_handle_t h76 = ui->create(CP_UI_OBJECT_MODAL);
+        UI_OK(ui->insert(h75, h68, 0));
+        if(state_mode == 3) {
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h75, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h75, CP_UI_PROP_BORDER_COLOR, 0xff9b63u));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+        } else {
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_WIDTH, 222));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_HEIGHT, 19));
+            UI_OK(ui->set_color(h75, CP_UI_PROP_BACKGROUND_COLOR, 0x3a3b39u));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+            UI_OK(ui->set_color(h75, CP_UI_PROP_BORDER_COLOR, 0x50514eu));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_BORDER_WIDTH, 1));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_RADIUS, 3));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_MARGIN_BOTTOM, 2));
+            UI_OK(ui->set_i32(h75, CP_UI_PROP_JUSTIFY, CP_UI_PLACE_CENTER));
+        }
+        cp_ui_handle_t h76 = ui->create(CP_UI_OBJECT_TEXT);
         if(h76 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[76] = h76;
-        UI_OK(ui->insert(h76, h0, 0));
-        UI_OK(ui->set_i32(h76, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h76, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h76, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h76, CP_UI_PROP_WIDTH, 320));
-        UI_OK(ui->set_i32(h76, CP_UI_PROP_HEIGHT, 240));
-        UI_OK(ui->set_i32(h76, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h76, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_color(h76, CP_UI_PROP_BACKGROUND_COLOR, 0xc9c5bdu));
-        UI_OK(ui->set_i32(h76, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h76, CP_UI_PROP_OPACITY, 255));
-        cp_ui_handle_t h77 = ui->create(CP_UI_OBJECT_IMAGE);
+        UI_OK(ui->insert(h76, h75, 0));
+        if(state_mode == 3) {
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h76, CP_UI_PROP_TEXT_COLOR, 0x171816u));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_MARGIN_LEFT, 8));
+        } else {
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_FONT_SIZE, 11));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_FONT_WEIGHT, 400));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_LINE_HEIGHT, 0));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_WIDTH, 206));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_HEIGHT, 11));
+            UI_OK(ui->set_color(h76, CP_UI_PROP_TEXT_COLOR, 0xd6d6d0u));
+            UI_OK(ui->set_i32(h76, CP_UI_PROP_MARGIN_LEFT, 8));
+        }
+        UI_OK(ui->set_string(h76, CP_UI_PROP_TEXT, "LOOP SOURCE"));
+        cp_ui_handle_t h77 = ui->create(CP_UI_OBJECT_TEXT);
         if(h77 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[77] = h77;
-        UI_OK(ui->insert(h77, h76, 0));
+        UI_OK(ui->insert(h77, h65, 0));
+        UI_OK(ui->set_i32(h77, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h77, CP_UI_PROP_FONT_WEIGHT, 400));
+        UI_OK(ui->set_i32(h77, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h77, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h77, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
         UI_OK(ui->set_i32(h77, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h77, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h77, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h77, CP_UI_PROP_WIDTH, 320));
-        UI_OK(ui->set_i32(h77, CP_UI_PROP_HEIGHT, 240));
-        UI_OK(ui->set_string(h77, CP_UI_PROP_IMAGE_SOURCE, "signal-modal"));
-        cp_ui_handle_t h78 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_i32(h77, CP_UI_PROP_X, 49));
+        UI_OK(ui->set_i32(h77, CP_UI_PROP_Y, 178));
+        UI_OK(ui->set_i32(h77, CP_UI_PROP_WIDTH, 222));
+        UI_OK(ui->set_i32(h77, CP_UI_PROP_HEIGHT, 9));
+        UI_OK(ui->set_color(h77, CP_UI_PROP_TEXT_COLOR, 0x9ea09au));
+        UI_OK(ui->set_i32(h77, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+        UI_OK(ui->set_string(h77, CP_UI_PROP_TEXT, "SELECT APPLIES / MENU RETURNS"));
+    } else {
+        cp_ui_handle_t h78 = ui->create(CP_UI_OBJECT_VIEW);
         if(h78 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[78] = h78;
-        UI_OK(ui->insert(h78, h76, 0));
-        UI_OK(ui->set_i32(h78, CP_UI_PROP_FONT_SIZE, 8));
-        UI_OK(ui->set_i32(h78, CP_UI_PROP_FONT_WEIGHT, 700));
-        UI_OK(ui->set_i32(h78, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h78, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h78, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
+        UI_OK(ui->insert(h78, h0, 0));
+        UI_OK(ui->set_i32(h78, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h78, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
         UI_OK(ui->set_i32(h78, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h78, CP_UI_PROP_X, 47));
-        UI_OK(ui->set_i32(h78, CP_UI_PROP_Y, 34));
-        UI_OK(ui->set_i32(h78, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h78, CP_UI_PROP_HEIGHT, 11));
-        UI_OK(ui->set_color(h78, CP_UI_PROP_TEXT_COLOR, 0x555651u));
-        UI_OK(ui->set_string(h78, CP_UI_PROP_TEXT, "LYRICS / LIVE"));
-        cp_ui_handle_t h79 = ui->create(CP_UI_OBJECT_VIEW);
+        UI_OK(ui->set_i32(h78, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h78, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h78, CP_UI_PROP_WIDTH, 0));
+        UI_OK(ui->set_i32(h78, CP_UI_PROP_HEIGHT, 0));
+        UI_OK(ui->set_color(h78, CP_UI_PROP_BACKGROUND_COLOR, 0x000000u));
+        UI_OK(ui->set_i32(h78, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+        UI_OK(ui->set_i32(h78, CP_UI_PROP_OPACITY, 0));
+    }
+    if(state_panel == 5) {
+        cp_ui_handle_t h79 = ui->create(CP_UI_OBJECT_MODAL);
         if(h79 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[79] = h79;
-        UI_OK(ui->insert(h79, h76, 0));
+        UI_OK(ui->insert(h79, h0, 0));
+        UI_OK(ui->set_i32(h79, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h79, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h79, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h79, CP_UI_PROP_WIDTH, 320));
+        UI_OK(ui->set_i32(h79, CP_UI_PROP_HEIGHT, 240));
         UI_OK(ui->set_i32(h79, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
         UI_OK(ui->set_i32(h79, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h79, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h79, CP_UI_PROP_X, 49));
-        UI_OK(ui->set_i32(h79, CP_UI_PROP_Y, 67));
-        UI_OK(ui->set_i32(h79, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h79, CP_UI_PROP_HEIGHT, 92));
-        cp_ui_handle_t h80 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_color(h79, CP_UI_PROP_BACKGROUND_COLOR, 0xc9c5bdu));
+        UI_OK(ui->set_i32(h79, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+        UI_OK(ui->set_i32(h79, CP_UI_PROP_OPACITY, 255));
+        cp_ui_handle_t h80 = ui->create(CP_UI_OBJECT_IMAGE);
         if(h80 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[80] = h80;
         UI_OK(ui->insert(h80, h79, 0));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_NUMBER_OF_LINES, 1));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_MARQUEE, 1));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_FONT_SIZE, 9));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_FONT_WEIGHT, 400));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_HEIGHT, 18));
-        UI_OK(ui->set_color(h80, CP_UI_PROP_TEXT_COLOR, 0x92948fu));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-        UI_OK(ui->set_i32(h80, CP_UI_PROP_MARGIN_BOTTOM, 8));
-        UI_OK(ui->set_string(h80, CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricPrevious : "")));
+        UI_OK(ui->set_i32(h80, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h80, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h80, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h80, CP_UI_PROP_WIDTH, 320));
+        UI_OK(ui->set_i32(h80, CP_UI_PROP_HEIGHT, 240));
+        UI_OK(ui->set_string(h80, CP_UI_PROP_IMAGE_SOURCE, "signal-modal"));
         cp_ui_handle_t h81 = ui->create(CP_UI_OBJECT_TEXT);
         if(h81 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[81] = h81;
         UI_OK(ui->insert(h81, h79, 0));
-        UI_OK(ui->set_i32(h81, CP_UI_PROP_NUMBER_OF_LINES, 1));
-        UI_OK(ui->set_i32(h81, CP_UI_PROP_MARQUEE, 1));
-        UI_OK(ui->set_i32(h81, CP_UI_PROP_FONT_SIZE, 12));
-        UI_OK(ui->set_i32(h81, CP_UI_PROP_FONT_WEIGHT, 400));
+        UI_OK(ui->set_i32(h81, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h81, CP_UI_PROP_FONT_WEIGHT, 700));
         UI_OK(ui->set_i32(h81, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
         UI_OK(ui->set_i32(h81, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h81, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+        UI_OK(ui->set_i32(h81, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
+        UI_OK(ui->set_i32(h81, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h81, CP_UI_PROP_X, 47));
+        UI_OK(ui->set_i32(h81, CP_UI_PROP_Y, 34));
         UI_OK(ui->set_i32(h81, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h81, CP_UI_PROP_HEIGHT, 24));
-        UI_OK(ui->set_color(h81, CP_UI_PROP_TEXT_COLOR, 0xf36b21u));
-        UI_OK(ui->set_i32(h81, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-        UI_OK(ui->set_i32(h81, CP_UI_PROP_MARGIN_BOTTOM, 8));
-        UI_OK(ui->set_string(h81, CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricCurrent : "No lyrics available")));
-        cp_ui_handle_t h82 = ui->create(CP_UI_OBJECT_TEXT);
+        UI_OK(ui->set_i32(h81, CP_UI_PROP_HEIGHT, 11));
+        UI_OK(ui->set_color(h81, CP_UI_PROP_TEXT_COLOR, 0x555651u));
+        UI_OK(ui->set_string(h81, CP_UI_PROP_TEXT, "PLAYBACK / SEEK"));
+        cp_ui_handle_t h82 = ui->create(CP_UI_OBJECT_VIEW);
         if(h82 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[82] = h82;
         UI_OK(ui->insert(h82, h79, 0));
-        UI_OK(ui->set_i32(h82, CP_UI_PROP_NUMBER_OF_LINES, 1));
-        UI_OK(ui->set_i32(h82, CP_UI_PROP_MARQUEE, 1));
-        UI_OK(ui->set_i32(h82, CP_UI_PROP_FONT_SIZE, 9));
-        UI_OK(ui->set_i32(h82, CP_UI_PROP_FONT_WEIGHT, 400));
-        UI_OK(ui->set_i32(h82, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h82, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h82, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+        UI_OK(ui->set_i32(h82, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h82, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+        UI_OK(ui->set_i32(h82, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h82, CP_UI_PROP_X, 49));
+        UI_OK(ui->set_i32(h82, CP_UI_PROP_Y, 65));
         UI_OK(ui->set_i32(h82, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h82, CP_UI_PROP_HEIGHT, 18));
-        UI_OK(ui->set_color(h82, CP_UI_PROP_TEXT_COLOR, 0x92948fu));
-        UI_OK(ui->set_i32(h82, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-        UI_OK(ui->set_i32(h82, CP_UI_PROP_MARGIN_BOTTOM, 8));
-        UI_OK(ui->set_string(h82, CP_UI_PROP_TEXT, ((state_lyricInfo[0] == 1) ? state_lyricNext : "")));
+        UI_OK(ui->set_i32(h82, CP_UI_PROP_HEIGHT, 105));
         cp_ui_handle_t h83 = ui->create(CP_UI_OBJECT_TEXT);
         if(h83 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[83] = h83;
-        UI_OK(ui->insert(h83, h76, 0));
-        UI_OK(ui->set_i32(h83, CP_UI_PROP_FONT_SIZE, 6));
+        UI_OK(ui->insert(h83, h82, 0));
+        UI_OK(ui->set_i32(h83, CP_UI_PROP_FONT_SIZE, 11));
         UI_OK(ui->set_i32(h83, CP_UI_PROP_FONT_WEIGHT, 400));
         UI_OK(ui->set_i32(h83, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
         UI_OK(ui->set_i32(h83, CP_UI_PROP_LINE_HEIGHT, 0));
         UI_OK(ui->set_i32(h83, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-        UI_OK(ui->set_i32(h83, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h83, CP_UI_PROP_X, 49));
-        UI_OK(ui->set_i32(h83, CP_UI_PROP_Y, 178));
         UI_OK(ui->set_i32(h83, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h83, CP_UI_PROP_HEIGHT, 9));
-        UI_OK(ui->set_color(h83, CP_UI_PROP_TEXT_COLOR, 0x9ea09au));
+        UI_OK(ui->set_i32(h83, CP_UI_PROP_HEIGHT, 10));
+        UI_OK(ui->set_color(h83, CP_UI_PROP_TEXT_COLOR, 0x969893u));
         UI_OK(ui->set_i32(h83, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-        UI_OK(ui->set_string(h83, CP_UI_PROP_TEXT, "SELECT OR MENU RETURNS"));
-    } else {
+        UI_OK(ui->set_string(h83, CP_UI_PROP_TEXT, "POSITION"));
         cp_ui_handle_t h84 = ui->create(CP_UI_OBJECT_VIEW);
         if(h84 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[84] = h84;
-        UI_OK(ui->insert(h84, h0, 0));
+        UI_OK(ui->insert(h84, h82, 0));
         UI_OK(ui->set_i32(h84, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
         UI_OK(ui->set_i32(h84, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h84, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h84, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h84, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h84, CP_UI_PROP_WIDTH, 0));
-        UI_OK(ui->set_i32(h84, CP_UI_PROP_HEIGHT, 0));
-        UI_OK(ui->set_color(h84, CP_UI_PROP_BACKGROUND_COLOR, 0x000000u));
+        UI_OK(ui->set_i32(h84, CP_UI_PROP_WIDTH, 198));
+        UI_OK(ui->set_i32(h84, CP_UI_PROP_HEIGHT, 8));
+        UI_OK(ui->set_color(h84, CP_UI_PROP_BACKGROUND_COLOR, 0x555651u));
         UI_OK(ui->set_i32(h84, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h84, CP_UI_PROP_OPACITY, 0));
-    }
-    if(state_panel == 5) {
-        cp_ui_handle_t h85 = ui->create(CP_UI_OBJECT_MODAL);
+        UI_OK(ui->set_color(h84, CP_UI_PROP_BORDER_COLOR, 0x767872u));
+        UI_OK(ui->set_i32(h84, CP_UI_PROP_BORDER_WIDTH, 1));
+        UI_OK(ui->set_i32(h84, CP_UI_PROP_RADIUS, 4));
+        UI_OK(ui->set_i32(h84, CP_UI_PROP_MARGIN_LEFT, 12));
+        UI_OK(ui->set_i32(h84, CP_UI_PROP_MARGIN_TOP, 15));
+        cp_ui_handle_t h85 = ui->create(CP_UI_OBJECT_VIEW);
         if(h85 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[85] = h85;
-        UI_OK(ui->insert(h85, h0, 0));
-        UI_OK(ui->set_i32(h85, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h85, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h85, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h85, CP_UI_PROP_WIDTH, 320));
-        UI_OK(ui->set_i32(h85, CP_UI_PROP_HEIGHT, 240));
+        UI_OK(ui->insert(h85, h84, 0));
         UI_OK(ui->set_i32(h85, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
         UI_OK(ui->set_i32(h85, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_color(h85, CP_UI_PROP_BACKGROUND_COLOR, 0xc9c5bdu));
+        UI_OK(ui->set_i32(h85, CP_UI_PROP_HEIGHT, 6));
+        UI_OK(ui->set_color(h85, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
         UI_OK(ui->set_i32(h85, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h85, CP_UI_PROP_OPACITY, 255));
-        cp_ui_handle_t h86 = ui->create(CP_UI_OBJECT_IMAGE);
+        UI_OK(ui->set_i32(h85, CP_UI_PROP_RADIUS, 3));
+        UI_OK(ui->set_i32(h85, CP_UI_PROP_WIDTH, ((cp_helper_progressWidth(state_seekDraft, state_info[2]) * 198) / 228)));
+        cp_ui_handle_t h86 = ui->create(CP_UI_OBJECT_TEXT);
         if(h86 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
         native_handles[86] = h86;
-        UI_OK(ui->insert(h86, h85, 0));
-        UI_OK(ui->set_i32(h86, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h86, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h86, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h86, CP_UI_PROP_WIDTH, 320));
-        UI_OK(ui->set_i32(h86, CP_UI_PROP_HEIGHT, 240));
-        UI_OK(ui->set_string(h86, CP_UI_PROP_IMAGE_SOURCE, "signal-modal"));
-        cp_ui_handle_t h87 = ui->create(CP_UI_OBJECT_TEXT);
-        if(h87 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[87] = h87;
-        UI_OK(ui->insert(h87, h85, 0));
-        UI_OK(ui->set_i32(h87, CP_UI_PROP_FONT_SIZE, 8));
-        UI_OK(ui->set_i32(h87, CP_UI_PROP_FONT_WEIGHT, 700));
-        UI_OK(ui->set_i32(h87, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h87, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h87, CP_UI_PROP_FONT, CP_UI_FONT_MONO));
-        UI_OK(ui->set_i32(h87, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h87, CP_UI_PROP_X, 47));
-        UI_OK(ui->set_i32(h87, CP_UI_PROP_Y, 34));
-        UI_OK(ui->set_i32(h87, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h87, CP_UI_PROP_HEIGHT, 11));
-        UI_OK(ui->set_color(h87, CP_UI_PROP_TEXT_COLOR, 0x555651u));
-        UI_OK(ui->set_string(h87, CP_UI_PROP_TEXT, "PLAYBACK / SEEK"));
-        cp_ui_handle_t h88 = ui->create(CP_UI_OBJECT_VIEW);
-        if(h88 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[88] = h88;
-        UI_OK(ui->insert(h88, h85, 0));
-        UI_OK(ui->set_i32(h88, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h88, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h88, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h88, CP_UI_PROP_X, 49));
-        UI_OK(ui->set_i32(h88, CP_UI_PROP_Y, 65));
-        UI_OK(ui->set_i32(h88, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h88, CP_UI_PROP_HEIGHT, 105));
-        cp_ui_handle_t h89 = ui->create(CP_UI_OBJECT_TEXT);
-        if(h89 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[89] = h89;
-        UI_OK(ui->insert(h89, h88, 0));
-        UI_OK(ui->set_i32(h89, CP_UI_PROP_FONT_SIZE, 7));
-        UI_OK(ui->set_i32(h89, CP_UI_PROP_FONT_WEIGHT, 400));
-        UI_OK(ui->set_i32(h89, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h89, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h89, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-        UI_OK(ui->set_i32(h89, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h89, CP_UI_PROP_HEIGHT, 10));
-        UI_OK(ui->set_color(h89, CP_UI_PROP_TEXT_COLOR, 0x969893u));
-        UI_OK(ui->set_i32(h89, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-        UI_OK(ui->set_string(h89, CP_UI_PROP_TEXT, "POSITION"));
-        cp_ui_handle_t h90 = ui->create(CP_UI_OBJECT_VIEW);
-        if(h90 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[90] = h90;
-        UI_OK(ui->insert(h90, h88, 0));
-        UI_OK(ui->set_i32(h90, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h90, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h90, CP_UI_PROP_WIDTH, 198));
-        UI_OK(ui->set_i32(h90, CP_UI_PROP_HEIGHT, 8));
-        UI_OK(ui->set_color(h90, CP_UI_PROP_BACKGROUND_COLOR, 0x555651u));
-        UI_OK(ui->set_i32(h90, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_color(h90, CP_UI_PROP_BORDER_COLOR, 0x767872u));
-        UI_OK(ui->set_i32(h90, CP_UI_PROP_BORDER_WIDTH, 1));
-        UI_OK(ui->set_i32(h90, CP_UI_PROP_RADIUS, 4));
-        UI_OK(ui->set_i32(h90, CP_UI_PROP_MARGIN_LEFT, 12));
-        UI_OK(ui->set_i32(h90, CP_UI_PROP_MARGIN_TOP, 15));
-        cp_ui_handle_t h91 = ui->create(CP_UI_OBJECT_VIEW);
-        if(h91 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[91] = h91;
-        UI_OK(ui->insert(h91, h90, 0));
-        UI_OK(ui->set_i32(h91, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h91, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h91, CP_UI_PROP_HEIGHT, 6));
-        UI_OK(ui->set_color(h91, CP_UI_PROP_BACKGROUND_COLOR, 0xf36b21u));
-        UI_OK(ui->set_i32(h91, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h91, CP_UI_PROP_RADIUS, 3));
-        UI_OK(ui->set_i32(h91, CP_UI_PROP_WIDTH, ((cp_helper_progressWidth(state_seekDraft, state_info[2]) * 198) / 228)));
-        cp_ui_handle_t h92 = ui->create(CP_UI_OBJECT_TEXT);
-        if(h92 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[92] = h92;
-        UI_OK(ui->insert(h92, h88, 0));
-        UI_OK(ui->set_i32(h92, CP_UI_PROP_FONT_SIZE, 11));
-        UI_OK(ui->set_i32(h92, CP_UI_PROP_FONT_WEIGHT, 400));
-        UI_OK(ui->set_i32(h92, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h92, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h92, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-        UI_OK(ui->set_i32(h92, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h92, CP_UI_PROP_HEIGHT, 18));
-        UI_OK(ui->set_color(h92, CP_UI_PROP_TEXT_COLOR, 0xf0eee7u));
-        UI_OK(ui->set_i32(h92, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-        UI_OK(ui->set_i32(h92, CP_UI_PROP_MARGIN_TOP, 12));
+        UI_OK(ui->insert(h86, h82, 0));
+        UI_OK(ui->set_i32(h86, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h86, CP_UI_PROP_FONT_WEIGHT, 400));
+        UI_OK(ui->set_i32(h86, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h86, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h86, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+        UI_OK(ui->set_i32(h86, CP_UI_PROP_WIDTH, 222));
+        UI_OK(ui->set_i32(h86, CP_UI_PROP_HEIGHT, 18));
+        UI_OK(ui->set_color(h86, CP_UI_PROP_TEXT_COLOR, 0xf0eee7u));
+        UI_OK(ui->set_i32(h86, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+        UI_OK(ui->set_i32(h86, CP_UI_PROP_MARGIN_TOP, 12));
         text_cursor = 0;
         text_buffer[0] = '\0';
         cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, (state_seekDraft / 1000));
         cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "s / ");
         cp_i32_append(text_buffer, sizeof(text_buffer), &text_cursor, (state_info[2] / 1000));
         cp_text_append(text_buffer, sizeof(text_buffer), &text_cursor, "s");
-        UI_OK(ui->set_string(h92, CP_UI_PROP_TEXT, text_buffer));
-        cp_ui_handle_t h93 = ui->create(CP_UI_OBJECT_TEXT);
-        if(h93 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[93] = h93;
-        UI_OK(ui->insert(h93, h88, 0));
-        UI_OK(ui->set_i32(h93, CP_UI_PROP_FONT_SIZE, 7));
-        UI_OK(ui->set_i32(h93, CP_UI_PROP_FONT_WEIGHT, 400));
-        UI_OK(ui->set_i32(h93, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
-        UI_OK(ui->set_i32(h93, CP_UI_PROP_LINE_HEIGHT, 0));
-        UI_OK(ui->set_i32(h93, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
-        UI_OK(ui->set_i32(h93, CP_UI_PROP_WIDTH, 222));
-        UI_OK(ui->set_i32(h93, CP_UI_PROP_HEIGHT, 10));
-        UI_OK(ui->set_color(h93, CP_UI_PROP_TEXT_COLOR, 0x969893u));
-        UI_OK(ui->set_i32(h93, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
-        UI_OK(ui->set_i32(h93, CP_UI_PROP_MARGIN_TOP, 10));
-        UI_OK(ui->set_string(h93, CP_UI_PROP_TEXT, "WHEEL 5 SEC / SELECT APPLIES"));
+        UI_OK(ui->set_string(h86, CP_UI_PROP_TEXT, text_buffer));
+        cp_ui_handle_t h87 = ui->create(CP_UI_OBJECT_TEXT);
+        if(h87 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
+        native_handles[87] = h87;
+        UI_OK(ui->insert(h87, h82, 0));
+        UI_OK(ui->set_i32(h87, CP_UI_PROP_FONT_SIZE, 11));
+        UI_OK(ui->set_i32(h87, CP_UI_PROP_FONT_WEIGHT, 400));
+        UI_OK(ui->set_i32(h87, CP_UI_PROP_FONT_STYLE, CP_UI_FONT_STYLE_NORMAL));
+        UI_OK(ui->set_i32(h87, CP_UI_PROP_LINE_HEIGHT, 0));
+        UI_OK(ui->set_i32(h87, CP_UI_PROP_FONT, CP_UI_FONT_SYSTEM));
+        UI_OK(ui->set_i32(h87, CP_UI_PROP_WIDTH, 222));
+        UI_OK(ui->set_i32(h87, CP_UI_PROP_HEIGHT, 10));
+        UI_OK(ui->set_color(h87, CP_UI_PROP_TEXT_COLOR, 0x969893u));
+        UI_OK(ui->set_i32(h87, CP_UI_PROP_TEXT_ALIGN, CP_UI_TEXT_ALIGN_CENTER));
+        UI_OK(ui->set_i32(h87, CP_UI_PROP_MARGIN_TOP, 10));
+        UI_OK(ui->set_string(h87, CP_UI_PROP_TEXT, "WHEEL 5 SEC / SELECT APPLIES"));
     } else {
-        cp_ui_handle_t h94 = ui->create(CP_UI_OBJECT_VIEW);
-        if(h94 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
-        native_handles[94] = h94;
-        UI_OK(ui->insert(h94, h0, 0));
-        UI_OK(ui->set_i32(h94, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
-        UI_OK(ui->set_i32(h94, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
-        UI_OK(ui->set_i32(h94, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
-        UI_OK(ui->set_i32(h94, CP_UI_PROP_X, 0));
-        UI_OK(ui->set_i32(h94, CP_UI_PROP_Y, 0));
-        UI_OK(ui->set_i32(h94, CP_UI_PROP_WIDTH, 0));
-        UI_OK(ui->set_i32(h94, CP_UI_PROP_HEIGHT, 0));
-        UI_OK(ui->set_color(h94, CP_UI_PROP_BACKGROUND_COLOR, 0x000000u));
-        UI_OK(ui->set_i32(h94, CP_UI_PROP_BACKGROUND_OPACITY, 255));
-        UI_OK(ui->set_i32(h94, CP_UI_PROP_OPACITY, 0));
+        cp_ui_handle_t h88 = ui->create(CP_UI_OBJECT_VIEW);
+        if(h88 == CP_NATIVE_UI_HANDLE_NONE) return CP_NATIVE_ERROR_LIMIT;
+        native_handles[88] = h88;
+        UI_OK(ui->insert(h88, h0, 0));
+        UI_OK(ui->set_i32(h88, CP_UI_PROP_LAYOUT, CP_UI_LAYOUT_FLEX));
+        UI_OK(ui->set_i32(h88, CP_UI_PROP_FLEX_FLOW, CP_UI_FLEX_COLUMN));
+        UI_OK(ui->set_i32(h88, CP_UI_PROP_POSITION, CP_UI_POSITION_ABSOLUTE));
+        UI_OK(ui->set_i32(h88, CP_UI_PROP_X, 0));
+        UI_OK(ui->set_i32(h88, CP_UI_PROP_Y, 0));
+        UI_OK(ui->set_i32(h88, CP_UI_PROP_WIDTH, 0));
+        UI_OK(ui->set_i32(h88, CP_UI_PROP_HEIGHT, 0));
+        UI_OK(ui->set_color(h88, CP_UI_PROP_BACKGROUND_COLOR, 0x000000u));
+        UI_OK(ui->set_i32(h88, CP_UI_PROP_BACKGROUND_OPACITY, 255));
+        UI_OK(ui->set_i32(h88, CP_UI_PROP_OPACITY, 0));
     }
     UI_OK(ui->end_update());
     rendered_structure_key = structure_key;
@@ -2362,6 +2165,10 @@ static int app_mount(void)
     cp_string_assign(state_album, sizeof(state_album), "");
     for(size_t cp_index_info = 0; cp_index_info < 10; ++cp_index_info)
         state_info[cp_index_info] = 0;
+    for(size_t cp_index_systemRequest = 0; cp_index_systemRequest < 1; ++cp_index_systemRequest)
+        state_systemRequest[cp_index_systemRequest] = 0;
+    for(size_t cp_index_system = 0; cp_index_system < 6; ++cp_index_system)
+        state_system[cp_index_system] = 0;
     state_result = 0;
     state_panel = 0;
     state_action = 0;
@@ -2388,11 +2195,16 @@ static int app_mount(void)
     cp_string_assign(state_lyricPrevious, sizeof(state_lyricPrevious), "");
     cp_string_assign(state_lyricCurrent, sizeof(state_lyricCurrent), "");
     cp_string_assign(state_lyricNext, sizeof(state_lyricNext), "");
-    for(size_t cp_index_lyricInfo = 0; cp_index_lyricInfo < 3; ++cp_index_lyricInfo)
+    for(size_t cp_index_lyricInfo = 0; cp_index_lyricInfo < 6; ++cp_index_lyricInfo)
         state_lyricInfo[cp_index_lyricInfo] = 0;
+    state_lyricAnchor = -1;
+    state_lyricBrowseTicks = 0;
+    state_lyricsEnabled = 0;
+    state_lyricFrame = 9;
 
     cp_interval_last_0 = host->monotonic_ms != NULL ? host->monotonic_ms() : 0u;
     cp_interval_last_1 = host->monotonic_ms != NULL ? host->monotonic_ms() : 0u;
+    cp_interval_last_2 = host->monotonic_ms != NULL ? host->monotonic_ms() : 0u;
     char previous_state_title[128];
     cp_string_assign(previous_state_title, sizeof(previous_state_title), state_title);
     (void)previous_state_title;
@@ -2406,6 +2218,14 @@ static int app_mount(void)
     for(size_t cp_snapshot_info = 0; cp_snapshot_info < 10; ++cp_snapshot_info)
         previous_state_info[cp_snapshot_info] = state_info[cp_snapshot_info];
     (void)previous_state_info;
+    int32_t previous_state_systemRequest[1];
+    for(size_t cp_snapshot_systemRequest = 0; cp_snapshot_systemRequest < 1; ++cp_snapshot_systemRequest)
+        previous_state_systemRequest[cp_snapshot_systemRequest] = state_systemRequest[cp_snapshot_systemRequest];
+    (void)previous_state_systemRequest;
+    int32_t previous_state_system[6];
+    for(size_t cp_snapshot_system = 0; cp_snapshot_system < 6; ++cp_snapshot_system)
+        previous_state_system[cp_snapshot_system] = state_system[cp_snapshot_system];
+    (void)previous_state_system;
     int32_t previous_state_result = state_result;
     (void)previous_state_result;
     int32_t previous_state_panel = state_panel;
@@ -2461,19 +2281,27 @@ static int app_mount(void)
     for(size_t cp_snapshot_queueItem2 = 0; cp_snapshot_queueItem2 < 3; ++cp_snapshot_queueItem2)
         previous_state_queueItem2[cp_snapshot_queueItem2] = state_queueItem2[cp_snapshot_queueItem2];
     (void)previous_state_queueItem2;
-    char previous_state_lyricPrevious[128];
+    char previous_state_lyricPrevious[768];
     cp_string_assign(previous_state_lyricPrevious, sizeof(previous_state_lyricPrevious), state_lyricPrevious);
     (void)previous_state_lyricPrevious;
-    char previous_state_lyricCurrent[128];
+    char previous_state_lyricCurrent[768];
     cp_string_assign(previous_state_lyricCurrent, sizeof(previous_state_lyricCurrent), state_lyricCurrent);
     (void)previous_state_lyricCurrent;
-    char previous_state_lyricNext[128];
+    char previous_state_lyricNext[768];
     cp_string_assign(previous_state_lyricNext, sizeof(previous_state_lyricNext), state_lyricNext);
     (void)previous_state_lyricNext;
-    int32_t previous_state_lyricInfo[3];
-    for(size_t cp_snapshot_lyricInfo = 0; cp_snapshot_lyricInfo < 3; ++cp_snapshot_lyricInfo)
+    int32_t previous_state_lyricInfo[6];
+    for(size_t cp_snapshot_lyricInfo = 0; cp_snapshot_lyricInfo < 6; ++cp_snapshot_lyricInfo)
         previous_state_lyricInfo[cp_snapshot_lyricInfo] = state_lyricInfo[cp_snapshot_lyricInfo];
     (void)previous_state_lyricInfo;
+    int32_t previous_state_lyricAnchor = state_lyricAnchor;
+    (void)previous_state_lyricAnchor;
+    int32_t previous_state_lyricBrowseTicks = state_lyricBrowseTicks;
+    (void)previous_state_lyricBrowseTicks;
+    int32_t previous_state_lyricsEnabled = state_lyricsEnabled;
+    (void)previous_state_lyricsEnabled;
+    int32_t previous_state_lyricFrame = state_lyricFrame;
+    (void)previous_state_lyricFrame;
         {
             struct cp_now_playing_snapshot cp_now_playing_snapshot_0 = {0};
             int32_t cp_now_playing_result_0 = CP_NATIVE_ERROR_UNSUPPORTED;
@@ -2544,7 +2372,26 @@ static int app_mount(void)
             }
             state_result = cp_now_playing_queue_state_result_0;
         }
-
+        {
+            int32_t cp_service_result_0 = CP_NATIVE_ERROR_UNSUPPORTED;
+            int32_t cp_service_response_0[6];
+            bool cp_service_changed_0 = false;
+            for(size_t cp_service_index_0 = 0; cp_service_index_0 < 6; ++cp_service_index_0)
+                cp_service_response_0[cp_service_index_0] = state_system[cp_service_index_0];
+            if((host->capabilities & CP_NATIVE_CAP_SERVICES) != 0 &&
+               host->service_call != NULL)
+                cp_service_result_0 = host->service_call(0u, 1u, previous_state_systemRequest, sizeof(previous_state_systemRequest), cp_service_response_0, sizeof(cp_service_response_0));
+            if(cp_service_result_0 >= 0 && cp_service_result_0 <= (int32_t)sizeof(cp_service_response_0)) {
+                for(size_t cp_service_index_0 = 0; cp_service_index_0 < 6; ++cp_service_index_0) {
+                    cp_service_changed_0 = cp_service_changed_0 || state_system[cp_service_index_0] != cp_service_response_0[cp_service_index_0];
+                    state_system[cp_service_index_0] = cp_service_response_0[cp_service_index_0];
+                }
+            } else if(cp_service_result_0 > (int32_t)sizeof(cp_service_response_0)) {
+                cp_service_result_0 = CP_NATIVE_ERROR_LIMIT;
+            }
+            state_result = cp_service_result_0;
+        }
+    cp_effect_update_0(true);
 
     return cp_render();
 }
@@ -2552,7 +2399,7 @@ static int app_mount(void)
 static void app_unmount(void)
 {
 
-
+    cp_effect_cleanup_0();
 
 
 
@@ -2579,6 +2426,14 @@ static uint32_t app_input(const struct cp_input_event *event)
     for(size_t cp_snapshot_info = 0; cp_snapshot_info < 10; ++cp_snapshot_info)
         previous_state_info[cp_snapshot_info] = state_info[cp_snapshot_info];
     (void)previous_state_info;
+    int32_t previous_state_systemRequest[1];
+    for(size_t cp_snapshot_systemRequest = 0; cp_snapshot_systemRequest < 1; ++cp_snapshot_systemRequest)
+        previous_state_systemRequest[cp_snapshot_systemRequest] = state_systemRequest[cp_snapshot_systemRequest];
+    (void)previous_state_systemRequest;
+    int32_t previous_state_system[6];
+    for(size_t cp_snapshot_system = 0; cp_snapshot_system < 6; ++cp_snapshot_system)
+        previous_state_system[cp_snapshot_system] = state_system[cp_snapshot_system];
+    (void)previous_state_system;
     int32_t previous_state_result = state_result;
     (void)previous_state_result;
     int32_t previous_state_panel = state_panel;
@@ -2634,25 +2489,37 @@ static uint32_t app_input(const struct cp_input_event *event)
     for(size_t cp_snapshot_queueItem2 = 0; cp_snapshot_queueItem2 < 3; ++cp_snapshot_queueItem2)
         previous_state_queueItem2[cp_snapshot_queueItem2] = state_queueItem2[cp_snapshot_queueItem2];
     (void)previous_state_queueItem2;
-    char previous_state_lyricPrevious[128];
+    char previous_state_lyricPrevious[768];
     cp_string_assign(previous_state_lyricPrevious, sizeof(previous_state_lyricPrevious), state_lyricPrevious);
     (void)previous_state_lyricPrevious;
-    char previous_state_lyricCurrent[128];
+    char previous_state_lyricCurrent[768];
     cp_string_assign(previous_state_lyricCurrent, sizeof(previous_state_lyricCurrent), state_lyricCurrent);
     (void)previous_state_lyricCurrent;
-    char previous_state_lyricNext[128];
+    char previous_state_lyricNext[768];
     cp_string_assign(previous_state_lyricNext, sizeof(previous_state_lyricNext), state_lyricNext);
     (void)previous_state_lyricNext;
-    int32_t previous_state_lyricInfo[3];
-    for(size_t cp_snapshot_lyricInfo = 0; cp_snapshot_lyricInfo < 3; ++cp_snapshot_lyricInfo)
+    int32_t previous_state_lyricInfo[6];
+    for(size_t cp_snapshot_lyricInfo = 0; cp_snapshot_lyricInfo < 6; ++cp_snapshot_lyricInfo)
         previous_state_lyricInfo[cp_snapshot_lyricInfo] = state_lyricInfo[cp_snapshot_lyricInfo];
     (void)previous_state_lyricInfo;
+    int32_t previous_state_lyricAnchor = state_lyricAnchor;
+    (void)previous_state_lyricAnchor;
+    int32_t previous_state_lyricBrowseTicks = state_lyricBrowseTicks;
+    (void)previous_state_lyricBrowseTicks;
+    int32_t previous_state_lyricsEnabled = state_lyricsEnabled;
+    (void)previous_state_lyricsEnabled;
+    int32_t previous_state_lyricFrame = state_lyricFrame;
+    (void)previous_state_lyricFrame;
     if(event == NULL || event->struct_size < sizeof(*event))
         return CP_NATIVE_UPDATE_NONE;
     value = event->steps;
     (void)value;
     switch(event->type) {
     case CP_INPUT_WHEEL_CLOCKWISE:
+        if(((previous_state_panel == 0) && (previous_state_lyricsEnabled == 1)) && (previous_state_lyricInfo[3] > 0)) {
+        state_lyricAnchor = cp_helper_cycleForward(((state_lyricAnchor < 0) ? previous_state_lyricInfo[2] : state_lyricAnchor), value, previous_state_lyricInfo[3]);
+        state_lyricBrowseTicks = 12;
+        } else {
         if(previous_state_panel == 0) {
         {
             const struct cp_now_playing_command_request cp_now_playing_command_0 = {
@@ -2669,7 +2536,7 @@ static uint32_t app_input(const struct cp_input_event *event)
         }
         } else {
         if(previous_state_panel == 1) {
-        state_action = cp_helper_cycleForward(state_action, value, 6);
+        state_action = cp_helper_cycleForward(state_action, value, 5);
         } else {
         if(previous_state_panel == 2) {
         state_queueSelected = cp_helper_queueForward(state_queueSelected, value, previous_state_queueInfo[1]);
@@ -2684,8 +2551,13 @@ static uint32_t app_input(const struct cp_input_event *event)
         }
         }
         }
+        }
         break;
     case CP_INPUT_WHEEL_COUNTERCLOCKWISE:
+        if(((previous_state_panel == 0) && (previous_state_lyricsEnabled == 1)) && (previous_state_lyricInfo[3] > 0)) {
+        state_lyricAnchor = cp_helper_cycleBackward(((state_lyricAnchor < 0) ? previous_state_lyricInfo[2] : state_lyricAnchor), value, previous_state_lyricInfo[3]);
+        state_lyricBrowseTicks = 12;
+        } else {
         if(previous_state_panel == 0) {
         {
             const struct cp_now_playing_command_request cp_now_playing_command_0 = {
@@ -2702,7 +2574,7 @@ static uint32_t app_input(const struct cp_input_event *event)
         }
         } else {
         if(previous_state_panel == 1) {
-        state_action = cp_helper_cycleBackward(state_action, value, 6);
+        state_action = cp_helper_cycleBackward(state_action, value, 5);
         } else {
         if(previous_state_panel == 2) {
         state_queueSelected = cp_helper_queueBackward(state_queueSelected, value);
@@ -2712,6 +2584,7 @@ static uint32_t app_input(const struct cp_input_event *event)
         } else {
         if(previous_state_panel == 5) {
         state_seekDraft = cp_helper_seekBackward(state_seekDraft, value);
+        }
         }
         }
         }
@@ -2735,20 +2608,16 @@ static uint32_t app_input(const struct cp_input_event *event)
         }
         } else {
         if(previous_state_panel == 1) {
-        state_action = ((state_action <= 0) ? 5 : (state_action - 1));
+        state_action = cp_helper_cycleBackward(state_action, 1, 5);
         } else {
         if(previous_state_panel == 2) {
         state_queueSelected = ((state_queueSelected <= 0) ? 0 : (state_queueSelected - 1));
         } else {
         if(previous_state_panel == 3) {
-        state_mode = ((state_mode <= 0) ? 3 : (state_mode - 1));
-        } else {
-        if(previous_state_panel == 4) {
-        state_panel = 1;
+        state_mode = cp_helper_cycleBackward(state_mode, 1, 4);
         } else {
         if(previous_state_panel == 5) {
         state_seekDraft = ((state_seekDraft <= 5000) ? 0 : (state_seekDraft - 5000));
-        }
         }
         }
         }
@@ -2772,20 +2641,16 @@ static uint32_t app_input(const struct cp_input_event *event)
         }
         } else {
         if(previous_state_panel == 1) {
-        state_action = ((state_action >= 5) ? 0 : (state_action + 1));
+        state_action = cp_helper_cycleForward(state_action, 1, 5);
         } else {
         if(previous_state_panel == 2) {
         state_queueSelected = (((state_queueSelected + 1) >= previous_state_queueInfo[1]) ? state_queueSelected : (state_queueSelected + 1));
         } else {
         if(previous_state_panel == 3) {
-        state_mode = ((state_mode >= 3) ? 0 : (state_mode + 1));
-        } else {
-        if(previous_state_panel == 4) {
-        state_panel = 1;
+        state_mode = cp_helper_cycleForward(state_mode, 1, 4);
         } else {
         if(previous_state_panel == 5) {
         state_seekDraft = cp_helper_seekForward(state_seekDraft, previous_state_info[2], 1);
-        }
         }
         }
         }
@@ -2822,50 +2687,112 @@ static uint32_t app_input(const struct cp_input_event *event)
         state_panel = 3;
         } else {
         if(previous_state_action == 3) {
+        state_lyricAnchor = (-1);
+        state_lyricBrowseTicks = 0;
         {
-            const struct cp_now_playing_lyrics_request cp_now_playing_lyrics_request_0 = {
-                sizeof(cp_now_playing_lyrics_request_0), (uint32_t)(previous_state_info[1])
+            const struct cp_now_playing_lyrics_context_request cp_now_playing_lyrics_context_request_0 = {
+                sizeof(cp_now_playing_lyrics_context_request_0), (uint32_t)(previous_state_info[1]), (int32_t)((-1))
             };
-            struct cp_now_playing_lyrics_window cp_now_playing_lyrics_window_0 = {0};
-            int32_t cp_now_playing_lyrics_result_0 = CP_NATIVE_ERROR_UNSUPPORTED;
-            cp_now_playing_lyrics_window_0.struct_size = sizeof(cp_now_playing_lyrics_window_0);
+            struct cp_now_playing_lyrics_context cp_now_playing_lyrics_context_0 = {0};
+            int32_t cp_now_playing_lyrics_context_result_0 = CP_NATIVE_ERROR_UNSUPPORTED;
+            cp_now_playing_lyrics_context_0.struct_size = sizeof(cp_now_playing_lyrics_context_0);
             if((host->capabilities & CP_NATIVE_CAP_SERVICES) != 0 &&
                host->service_call != NULL)
-                cp_now_playing_lyrics_result_0 = host->service_call(
+                cp_now_playing_lyrics_context_result_0 = host->service_call(
                     CP_NATIVE_SERVICE_NOW_PLAYING,
-                    CP_NATIVE_NOW_PLAYING_LYRICS_WINDOW,
-                    &cp_now_playing_lyrics_request_0, sizeof(cp_now_playing_lyrics_request_0),
-                    &cp_now_playing_lyrics_window_0, sizeof(cp_now_playing_lyrics_window_0));
-            if(cp_now_playing_lyrics_result_0 == (int32_t)sizeof(cp_now_playing_lyrics_window_0) &&
-               cp_now_playing_lyrics_window_0.struct_size >= sizeof(cp_now_playing_lyrics_window_0)) {
-                if(!cp_string_equal(state_lyricPrevious, cp_now_playing_lyrics_window_0.previous)) {
-                    cp_string_assign(state_lyricPrevious, sizeof(state_lyricPrevious), cp_now_playing_lyrics_window_0.previous);
+                    CP_NATIVE_NOW_PLAYING_LYRICS_CONTEXT,
+                    &cp_now_playing_lyrics_context_request_0, sizeof(cp_now_playing_lyrics_context_request_0),
+                    &cp_now_playing_lyrics_context_0, sizeof(cp_now_playing_lyrics_context_0));
+            if(cp_now_playing_lyrics_context_result_0 == (int32_t)sizeof(cp_now_playing_lyrics_context_0) &&
+               cp_now_playing_lyrics_context_0.struct_size >= sizeof(cp_now_playing_lyrics_context_0)) {
+                const int32_t cp_now_playing_lyric_line_request_0_0_index = cp_now_playing_lyrics_context_0.current_line + (-1);
+                if(cp_now_playing_lyric_line_request_0_0_index >= 0 && cp_now_playing_lyric_line_request_0_0_index < cp_now_playing_lyrics_context_0.line_count) {
+                    const struct cp_now_playing_lyric_line_request cp_now_playing_lyric_line_request_0_0 = {
+                        sizeof(cp_now_playing_lyric_line_request_0_0), cp_now_playing_lyric_line_request_0_0_index
+                    };
+                    struct cp_now_playing_lyric_line cp_now_playing_lyric_line_0_0 = {0};
+                    int32_t cp_now_playing_lyric_line_result_0_0 = host->service_call(
+                        CP_NATIVE_SERVICE_NOW_PLAYING,
+                        CP_NATIVE_NOW_PLAYING_LYRIC_LINE,
+                        &cp_now_playing_lyric_line_request_0_0, sizeof(cp_now_playing_lyric_line_request_0_0),
+                        &cp_now_playing_lyric_line_0_0, sizeof(cp_now_playing_lyric_line_0_0));
+                    if(cp_now_playing_lyric_line_result_0_0 == (int32_t)sizeof(cp_now_playing_lyric_line_0_0) &&
+                       cp_now_playing_lyric_line_0_0.struct_size >= sizeof(cp_now_playing_lyric_line_0_0)) {
+                        if(!cp_string_equal(state_lyricPrevious, cp_now_playing_lyric_line_0_0.text)) {
+                            cp_string_assign(state_lyricPrevious, sizeof(state_lyricPrevious), cp_now_playing_lyric_line_0_0.text);
+                        }
+                    }
+                    else cp_now_playing_lyrics_context_result_0 = cp_now_playing_lyric_line_result_0_0;
                 }
-                if(!cp_string_equal(state_lyricCurrent, cp_now_playing_lyrics_window_0.current)) {
-                    cp_string_assign(state_lyricCurrent, sizeof(state_lyricCurrent), cp_now_playing_lyrics_window_0.current);
+                else if(state_lyricPrevious[0] != '\0') {
+                    state_lyricPrevious[0] = '\0';
                 }
-                if(!cp_string_equal(state_lyricNext, cp_now_playing_lyrics_window_0.next)) {
-                    cp_string_assign(state_lyricNext, sizeof(state_lyricNext), cp_now_playing_lyrics_window_0.next);
+                const int32_t cp_now_playing_lyric_line_request_0_1_index = cp_now_playing_lyrics_context_0.current_line + (0);
+                if(cp_now_playing_lyric_line_request_0_1_index >= 0 && cp_now_playing_lyric_line_request_0_1_index < cp_now_playing_lyrics_context_0.line_count) {
+                    const struct cp_now_playing_lyric_line_request cp_now_playing_lyric_line_request_0_1 = {
+                        sizeof(cp_now_playing_lyric_line_request_0_1), cp_now_playing_lyric_line_request_0_1_index
+                    };
+                    struct cp_now_playing_lyric_line cp_now_playing_lyric_line_0_1 = {0};
+                    int32_t cp_now_playing_lyric_line_result_0_1 = host->service_call(
+                        CP_NATIVE_SERVICE_NOW_PLAYING,
+                        CP_NATIVE_NOW_PLAYING_LYRIC_LINE,
+                        &cp_now_playing_lyric_line_request_0_1, sizeof(cp_now_playing_lyric_line_request_0_1),
+                        &cp_now_playing_lyric_line_0_1, sizeof(cp_now_playing_lyric_line_0_1));
+                    if(cp_now_playing_lyric_line_result_0_1 == (int32_t)sizeof(cp_now_playing_lyric_line_0_1) &&
+                       cp_now_playing_lyric_line_0_1.struct_size >= sizeof(cp_now_playing_lyric_line_0_1)) {
+                        if(!cp_string_equal(state_lyricCurrent, cp_now_playing_lyric_line_0_1.text)) {
+                            cp_string_assign(state_lyricCurrent, sizeof(state_lyricCurrent), cp_now_playing_lyric_line_0_1.text);
+                        }
+                    }
+                    else cp_now_playing_lyrics_context_result_0 = cp_now_playing_lyric_line_result_0_1;
                 }
-                bool cp_now_playing_lyrics_changed_0 = false;
-                cp_now_playing_lyrics_changed_0 = cp_now_playing_lyrics_changed_0 || state_lyricInfo[0] != (int32_t)cp_now_playing_lyrics_window_0.available;
-                state_lyricInfo[0] = (int32_t)cp_now_playing_lyrics_window_0.available;
-                cp_now_playing_lyrics_changed_0 = cp_now_playing_lyrics_changed_0 || state_lyricInfo[1] != (int32_t)cp_now_playing_lyrics_window_0.revision;
-                state_lyricInfo[1] = (int32_t)cp_now_playing_lyrics_window_0.revision;
-                cp_now_playing_lyrics_changed_0 = cp_now_playing_lyrics_changed_0 || state_lyricInfo[2] != (int32_t)cp_now_playing_lyrics_window_0.current_line;
-                state_lyricInfo[2] = (int32_t)cp_now_playing_lyrics_window_0.current_line;
-                (void)cp_now_playing_lyrics_changed_0;
+                else if(state_lyricCurrent[0] != '\0') {
+                    state_lyricCurrent[0] = '\0';
+                }
+                const int32_t cp_now_playing_lyric_line_request_0_2_index = cp_now_playing_lyrics_context_0.current_line + (1);
+                if(cp_now_playing_lyric_line_request_0_2_index >= 0 && cp_now_playing_lyric_line_request_0_2_index < cp_now_playing_lyrics_context_0.line_count) {
+                    const struct cp_now_playing_lyric_line_request cp_now_playing_lyric_line_request_0_2 = {
+                        sizeof(cp_now_playing_lyric_line_request_0_2), cp_now_playing_lyric_line_request_0_2_index
+                    };
+                    struct cp_now_playing_lyric_line cp_now_playing_lyric_line_0_2 = {0};
+                    int32_t cp_now_playing_lyric_line_result_0_2 = host->service_call(
+                        CP_NATIVE_SERVICE_NOW_PLAYING,
+                        CP_NATIVE_NOW_PLAYING_LYRIC_LINE,
+                        &cp_now_playing_lyric_line_request_0_2, sizeof(cp_now_playing_lyric_line_request_0_2),
+                        &cp_now_playing_lyric_line_0_2, sizeof(cp_now_playing_lyric_line_0_2));
+                    if(cp_now_playing_lyric_line_result_0_2 == (int32_t)sizeof(cp_now_playing_lyric_line_0_2) &&
+                       cp_now_playing_lyric_line_0_2.struct_size >= sizeof(cp_now_playing_lyric_line_0_2)) {
+                        if(!cp_string_equal(state_lyricNext, cp_now_playing_lyric_line_0_2.text)) {
+                            cp_string_assign(state_lyricNext, sizeof(state_lyricNext), cp_now_playing_lyric_line_0_2.text);
+                        }
+                    }
+                    else cp_now_playing_lyrics_context_result_0 = cp_now_playing_lyric_line_result_0_2;
+                }
+                else if(state_lyricNext[0] != '\0') {
+                    state_lyricNext[0] = '\0';
+                }
+                bool cp_now_playing_lyrics_context_changed_0 = false;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[0] != (int32_t)cp_now_playing_lyrics_context_0.available;
+                state_lyricInfo[0] = (int32_t)cp_now_playing_lyrics_context_0.available;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[1] != (int32_t)cp_now_playing_lyrics_context_0.revision;
+                state_lyricInfo[1] = (int32_t)cp_now_playing_lyrics_context_0.revision;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[2] != (int32_t)cp_now_playing_lyrics_context_0.current_line;
+                state_lyricInfo[2] = (int32_t)cp_now_playing_lyrics_context_0.current_line;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[3] != (int32_t)cp_now_playing_lyrics_context_0.line_count;
+                state_lyricInfo[3] = (int32_t)cp_now_playing_lyrics_context_0.line_count;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[4] != (int32_t)cp_now_playing_lyrics_context_0.status;
+                state_lyricInfo[4] = (int32_t)cp_now_playing_lyrics_context_0.status;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[5] != (int32_t)cp_now_playing_lyrics_context_0.synchronized;
+                state_lyricInfo[5] = (int32_t)cp_now_playing_lyrics_context_0.synchronized;
+                (void)cp_now_playing_lyrics_context_changed_0;
             }
-            state_result = cp_now_playing_lyrics_result_0;
+            state_result = cp_now_playing_lyrics_context_result_0;
         }
-        state_panel = 4;
+        state_lyricsEnabled = ((state_lyricsEnabled == 0) ? 1 : 0);
+        state_panel = 0;
         } else {
-        if(previous_state_action == 4) {
         state_seekDraft = previous_state_info[1];
         state_panel = 5;
-        } else {
-        state_panel = 0;
-        }
         }
         }
         }
@@ -2953,9 +2880,6 @@ static uint32_t app_input(const struct cp_input_event *event)
         }
         state_panel = 1;
         } else {
-        if(previous_state_panel == 4) {
-        state_panel = 1;
-        } else {
         if(previous_state_panel == 5) {
         {
             const struct cp_now_playing_command_request cp_now_playing_command_6 = {
@@ -2971,7 +2895,6 @@ static uint32_t app_input(const struct cp_input_event *event)
             state_result = cp_now_playing_command_result_6;
         }
         state_panel = 1;
-        }
         }
         }
         }
@@ -2994,12 +2917,16 @@ static uint32_t app_input(const struct cp_input_event *event)
         }
         break;
     case CP_INPUT_MENU:
+        if(previous_state_lyricsEnabled == 1) {
+        state_lyricsEnabled = 0;
+        } else {
         state_panel = ((state_panel == 1) ? 0 : 1);
+        }
         break;
     default:
         return CP_NATIVE_UPDATE_NONE;
     }
-
+    cp_effect_update_0(false);
 
     bool cp_state_changed = false;
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_title, state_title);
@@ -3007,6 +2934,10 @@ static uint32_t app_input(const struct cp_input_event *event)
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_album, state_album);
     for(size_t cp_changed_info = 0; cp_changed_info < 10; ++cp_changed_info)
         cp_state_changed = cp_state_changed || previous_state_info[cp_changed_info] != state_info[cp_changed_info];
+    for(size_t cp_changed_systemRequest = 0; cp_changed_systemRequest < 1; ++cp_changed_systemRequest)
+        cp_state_changed = cp_state_changed || previous_state_systemRequest[cp_changed_systemRequest] != state_systemRequest[cp_changed_systemRequest];
+    for(size_t cp_changed_system = 0; cp_changed_system < 6; ++cp_changed_system)
+        cp_state_changed = cp_state_changed || previous_state_system[cp_changed_system] != state_system[cp_changed_system];
     cp_state_changed = cp_state_changed || previous_state_result != state_result;
     cp_state_changed = cp_state_changed || previous_state_panel != state_panel;
     cp_state_changed = cp_state_changed || previous_state_action != state_action;
@@ -3033,8 +2964,12 @@ static uint32_t app_input(const struct cp_input_event *event)
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_lyricPrevious, state_lyricPrevious);
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_lyricCurrent, state_lyricCurrent);
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_lyricNext, state_lyricNext);
-    for(size_t cp_changed_lyricInfo = 0; cp_changed_lyricInfo < 3; ++cp_changed_lyricInfo)
+    for(size_t cp_changed_lyricInfo = 0; cp_changed_lyricInfo < 6; ++cp_changed_lyricInfo)
         cp_state_changed = cp_state_changed || previous_state_lyricInfo[cp_changed_lyricInfo] != state_lyricInfo[cp_changed_lyricInfo];
+    cp_state_changed = cp_state_changed || previous_state_lyricAnchor != state_lyricAnchor;
+    cp_state_changed = cp_state_changed || previous_state_lyricBrowseTicks != state_lyricBrowseTicks;
+    cp_state_changed = cp_state_changed || previous_state_lyricsEnabled != state_lyricsEnabled;
+    cp_state_changed = cp_state_changed || previous_state_lyricFrame != state_lyricFrame;
     if(!cp_state_changed)
         return CP_NATIVE_UPDATE_NONE;
     return cp_render() == CP_NATIVE_OK
@@ -3061,6 +2996,14 @@ static uint32_t app_ui_event(
     for(size_t cp_snapshot_info = 0; cp_snapshot_info < 10; ++cp_snapshot_info)
         previous_state_info[cp_snapshot_info] = state_info[cp_snapshot_info];
     (void)previous_state_info;
+    int32_t previous_state_systemRequest[1];
+    for(size_t cp_snapshot_systemRequest = 0; cp_snapshot_systemRequest < 1; ++cp_snapshot_systemRequest)
+        previous_state_systemRequest[cp_snapshot_systemRequest] = state_systemRequest[cp_snapshot_systemRequest];
+    (void)previous_state_systemRequest;
+    int32_t previous_state_system[6];
+    for(size_t cp_snapshot_system = 0; cp_snapshot_system < 6; ++cp_snapshot_system)
+        previous_state_system[cp_snapshot_system] = state_system[cp_snapshot_system];
+    (void)previous_state_system;
     int32_t previous_state_result = state_result;
     (void)previous_state_result;
     int32_t previous_state_panel = state_panel;
@@ -3116,25 +3059,33 @@ static uint32_t app_ui_event(
     for(size_t cp_snapshot_queueItem2 = 0; cp_snapshot_queueItem2 < 3; ++cp_snapshot_queueItem2)
         previous_state_queueItem2[cp_snapshot_queueItem2] = state_queueItem2[cp_snapshot_queueItem2];
     (void)previous_state_queueItem2;
-    char previous_state_lyricPrevious[128];
+    char previous_state_lyricPrevious[768];
     cp_string_assign(previous_state_lyricPrevious, sizeof(previous_state_lyricPrevious), state_lyricPrevious);
     (void)previous_state_lyricPrevious;
-    char previous_state_lyricCurrent[128];
+    char previous_state_lyricCurrent[768];
     cp_string_assign(previous_state_lyricCurrent, sizeof(previous_state_lyricCurrent), state_lyricCurrent);
     (void)previous_state_lyricCurrent;
-    char previous_state_lyricNext[128];
+    char previous_state_lyricNext[768];
     cp_string_assign(previous_state_lyricNext, sizeof(previous_state_lyricNext), state_lyricNext);
     (void)previous_state_lyricNext;
-    int32_t previous_state_lyricInfo[3];
-    for(size_t cp_snapshot_lyricInfo = 0; cp_snapshot_lyricInfo < 3; ++cp_snapshot_lyricInfo)
+    int32_t previous_state_lyricInfo[6];
+    for(size_t cp_snapshot_lyricInfo = 0; cp_snapshot_lyricInfo < 6; ++cp_snapshot_lyricInfo)
         previous_state_lyricInfo[cp_snapshot_lyricInfo] = state_lyricInfo[cp_snapshot_lyricInfo];
     (void)previous_state_lyricInfo;
+    int32_t previous_state_lyricAnchor = state_lyricAnchor;
+    (void)previous_state_lyricAnchor;
+    int32_t previous_state_lyricBrowseTicks = state_lyricBrowseTicks;
+    (void)previous_state_lyricBrowseTicks;
+    int32_t previous_state_lyricsEnabled = state_lyricsEnabled;
+    (void)previous_state_lyricsEnabled;
+    int32_t previous_state_lyricFrame = state_lyricFrame;
+    (void)previous_state_lyricFrame;
     switch(handler) {
 
     default:
         return CP_NATIVE_UPDATE_NONE;
     }
-
+    cp_effect_update_0(false);
 
     bool cp_state_changed = false;
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_title, state_title);
@@ -3142,6 +3093,10 @@ static uint32_t app_ui_event(
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_album, state_album);
     for(size_t cp_changed_info = 0; cp_changed_info < 10; ++cp_changed_info)
         cp_state_changed = cp_state_changed || previous_state_info[cp_changed_info] != state_info[cp_changed_info];
+    for(size_t cp_changed_systemRequest = 0; cp_changed_systemRequest < 1; ++cp_changed_systemRequest)
+        cp_state_changed = cp_state_changed || previous_state_systemRequest[cp_changed_systemRequest] != state_systemRequest[cp_changed_systemRequest];
+    for(size_t cp_changed_system = 0; cp_changed_system < 6; ++cp_changed_system)
+        cp_state_changed = cp_state_changed || previous_state_system[cp_changed_system] != state_system[cp_changed_system];
     cp_state_changed = cp_state_changed || previous_state_result != state_result;
     cp_state_changed = cp_state_changed || previous_state_panel != state_panel;
     cp_state_changed = cp_state_changed || previous_state_action != state_action;
@@ -3168,8 +3123,12 @@ static uint32_t app_ui_event(
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_lyricPrevious, state_lyricPrevious);
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_lyricCurrent, state_lyricCurrent);
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_lyricNext, state_lyricNext);
-    for(size_t cp_changed_lyricInfo = 0; cp_changed_lyricInfo < 3; ++cp_changed_lyricInfo)
+    for(size_t cp_changed_lyricInfo = 0; cp_changed_lyricInfo < 6; ++cp_changed_lyricInfo)
         cp_state_changed = cp_state_changed || previous_state_lyricInfo[cp_changed_lyricInfo] != state_lyricInfo[cp_changed_lyricInfo];
+    cp_state_changed = cp_state_changed || previous_state_lyricAnchor != state_lyricAnchor;
+    cp_state_changed = cp_state_changed || previous_state_lyricBrowseTicks != state_lyricBrowseTicks;
+    cp_state_changed = cp_state_changed || previous_state_lyricsEnabled != state_lyricsEnabled;
+    cp_state_changed = cp_state_changed || previous_state_lyricFrame != state_lyricFrame;
     if(!cp_state_changed)
         return CP_NATIVE_UPDATE_NONE;
     return cp_render() == CP_NATIVE_OK
@@ -3193,6 +3152,14 @@ static uint32_t app_tick(uint32_t epoch_seconds, uint32_t monotonic_ms)
     for(size_t cp_snapshot_info = 0; cp_snapshot_info < 10; ++cp_snapshot_info)
         previous_state_info[cp_snapshot_info] = state_info[cp_snapshot_info];
     (void)previous_state_info;
+    int32_t previous_state_systemRequest[1];
+    for(size_t cp_snapshot_systemRequest = 0; cp_snapshot_systemRequest < 1; ++cp_snapshot_systemRequest)
+        previous_state_systemRequest[cp_snapshot_systemRequest] = state_systemRequest[cp_snapshot_systemRequest];
+    (void)previous_state_systemRequest;
+    int32_t previous_state_system[6];
+    for(size_t cp_snapshot_system = 0; cp_snapshot_system < 6; ++cp_snapshot_system)
+        previous_state_system[cp_snapshot_system] = state_system[cp_snapshot_system];
+    (void)previous_state_system;
     int32_t previous_state_result = state_result;
     (void)previous_state_result;
     int32_t previous_state_panel = state_panel;
@@ -3248,19 +3215,27 @@ static uint32_t app_tick(uint32_t epoch_seconds, uint32_t monotonic_ms)
     for(size_t cp_snapshot_queueItem2 = 0; cp_snapshot_queueItem2 < 3; ++cp_snapshot_queueItem2)
         previous_state_queueItem2[cp_snapshot_queueItem2] = state_queueItem2[cp_snapshot_queueItem2];
     (void)previous_state_queueItem2;
-    char previous_state_lyricPrevious[128];
+    char previous_state_lyricPrevious[768];
     cp_string_assign(previous_state_lyricPrevious, sizeof(previous_state_lyricPrevious), state_lyricPrevious);
     (void)previous_state_lyricPrevious;
-    char previous_state_lyricCurrent[128];
+    char previous_state_lyricCurrent[768];
     cp_string_assign(previous_state_lyricCurrent, sizeof(previous_state_lyricCurrent), state_lyricCurrent);
     (void)previous_state_lyricCurrent;
-    char previous_state_lyricNext[128];
+    char previous_state_lyricNext[768];
     cp_string_assign(previous_state_lyricNext, sizeof(previous_state_lyricNext), state_lyricNext);
     (void)previous_state_lyricNext;
-    int32_t previous_state_lyricInfo[3];
-    for(size_t cp_snapshot_lyricInfo = 0; cp_snapshot_lyricInfo < 3; ++cp_snapshot_lyricInfo)
+    int32_t previous_state_lyricInfo[6];
+    for(size_t cp_snapshot_lyricInfo = 0; cp_snapshot_lyricInfo < 6; ++cp_snapshot_lyricInfo)
         previous_state_lyricInfo[cp_snapshot_lyricInfo] = state_lyricInfo[cp_snapshot_lyricInfo];
     (void)previous_state_lyricInfo;
+    int32_t previous_state_lyricAnchor = state_lyricAnchor;
+    (void)previous_state_lyricAnchor;
+    int32_t previous_state_lyricBrowseTicks = state_lyricBrowseTicks;
+    (void)previous_state_lyricBrowseTicks;
+    int32_t previous_state_lyricsEnabled = state_lyricsEnabled;
+    (void)previous_state_lyricsEnabled;
+    int32_t previous_state_lyricFrame = state_lyricFrame;
+    (void)previous_state_lyricFrame;
     if(monotonic_ms - cp_interval_last_0 >= 100u) {
         cp_interval_last_0 = monotonic_ms;
         {
@@ -3312,8 +3287,36 @@ static uint32_t app_tick(uint32_t epoch_seconds, uint32_t monotonic_ms)
         }
         update = CP_NATIVE_UPDATE_UI;
     }
-    if(monotonic_ms - cp_interval_last_1 >= 250u) {
+    if(monotonic_ms - cp_interval_last_1 >= 50u) {
         cp_interval_last_1 = monotonic_ms;
+        if(previous_state_system[5] == 1) {
+        state_lyricFrame = 9;
+        } else {
+        state_lyricFrame = ((state_lyricFrame >= 9) ? 9 : (state_lyricFrame + 1));
+        }
+        update = CP_NATIVE_UPDATE_UI;
+    }
+    if(monotonic_ms - cp_interval_last_2 >= 250u) {
+        cp_interval_last_2 = monotonic_ms;
+        {
+            int32_t cp_service_result_0 = CP_NATIVE_ERROR_UNSUPPORTED;
+            int32_t cp_service_response_0[6];
+            bool cp_service_changed_0 = false;
+            for(size_t cp_service_index_0 = 0; cp_service_index_0 < 6; ++cp_service_index_0)
+                cp_service_response_0[cp_service_index_0] = state_system[cp_service_index_0];
+            if((host->capabilities & CP_NATIVE_CAP_SERVICES) != 0 &&
+               host->service_call != NULL)
+                cp_service_result_0 = host->service_call(0u, 1u, previous_state_systemRequest, sizeof(previous_state_systemRequest), cp_service_response_0, sizeof(cp_service_response_0));
+            if(cp_service_result_0 >= 0 && cp_service_result_0 <= (int32_t)sizeof(cp_service_response_0)) {
+                for(size_t cp_service_index_0 = 0; cp_service_index_0 < 6; ++cp_service_index_0) {
+                    cp_service_changed_0 = cp_service_changed_0 || state_system[cp_service_index_0] != cp_service_response_0[cp_service_index_0];
+                    state_system[cp_service_index_0] = cp_service_response_0[cp_service_index_0];
+                }
+            } else if(cp_service_result_0 > (int32_t)sizeof(cp_service_response_0)) {
+                cp_service_result_0 = CP_NATIVE_ERROR_LIMIT;
+            }
+            state_result = cp_service_result_0;
+        }
         if(previous_state_panel == 2) {
         {
             struct cp_now_playing_queue_state cp_now_playing_queue_state_0 = {0};
@@ -3473,48 +3476,119 @@ static uint32_t app_tick(uint32_t epoch_seconds, uint32_t monotonic_ms)
         }
         }
         }
-        if(previous_state_panel == 4) {
+        if(previous_state_lyricsEnabled == 1) {
+        if(previous_state_lyricAnchor >= 0) {
+        if(previous_state_lyricBrowseTicks <= 1) {
+        state_lyricBrowseTicks = 0;
+        state_lyricAnchor = (-1);
+        } else {
+        state_lyricBrowseTicks = (state_lyricBrowseTicks - 1);
+        }
+        }
         {
-            const struct cp_now_playing_lyrics_request cp_now_playing_lyrics_request_0 = {
-                sizeof(cp_now_playing_lyrics_request_0), (uint32_t)(previous_state_info[1])
+            const struct cp_now_playing_lyrics_context_request cp_now_playing_lyrics_context_request_0 = {
+                sizeof(cp_now_playing_lyrics_context_request_0), (uint32_t)(previous_state_info[1]), (int32_t)(previous_state_lyricAnchor)
             };
-            struct cp_now_playing_lyrics_window cp_now_playing_lyrics_window_0 = {0};
-            int32_t cp_now_playing_lyrics_result_0 = CP_NATIVE_ERROR_UNSUPPORTED;
-            cp_now_playing_lyrics_window_0.struct_size = sizeof(cp_now_playing_lyrics_window_0);
+            struct cp_now_playing_lyrics_context cp_now_playing_lyrics_context_0 = {0};
+            int32_t cp_now_playing_lyrics_context_result_0 = CP_NATIVE_ERROR_UNSUPPORTED;
+            cp_now_playing_lyrics_context_0.struct_size = sizeof(cp_now_playing_lyrics_context_0);
             if((host->capabilities & CP_NATIVE_CAP_SERVICES) != 0 &&
                host->service_call != NULL)
-                cp_now_playing_lyrics_result_0 = host->service_call(
+                cp_now_playing_lyrics_context_result_0 = host->service_call(
                     CP_NATIVE_SERVICE_NOW_PLAYING,
-                    CP_NATIVE_NOW_PLAYING_LYRICS_WINDOW,
-                    &cp_now_playing_lyrics_request_0, sizeof(cp_now_playing_lyrics_request_0),
-                    &cp_now_playing_lyrics_window_0, sizeof(cp_now_playing_lyrics_window_0));
-            if(cp_now_playing_lyrics_result_0 == (int32_t)sizeof(cp_now_playing_lyrics_window_0) &&
-               cp_now_playing_lyrics_window_0.struct_size >= sizeof(cp_now_playing_lyrics_window_0)) {
-                if(!cp_string_equal(state_lyricPrevious, cp_now_playing_lyrics_window_0.previous)) {
-                    cp_string_assign(state_lyricPrevious, sizeof(state_lyricPrevious), cp_now_playing_lyrics_window_0.previous);
+                    CP_NATIVE_NOW_PLAYING_LYRICS_CONTEXT,
+                    &cp_now_playing_lyrics_context_request_0, sizeof(cp_now_playing_lyrics_context_request_0),
+                    &cp_now_playing_lyrics_context_0, sizeof(cp_now_playing_lyrics_context_0));
+            if(cp_now_playing_lyrics_context_result_0 == (int32_t)sizeof(cp_now_playing_lyrics_context_0) &&
+               cp_now_playing_lyrics_context_0.struct_size >= sizeof(cp_now_playing_lyrics_context_0)) {
+                const int32_t cp_now_playing_lyric_line_request_0_0_index = cp_now_playing_lyrics_context_0.current_line + (-1);
+                if(cp_now_playing_lyric_line_request_0_0_index >= 0 && cp_now_playing_lyric_line_request_0_0_index < cp_now_playing_lyrics_context_0.line_count) {
+                    const struct cp_now_playing_lyric_line_request cp_now_playing_lyric_line_request_0_0 = {
+                        sizeof(cp_now_playing_lyric_line_request_0_0), cp_now_playing_lyric_line_request_0_0_index
+                    };
+                    struct cp_now_playing_lyric_line cp_now_playing_lyric_line_0_0 = {0};
+                    int32_t cp_now_playing_lyric_line_result_0_0 = host->service_call(
+                        CP_NATIVE_SERVICE_NOW_PLAYING,
+                        CP_NATIVE_NOW_PLAYING_LYRIC_LINE,
+                        &cp_now_playing_lyric_line_request_0_0, sizeof(cp_now_playing_lyric_line_request_0_0),
+                        &cp_now_playing_lyric_line_0_0, sizeof(cp_now_playing_lyric_line_0_0));
+                    if(cp_now_playing_lyric_line_result_0_0 == (int32_t)sizeof(cp_now_playing_lyric_line_0_0) &&
+                       cp_now_playing_lyric_line_0_0.struct_size >= sizeof(cp_now_playing_lyric_line_0_0)) {
+                        if(!cp_string_equal(state_lyricPrevious, cp_now_playing_lyric_line_0_0.text)) {
+                            cp_string_assign(state_lyricPrevious, sizeof(state_lyricPrevious), cp_now_playing_lyric_line_0_0.text);
+                        }
+                    }
+                    else cp_now_playing_lyrics_context_result_0 = cp_now_playing_lyric_line_result_0_0;
                 }
-                if(!cp_string_equal(state_lyricCurrent, cp_now_playing_lyrics_window_0.current)) {
-                    cp_string_assign(state_lyricCurrent, sizeof(state_lyricCurrent), cp_now_playing_lyrics_window_0.current);
+                else if(state_lyricPrevious[0] != '\0') {
+                    state_lyricPrevious[0] = '\0';
                 }
-                if(!cp_string_equal(state_lyricNext, cp_now_playing_lyrics_window_0.next)) {
-                    cp_string_assign(state_lyricNext, sizeof(state_lyricNext), cp_now_playing_lyrics_window_0.next);
+                const int32_t cp_now_playing_lyric_line_request_0_1_index = cp_now_playing_lyrics_context_0.current_line + (0);
+                if(cp_now_playing_lyric_line_request_0_1_index >= 0 && cp_now_playing_lyric_line_request_0_1_index < cp_now_playing_lyrics_context_0.line_count) {
+                    const struct cp_now_playing_lyric_line_request cp_now_playing_lyric_line_request_0_1 = {
+                        sizeof(cp_now_playing_lyric_line_request_0_1), cp_now_playing_lyric_line_request_0_1_index
+                    };
+                    struct cp_now_playing_lyric_line cp_now_playing_lyric_line_0_1 = {0};
+                    int32_t cp_now_playing_lyric_line_result_0_1 = host->service_call(
+                        CP_NATIVE_SERVICE_NOW_PLAYING,
+                        CP_NATIVE_NOW_PLAYING_LYRIC_LINE,
+                        &cp_now_playing_lyric_line_request_0_1, sizeof(cp_now_playing_lyric_line_request_0_1),
+                        &cp_now_playing_lyric_line_0_1, sizeof(cp_now_playing_lyric_line_0_1));
+                    if(cp_now_playing_lyric_line_result_0_1 == (int32_t)sizeof(cp_now_playing_lyric_line_0_1) &&
+                       cp_now_playing_lyric_line_0_1.struct_size >= sizeof(cp_now_playing_lyric_line_0_1)) {
+                        if(!cp_string_equal(state_lyricCurrent, cp_now_playing_lyric_line_0_1.text)) {
+                            cp_string_assign(state_lyricCurrent, sizeof(state_lyricCurrent), cp_now_playing_lyric_line_0_1.text);
+                        }
+                    }
+                    else cp_now_playing_lyrics_context_result_0 = cp_now_playing_lyric_line_result_0_1;
                 }
-                bool cp_now_playing_lyrics_changed_0 = false;
-                cp_now_playing_lyrics_changed_0 = cp_now_playing_lyrics_changed_0 || state_lyricInfo[0] != (int32_t)cp_now_playing_lyrics_window_0.available;
-                state_lyricInfo[0] = (int32_t)cp_now_playing_lyrics_window_0.available;
-                cp_now_playing_lyrics_changed_0 = cp_now_playing_lyrics_changed_0 || state_lyricInfo[1] != (int32_t)cp_now_playing_lyrics_window_0.revision;
-                state_lyricInfo[1] = (int32_t)cp_now_playing_lyrics_window_0.revision;
-                cp_now_playing_lyrics_changed_0 = cp_now_playing_lyrics_changed_0 || state_lyricInfo[2] != (int32_t)cp_now_playing_lyrics_window_0.current_line;
-                state_lyricInfo[2] = (int32_t)cp_now_playing_lyrics_window_0.current_line;
-                (void)cp_now_playing_lyrics_changed_0;
+                else if(state_lyricCurrent[0] != '\0') {
+                    state_lyricCurrent[0] = '\0';
+                }
+                const int32_t cp_now_playing_lyric_line_request_0_2_index = cp_now_playing_lyrics_context_0.current_line + (1);
+                if(cp_now_playing_lyric_line_request_0_2_index >= 0 && cp_now_playing_lyric_line_request_0_2_index < cp_now_playing_lyrics_context_0.line_count) {
+                    const struct cp_now_playing_lyric_line_request cp_now_playing_lyric_line_request_0_2 = {
+                        sizeof(cp_now_playing_lyric_line_request_0_2), cp_now_playing_lyric_line_request_0_2_index
+                    };
+                    struct cp_now_playing_lyric_line cp_now_playing_lyric_line_0_2 = {0};
+                    int32_t cp_now_playing_lyric_line_result_0_2 = host->service_call(
+                        CP_NATIVE_SERVICE_NOW_PLAYING,
+                        CP_NATIVE_NOW_PLAYING_LYRIC_LINE,
+                        &cp_now_playing_lyric_line_request_0_2, sizeof(cp_now_playing_lyric_line_request_0_2),
+                        &cp_now_playing_lyric_line_0_2, sizeof(cp_now_playing_lyric_line_0_2));
+                    if(cp_now_playing_lyric_line_result_0_2 == (int32_t)sizeof(cp_now_playing_lyric_line_0_2) &&
+                       cp_now_playing_lyric_line_0_2.struct_size >= sizeof(cp_now_playing_lyric_line_0_2)) {
+                        if(!cp_string_equal(state_lyricNext, cp_now_playing_lyric_line_0_2.text)) {
+                            cp_string_assign(state_lyricNext, sizeof(state_lyricNext), cp_now_playing_lyric_line_0_2.text);
+                        }
+                    }
+                    else cp_now_playing_lyrics_context_result_0 = cp_now_playing_lyric_line_result_0_2;
+                }
+                else if(state_lyricNext[0] != '\0') {
+                    state_lyricNext[0] = '\0';
+                }
+                bool cp_now_playing_lyrics_context_changed_0 = false;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[0] != (int32_t)cp_now_playing_lyrics_context_0.available;
+                state_lyricInfo[0] = (int32_t)cp_now_playing_lyrics_context_0.available;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[1] != (int32_t)cp_now_playing_lyrics_context_0.revision;
+                state_lyricInfo[1] = (int32_t)cp_now_playing_lyrics_context_0.revision;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[2] != (int32_t)cp_now_playing_lyrics_context_0.current_line;
+                state_lyricInfo[2] = (int32_t)cp_now_playing_lyrics_context_0.current_line;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[3] != (int32_t)cp_now_playing_lyrics_context_0.line_count;
+                state_lyricInfo[3] = (int32_t)cp_now_playing_lyrics_context_0.line_count;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[4] != (int32_t)cp_now_playing_lyrics_context_0.status;
+                state_lyricInfo[4] = (int32_t)cp_now_playing_lyrics_context_0.status;
+                cp_now_playing_lyrics_context_changed_0 = cp_now_playing_lyrics_context_changed_0 || state_lyricInfo[5] != (int32_t)cp_now_playing_lyrics_context_0.synchronized;
+                state_lyricInfo[5] = (int32_t)cp_now_playing_lyrics_context_0.synchronized;
+                (void)cp_now_playing_lyrics_context_changed_0;
             }
-            state_result = cp_now_playing_lyrics_result_0;
+            state_result = cp_now_playing_lyrics_context_result_0;
         }
         }
         update = CP_NATIVE_UPDATE_UI;
     }
 
-
+    cp_effect_update_0(false);
 
     bool cp_state_changed = false;
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_title, state_title);
@@ -3522,6 +3596,10 @@ static uint32_t app_tick(uint32_t epoch_seconds, uint32_t monotonic_ms)
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_album, state_album);
     for(size_t cp_changed_info = 0; cp_changed_info < 10; ++cp_changed_info)
         cp_state_changed = cp_state_changed || previous_state_info[cp_changed_info] != state_info[cp_changed_info];
+    for(size_t cp_changed_systemRequest = 0; cp_changed_systemRequest < 1; ++cp_changed_systemRequest)
+        cp_state_changed = cp_state_changed || previous_state_systemRequest[cp_changed_systemRequest] != state_systemRequest[cp_changed_systemRequest];
+    for(size_t cp_changed_system = 0; cp_changed_system < 6; ++cp_changed_system)
+        cp_state_changed = cp_state_changed || previous_state_system[cp_changed_system] != state_system[cp_changed_system];
     cp_state_changed = cp_state_changed || previous_state_result != state_result;
     cp_state_changed = cp_state_changed || previous_state_panel != state_panel;
     cp_state_changed = cp_state_changed || previous_state_action != state_action;
@@ -3548,8 +3626,12 @@ static uint32_t app_tick(uint32_t epoch_seconds, uint32_t monotonic_ms)
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_lyricPrevious, state_lyricPrevious);
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_lyricCurrent, state_lyricCurrent);
     cp_state_changed = cp_state_changed || !cp_string_equal(previous_state_lyricNext, state_lyricNext);
-    for(size_t cp_changed_lyricInfo = 0; cp_changed_lyricInfo < 3; ++cp_changed_lyricInfo)
+    for(size_t cp_changed_lyricInfo = 0; cp_changed_lyricInfo < 6; ++cp_changed_lyricInfo)
         cp_state_changed = cp_state_changed || previous_state_lyricInfo[cp_changed_lyricInfo] != state_lyricInfo[cp_changed_lyricInfo];
+    cp_state_changed = cp_state_changed || previous_state_lyricAnchor != state_lyricAnchor;
+    cp_state_changed = cp_state_changed || previous_state_lyricBrowseTicks != state_lyricBrowseTicks;
+    cp_state_changed = cp_state_changed || previous_state_lyricsEnabled != state_lyricsEnabled;
+    cp_state_changed = cp_state_changed || previous_state_lyricFrame != state_lyricFrame;
     if(update != CP_NATIVE_UPDATE_NONE && cp_state_changed &&
        cp_render() == CP_NATIVE_OK)
         return CP_NATIVE_UPDATE_UI;
@@ -3567,7 +3649,7 @@ static const struct cp_native_app_ops app_ops = {
     .struct_size = sizeof(struct cp_native_app_ops),
     .id = "now-playing-signal",
     .name = "Signal One",
-    .version = "1.0.1",
+    .version = "1.0.7",
     .mount = app_mount,
     .unmount = app_unmount,
     .input = app_input,

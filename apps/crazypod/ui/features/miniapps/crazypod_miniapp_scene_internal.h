@@ -44,6 +44,11 @@ struct crazypod_miniapp_scene_node {
     int32_t grid_row_descriptors[9];
     lv_image_dsc_t image;
     unsigned artwork_generation;
+    uint32_t adaptive_lyrics_hash;
+    int adaptive_lyrics_scroll;
+    int adaptive_lyrics_scroll_max;
+    long adaptive_lyrics_scroll_tick;
+    long adaptive_lyrics_hold_until;
     char text[CRAZYPOD_MINIAPP_TEXT_CAPACITY];
     char placeholder[CRAZYPOD_MINIAPP_PLACEHOLDER_CAPACITY];
     char source[CRAZYPOD_MINIAPP_SOURCE_CAPACITY];
@@ -63,6 +68,8 @@ void crazypod_miniapp_scene_node_release(
     struct crazypod_miniapp_scene_node *node);
 void crazypod_miniapp_scene_grid_refresh(
     struct crazypod_miniapp_scene_node *node);
+void crazypod_miniapp_scene_adaptive_lyrics_refresh(
+    struct crazypod_miniapp_scene_node *node, long now);
 bool crazypod_miniapp_scene_canvas_commit(
     struct crazypod_miniapp_scene_node *node,
     const void *data, size_t size);
@@ -80,5 +87,8 @@ bool crazypod_miniapp_scene_now_playing_artwork_refresh_node(
     struct crazypod_miniapp_scene_node *node);
 void crazypod_miniapp_scene_now_playing_artwork_transform_flush(
     struct crazypod_miniapp_scene_node *node);
+bool crazypod_miniapp_scene_property_is_set(
+    const struct crazypod_miniapp_scene_node *node,
+    uint16_t property);
 
 #endif

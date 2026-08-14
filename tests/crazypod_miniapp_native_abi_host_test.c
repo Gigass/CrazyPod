@@ -7,7 +7,7 @@
 static void verify_constants(void)
 {
     assert(CP_NATIVE_ABI_MAJOR == 1u);
-    assert(CP_NATIVE_ABI_MINOR == 17u);
+    assert(CP_NATIVE_ABI_MINOR == 20u);
     assert(CP_NATIVE_ABI_REJECTED_MINOR == 14u);
     assert(CP_UI_FONT_CONDENSED_16 > CP_UI_FONT_DISPLAY);
     assert(CP_UI_FONT_SERIF_28 > CP_UI_FONT_CONDENSED_32);
@@ -36,7 +36,23 @@ static void verify_constants(void)
     assert(CP_UI_PROP_FONT_WEIGHT == CP_UI_PROP_FONT_SIZE + 1);
     assert(CP_UI_PROP_FONT_STYLE == CP_UI_PROP_FONT_WEIGHT + 1);
     assert(CP_UI_PROP_LINE_HEIGHT == CP_UI_PROP_FONT_STYLE + 1);
-    assert(CP_UI_PROP_COUNT == CP_UI_PROP_LINE_HEIGHT + 1);
+    assert(CP_UI_PROP_WAVE_PRIMARY_COLOR == CP_UI_PROP_LINE_HEIGHT + 1);
+    assert(CP_UI_PROP_WAVE_SECONDARY_COLOR ==
+           CP_UI_PROP_WAVE_PRIMARY_COLOR + 1);
+    assert(CP_UI_PROP_WAVE_HIGHLIGHT_COLOR ==
+           CP_UI_PROP_WAVE_SECONDARY_COLOR + 1);
+    assert(CP_UI_PROP_ADAPTIVE_LYRICS ==
+           CP_UI_PROP_WAVE_HIGHLIGHT_COLOR + 1);
+    assert(CP_UI_PROP_COUNT == CP_UI_PROP_ADAPTIVE_LYRICS + 1);
+    assert(CP_UI_SOUND_WAVE_TORRENT == 0);
+    assert(CP_UI_SOUND_WAVE_RADIAL_SPECTRUM == 1);
+    assert(CP_UI_SOUND_WAVE_LIQUID_RIBBON == 2);
+    assert(CP_UI_SOUND_WAVE_VINYL_GROOVE == 3);
+    assert(CP_UI_SOUND_WAVE_MINI_LED_METER == 4);
+    assert(CP_UI_SOUND_WAVE_PARTICLE_PULSE == 5);
+    assert(CP_UI_SOUND_WAVE_STYLE_COUNT == 6);
+    assert(CP_UI_SOUND_WAVE_BAR == 0);
+    assert(CP_UI_SOUND_WAVE_BALL == 1);
 }
 
 static void verify_layout(void)
@@ -72,6 +88,12 @@ static void verify_layout(void)
     assert(sizeof(struct cp_now_playing_queue_item) == 400u);
     assert(sizeof(struct cp_now_playing_lyrics_request) == 8u);
     assert(sizeof(struct cp_now_playing_lyrics_window) == 400u);
+    assert(sizeof(struct cp_now_playing_lyrics_context_request) == 12u);
+    assert(sizeof(struct cp_now_playing_lyrics_context) == 28u);
+    assert(sizeof(struct cp_now_playing_lyric_line_request) == 8u);
+    assert(sizeof(struct cp_now_playing_lyric_line) == 780u);
+    assert(sizeof(struct cp_now_playing_lyric_line) <=
+           CP_NATIVE_SERVICE_PAYLOAD_MAX);
     assert(sizeof(struct cp_diagnostics_snapshot) == 44u);
     assert(sizeof(struct cp_diagnostics_log_request) == 8u);
     assert(sizeof(struct cp_diagnostics_log_entry) == 144u);

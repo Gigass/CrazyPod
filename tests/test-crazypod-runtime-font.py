@@ -23,8 +23,8 @@ SPECS = {
     *(('serif', 400, size) for size in (11, 12, 14, 16, 28)),
     *(('serif', weight, size) for weight, size in
       ((700, 14), (700, 16), (700, 28), (900, 22))),
-    *(('mono', 400, size) for size in (7, 8, 12, 16)),
-    *(('mono', 700, size) for size in (8, 14, 22)),
+    *(('mono', 400, size) for size in (7, 8, 11, 12, 16)),
+    *(('mono', 700, size) for size in (8, 11, 14, 22)),
 }
 LOCALES = ("jp", "kr", "sc", "tc")
 
@@ -105,5 +105,5 @@ for license_name in ("OFL-Noto-CJK.txt", "SOURCE"):
     if not (font_dir / license_name).is_file():
         raise SystemExit(f"missing {license_name}")
 
-print("Noto AOT runtime fonts: 3 semantic families, 35 tuples, "
+print("Noto AOT runtime fonts: 3 semantic families, 37 tuples, "
       "4 regional faces, identical regional line metrics")

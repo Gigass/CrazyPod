@@ -13,7 +13,7 @@
  * objects, Rockbox internals and compiler-runtime state remain host-owned.
  */
 #define CP_NATIVE_ABI_MAJOR 1u
-#define CP_NATIVE_ABI_MINOR 17u
+#define CP_NATIVE_ABI_MINOR 20u
 /* ABI 1.14 assigned a new property in the middle of this enum.  Its binary
  * property values are ambiguous, so packages built for it are not valid. */
 #define CP_NATIVE_ABI_REJECTED_MINOR 14u
@@ -47,6 +47,8 @@
 #define CP_NATIVE_NOW_PLAYING_QUEUE_STATE 2u
 #define CP_NATIVE_NOW_PLAYING_QUEUE_ITEM 3u
 #define CP_NATIVE_NOW_PLAYING_LYRICS_WINDOW 4u
+#define CP_NATIVE_NOW_PLAYING_LYRICS_CONTEXT 5u
+#define CP_NATIVE_NOW_PLAYING_LYRIC_LINE 6u
 
 #define CP_NATIVE_SERVICE_DIAGNOSTICS 2u
 #define CP_NATIVE_DIAGNOSTICS_SNAPSHOT 0u
@@ -281,6 +283,45 @@ struct cp_now_playing_lyrics_window {
     char next[CP_NOW_PLAYING_TEXT_CAPACITY];
 };
 
+#define CP_NOW_PLAYING_LYRIC_TEXT_CAPACITY 768u
+
+enum cp_now_playing_lyrics_status {
+    CP_NOW_PLAYING_LYRICS_EMPTY = 0,
+    CP_NOW_PLAYING_LYRICS_SYNCED,
+    CP_NOW_PLAYING_LYRICS_PLAIN,
+    CP_NOW_PLAYING_LYRICS_NOT_FOUND,
+    CP_NOW_PLAYING_LYRICS_INVALID,
+    CP_NOW_PLAYING_LYRICS_CAPACITY
+};
+
+struct cp_now_playing_lyrics_context_request {
+    uint32_t struct_size;
+    uint32_t elapsed_ms;
+    int32_t anchor_line;
+};
+
+struct cp_now_playing_lyrics_context {
+    uint32_t struct_size;
+    uint32_t revision;
+    int32_t status;
+    int32_t synchronized;
+    int32_t available;
+    int32_t current_line;
+    int32_t line_count;
+};
+
+struct cp_now_playing_lyric_line_request {
+    uint32_t struct_size;
+    int32_t index;
+};
+
+struct cp_now_playing_lyric_line {
+    uint32_t struct_size;
+    uint32_t revision;
+    int32_t index;
+    char text[CP_NOW_PLAYING_LYRIC_TEXT_CAPACITY];
+};
+
 struct cp_diagnostics_snapshot {
     uint32_t struct_size;
     uint32_t monotonic_ms;
@@ -470,7 +511,26 @@ enum cp_ui_property {
     CP_UI_PROP_FONT_WEIGHT,
     CP_UI_PROP_FONT_STYLE,
     CP_UI_PROP_LINE_HEIGHT,
+    CP_UI_PROP_WAVE_PRIMARY_COLOR,
+    CP_UI_PROP_WAVE_SECONDARY_COLOR,
+    CP_UI_PROP_WAVE_HIGHLIGHT_COLOR,
+    CP_UI_PROP_ADAPTIVE_LYRICS,
     CP_UI_PROP_COUNT
+};
+
+enum cp_ui_sound_wave_style {
+    CP_UI_SOUND_WAVE_TORRENT = 0,
+    CP_UI_SOUND_WAVE_RADIAL_SPECTRUM,
+    CP_UI_SOUND_WAVE_LIQUID_RIBBON,
+    CP_UI_SOUND_WAVE_VINYL_GROOVE,
+    CP_UI_SOUND_WAVE_MINI_LED_METER,
+    CP_UI_SOUND_WAVE_PARTICLE_PULSE,
+    CP_UI_SOUND_WAVE_STYLE_COUNT
+};
+
+enum cp_ui_sound_wave_variant {
+    CP_UI_SOUND_WAVE_BAR = 0,
+    CP_UI_SOUND_WAVE_BALL
 };
 
 enum cp_ui_position {

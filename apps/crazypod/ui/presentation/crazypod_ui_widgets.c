@@ -70,15 +70,18 @@ void crazypod_ui_widget_set_label_text(lv_obj_t *label, const char *text)
     }
 }
 
-void crazypod_ui_widget_align_row_label(lv_obj_t *label, int x)
+void crazypod_ui_widget_align_row_label(
+    lv_obj_t *label, int x,
+    enum crazypod_ui_row_label_role role)
 {
     const lv_font_t *font;
+    int optical_y = role == CRAZYPOD_UI_ROW_LABEL_TEXT ? 2 : 0;
 
     if(label == NULL)
         return;
     font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
     lv_obj_set_height(label, lv_font_get_line_height(font));
-    lv_obj_align(label, LV_ALIGN_LEFT_MID, x, 0);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, x, optical_y);
 }
 
 void crazypod_l10n_label_set_text(void *label, const char *text)

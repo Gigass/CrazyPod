@@ -190,6 +190,80 @@ static int lyrics_window_call(
     return sizeof(window);
 }
 
+static int lyrics_context_call(
+    const void *request, size_t request_size,
+    void *response, size_t response_capacity)
+{
+    const struct cp_now_playing_lyrics_context_request *lyrics_request =
+        request;
+    struct cp_now_playing_lyrics_context context;
+    const struct crazypod_track *track =
+        crazypod_miniapp_now_playing_track();
+
+    if(lyrics_request == NULL ||
+       request_size != sizeof(*lyrics_request) ||
+       lyrics_request->struct_size < sizeof(*lyrics_request) ||
+       lyrics_request->anchor_line < -1 || response == NULL)
+        return CP_NATIVE_ERROR_ARGUMENT;
+    if(response_capacity < sizeof(context))
+        return CP_NATIVE_ERROR_LIMIT;
+    memset(&context, 0, sizeof(context));
+    context.struct_size = sizeof(context);
+    context.revision = track_revision(track);
+    context.current_line = -1;
+    if(track != NULL)
+        (void)crazypod_lyrics_load(track->path);
+    context.status = crazypod_lyrics_get_status();
+    context.available = crazypod_lyrics_available() ? 1 : 0;
+    context.synchronized = crazypod_lyrics_synchronized() ? 1 : 0;
+    context.line_count = crazypod_lyrics_display_page_count(
+        CP_NOW_PLAYING_LYRIC_TEXT_CAPACITY);
+    if(context.line_count > 0) {
+        if(lyrics_request->anchor_line >= 0)
+            context.current_line = lyrics_request->anchor_line;
+        else if(context.synchronized)
+            context.current_line = crazypod_lyrics_current_line(
+                lyrics_request->elapsed_ms);
+        else
+            context.current_line = 0;
+        if(context.current_line < 0)
+            context.current_line = 0;
+        if(context.current_line >= context.line_count)
+            context.current_line = context.line_count - 1;
+    }
+    memcpy(response, &context, sizeof(context));
+    return sizeof(context);
+}
+
+static int lyric_line_call(
+    const void *request, size_t request_size,
+    void *response, size_t response_capacity)
+{
+    const struct cp_now_playing_lyric_line_request *line_request = request;
+    struct cp_now_playing_lyric_line line;
+    const struct crazypod_track *track =
+        crazypod_miniapp_now_playing_track();
+
+    if(line_request == NULL ||
+       request_size != sizeof(*line_request) ||
+       line_request->struct_size < sizeof(*line_request) ||
+       line_request->index < 0 || response == NULL)
+        return CP_NATIVE_ERROR_ARGUMENT;
+    if(response_capacity < sizeof(line))
+        return CP_NATIVE_ERROR_LIMIT;
+    if(track == NULL || !crazypod_lyrics_load(track->path))
+        return CP_NATIVE_ERROR_STATE;
+    memset(&line, 0, sizeof(line));
+    line.struct_size = sizeof(line);
+    line.revision = track_revision(track);
+    line.index = line_request->index;
+    if(!crazypod_lyrics_copy_display_page(
+           line.index, line.text, sizeof(line.text)))
+        return CP_NATIVE_ERROR_ARGUMENT;
+    memcpy(response, &line, sizeof(line));
+    return sizeof(line);
+}
+
 static int seek_to(int64_t target)
 {
     const struct mp3entry *id3 = audio_current_track();
@@ -318,6 +392,12 @@ int crazypod_miniapp_now_playing_service_call(
             request, request_size, response, response_capacity);
     if(operation == CP_NATIVE_NOW_PLAYING_LYRICS_WINDOW)
         return lyrics_window_call(
+            request, request_size, response, response_capacity);
+    if(operation == CP_NATIVE_NOW_PLAYING_LYRICS_CONTEXT)
+        return lyrics_context_call(
+            request, request_size, response, response_capacity);
+    if(operation == CP_NATIVE_NOW_PLAYING_LYRIC_LINE)
+        return lyric_line_call(
             request, request_size, response, response_capacity);
     return CP_NATIVE_ERROR_UNSUPPORTED;
 }

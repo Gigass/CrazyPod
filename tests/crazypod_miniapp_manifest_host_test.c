@@ -14,7 +14,7 @@ static const char valid_manifest[] =
     "\"versionCode\":50000,"
     "\"runtime\":\"native-aot\","
     "\"abiMajor\":1,"
-    "\"abiMinor\":17,"
+    "\"abiMinor\":20,"
     "\"reactProfile\":1,"
     "\"fontSet\":\"system:400:12,system:700:24\","
     "\"target\":\"simulator\","
@@ -123,7 +123,7 @@ int main(void)
     assert(metadata.kind == CRAZYPOD_MINIAPP_KIND_APP);
     snprintf(rejected_abi, sizeof(rejected_abi), "%s", valid_manifest);
     {
-        char *minor = strstr(rejected_abi, "\"abiMinor\":17");
+        char *minor = strstr(rejected_abi, "\"abiMinor\":20");
         char *value;
 
         assert(minor != NULL);

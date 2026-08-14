@@ -185,6 +185,66 @@ static void open_photos_route(
     host->push_route(route, -1);
 }
 
+static bool apply_cpk_actions(
+    const struct crazypod_simulator_snapshot_host *host,
+    bool now_playing_theme)
+{
+    const char *actions = getenv("CRAZYPOD_SIM_ACTIONS");
+    struct cp_input_event event = {
+        .struct_size = sizeof(event),
+        .steps = 1,
+    };
+    char buffer[1025];
+    char *cursor;
+    char *save = NULL;
+    unsigned count = 0;
+
+    if(actions == NULL || actions[0] == '\0')
+        return true;
+    if(strlen(actions) >= sizeof(buffer))
+        return false;
+    strlcpy(buffer, actions, sizeof(buffer));
+    cursor = strtok_r(buffer, ",", &save);
+    while(cursor != NULL && count++ < 64u) {
+        char *separator = strchr(cursor, ':');
+        int steps = 1;
+
+        if(separator != NULL) {
+            char *end = NULL;
+            *separator++ = '\0';
+            steps = (int)strtol(separator, &end, 10);
+            if(end == separator || *end != '\0' ||
+               steps < 1 || steps > 32)
+                return false;
+        }
+        if(strcmp(cursor, "cw") == 0)
+            event.type = CP_INPUT_WHEEL_CLOCKWISE;
+        else if(strcmp(cursor, "ccw") == 0)
+            event.type = CP_INPUT_WHEEL_COUNTERCLOCKWISE;
+        else if(strcmp(cursor, "left") == 0)
+            event.type = CP_INPUT_LEFT;
+        else if(strcmp(cursor, "right") == 0)
+            event.type = CP_INPUT_RIGHT;
+        else if(strcmp(cursor, "select") == 0)
+            event.type = CP_INPUT_SELECT;
+        else if(strcmp(cursor, "play") == 0)
+            event.type = CP_INPUT_PLAY;
+        else if(strcmp(cursor, "menu") == 0)
+            event.type = CP_INPUT_MENU;
+        else
+            return false;
+        event.steps = (uint8_t)steps;
+        (void)crazypod_miniapps_event(&event);
+        if(now_playing_theme
+               ? !crazypod_now_playing_theme_open()
+               : !crazypod_miniapps_is_open())
+            return false;
+        host->render(false);
+        cursor = strtok_r(NULL, ",", &save);
+    }
+    return cursor == NULL;
+}
+
 static bool open_miniapp_snapshot(
     const struct crazypod_simulator_snapshot_host *host,
     const char *id, int page)
@@ -221,56 +281,7 @@ static bool open_miniapp_snapshot(
             return false;
         host->render(false);
     }
-    {
-        const char *actions = getenv("CRAZYPOD_SIM_ACTIONS");
-        char buffer[1025];
-        char *cursor;
-        char *save = NULL;
-        unsigned count = 0;
-
-        if(actions == NULL || actions[0] == '\0')
-            return true;
-        if(strlen(actions) >= sizeof(buffer))
-            return false;
-        strlcpy(buffer, actions, sizeof(buffer));
-        cursor = strtok_r(buffer, ",", &save);
-        while(cursor != NULL && count++ < 64u) {
-            char *separator = strchr(cursor, ':');
-            int steps = 1;
-
-            if(separator != NULL) {
-                char *end = NULL;
-                *separator++ = '\0';
-                steps = (int)strtol(separator, &end, 10);
-                if(end == separator || *end != '\0' ||
-                   steps < 1 || steps > 32)
-                    return false;
-            }
-            if(strcmp(cursor, "cw") == 0)
-                event.type = CP_INPUT_WHEEL_CLOCKWISE;
-            else if(strcmp(cursor, "ccw") == 0)
-                event.type = CP_INPUT_WHEEL_COUNTERCLOCKWISE;
-            else if(strcmp(cursor, "left") == 0)
-                event.type = CP_INPUT_LEFT;
-            else if(strcmp(cursor, "right") == 0)
-                event.type = CP_INPUT_RIGHT;
-            else if(strcmp(cursor, "select") == 0)
-                event.type = CP_INPUT_SELECT;
-            else if(strcmp(cursor, "play") == 0)
-                event.type = CP_INPUT_PLAY;
-            else if(strcmp(cursor, "menu") == 0)
-                event.type = CP_INPUT_MENU;
-            else
-                return false;
-            event.steps = (uint8_t)steps;
-            (void)crazypod_miniapps_event(&event);
-            if(!crazypod_miniapps_is_open())
-                return false;
-            host->render(false);
-            cursor = strtok_r(NULL, ",", &save);
-        }
-        return cursor == NULL;
-    }
+    return apply_cpk_actions(host, false);
 }
 
 void crazypod_simulator_snapshot_write_profile(void)
@@ -332,7 +343,8 @@ static bool open_now_playing_theme_snapshot(
                 "CrazyPod now-playing theme open failed: %d\n",
                 crazypod_now_playing_theme_last_error());
     return custom
-        ? crazypod_now_playing_theme_open()
+        ? crazypod_now_playing_theme_open() &&
+            apply_cpk_actions(host, true)
         : !crazypod_now_playing_theme_open();
 }
 
@@ -699,6 +711,29 @@ static bool open_now_playing_default_media(
         open_now_playing_theme_snapshot(host, NULL);
 }
 
+static bool open_now_playing_default_lyrics(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    if(!open_now_playing_default_media(host))
+        return false;
+    crazypod_now_playing_overlay_show_actions();
+    crazypod_now_playing_overlay_move(3);
+    crazypod_now_playing_overlay_activate();
+    crazypod_now_playing_overlay_dismiss(true);
+    host->render(false);
+    return crazypod_now_playing_lyrics_mode();
+}
+
+static bool open_now_playing_default_actions(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    if(!open_now_playing_default_media(host))
+        return false;
+    crazypod_app_input_handle(BUTTON_SELECT, 0, current_tick);
+    return crazypod_now_playing_overlay_kind() ==
+        CRAZYPOD_NOW_OVERLAY_ACTIONS;
+}
+
 static bool show_miniapp_exit_prompt(
     const struct crazypod_simulator_snapshot_host *host)
 {
@@ -992,6 +1027,8 @@ bool crazypod_simulator_snapshot_prepare(
     }
     else if(strcmp(screen, "settings-main-menu") == 0)
         host->open_root_route(SETTINGS_ROUTE_MAIN_MENU);
+    else if(strcmp(screen, "settings-power") == 0)
+        host->open_root_route(SETTINGS_ROUTE_POWER);
     else if(strcmp(screen, "settings-language") == 0) {
         host->open_root_route(SETTINGS_ROUTE_MENU);
         select_bounded(host, item_count() - 1);
@@ -1063,6 +1100,10 @@ bool crazypod_simulator_snapshot_prepare(
         return build_now_playing_theme_media_catalog(host);
     else if(strcmp(screen, "now-playing-default-media") == 0)
         return open_now_playing_default_media(host);
+    else if(strcmp(screen, "now-playing-default-actions") == 0)
+        return open_now_playing_default_actions(host);
+    else if(strcmp(screen, "now-playing-default-lyrics") == 0)
+        return open_now_playing_default_lyrics(host);
     else if(strcmp(screen, "now-playing-default") == 0)
         return open_now_playing_theme_snapshot(host, NULL);
     else if(strcmp(screen, "note-compose") == 0) {

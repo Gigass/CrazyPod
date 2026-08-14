@@ -225,7 +225,7 @@
   "Convert this video to MPEG-1 or MPEG-2": "将此影片转換為 MPEG-1 或 MPEG-2",
   "Converted MPEG files in /Videos": "/Videos 中已转換的 MPEG 檔案",
   "Cooldown": "整理活動",
-  "Copy a CPK directly to /MiniApps.": "將 CPK 直接複製到 /MiniApps。",
+  "Copy a CPK directly to /MiniApps.": "將 CPK 複製到 /MiniApps。",
   "Copy import.upodtheme to /.crazypod": "将 import.upodtheme 复制到 /.crazypod",
   "Core": "核心",
   "Could not activate wallpaper": "無法啟用桌布",
@@ -410,6 +410,7 @@
   "LAP       TOTAL": "本圈       總計",
   "LAYOUT": "布局",
   "LCD Sleep": "LCD 休眠",
+  "Idle Power Off": "無操作自動關機",
   "LOCAL TIME": "本機時間",
   "LOCK PICTURE": "鎖屏圖片",
   "LOCK SCREEN": "鎖定畫面",
@@ -828,6 +829,11 @@
   "Y2K": "Y2K",
   "Yoga": "瑜伽",
   "Your favorite books": "你收藏的書籍",
+  "Invalid lyrics file": "歌詞檔案無效",
+  "Lyrics file is too large": "歌詞檔案過大",
+  "No lyrics available": "沒有可用歌詞",
+  "No lyrics file": "沒有歌詞檔案",
+  "Select: cover  Wheel: scroll": "按選擇鍵看封面  轉盤轉動",
   "Z": "Z",
   "by ": "作者："
 }

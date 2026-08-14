@@ -653,6 +653,7 @@ void crazypod_ui_run(void)
     while(true) {
         long button;
         bool locked;
+        bool screen_off;
         int drained = 0;
         int wait_ticks;
         /* Once mass storage is acknowledged, the host owns the filesystem.
@@ -668,27 +669,24 @@ void crazypod_ui_run(void)
             }
         }
         process_lock_state();
-        wait_ticks = crazypod_runtime_services_wait_ticks();
-        {
-            int input_wait =
-                crazypod_app_input_wait_ticks(current_tick);
-
+        wait_ticks = crazypod_runtime_services_prepare_wait(
+            current_tick, &screen_off);
+        if(!screen_off) {
+            int input_wait = crazypod_app_input_wait_ticks(current_tick);
             if(input_wait < wait_ticks)
                 wait_ticks = input_wait;
-        }
-        wait_ticks = MIN(
-            wait_ticks,
-            crazypod_render_scheduler_wait_ticks(current_tick));
+            wait_ticks = MIN(wait_ticks,
+                crazypod_render_scheduler_wait_ticks(current_tick));
 #if defined(SIMULATOR) || \
     defined(CRAZYPOD_REPRO_DIAGNOSTICS)
-        {
-            int repro_wait =
-                crazypod_miniapp_repro_wait_ticks();
+            {
+                int repro_wait = crazypod_miniapp_repro_wait_ticks();
 
-            if(repro_wait < wait_ticks)
-                wait_ticks = repro_wait;
-        }
+                if(repro_wait < wait_ticks)
+                    wait_ticks = repro_wait;
+            }
 #endif
+        }
         button = button_get_w_tmo(wait_ticks);
         process_lock_state();
         while(button != BUTTON_NONE && drained < 16) {
@@ -705,9 +703,12 @@ void crazypod_ui_run(void)
         }
         process_lock_state();
         locked = crazypod_lock_screen_is_locked();
+        if(crazypod_runtime_services_screen_off_tick()) {
+            set_cpu_boost(false);
+            continue;
+        }
         crazypod_app_input_tick(current_tick, locked);
-        crazypod_alpha_jump_hud_tick(
-            current_tick,
+        crazypod_alpha_jump_hud_tick(current_tick,
             !locked && crazypod_shell_product_active());
         crazypod_runtime_services_tick(
             current_tick,

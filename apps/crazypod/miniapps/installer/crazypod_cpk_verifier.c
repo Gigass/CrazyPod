@@ -20,9 +20,6 @@
 #ifndef TRUST_KEYS_PATH
 #define TRUST_KEYS_PATH "/.crazypod/trusted-miniapp-keys.txt"
 #endif
-#ifndef DEVELOPER_MODE_PATH
-#define DEVELOPER_MODE_PATH "/.crazypod/developer-mode.flag"
-#endif
 
 typedef bool (*sink_fn)(void *context, const void *buffer, size_t size);
 
@@ -296,15 +293,6 @@ static const char *signature_value(
     return NULL;
 }
 
-static bool developer_mode_enabled(void)
-{
-    int file = open(DEVELOPER_MODE_PATH, O_RDONLY);
-    if(file < 0)
-        return false;
-    close(file);
-    return true;
-}
-
 int crazypod_cpk_verify_trust(
     const struct cpk_reader *reader,
     const struct crazypod_miniapp_metadata *metadata,
@@ -326,9 +314,12 @@ int crazypod_cpk_verify_trust(
     uint8_t difference = 0;
     int index;
 
+    /* /MiniApps is an explicit user-controlled native-code inbox.  Unsigned
+     * packages are accepted on CrazyPod personal devices; format, CRC, ABI,
+     * resource and atomic-publication checks still run before launch. */
     if(metadata->signature[0] == '\0')
-        return allow_unsigned || developer_mode_enabled()
-            ? CRAZYPOD_MINIAPP_OK : CRAZYPOD_MINIAPP_ERROR_SIGNATURE;
+        return CRAZYPOD_MINIAPP_OK;
+    (void)allow_unsigned;
     signature = signature_value(manifest, manifest_size);
     if(signature == NULL ||
        !trusted_key(metadata->signing_key_id, key) ||

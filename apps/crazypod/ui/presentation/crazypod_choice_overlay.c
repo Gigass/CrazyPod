@@ -238,7 +238,8 @@ void crazypod_choice_overlay_show(
             view.rows[row], "", metadata_font,
             COLOR_WHITE, 180);
         lv_obj_set_width(view.labels[row], 146);
-        crazypod_ui_widget_align_row_label(view.labels[row], 30);
+        crazypod_ui_widget_align_row_label(
+            view.labels[row], 30, CRAZYPOD_UI_ROW_LABEL_TEXT);
         lv_label_set_long_mode(
             view.labels[row], LV_LABEL_LONG_MODE_DOTS);
         view.markers[row] = crazypod_ui_widget_label(
@@ -247,7 +248,8 @@ void crazypod_choice_overlay_show(
         lv_obj_set_width(view.markers[row], 24);
         lv_obj_set_style_text_align(
             view.markers[row], LV_TEXT_ALIGN_CENTER, 0);
-        crazypod_ui_widget_align_row_label(view.markers[row], 184);
+        crazypod_ui_widget_align_row_label(
+            view.markers[row], 184, CRAZYPOD_UI_ROW_LABEL_MARKER);
     }
 
     track = crazypod_ui_widget_box(

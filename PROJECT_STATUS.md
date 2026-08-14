@@ -111,6 +111,7 @@ Simulator success and ARM compilation do not prove physical-device timing.
 
 ## Contracts
 
+- [Power management](docs/CRAZYPOD_POWER_MANAGEMENT.zh-CN.md)
 - [Native AOT architecture](docs/CRAZYPOD_MINIAPP_NATIVE_AOT_ARCHITECTURE.zh-CN.md)
 - [Native AOT development](docs/CRAZYPOD_MINIAPP_NATIVE_AOT_DEVELOPMENT.zh-CN.md)
 - [CPK5 format](docs/CRAZYPOD_MINIAPP_CPK5_FORMAT.zh-CN.md)

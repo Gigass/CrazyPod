@@ -21,6 +21,8 @@ struct crazypod_now_screen_context {
     const struct crazypod_track *track;
     bool lyrics_mode;
     const lv_font_t *metadata_font;
+    const lv_font_t *lyrics_context_font;
+    const lv_font_t *lyrics_current_font;
     uint32_t primary_color;
     const lv_image_dsc_t *visual_artwork;
     const char *visual_track_path;
@@ -32,6 +34,7 @@ struct crazypod_now_screen_context {
 };
 
 struct crazypod_now_screen_view {
+    lv_obj_t *lyrics_viewport;
     lv_obj_t *lyrics_previous;
     lv_obj_t *lyrics_current;
     lv_obj_t *lyrics_next;
@@ -41,6 +44,10 @@ struct crazypod_now_screen_view {
     lv_obj_t *remaining;
     bool wave_playing;
     long wave_tick;
+    int lyrics_scroll;
+    int lyrics_scroll_max;
+    long lyrics_scroll_tick;
+    long lyrics_scroll_hold_until;
 };
 
 void crazypod_now_screen_render(

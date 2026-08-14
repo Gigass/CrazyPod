@@ -17,12 +17,19 @@ enum crazypod_ui_icon {
     CRAZYPOD_UI_ICON_AUDIO,
 };
 
+enum crazypod_ui_row_label_role {
+    CRAZYPOD_UI_ROW_LABEL_TEXT = 0,
+    CRAZYPOD_UI_ROW_LABEL_MARKER,
+};
+
 void crazypod_ui_widget_make_plain(lv_obj_t *obj);
 lv_obj_t *crazypod_ui_widget_label(lv_obj_t *parent, const char *text,
                                    const lv_font_t *font, uint32_t color,
                                    lv_opa_t opacity);
 void crazypod_ui_widget_set_label_text(lv_obj_t *label, const char *text);
-void crazypod_ui_widget_align_row_label(lv_obj_t *label, int x);
+void crazypod_ui_widget_align_row_label(
+    lv_obj_t *label, int x,
+    enum crazypod_ui_row_label_role role);
 lv_obj_t *crazypod_ui_widget_box(lv_obj_t *parent, int x, int y,
                                  int width, int height, int radius,
                                  uint32_t color, lv_opa_t opacity);

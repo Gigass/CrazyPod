@@ -47,6 +47,7 @@ static const int playback_items[] = {
 };
 
 static const int power_items[] = {
+    SETTINGS_ITEM_IDLE_POWEROFF,
 #ifdef HAVE_USB_CHARGING_ENABLE
     SETTINGS_ITEM_USB_CHARGING,
 #endif

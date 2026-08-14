@@ -4,6 +4,63 @@ Entries are point-in-time records. Use the newest entry and
 [PROJECT_STATUS.md](PROJECT_STATUS.md) for current status; older open items may
 have been completed later.
 
+## 2026-08-10 (Lock-screen power and idle shutdown)
+
+Goal: stop indefinite battery drain after the display is locked while keeping
+screen-off music playback correct.
+
+Changed:
+
+- added Settings → Power → Idle Power Off with Off and 1–60 minute choices;
+- defaulted fresh and v1–v10 migrated state to 10 minutes and upgraded state
+  persistence to v11;
+- restored real `audio_status()` use in the iPod 6G automatic-poweroff path so
+  active playback inhibits shutdown while paused/stopped playback may time out;
+- applied LCD sleep and all other runtime settings even when `state.bin` is
+  absent, removing the first-boot 1-second/10-second LCD mismatch;
+- made an externally powered sleep timer pause audio when it expires;
+- replaced the locked, backlight-off 1 Hz UI loop with an event/deadline-driven
+  wait: no playback, pending save, or alarm now blocks indefinitely until a
+  button or Rockbox system event arrives;
+- stopped LVGL timers, display presentation and ordinary runtime services while
+  the locked display is off; playback checkpoints wake at most every 30 seconds
+  and Mini App alarms wake at their nearest absolute deadline;
+- kept click-wheel hardware event ownership unchanged because
+  `wheel_send_events(false)` still generates wheel interrupts and `BUTTON_NONE`
+  wakeups, so it does not provide the claimed hardware power saving;
+- added host coverage for indefinite waits, minimum-deadline selection, due
+  alarms and timeout overflow;
+- documented the lock, LCD, audio, storage, idle-poweroff and verification
+  contracts in `docs/CRAZYPOD_POWER_MANAGEMENT.zh-CN.md`.
+
+Verified and installed:
+
+- UI architecture and UI host tests pass;
+- strict nine-language localization audit passes with no errors or warnings;
+- incremental iPod 6G build completes and packages a valid release archive;
+- repaired one orphaned FAT32 cluster on `CRAZYPOD` (`/dev/disk18s1`) and passed
+  read-only filesystem verification before and after installation;
+- backed up and checksum-compared the active device data under
+  `~/CrazyPod-device-backups/20260810-before-idle-poweroff`;
+- installed and byte-compared all 452 packaged files without delete-mirroring;
+  installed `rockbox.ipod` SHA-256 is
+  `874da2a7db5e95eb09219e269fa7dd92467972cacf082839d6e4acc6b6a22ded`;
+- preserved the 268-byte v10 `state.bin` unchanged so the first device boot can
+  exercise the real v10-to-v11 migration path;
+- after the event/deadline screen-off change, repeated the architecture, UI,
+  Mini App, EPUB and strict localization suites plus simulator and iPod 6G
+  builds; the final installed `rockbox.ipod` SHA-256 is
+  `7c087360a9c1cad32d5061b4eb325dfe36f2dc1f0ae227350d4686252d4db86e`,
+  and the release ZIP passes its compressed-data integrity check;
+- backed up and content-compared the active device data under
+  `~/CrazyPod-device-backups/20260810-before-screen-off-idle`, installed and
+  content-compared all 452 release files with firmware last, preserved
+  `state.bin` byte-for-byte, passed the post-install FAT32 check and safely
+  ejected `/dev/disk18`;
+- physical idle-timeout, playback-inhibit and external-power behavior still
+  require post-boot timing tests on the device; build, installation and media
+  integrity do not prove those hardware-time behaviors.
+
 ## 2026-07-31 (Mini App Native AOT phases 1–7)
 
 Goal: replace the device-side script runtime with React-style TSX compiled to

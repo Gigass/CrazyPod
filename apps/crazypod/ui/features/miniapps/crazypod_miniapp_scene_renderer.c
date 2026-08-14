@@ -8,6 +8,7 @@
 
 #include "buflib.h"
 #include "core_alloc.h"
+#include "kernel.h"
 
 #include "../../../crazypod_appearance.h"
 #include "../../../crazypod_image.h"
@@ -20,6 +21,198 @@
 #include "../../features/now_playing/crazypod_now_playing_feature.h"
 #include "../../presentation/crazypod_marquee.h"
 #include "crazypod_miniapp_scene_internal.h"
+
+#define ADAPTIVE_LYRICS_INSET 2
+#define ADAPTIVE_LYRICS_CURRENT_LINE_SPACE 4
+#define ADAPTIVE_LYRICS_SCROLL_TICKS \
+    ((HZ / 12) > 0 ? (HZ / 12) : 1)
+#define ADAPTIVE_LYRICS_SCROLL_HOLD \
+    ((HZ * 2) > 0 ? (HZ * 2) : 1)
+
+static uint32_t adaptive_lyrics_text_hash(const char *text)
+{
+    uint32_t hash = 2166136261u;
+
+    if(text == NULL)
+        return hash;
+    while(*text != '\0') {
+        hash ^= (uint8_t)*text++;
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static void adaptive_lyrics_hide(lv_obj_t *label)
+{
+    if(label != NULL)
+        lv_obj_add_flag(label, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void adaptive_lyrics_show(
+    lv_obj_t *label, int width, int y, int height)
+{
+    if(label == NULL)
+        return;
+    lv_obj_set_pos(label, 0, y);
+    lv_obj_set_size(label, width, height);
+    lv_obj_remove_flag(label, LV_OBJ_FLAG_HIDDEN);
+}
+
+void crazypod_miniapp_scene_adaptive_lyrics_refresh(
+    struct crazypod_miniapp_scene_node *node, long now)
+{
+    lv_obj_t *previous;
+    lv_obj_t *current;
+    lv_obj_t *next;
+    const lv_font_t *current_font;
+    const lv_font_t *context_font;
+    const char *current_text;
+    lv_point_t measured = { 0, 0 };
+    uint32_t text_hash;
+    int width;
+    int height;
+    int context_height;
+    int line_height;
+    int one_height;
+    int two_height;
+    int three_height;
+    int four_height;
+    int current_height;
+    int bottom_y;
+
+    if(node == NULL || node->object == NULL ||
+       node->values[CP_UI_PROP_ADAPTIVE_LYRICS] == 0 ||
+       (node->type != CP_UI_OBJECT_VIEW &&
+        node->type != CP_UI_OBJECT_MODAL) ||
+       lv_obj_get_child_count(node->object) != 3u)
+        return;
+    previous = lv_obj_get_child(node->object, 0);
+    current = lv_obj_get_child(node->object, 1);
+    next = lv_obj_get_child(node->object, 2);
+    if(previous == NULL || current == NULL || next == NULL)
+        return;
+
+    /* The adaptive grid owns child geometry. Leaving the React Profile's
+       default column flex layout active makes LVGL immediately overwrite the
+       measured positions and can repeatedly dirty the layout tree. */
+    lv_obj_set_layout(node->object, LV_LAYOUT_NONE);
+    lv_obj_remove_flag(
+        node->object,
+        LV_OBJ_FLAG_OVERFLOW_VISIBLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_update_layout(node->object);
+    width = lv_obj_get_content_width(node->object);
+    height = lv_obj_get_content_height(node->object);
+    if(width <= 0 || height <= ADAPTIVE_LYRICS_INSET * 2)
+        return;
+
+    current_font = lv_obj_get_style_text_font(current, LV_PART_MAIN);
+    context_font = lv_obj_get_style_text_font(previous, LV_PART_MAIN);
+    if(current_font == NULL || context_font == NULL)
+        return;
+    line_height = lv_font_get_line_height(current_font);
+    context_height = lv_font_get_line_height(context_font);
+    if(line_height <= 0 || context_height <= 0)
+        return;
+
+    lv_label_set_long_mode(previous, LV_LABEL_LONG_MODE_CLIP);
+    lv_label_set_long_mode(current, LV_LABEL_LONG_MODE_WRAP);
+    lv_label_set_long_mode(next, LV_LABEL_LONG_MODE_CLIP);
+    lv_obj_set_style_text_line_space(previous, 0, 0);
+    lv_obj_set_style_text_line_space(
+        current, ADAPTIVE_LYRICS_CURRENT_LINE_SPACE, 0);
+    lv_obj_set_style_text_line_space(next, 0, 0);
+
+    current_text = lv_label_get_text(current);
+    lv_text_get_size(
+        &measured, current_text != NULL ? current_text : "",
+        current_font,
+        lv_obj_get_style_text_letter_space(current, LV_PART_MAIN),
+        ADAPTIVE_LYRICS_CURRENT_LINE_SPACE,
+        width, LV_TEXT_FLAG_NONE);
+    current_height = measured.y < line_height
+        ? line_height : measured.y;
+    one_height = line_height;
+    two_height = line_height * 2 +
+        ADAPTIVE_LYRICS_CURRENT_LINE_SPACE;
+    three_height = line_height * 3 +
+        ADAPTIVE_LYRICS_CURRENT_LINE_SPACE * 2;
+    four_height = line_height * 4 +
+        ADAPTIVE_LYRICS_CURRENT_LINE_SPACE * 3;
+    if(four_height > height - ADAPTIVE_LYRICS_INSET * 2)
+        four_height = height - ADAPTIVE_LYRICS_INSET * 2;
+    bottom_y = height - ADAPTIVE_LYRICS_INSET - context_height;
+
+    text_hash = adaptive_lyrics_text_hash(current_text);
+    if(text_hash != node->adaptive_lyrics_hash) {
+        node->adaptive_lyrics_hash = text_hash;
+        node->adaptive_lyrics_scroll = 0;
+        node->adaptive_lyrics_scroll_tick = now;
+        node->adaptive_lyrics_hold_until =
+            now + ADAPTIVE_LYRICS_SCROLL_HOLD;
+    }
+    node->adaptive_lyrics_scroll_max = current_height > four_height
+        ? current_height - four_height : 0;
+    if(node->adaptive_lyrics_scroll > node->adaptive_lyrics_scroll_max)
+        node->adaptive_lyrics_scroll =
+            node->adaptive_lyrics_scroll_max;
+    if(node->adaptive_lyrics_scroll_max > 0 &&
+       !TIME_BEFORE(now, node->adaptive_lyrics_hold_until) &&
+       !TIME_BEFORE(now, node->adaptive_lyrics_scroll_tick +
+                    ADAPTIVE_LYRICS_SCROLL_TICKS)) {
+        node->adaptive_lyrics_scroll_tick = now;
+        if(node->adaptive_lyrics_scroll >=
+           node->adaptive_lyrics_scroll_max) {
+            node->adaptive_lyrics_scroll = 0;
+            node->adaptive_lyrics_hold_until =
+                now + ADAPTIVE_LYRICS_SCROLL_HOLD;
+        }
+        else
+            ++node->adaptive_lyrics_scroll;
+    }
+
+    adaptive_lyrics_hide(previous);
+    adaptive_lyrics_hide(next);
+    if(current_height > four_height) {
+        adaptive_lyrics_show(
+            current, width,
+            ADAPTIVE_LYRICS_INSET - node->adaptive_lyrics_scroll,
+            current_height);
+        return;
+    }
+    if(current_height <= one_height) {
+        adaptive_lyrics_show(
+            current, width, (height - one_height) / 2, one_height);
+        if(lv_label_get_text(previous)[0] != '\0')
+            adaptive_lyrics_show(
+                previous, width, ADAPTIVE_LYRICS_INSET,
+                context_height);
+        if(lv_label_get_text(next)[0] != '\0')
+            adaptive_lyrics_show(
+                next, width, bottom_y, context_height);
+    }
+    else if(current_height <= two_height) {
+        adaptive_lyrics_show(
+            current, width, (height - two_height) / 2, two_height);
+        if(lv_label_get_text(previous)[0] != '\0')
+            adaptive_lyrics_show(
+                previous, width, ADAPTIVE_LYRICS_INSET,
+                context_height);
+        if(lv_label_get_text(next)[0] != '\0')
+            adaptive_lyrics_show(
+                next, width, bottom_y, context_height);
+    }
+    else if(current_height <= three_height) {
+        adaptive_lyrics_show(
+            current, width, ADAPTIVE_LYRICS_INSET, three_height);
+        if(lv_label_get_text(next)[0] != '\0')
+            adaptive_lyrics_show(
+                next, width, bottom_y, context_height);
+    }
+    else {
+        adaptive_lyrics_show(
+            current, width, ADAPTIVE_LYRICS_INSET, four_height);
+    }
+}
 
 static lv_obj_t *transform_target(
     struct crazypod_miniapp_scene_node *node)
@@ -284,22 +477,47 @@ static void draw_sound_wave(lv_event_t *event)
     const struct crazypod_appearance *appearance =
         crazypod_appearance_get();
     lv_area_t area;
+    uint32_t primary;
+    uint32_t secondary;
+    uint32_t highlight;
     int style;
+    int variant;
 
     if(node == NULL || lv_event_get_code(event) != LV_EVENT_DRAW_MAIN)
         return;
     style = node->values[CP_UI_PROP_WAVE_STYLE];
-    if(style < 0 || style >= CRAZYPOD_SOUND_WAVE_STYLE_COUNT)
+    if(!crazypod_miniapp_scene_property_is_set(
+           node, CP_UI_PROP_WAVE_STYLE) ||
+       style < 0 || style >= CRAZYPOD_SOUND_WAVE_STYLE_COUNT)
         style = appearance->sound_wave_style;
+    variant = node->values[CP_UI_PROP_VARIANT];
+    primary = crazypod_miniapp_scene_property_is_set(
+        node, CP_UI_PROP_WAVE_PRIMARY_COLOR)
+        ? (uint32_t)node->values[CP_UI_PROP_WAVE_PRIMARY_COLOR]
+        : crazypod_appearance_color(appearance->primary_color);
+    secondary = crazypod_miniapp_scene_property_is_set(
+        node, CP_UI_PROP_WAVE_SECONDARY_COLOR)
+        ? (uint32_t)node->values[CP_UI_PROP_WAVE_SECONDARY_COLOR]
+        : crazypod_appearance_color(appearance->secondary_color);
+    highlight = crazypod_miniapp_scene_property_is_set(
+        node, CP_UI_PROP_WAVE_HIGHLIGHT_COLOR)
+        ? (uint32_t)node->values[CP_UI_PROP_WAVE_HIGHLIGHT_COLOR]
+        : 0xFFFFFF;
     lv_obj_get_coords(node->object, &area);
-    crazypod_sound_wave_draw_bar(
-        lv_event_get_layer(event), &area,
-        (enum crazypod_sound_wave_style)style,
-        node->values[CP_UI_PROP_PHASE],
-        node->values[CP_UI_PROP_PLAYING] != 0,
-        crazypod_appearance_color(appearance->primary_color),
-        crazypod_appearance_color(appearance->secondary_color),
-        0xFFFFFF);
+    if(variant == CP_UI_SOUND_WAVE_BALL)
+        crazypod_sound_wave_draw_ball(
+            lv_event_get_layer(event), &area,
+            (enum crazypod_sound_wave_style)style,
+            node->values[CP_UI_PROP_PHASE],
+            node->values[CP_UI_PROP_PLAYING] != 0,
+            primary, secondary, highlight);
+    else
+        crazypod_sound_wave_draw_bar(
+            lv_event_get_layer(event), &area,
+            (enum crazypod_sound_wave_style)style,
+            node->values[CP_UI_PROP_PHASE],
+            node->values[CP_UI_PROP_PLAYING] != 0,
+            primary, secondary, highlight);
 }
 
 static enum crazypod_font_family family_for_value(int32_t value)
@@ -1631,6 +1849,10 @@ void crazypod_miniapp_scene_property_apply(
     case CP_UI_PROP_NUMBER_OF_LINES:
         apply_number_of_lines(node);
         break;
+    case CP_UI_PROP_ADAPTIVE_LYRICS:
+        crazypod_miniapp_scene_adaptive_lyrics_refresh(
+            node, current_tick);
+        break;
     case CP_UI_PROP_MARQUEE:
         if(node->type == CP_UI_OBJECT_TEXT) {
             if(value)
@@ -1650,6 +1872,9 @@ void crazypod_miniapp_scene_property_apply(
     case CP_UI_PROP_PHASE:
     case CP_UI_PROP_PLAYING:
     case CP_UI_PROP_WAVE_STYLE:
+    case CP_UI_PROP_WAVE_PRIMARY_COLOR:
+    case CP_UI_PROP_WAVE_SECONDARY_COLOR:
+    case CP_UI_PROP_WAVE_HIGHLIGHT_COLOR:
         if(node->type == CP_UI_OBJECT_SOUND_WAVE)
             lv_obj_invalidate(object);
         break;

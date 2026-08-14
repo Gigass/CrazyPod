@@ -19,6 +19,7 @@ crazypod/ui/app/crazypod_choice_coordinator.c
 crazypod/ui/app/crazypod_menu_preview.c
 crazypod/ui/app/crazypod_menu_rows.c
 crazypod/ui/app/crazypod_route_renderer.c
+crazypod/ui/app/crazypod_screen_off_policy.c
 crazypod/ui/app/crazypod_runtime_services.c
 crazypod/ui/app/crazypod_app_launcher.c
 crazypod/ui/app/crazypod_route_actions.c

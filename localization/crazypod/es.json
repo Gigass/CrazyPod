@@ -410,6 +410,7 @@
   "LAP       TOTAL": "VUELTA    TOTAL",
   "LAYOUT": "DISEÑO",
   "LCD Sleep": "Reposo de LCD",
+  "Idle Power Off": "Apagado automático",
   "LOCAL TIME": "HORA LOCAL",
   "LOCK PICTURE": "IMAGEN DE BLOQUEO",
   "LOCK SCREEN": "PANTALLA DE BLOQUEO",
@@ -828,6 +829,11 @@
   "Y2K": "Y2K",
   "Yoga": "Yoga",
   "Your favorite books": "Tus libros favoritos",
+  "Invalid lyrics file": "Archivo de letras no válido",
+  "Lyrics file is too large": "El archivo de letras es demasiado grande",
+  "No lyrics available": "No hay letras disponibles",
+  "No lyrics file": "No hay archivo de letras",
+  "Select: cover  Wheel: scroll": "Seleccionar: portada  Rueda: desplazar",
   "Z": "Z",
   "by ": "por "
 }

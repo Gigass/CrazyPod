@@ -213,6 +213,8 @@ def function_name(tokens: list[Token], opening: int) -> str:
 def looks_user_facing(value: str) -> bool:
     if not ENGLISH.search(value) or len(value.strip()) < 2:
         return False
+    if value.lstrip().startswith(('{"', '"')) and '":' in value:
+        return False  # bounded machine-readable JSON, not rendered UI copy
     if value.startswith(("/", ".", "%", "<")):
         return False
     if re.fullmatch(r"[A-Za-z0-9_./:+%*\-]+", value) and (

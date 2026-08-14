@@ -76,8 +76,8 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
   CrazyPod records elapsed time only; it does not invent distance, steps, or
   calorie data.
 - **System:** live battery and clock status, selectable USB Charge/Data modes,
-  a full-screen input block while Data mode is active, and a configurable
-  16-application main menu.
+  a full-screen input block while Data mode is active, configurable idle
+  power-off, and a configurable 16-application main menu.
 - **Lock screen:** immediate manual lock, wake-key isolation, a large clock,
   configurable wallpaper and corner radii, and a 0.5-second Center-button hold
   to unlock with progress feedback.
@@ -85,8 +85,15 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
   Restart confirmation surface without entering Rockbox's committed shutdown
   path first.
 - **Settings:** sound, EQ Studio, display and backlight, Reduce Motion,
-  playback, sleep timer, USB charging, click feedback, language, and main-menu
-  order.
+  playback, idle power-off, sleep timer, USB charging, click feedback,
+  language, and main-menu order.
+
+Lock turns off the backlight, suspends product background media work, and stops
+periodic LVGL/UI servicing until an input, system event, alarm, or playback
+checkpoint is due; it is still not whole-device suspend. Settings → Power →
+Idle Power Off defaults to ten minutes, is disabled while audio is actively
+playing or external power is connected, and shuts the device down after
+paused/stopped inactivity. See the [power-management contract](docs/CRAZYPOD_POWER_MANAGEMENT.zh-CN.md).
 
 ### Localization
 

@@ -225,7 +225,7 @@
   "Convert this video to MPEG-1 or MPEG-2": "この動画をMPEG-1またはMPEG-2に変換してください",
   "Converted MPEG files in /Videos": "/Videos 内の変換済みMPEGファイル",
   "Cooldown": "クールダウン",
-  "Copy a CPK directly to /MiniApps.": "CPKを /MiniApps に直接コピーしてください。",
+  "Copy a CPK directly to /MiniApps.": "CPKを /MiniApps にコピーしてください。",
   "Copy import.upodtheme to /.crazypod": "import.upodthemeを /.crazypod にコピーしてください",
   "Core": "コア",
   "Could not activate wallpaper": "壁紙を有効にできませんでした",
@@ -410,6 +410,7 @@
   "LAP       TOTAL": "ラップ       合計",
   "LAYOUT": "レイアウト",
   "LCD Sleep": "LCDスリープ",
+  "Idle Power Off": "自動電源オフ",
   "LOCAL TIME": "現地時刻",
   "LOCK PICTURE": "ロック画面の画像",
   "LOCK SCREEN": "ロック画面",
@@ -828,6 +829,11 @@
   "Y2K": "Y2K",
   "Yoga": "ヨガ",
   "Your favorite books": "お気に入りの本",
+  "Invalid lyrics file": "歌詞ファイルが無効です",
+  "Lyrics file is too large": "歌詞ファイルが大きいです",
+  "No lyrics available": "利用できる歌詞がありません",
+  "No lyrics file": "歌詞ファイルがありません",
+  "Select: cover  Wheel: scroll": "選択：カバー  ホイール：スクロール",
   "Z": "Z",
   "by ": "著者："
 }

@@ -2075,6 +2075,11 @@
         "apps/crazypod/ui/features/settings/crazypod_settings_preview.c:74"
       ]
     },
+    "Idle Power Off": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c:59"
+      ]
+    },
     "Info": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:154"
@@ -4419,6 +4424,31 @@
     "Your favorite books": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_preview.c:183"
+      ]
+    },
+    "Invalid lyrics file": {
+      "locations": [
+        "apps/crazypod/ui/features/now_playing/crazypod_now_lyrics_view.c:200"
+      ]
+    },
+    "Lyrics file is too large": {
+      "locations": [
+        "apps/crazypod/ui/features/now_playing/crazypod_now_lyrics_view.c:202"
+      ]
+    },
+    "No lyrics available": {
+      "locations": [
+        "apps/crazypod/ui/features/now_playing/crazypod_now_lyrics_view.c:204"
+      ]
+    },
+    "No lyrics file": {
+      "locations": [
+        "apps/crazypod/ui/features/now_playing/crazypod_now_lyrics_view.c:198"
+      ]
+    },
+    "Select: cover  Wheel: scroll": {
+      "locations": [
+        "apps/crazypod/ui/features/now_playing/crazypod_now_lyrics_view.c:337"
       ]
     },
     "Z": {

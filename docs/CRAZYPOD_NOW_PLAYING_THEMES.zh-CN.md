@@ -78,6 +78,11 @@ handler 都只代表一格。普通 Mini App 的既有输入路径不变。
 用纯 TSX 绘制真实 VU 律动。`SoundWave` 是由 phase 驱动的原生装饰波形，不做
 频谱分析。主题无权读取原始 PCM，也不自行解码封面。
 
+ABI 1.18 将 CrazyPod DIY 的六种音波样式作为稳定枚举公开给主题，并允许主题
+选择横向 Bar 或圆形 Ball 形态，以及提供主色、辅助色和高亮色。未指定样式时使用
+设备当前 DIY 音波设置；未指定颜色时沿用设备外观色。主题仍必须把 `SoundWave`
+设计为装饰动态图形，真实左右声道表头继续读取下标 8、9。
+
 媒体库和 Cover Flow 始终读写 128px 的 `CV10` 持久缓存。正在播放主题不读取、
 不写入该缓存，而是按 `artworkSourceSize` 从嵌入或外置原图直接解码；因此全屏主题
 不会再把 128px 缓存放大到 320px。
@@ -91,12 +96,15 @@ ABI 1.7 起的固定播放数据布局：
 - `refreshQueueState`：`[generation, count, currentIndex]`；
 - `refreshQueueItem`：三段文本加 `[generation, index, isCurrent]`；
 - `refreshLyricsWindow`：前/当前/后三行加 `[available, revision, currentLine]`；
+- `refreshLyricsContext`（ABI 1.19）：768 字节 UTF-8 安全页加
+  `[available, revision, currentLine, lineCount, status, synchronized]`；
 - `setFavorite(boolean)`：幂等设置，不依赖界面缓存状态；
 - `setPlaybackMode("normal" | "shuffle" | "repeat-all" | "repeat-one")`；
 - `seekPlayback(ms)`、`seekBy(deltaMs)`、`playQueueItem(index)`。
 
-全部读取都有固定结构和 128 字节单段文本上限，不把完整动态数组或歌词文件交给
-主题。主题必须用队列 `count` 约束索引，并处理无歌曲、无歌词和总时长为 0。
+全部读取都有固定结构；旧窗口仍为 128 字节，新歌词页为 768 字节。ABI 不把完整
+动态数组或歌词文件交给主题。主题必须用队列 `count` 约束索引，并处理无歌曲、
+无歌词和总时长为 0。
 
 完整纯 TSX 示例位于 `miniapps/themes/atelier-hifi/App.tsx`。仓库同时提交
 Devtool 生成的 `generated/app.c`，固件构建只编译该产物，不维护第二份手写页面。
@@ -140,3 +148,15 @@ render、连续滚轮 Repeat 事件、逐首切换、进度增长、PCM 峰值�
 封面检查读取实际 framebuffer，不以缓存文件存在代替画面成功。真机发布仍必须
 验证真实媒体库、连续切歌、暂停/继续、长时间音频和重启后的主题选择；模拟器通过
 不等于真机通过。
+
+ABI 1.19 在保留旧 128 字节歌词窗口的同时，新增歌词上下文与逐行/分页读取：
+同步歌词按完整行返回，纯文本歌词按 UTF-8 安全页返回，主题同时取得缺失、无效、
+超容量等明确状态以及当前索引、总数和同步标志。新主题不得再对歌词使用省略号或
+跑马灯，应提供可换行的歌词焦点界面，并在该界面打开时将滚轮用于歌词浏览。
+
+ABI 1.20 为正在播放主题新增 `adaptiveLyrics` 容器属性。容器必须恰好包含
+“上一句 / 当前句 / 下一句”三个 `Text` 子节点。宿主按实际字体、实际宽度测量
+当前句：一行时保留上下文并将当前句居中；两行时使用上一句 + 两行当前句 +
+下一句；三行时隐藏上一句；四行时仅显示当前句；超过四行时在四行视口内纵向
+滚动。上下文固定单行裁切，不生成省略号。八套内置正在播放主题均使用该属性，
+主题只定义字体、颜色和视口尺寸，不再各自猜测歌词行数。

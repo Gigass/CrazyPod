@@ -115,8 +115,8 @@ system:400:28 system:400:32 system:400:40
 system:500:32 system:700:16 system:700:32 system:900:32
 serif:400:12 serif:400:14 serif:400:16 serif:400:28
 serif:400:11 serif:700:14 serif:700:16 serif:700:28 serif:900:22
-mono:400:7 mono:400:8 mono:400:12 mono:400:16
-mono:700:8 mono:700:14 mono:700:22'
+mono:400:7 mono:400:8 mono:400:11 mono:400:12 mono:400:16
+mono:700:8 mono:700:11 mono:700:14 mono:700:22'
 
 for spec in $font_specs; do
     family=${spec%%:*}

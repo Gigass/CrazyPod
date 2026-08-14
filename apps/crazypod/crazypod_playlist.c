@@ -54,6 +54,16 @@ static void copy_path(char *destination, const char *source)
     snprintf(destination, MAX_PATH, "%s", source);
 }
 
+static bool path_is_excluded_ipod_music(const char *path)
+{
+    static const char directory[] = "/iPod_Control/Music";
+    size_t length = sizeof(directory) - 1;
+
+    return path != NULL &&
+        strncmp(path, directory, length) == 0 &&
+        (path[length] == '\0' || path[length] == '/');
+}
+
 void playlist_init(void)
 {
     memset(&queue_info, 0, sizeof(queue_info));
@@ -99,7 +109,8 @@ int playlist_insert_track(struct playlist_info *playlist, const char *filename,
     (void)queued;
     (void)sync;
 
-    if(filename == NULL || queue_length >= CRAZYPOD_QUEUE_CAPACITY)
+    if(filename == NULL || path_is_excluded_ipod_music(filename) ||
+       queue_length >= CRAZYPOD_QUEUE_CAPACITY)
         return -1;
 
     if(position == PLAYLIST_PREPEND || position == PLAYLIST_INSERT_FIRST)
@@ -266,8 +277,8 @@ void playlist_resume_track(int start_index, unsigned int crc,
     playlist_start(start_index, elapsed, offset);
 }
 
-void crazypod_queue_replace(const char *const *paths, int count,
-                            int start_index)
+static void queue_replace(const char *const *paths, int count,
+                          int start_index, bool preserve_selected)
 {
     char selected[MAX_PATH];
     int i;
@@ -292,7 +303,7 @@ void crazypod_queue_replace(const char *const *paths, int count,
 
     if(start_index < 0 || start_index >= queue_length)
         start_index = 0;
-    if(queue_length > 0)
+    if(queue_length > 0 && preserve_selected)
         copy_path(selected, queue_paths[start_index]);
     else
         selected[0] = '\0';
@@ -300,7 +311,7 @@ void crazypod_queue_replace(const char *const *paths, int count,
     if(queue_shuffle)
         crazypod_queue_set_shuffle(true);
 
-    if(queue_shuffle) {
+    if(queue_shuffle && preserve_selected) {
         for(i = 0; i < queue_length; ++i) {
             if(strcmp(queue_paths[i], selected) == 0) {
                 start_index = i;
@@ -310,6 +321,22 @@ void crazypod_queue_replace(const char *const *paths, int count,
     }
     ++queue_generation;
     playlist_start(start_index, 0, 0);
+}
+
+void crazypod_queue_replace(const char *const *paths, int count,
+                            int start_index)
+{
+    queue_replace(paths, count, start_index, true);
+}
+
+void crazypod_queue_replace_shuffled(const char *const *paths, int count,
+                                     unsigned int seed)
+{
+    shuffle_state ^= (uint32_t)seed + 0x9e3779b9u +
+        (shuffle_state << 6) + (shuffle_state >> 2);
+    queue_shuffle = true;
+    global_settings.playlist_shuffle = true;
+    queue_replace(paths, count, 0, false);
 }
 
 void crazypod_queue_restore_begin(void)
@@ -326,6 +353,7 @@ void crazypod_queue_restore_begin(void)
 bool crazypod_queue_restore_add(const char *path)
 {
     if(path == NULL || path[0] != '/' ||
+       path_is_excluded_ipod_music(path) ||
        queue_length >= CRAZYPOD_QUEUE_CAPACITY)
         return false;
     copy_path(queue_paths[queue_length], path);

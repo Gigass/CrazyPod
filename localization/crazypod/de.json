@@ -410,6 +410,7 @@
   "LAP       TOTAL": "RUNDE     GESAMT",
   "LAYOUT": "ANORDNUNG",
   "LCD Sleep": "LCD-Ruhemodus",
+  "Idle Power Off": "Automatisch ausschalten",
   "LOCAL TIME": "ORTSZEIT",
   "LOCK PICTURE": "SPERRBILD",
   "LOCK SCREEN": "SPERRBILDSCHIRM",
@@ -828,6 +829,11 @@
   "Y2K": "Y2K",
   "Yoga": "Yoga",
   "Your favorite books": "Deine Lieblingsbücher",
+  "Invalid lyrics file": "Ungültige Liedtextdatei",
+  "Lyrics file is too large": "Liedtextdatei ist zu groß",
+  "No lyrics available": "Kein Liedtext verfügbar",
+  "No lyrics file": "Keine Liedtextdatei",
+  "Select: cover  Wheel: scroll": "Auswahl: Cover  Rad: Scrollen",
   "Z": "Z",
   "by ": "von "
 }

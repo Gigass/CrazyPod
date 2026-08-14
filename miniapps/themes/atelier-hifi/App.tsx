@@ -1,4 +1,7 @@
 import React, {
+  boundedText,
+  callHostService,
+  useEffect,
   useFixedArray,
   useInterval,
   useOnMount,
@@ -18,7 +21,7 @@ import {
   NowPlayingArtwork,
   playQueueItem,
   previousTrack,
-  refreshLyricsWindow,
+  refreshLyricsContext,
   refreshNowPlaying,
   refreshQueueItem,
   refreshQueueState,
@@ -36,16 +39,20 @@ function progressWidth(elapsed: number, length: number) {
         : elapsed * 236 / length;
 }
 
+function volumePercent(value: number) {
+  return value <= -60 ? 0 : value >= 12 ? 100 : (value + 60) * 100 / 72;
+}
+
 function audioLevel(left: number, right: number) {
   return left > right ? left : right;
 }
 
 function cycleForward(value: number, steps: number, count: number) {
-  return (value + steps) % count;
+  return count <= 0 ? 0 : value + steps >= count ? count - 1 : value + steps;
 }
 
 function cycleBackward(value: number, steps: number, count: number) {
-  return (value + count - (steps % count)) % count;
+  return count <= 0 || value <= steps ? 0 : value - steps;
 }
 
 function queueForward(value: number, steps: number, count: number) {
@@ -74,6 +81,8 @@ export default function App() {
   const [artist, setArtist] = useState<string>("");
   const [album, setAlbum] = useState<string>("");
   const [info, setInfo] = useFixedArray(10, 0);
+  const [systemRequest, setSystemRequest] = useFixedArray(1, 0);
+  const [system, setSystem] = useFixedArray(6, 0);
   const [result, setResult] = useState(0);
   const [panel, setPanel] = useState(0);
   const [action, setAction] = useState(0);
@@ -95,19 +104,43 @@ export default function App() {
   const [queueAlbum2, setQueueAlbum2] = useState<string>("");
   const [queueItem2, setQueueItem2] = useFixedArray(3, 0);
 
-  const [lyricPrevious, setLyricPrevious] = useState<string>("");
-  const [lyricCurrent, setLyricCurrent] = useState<string>("");
-  const [lyricNext, setLyricNext] = useState<string>("");
-  const [lyricInfo, setLyricInfo] = useFixedArray(3, 0);
+  const [lyricPrevious, setLyricPrevious] = useState(boundedText(768, ""));
+  const [lyricCurrent, setLyricCurrent] = useState(boundedText(768, ""));
+  const [lyricNext, setLyricNext] = useState(boundedText(768, ""));
+  const [lyricInfo, setLyricInfo] = useFixedArray(6, 0);
+  const [lyricAnchor, setLyricAnchor] = useState(-1);
+  const [lyricBrowseTicks, setLyricBrowseTicks] = useState(0);
+  const [lyricsEnabled, setLyricsEnabled] = useState(0);
+  const [lyricFrame, setLyricFrame] = useState(9);
+  const [meterLevel, setMeterLevel] = useState(0);
 
   useOnMount(() => {
     refreshNowPlaying(setTitle, setArtist, setAlbum, setInfo, setResult);
     refreshQueueState(setQueueInfo, setResult);
+    callHostService(0, 1, systemRequest, setSystem, setResult);
   });
   useInterval(100, () => {
     refreshNowPlaying(setTitle, setArtist, setAlbum, setInfo, setResult);
   });
+  useInterval(50, () => {
+    if (system[5] === 1) {
+      setLyricFrame(9);
+      setMeterLevel(info[3] === 2 ? audioLevel(info[8], info[9]) : 0);
+    } else {
+      setLyricFrame((value) => value >= 9 ? 9 : value + 1);
+      setMeterLevel((value) => info[3] !== 2
+        ? value <= 70 ? 0 : value - 70
+        : audioLevel(info[8], info[9]) > value
+          ? value + 180 >= audioLevel(info[8], info[9])
+            ? audioLevel(info[8], info[9]) : value + 180
+          : value <= 55 ? 0 : value - 55);
+    }
+  });
+  useEffect(() => {
+    setLyricFrame(0);
+  }, [lyricInfo[2]]);
   useInterval(250, () => {
+    callHostService(0, 1, systemRequest, setSystem, setResult);
     if (panel === 2) {
       refreshQueueState(setQueueInfo, setResult);
       if (queueInfo[1] > 0) {
@@ -140,9 +173,15 @@ export default function App() {
         }
       }
     }
-    if (panel === 4) {
-      refreshLyricsWindow(
-        info[1], setLyricPrevious, setLyricCurrent, setLyricNext,
+    if (lyricsEnabled === 1) {
+      if (lyricAnchor >= 0) {
+        if (lyricBrowseTicks <= 1) {
+          setLyricBrowseTicks(0);
+          setLyricAnchor(-1);
+        } else setLyricBrowseTicks((value) => value - 1);
+      }
+      refreshLyricsContext(
+        info[1], lyricAnchor, setLyricPrevious, setLyricCurrent, setLyricNext,
         setLyricInfo, setResult,
       );
     }
@@ -152,8 +191,13 @@ export default function App() {
     <View
       style={styles.screen}
       onWheelClockwise={(event) => {
-        if (panel === 0) adjustVolume(event.steps, setResult);
-        else if (panel === 1) setAction((value) => cycleForward(value, event.steps, 6));
+        if (panel === 0 && lyricsEnabled === 1 && lyricInfo[3] > 0) {
+          setLyricAnchor((value) => cycleForward(
+            value < 0 ? lyricInfo[2] : value, event.steps, lyricInfo[3]));
+          setLyricBrowseTicks(12);
+        }
+        else if (panel === 0) adjustVolume(event.steps, setResult);
+        else if (panel === 1) setAction((value) => cycleForward(value, event.steps, 5));
         else if (panel === 2) setQueueSelected((value) =>
           queueForward(value, event.steps, queueInfo[1]));
         else if (panel === 3) setMode((value) => cycleForward(value, event.steps, 4));
@@ -161,8 +205,13 @@ export default function App() {
           seekForward(value, info[2], event.steps));
       }}
       onWheelCounterClockwise={(event) => {
-        if (panel === 0) adjustVolume(-event.steps, setResult);
-        else if (panel === 1) setAction((value) => cycleBackward(value, event.steps, 6));
+        if (panel === 0 && lyricsEnabled === 1 && lyricInfo[3] > 0) {
+          setLyricAnchor((value) => cycleBackward(
+            value < 0 ? lyricInfo[2] : value, event.steps, lyricInfo[3]));
+          setLyricBrowseTicks(12);
+        }
+        else if (panel === 0) adjustVolume(-event.steps, setResult);
+        else if (panel === 1) setAction((value) => cycleBackward(value, event.steps, 5));
         else if (panel === 2) setQueueSelected((value) =>
           queueBackward(value, event.steps));
         else if (panel === 3) setMode((value) => cycleBackward(value, event.steps, 4));
@@ -171,24 +220,25 @@ export default function App() {
       }}
       onLeft={() => {
         if (panel === 0) previousTrack(setResult);
-        else if (panel === 1) setAction((value) => value <= 0 ? 5 : value - 1);
+        else if (panel === 1) setAction((value) => cycleBackward(value, 1, 5));
         else if (panel === 2) setQueueSelected((value) =>
           value <= 0 ? 0 : value - 1);
-        else if (panel === 3) setMode((value) => value <= 0 ? 3 : value - 1);
-        else if (panel === 4) setPanel(1);
+        else if (panel === 3) setMode((value) => cycleBackward(value, 1, 4));
         else if (panel === 5) setSeekDraft((value) =>
           value <= 5000 ? 0 : value - 5000);
       }}
       onRight={() => {
         if (panel === 0) nextTrack(setResult);
-        else if (panel === 1) setAction((value) => value >= 5 ? 0 : value + 1);
+        else if (panel === 1) setAction((value) => cycleForward(value, 1, 5));
         else if (panel === 2) setQueueSelected((value) =>
           value + 1 >= queueInfo[1] ? value : value + 1);
-        else if (panel === 3) setMode((value) => value >= 3 ? 0 : value + 1);
-        else if (panel === 4) setPanel(1);
+        else if (panel === 3) setMode((value) => cycleForward(value, 1, 4));
         else if (panel === 5) setSeekDraft((value) => seekForward(value, info[2], 1));
       }}
-      onMenu={() => setPanel((value) => value === 1 ? 0 : 1)}
+      onMenu={() => {
+        if (lyricsEnabled === 1) setLyricsEnabled(0);
+        else setPanel((value) => value === 1 ? 0 : 1);
+      }}
       onPlay={() => togglePlayback(setResult)}
       onPress={() => {
         if (panel === 0) {
@@ -204,15 +254,18 @@ export default function App() {
             setMode(playbackMode(info[5], info[6]));
             setPanel(3);
           } else if (action === 3) {
-            refreshLyricsWindow(
-              info[1], setLyricPrevious, setLyricCurrent, setLyricNext,
+            setLyricAnchor(-1);
+            setLyricBrowseTicks(0);
+            refreshLyricsContext(
+              info[1], -1, setLyricPrevious, setLyricCurrent, setLyricNext,
               setLyricInfo, setResult,
             );
-            setPanel(4);
-          } else if (action === 4) {
+            setLyricsEnabled((value) => value === 0 ? 1 : 0);
+            setPanel(0);
+          } else {
             setSeekDraft(info[1]);
             setPanel(5);
-          } else setPanel(0);
+          }
         } else if (panel === 2) {
           if (queueInfo[1] > 0) playQueueItem(queueSelected, setResult);
           setPanel(0);
@@ -222,20 +275,24 @@ export default function App() {
           else if (mode === 2) setPlaybackMode("repeat-all", setResult);
           else setPlaybackMode("repeat-one", setResult);
           setPanel(1);
-        } else if (panel === 4) setPanel(1);
-        else if (panel === 5) {
+        } else if (panel === 5) {
           seekPlayback(seekDraft, setResult);
           setPanel(1);
         }
       }}
     >
       <Image style={styles.console} source="atelier-console" />
+      <View style={styles.topRail} />
+      <Text style={styles.topTime}>{system[0]}:{system[1]}{system[2]}</Text>
+      <Text style={styles.topState}>{info[3] === 2 ? "PLAYING" : info[3] === 1 ? "PAUSED" : "STOPPED"}</Text>
+      <Text style={styles.topBattery}>{system[4] === 1 ? "CHG" : "BAT"} {system[3]}%</Text>
       <View style={styles.coverShadow} />
       <NowPlayingArtwork style={styles.artwork} variant={2} />
       <View style={styles.coverBezel} />
 
       <View style={styles.metadataPanel}>
-        <View style={styles.pilotLight} />
+        <View style={[styles.pilotLight,
+          info[3] === 2 ? styles.pilotLightOn : styles.pilotLightOff]} />
         <Text style={styles.kicker}>ATELIER</Text>
         <MarqueeText style={styles.title}>
           {title === "" ? "No Track" : title}
@@ -246,17 +303,17 @@ export default function App() {
         <MarqueeText style={styles.album}>
           {album === "" ? "Local Library" : album}
         </MarqueeText>
-        <Text style={styles.favorite}>{info[7] === 1 ? "FAV" : "---"}</Text>
+        <Text style={styles.favorite}>{info[7] === 1 ? "MEM ●" : "MEM ○"}</Text>
         <Text style={styles.modeText}>
-          {info[6] === 1 ? "SHUF" : info[5] === 2 ? "RPT1" :
-            info[5] === 1 ? "RPTA" : "NORM"}
+          {info[6] === 1 ? "MIX" : info[5] === 2 ? "ONE" :
+            info[5] === 1 ? "LOOP" : "DIR"}
         </Text>
         <View style={styles.statusPlate}>
           <Text style={styles.statusText}>
             {info[3] === 2 ? "PLAY" : info[3] === 1 ? "PAUSE" : "STOP"}
           </Text>
         </View>
-        <Text style={styles.volume}>VOL {info[4]}</Text>
+        <Text style={styles.volume}>GAIN {volumePercent(info[4])}%</Text>
       </View>
 
       <View style={styles.transportDeck}>
@@ -266,29 +323,35 @@ export default function App() {
           }]} />
         </View>
         <View style={styles.meterRow}>
-          <View style={[styles.meterSegment, info[3] === 2 &&
-            audioLevel(info[8], info[9]) >= 25 ? styles.meterOn : styles.meterOff]} />
-          <View style={[styles.meterSegment, info[3] === 2 &&
-            audioLevel(info[8], info[9]) >= 55 ? styles.meterOn : styles.meterOff]} />
-          <View style={[styles.meterSegment, info[3] === 2 &&
-            audioLevel(info[8], info[9]) >= 90 ? styles.meterOn : styles.meterOff]} />
-          <View style={[styles.meterSegment, info[3] === 2 &&
-            audioLevel(info[8], info[9]) >= 140 ? styles.meterOn : styles.meterOff]} />
-          <View style={[styles.meterSegment, info[3] === 2 &&
-            audioLevel(info[8], info[9]) >= 210 ? styles.meterOn : styles.meterOff]} />
-          <View style={[styles.meterSegment, info[3] === 2 &&
-            audioLevel(info[8], info[9]) >= 320 ? styles.meterOn : styles.meterOff]} />
-          <View style={[styles.meterSegment, info[3] === 2 &&
-            audioLevel(info[8], info[9]) >= 470 ? styles.meterOn : styles.meterOff]} />
-          <View style={[styles.meterSegment, info[3] === 2 &&
-            audioLevel(info[8], info[9]) >= 650 ? styles.meterHot : styles.meterHotOff]} />
-          <View style={[styles.meterSegment, info[3] === 2 &&
-            audioLevel(info[8], info[9]) >= 850 ? styles.meterHot : styles.meterHotOff]} />
+          <View style={[styles.meterSegment, meterLevel >= 25 ? styles.meterOn : styles.meterOff]} />
+          <View style={[styles.meterSegment, meterLevel >= 55 ? styles.meterOn : styles.meterOff]} />
+          <View style={[styles.meterSegment, meterLevel >= 90 ? styles.meterOn : styles.meterOff]} />
+          <View style={[styles.meterSegment, meterLevel >= 140 ? styles.meterOn : styles.meterOff]} />
+          <View style={[styles.meterSegment, meterLevel >= 210 ? styles.meterOn : styles.meterOff]} />
+          <View style={[styles.meterSegment, meterLevel >= 320 ? styles.meterOn : styles.meterOff]} />
+          <View style={[styles.meterSegment, meterLevel >= 470 ? styles.meterOn : styles.meterOff]} />
+          <View style={[styles.meterSegment, meterLevel >= 650 ? styles.meterHot : styles.meterHotOff]} />
+          <View style={[styles.meterSegment, meterLevel >= 850 ? styles.meterHot : styles.meterHotOff]} />
         </View>
         <Text style={styles.previousHint}>PREV</Text>
         <Text style={styles.centerHint}>SELECT / OPTIONS</Text>
         <Text style={styles.nextHint}>NEXT</Text>
       </View>
+
+      {lyricsEnabled === 1 ? <Modal style={styles.lyricsOverlay}>
+        <View style={styles.lyricsPanel}>
+          <Text style={styles.lyricsHeader}>LYRICS MONITOR · {lyricInfo[5] === 1 ? "SYNC" : "TEXT"}</Text>
+          <View style={styles.lyricsRows} adaptiveLyrics={true}>
+            <Text style={styles.lyricDim}>{lyricInfo[0] === 1 ? lyricPrevious : ""}</Text>
+            <Text style={styles.lyricCurrent}>{lyricInfo[0] === 1 ? lyricCurrent :
+              lyricInfo[4] === 3 ? "NO LYRICS FILE" : lyricInfo[4] === 4 ?
+                "INVALID LYRICS FILE" : lyricInfo[4] === 5 ?
+                  "LYRICS FILE TOO LARGE" : "NO LYRICS AVAILABLE"}</Text>
+            <Text style={styles.lyricDim}>{lyricInfo[0] === 1 ? lyricNext : ""}</Text>
+          </View>
+          <Text style={styles.lyricsCloseHint}>WHEEL BROWSE · {lyricInfo[2] + 1}/{lyricInfo[3]} · MENU CLOSE</Text>
+        </View>
+      </Modal> : <View style={styles.hidden} />}
 
       {panel === 1 ? (
         <Modal style={styles.overlay}>
@@ -306,13 +369,10 @@ export default function App() {
               <Text style={action === 2 ? styles.menuTextOn : styles.menuTextOff}>PLAYBACK MODE</Text>
             </View>
             <View style={action === 3 ? styles.menuOn : styles.menuOff}>
-              <Text style={action === 3 ? styles.menuTextOn : styles.menuTextOff}>LYRICS</Text>
+              <Text style={action === 3 ? styles.menuTextOn : styles.menuTextOff}>{lyricsEnabled === 1 ? "HIDE LYRICS" : "SHOW LYRICS"}</Text>
             </View>
             <View style={action === 4 ? styles.menuOn : styles.menuOff}>
               <Text style={action === 4 ? styles.menuTextOn : styles.menuTextOff}>SEEK</Text>
-            </View>
-            <View style={action === 5 ? styles.menuOn : styles.menuOff}>
-              <Text style={action === 5 ? styles.menuTextOn : styles.menuTextOff}>CLOSE</Text>
             </View>
           </View>
         </Modal>
@@ -329,7 +389,7 @@ export default function App() {
               <MarqueeText style={styles.queueArtist}>{queueArtist0}</MarqueeText>
             </View>
             <View style={styles.queueRowOn}>
-              <MarqueeText style={styles.queueTitleOn}>{queueTitle1}</MarqueeText>
+              <MarqueeText style={styles.queueTitleOn}>{queueInfo[1] > 0 ? queueTitle1 : "QUEUE IS EMPTY"}</MarqueeText>
               <MarqueeText style={styles.queueArtistOn}>{queueArtist1}</MarqueeText>
             </View>
             <View style={styles.queueRow}>
@@ -361,24 +421,6 @@ export default function App() {
         </Modal>
       ) : <View style={styles.hidden} />}
 
-      {panel === 4 ? (
-        <Modal style={styles.overlay}>
-          <View style={styles.lyricsPanel}>
-            <Text style={styles.panelTitle}>LYRICS</Text>
-            <MarqueeText style={styles.lyricDim}>
-              {lyricInfo[0] === 1 ? lyricPrevious : ""}
-            </MarqueeText>
-            <MarqueeText style={styles.lyricCurrent}>
-              {lyricInfo[0] === 1 ? lyricCurrent : "No lyrics available"}
-            </MarqueeText>
-            <MarqueeText style={styles.lyricDim}>
-              {lyricInfo[0] === 1 ? lyricNext : ""}
-            </MarqueeText>
-            <Text style={styles.panelHint}>SELECT RETURNS</Text>
-          </View>
-        </Modal>
-      ) : <View style={styles.hidden} />}
-
       {panel === 5 ? (
         <Modal style={styles.overlay}>
           <View style={styles.panelSmall}>
@@ -400,6 +442,15 @@ export default function App() {
 const styles = StyleSheet.create({
   screen: { width: 320, height: 240, backgroundColor: "#090806" },
   console: { position: "absolute", left: 0, top: 0, width: 320, height: 240 },
+  topRail: { position: "absolute", left: 20, top: 5, width: 280, height: 18,
+    backgroundColor: "#16110d", borderColor: "#6f5132", borderWidth: 1,
+    borderRadius: 4, opacity: 0.94 },
+  topTime: { position: "absolute", left: 29, top: 8, width: 52, height: 13,
+    color: "#d9a15d", fontSize: 11 },
+  topState: { position: "absolute", left: 112, top: 8, width: 96, height: 13,
+    color: "#ffe1ac", fontSize: 11, textAlign: "center" },
+  topBattery: { position: "absolute", left: 229, top: 8, width: 62, height: 13,
+    color: "#d4c2aa", fontSize: 11, textAlign: "right" },
   coverShadow: { position: "absolute", left: 25, top: 48, width: 114, height: 114,
     backgroundColor: "#070605", borderColor: "#050403", borderWidth: 2,
     borderRadius: 14, shadowColor: "#000000", shadowRadius: 8, opacity: 1 },
@@ -411,27 +462,33 @@ const styles = StyleSheet.create({
     backgroundColor: "#11100e", borderColor: "#514333", borderWidth: 1,
     borderRadius: 9, shadowColor: "#000000", shadowRadius: 5, opacity: 1 },
   pilotLight: { position: "absolute", left: 132, top: 9, width: 5, height: 5,
-    backgroundColor: "#f4b45f", borderColor: "#6c3e18", borderWidth: 1,
-    borderRadius: 3, shadowColor: "#f4a340", shadowRadius: 4 },
-  kicker: { position: "absolute", left: 10, top: 8, width: 78, height: 13,
-    color: "#d9a15d", fontSize: 8, fontFamily: "system" },
+    borderColor: "#6c3e18", borderWidth: 1, borderRadius: 3 },
+  pilotLightOn: { backgroundColor: "#f4b45f", shadowColor: "#f4a340", shadowRadius: 4 },
+  pilotLightOff: { backgroundColor: "#5d4327", shadowColor: "#5d4327", shadowRadius: 0 },
+  kicker: { position: "absolute", left: 10, top: 7, width: 78, height: 13,
+    color: "#d9a15d", fontFamily: "system", fontSize: 11 },
   title: { position: "absolute", left: 10, top: 27, width: 127, height: 15,
-    color: "#f6ecd8", fontSize: 14, fontFamily: "serif", fontWeight: "700" },
+    color: "#f6ecd8", fontFamily: "serif", fontSize: 14, fontWeight: "700" },
   artist: { position: "absolute", left: 10, top: 47, width: 127, height: 14,
     color: "#d0b99d", fontSize: 12 },
   album: { position: "absolute", left: 10, top: 65, width: 127, height: 14,
-    color: "#8f8376", fontSize: 10 },
-  favorite: { position: "absolute", left: 10, top: 86, width: 32, height: 12,
-    color: "#ff657f", fontSize: 8 },
-  modeText: { position: "absolute", left: 45, top: 86, width: 34, height: 12,
-    color: "#55d6e7", fontSize: 8 },
+    color: "#8f8376", fontSize: 11 },
+  favorite: { position: "absolute", left: 10, top: 84, width: 88, height: 14,
+    color: "#ff8fa2", fontSize: 11 },
+  modeText: { position: "absolute", left: 102, top: 84, width: 35, height: 14,
+    color: "#55d6e7", fontSize: 11 },
   statusPlate: { position: "absolute", left: 88, top: 6, width: 40, height: 11,
     backgroundColor: "#7b441d", borderColor: "#d59b59", borderWidth: 1,
     borderRadius: 3 },
-  statusText: { width: 38, height: 9, color: "#ffe1ac", fontSize: 7,
+  statusText: { width: 38, height: 11, color: "#ffe1ac", fontSize: 11,
     textAlign: "center" },
-  volume: { position: "absolute", left: 65, top: 101, width: 67, height: 9,
-    color: "#897665", fontSize: 7, textAlign: "right" },
+  volume: { position: "absolute", left: 65, top: 99, width: 67, height: 13,
+    color: "#b8a38c", fontSize: 11, textAlign: "right" },
+  lyricsOverlay: { backgroundColor: "#050403", opacity: 1 },
+  lyricsHeader: { width: 260, height: 14, color: "#d9a15d", fontSize: 11,
+    fontFamily: "mono", textAlign: "center", marginBottom: 4 },
+  lyricsCloseHint: { width: 260, height: 13, color: "#bca384", fontSize: 11,
+    textAlign: "center", marginTop: 2 },
   transportDeck: { position: "absolute", left: 27, top: 174, width: 266, height: 49,
     backgroundColor: "#0b0a09", borderColor: "#594a39", borderWidth: 1,
     borderRadius: 8, shadowColor: "#000000", shadowRadius: 5, opacity: 1 },
@@ -446,11 +503,11 @@ const styles = StyleSheet.create({
   meterHot: { backgroundColor: "#e9683e", opacity: 1 },
   meterHotOff: { backgroundColor: "#4d2420", opacity: 0.58 },
   previousHint: { position: "absolute", left: 14, top: 31, width: 50, height: 9,
-    color: "#8d7962", fontSize: 7 },
+    color: "#8d7962", fontSize: 11 },
   centerHint: { position: "absolute", left: 70, top: 31, width: 126, height: 9,
-    color: "#bca384", fontSize: 7, textAlign: "center" },
+    color: "#bca384", fontSize: 11, textAlign: "center" },
   nextHint: { position: "absolute", left: 201, top: 31, width: 49, height: 9,
-    color: "#8d7962", fontSize: 7, textAlign: "right" },
+    color: "#8d7962", fontSize: 11, textAlign: "right" },
   hidden: { position: "absolute", left: 0, top: 0, width: 0, height: 0,
     backgroundColor: "#000000", opacity: 0 },
   overlay: { backgroundColor: "#050403", opacity: 1 },
@@ -460,41 +517,42 @@ const styles = StyleSheet.create({
   panelSmall: { position: "absolute", left: 35, top: 58, width: 250, height: 132,
     backgroundColor: "#15120f", borderColor: "#d89142", borderWidth: 1,
     borderRadius: 10, padding: 12 },
-  lyricsPanel: { position: "absolute", left: 24, top: 54, width: 272, height: 138,
+  lyricsPanel: { position: "absolute", left: 16, top: 36, width: 288, height: 190,
     backgroundColor: "#15120f", borderColor: "#d89142", borderWidth: 1,
     borderRadius: 10, padding: 12 },
-  panelTitle: { width: 226, height: 14, color: "#d9a15d", fontSize: 10,
-    fontFamily: "system", textAlign: "center", marginBottom: 5 },
+  lyricsRows: { width: 260, height: 96 },
+  panelTitle: { width: 226, height: 14, color: "#d9a15d", fontFamily: "system", fontSize: 11,
+    textAlign: "center", marginBottom: 5 },
   menuOn: { width: 226, height: 21, backgroundColor: "#d89142",
     borderRadius: 4, marginBottom: 2, justifyContent: "center" },
   menuOff: { width: 226, height: 21, backgroundColor: "#231c16",
     borderRadius: 4, marginBottom: 2, justifyContent: "center" },
-  menuTextOn: { width: 226, height: 12, color: "#130f0b", fontSize: 10,
+  menuTextOn: { width: 226, height: 12, color: "#130f0b", fontSize: 11,
     textAlign: "center" },
-  menuTextOff: { width: 226, height: 12, color: "#d8c6aa", fontSize: 10,
+  menuTextOff: { width: 226, height: 12, color: "#d8c6aa", fontSize: 11,
     textAlign: "center" },
   queueRow: { width: 226, height: 38, backgroundColor: "#211b16",
     borderColor: "#3e3025", borderWidth: 1, borderRadius: 5, marginBottom: 3 },
   queueRowOn: { width: 226, height: 38, backgroundColor: "#6f4828",
     borderColor: "#d89142", borderWidth: 1, borderRadius: 5, marginBottom: 3 },
-  queueTitle: { width: 212, height: 14, color: "#cdbda4", fontSize: 10,
+  queueTitle: { width: 212, height: 14, color: "#cdbda4", fontSize: 11,
     marginLeft: 7, marginTop: 3 },
-  queueArtist: { width: 212, height: 12, color: "#817566", fontSize: 8,
+  queueArtist: { width: 212, height: 13, color: "#a99a87", fontSize: 11,
     marginLeft: 7, marginTop: 1 },
-  queueTitleOn: { width: 212, height: 14, color: "#fff1d4", fontSize: 10,
+  queueTitleOn: { width: 212, height: 14, color: "#fff1d4", fontSize: 11,
     marginLeft: 7, marginTop: 3 },
-  queueArtistOn: { width: 212, height: 12, color: "#e2bf91", fontSize: 8,
+  queueArtistOn: { width: 212, height: 13, color: "#f0c894", fontSize: 11,
     marginLeft: 7, marginTop: 1 },
-  panelHint: { width: 226, height: 12, color: "#867665", fontSize: 8,
+  panelHint: { width: 226, height: 13, color: "#a99a87", fontSize: 11,
     textAlign: "center", marginTop: 5 },
-  lyricDim: { width: 248, height: 18, color: "#867665", fontSize: 10,
-    textAlign: "center", marginBottom: 7 },
-  lyricCurrent: { width: 248, height: 22, color: "#fff0d0", fontSize: 12,
-    textAlign: "center", marginBottom: 7 },
+  lyricDim: { color: "#867665", fontSize: 12, lineHeight: 16,
+    textAlign: "center" },
+  lyricCurrent: { color: "#fff0d0", fontSize: 16, lineHeight: 20,
+    fontWeight: "700", textAlign: "center" },
   seekTrack: { width: 180, height: 10, backgroundColor: "#30271e",
     borderColor: "#d89142", borderWidth: 1, borderRadius: 5,
     marginLeft: 23, marginTop: 18 },
   seekFill: { height: 8, backgroundColor: "#d89142", borderRadius: 4 },
-  seekValue: { width: 226, height: 18, color: "#f4dfbc", fontSize: 10,
+  seekValue: { width: 226, height: 18, color: "#f4dfbc", fontSize: 11,
     textAlign: "center", marginTop: 12 },
 });

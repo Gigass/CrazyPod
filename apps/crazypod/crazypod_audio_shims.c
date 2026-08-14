@@ -264,6 +264,7 @@ void crazypod_audio_settings_init(void)
     global_settings.repeat_mode = REPEAT_OFF;
     global_settings.single_mode = SINGLE_MODE_OFF;
     global_settings.max_files_in_playlist = CRAZYPOD_MAX_TRACKS;
+    global_settings.poweroff = 10;
 #ifdef HAVE_BACKLIGHT
     global_settings.backlight_timeout = 30;
 #if CONFIG_CHARGING

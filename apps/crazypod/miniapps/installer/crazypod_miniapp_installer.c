@@ -12,7 +12,6 @@
 #include "../../crazypod_miniapps.h"
 #include "../catalog/crazypod_miniapp_catalog.h"
 #include "../catalog/crazypod_miniapp_registry_loader.h"
-#include "../runtime/crazypod_miniapp_installed_verifier.h"
 #include "../runtime/crazypod_miniapp_verification_cache.h"
 #include "crazypod_cpk_reader.h"
 #include "crazypod_cpk_verifier.h"
@@ -122,7 +121,6 @@ int crazypod_miniapps_install(const char *package_path)
     struct crazypod_miniapp_metadata *metadata = &installer.metadata;
     uint32_t installed_version;
     uint32_t extracted_size = sizeof(struct install_record);
-    bool same_version = false;
     int result;
     int index;
 
@@ -157,25 +155,10 @@ int crazypod_miniapps_install(const char *package_path)
     }
     if(crazypod_miniapp_registry_installed_version(
            metadata->id, &installed_version)) {
-        same_version = installed_version == metadata->version_code;
         if(installed_version > metadata->version_code) {
             result = CRAZYPOD_MINIAPP_DOWNGRADE_IGNORED;
             goto done;
         }
-    }
-    if(same_version &&
-       crazypod_miniapp_registry_installed_metadata(
-           metadata->id, &installer.verified_metadata) &&
-       crazypod_miniapp_installed_verify(
-           &installer.verified_metadata) == CRAZYPOD_MINIAPP_OK) {
-        /* A versionCode identifies immutable package contents.  Ignore a
-         * second, different package at the same version when the installed
-         * copy is healthy; otherwise scan order lets a stale user-inbox CPK
-         * overwrite a newer system CPK on every boot. */
-        crazypod_miniapp_verification_cache_mark(
-            metadata->id, metadata->version_code);
-        result = CRAZYPOD_MINIAPP_ALREADY_INSTALLED;
-        goto done;
     }
     for(index = 0; index < reader.entry_count; ++index) {
         result = crazypod_cpk_verify_crc(&reader, index);

@@ -225,7 +225,7 @@
   "Convert this video to MPEG-1 or MPEG-2": "이 비디오를 MPEG-1 또는 MPEG-2로 변환하십시오",
   "Converted MPEG files in /Videos": "/Videos의 변환된 MPEG 파일",
   "Cooldown": "クールダウン",
-  "Copy a CPK directly to /MiniApps.": "CPK를 /MiniApps에 직접 복사하십시오.",
+  "Copy a CPK directly to /MiniApps.": "CPK를 /MiniApps에 바로 복사하십시오.",
   "Copy import.upodtheme to /.crazypod": "import.upodtheme을 /.crazypod에 복사하십시오",
   "Core": "코어",
   "Could not activate wallpaper": "배경화면을 활성화할 수 없음",
@@ -410,6 +410,7 @@
   "LAP       TOTAL": "랩       합계",
   "LAYOUT": "레이아웃",
   "LCD Sleep": "LCD 잠자기",
+  "Idle Power Off": "자동 전원 끄기",
   "LOCAL TIME": "현지 시간",
   "LOCK PICTURE": "잠금 화면 사진",
   "LOCK SCREEN": "잠금 화면",
@@ -828,6 +829,11 @@
   "Y2K": "Y2K",
   "Yoga": "ヨガ",
   "Your favorite books": "즐겨찾는 책",
+  "Invalid lyrics file": "가사 파일이 올바르지 않음",
+  "Lyrics file is too large": "가사 파일 크기 초과",
+  "No lyrics available": "사용 가능한 가사 없음",
+  "No lyrics file": "가사 파일 없음",
+  "Select: cover  Wheel: scroll": "선택: 표지  휠: 스크롤",
   "Z": "Z",
   "by ": "저자: "
 }

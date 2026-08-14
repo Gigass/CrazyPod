@@ -33,6 +33,10 @@ static const int setting_sleep_timer_values[] = {
     0, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 300
 };
 
+static const int setting_idle_poweroff_values[] = {
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 30, 45, 60
+};
+
 static const int setting_repeat_values[] = {
     REPEAT_OFF, REPEAT_ALL, REPEAT_ONE
 };
@@ -52,6 +56,7 @@ const char *crazypod_ui_settings_item_title(int item)
     case SETTINGS_ITEM_REDUCE_MOTION: return CP_TR("Reduce Motion");
     case SETTINGS_ITEM_SHUFFLE: return CP_TR("Shuffle");
     case SETTINGS_ITEM_REPEAT: return CP_TR("Repeat");
+    case SETTINGS_ITEM_IDLE_POWEROFF: return CP_TR("Idle Power Off");
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION: return CP_TR("Sleep Timer");
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP: return CP_TR("Timer on Boot");
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS: return CP_TR("Key Reset Timer");
@@ -235,6 +240,8 @@ static int settings_item_current_value(int item)
         return global_settings.playlist_shuffle ? 1 : 0;
     case SETTINGS_ITEM_REPEAT:
         return crazypod_queue_repeat();
+    case SETTINGS_ITEM_IDLE_POWEROFF:
+        return global_settings.poweroff;
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
         return global_settings.sleeptimer_duration;
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
@@ -316,6 +323,9 @@ int crazypod_ui_settings_choice_count(int item)
     case SETTINGS_ITEM_REPEAT:
         return (int)(sizeof(setting_repeat_values) /
                      sizeof(setting_repeat_values[0]));
+    case SETTINGS_ITEM_IDLE_POWEROFF:
+        return (int)(sizeof(setting_idle_poweroff_values) /
+                     sizeof(setting_idle_poweroff_values[0]));
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
         return (int)(sizeof(setting_sleep_timer_values) /
                      sizeof(setting_sleep_timer_values[0]));
@@ -385,6 +395,8 @@ static int settings_choice_value(int item, int index)
         return setting_lcd_sleep_values[index];
     case SETTINGS_ITEM_REPEAT:
         return setting_repeat_values[index];
+    case SETTINGS_ITEM_IDLE_POWEROFF:
+        return setting_idle_poweroff_values[index];
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
         return setting_sleep_timer_values[index];
     case SETTINGS_ITEM_BEEP:
@@ -474,6 +486,12 @@ int crazypod_ui_settings_choice_index(int item)
             setting_repeat_values,
             (int)(sizeof(setting_repeat_values) /
                   sizeof(setting_repeat_values[0])),
+            current);
+    case SETTINGS_ITEM_IDLE_POWEROFF:
+        return find_value_index(
+            setting_idle_poweroff_values,
+            (int)(sizeof(setting_idle_poweroff_values) /
+                  sizeof(setting_idle_poweroff_values[0])),
             current);
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
         return find_value_index(
@@ -579,6 +597,7 @@ const char *crazypod_ui_settings_choice_title(int item, int index)
         return format_timeout_value(value);
     case SETTINGS_ITEM_REPEAT:
         return settings_repeat_title(value);
+    case SETTINGS_ITEM_IDLE_POWEROFF:
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
         return format_sleep_timer_value(value);
 #ifdef HAVE_USB_CHARGING_ENABLE
@@ -663,6 +682,11 @@ void crazypod_ui_settings_apply_choice(int item, int index)
     case SETTINGS_ITEM_REPEAT:
         crazypod_queue_set_repeat(value);
         crazypod_state_mark_dirty();
+        break;
+    case SETTINGS_ITEM_IDLE_POWEROFF:
+        global_settings.poweroff = value;
+        set_poweroff_timeout(global_settings.poweroff);
+        reset_poweroff_timer();
         break;
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
         global_settings.sleeptimer_duration = value;
