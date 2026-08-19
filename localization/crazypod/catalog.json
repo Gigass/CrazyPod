@@ -299,7 +299,7 @@
     },
     "16 complete icon themes": {
       "locations": [
-        "apps/crazypod/ui/features/customize/crazypod_customize_preview.c:130"
+        "apps/crazypod/ui/features/customize/crazypod_customize_preview.c:136"
       ]
     },
     "16k": {
@@ -2574,6 +2574,11 @@
         "apps/crazypod/ui/shell/crazypod_app_catalog.c"
       ]
     },
+    "Music files changed during the library scan": {
+      "locations": [
+        "apps/crazypod/ui/features/music/crazypod_music_library.c:41"
+      ]
+    },
     "My Favorites": {
       "locations": [
         "apps/crazypod/crazypod_music.c:36"
@@ -2771,6 +2776,11 @@
     "Not enough image workspace": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_wallpaper_crop_screen.c:74"
+      ]
+    },
+    "Not enough memory to build the music library": {
+      "locations": [
+        "apps/crazypod/ui/features/music/crazypod_music_library.c:39"
       ]
     },
     "Not enough memory to play this video": {

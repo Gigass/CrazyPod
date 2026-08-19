@@ -224,6 +224,7 @@ static void configure_composition(void)
     };
 
     crazypod_composition_configure(&host);
+    crazypod_coverflow_configure(keep_cpu_boosted);
     crazypod_runtime_services_configure(render_current_route);
 }
 

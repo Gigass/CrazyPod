@@ -5,10 +5,12 @@
 #ifdef IPOD_6G
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "core_alloc.h"
 #include "dir.h"
 #include "file.h"
 #include "fs_attr.h"
@@ -18,6 +20,7 @@
 
 #include "crazypod_collation.h"
 #include "crazypod_music.h"
+#include "crazypod_music_storage.h"
 #include "crazypod_playlist.h"
 
 #define CRAZYPOD_SCAN_DEPTH 16
@@ -37,7 +40,7 @@
     CRAZYPOD_STATE_DIRECTORY "/favorites.tmp"
 #define CRAZYPOD_FAVORITES_NAME CP_TR("My Favorites")
 #define CRAZYPOD_MUSIC_CACHE_MAGIC 0x43504d4cu
-#define CRAZYPOD_MUSIC_CACHE_VERSION 5u
+#define CRAZYPOD_MUSIC_CACHE_VERSION 6u
 
 struct music_source_fingerprint {
     uint32_t file_count;
@@ -58,21 +61,21 @@ struct music_cache_header {
     uint32_t checksum;
 };
 
-static struct crazypod_track tracks[CRAZYPOD_MAX_TRACKS];
-static struct crazypod_album albums[CRAZYPOD_MAX_TRACKS];
-static char artists[CRAZYPOD_MAX_TRACKS][72];
-static uint16_t artist_first_tracks[CRAZYPOD_MAX_TRACKS];
-static uint16_t artist_track_counts[CRAZYPOD_MAX_TRACKS];
-static uint16_t artist_track_indices[CRAZYPOD_MAX_TRACKS];
-static uint16_t album_track_indices[CRAZYPOD_MAX_TRACKS];
-static uint16_t path_track_indices[CRAZYPOD_MAX_TRACKS];
+static struct crazypod_music_storage catalog_storage;
+#define tracks catalog_storage.tracks
+#define albums catalog_storage.albums
+#define artists catalog_storage.artists
+#define artist_first_tracks catalog_storage.artist_first_tracks
+#define artist_track_counts catalog_storage.artist_track_counts
+#define artist_track_indices catalog_storage.artist_track_indices
+#define album_track_indices catalog_storage.album_track_indices
+#define path_track_indices catalog_storage.path_track_indices
+#define favorite_track_indices catalog_storage.favorite_track_indices
+#define search_track_indices catalog_storage.search_track_indices
 static struct crazypod_playlist playlists[CRAZYPOD_MAX_PLAYLISTS];
-static uint16_t playlist_track_indices[CRAZYPOD_MAX_PLAYLIST_TRACKS];
+static uint32_t playlist_track_indices[CRAZYPOD_MAX_PLAYLIST_TRACKS];
 static struct crazypod_playlist favorites_playlist;
-static uint16_t favorite_track_indices[CRAZYPOD_MAX_TRACKS];
-static uint16_t search_track_indices[CRAZYPOD_MAX_TRACKS];
 static char playlist_paths[CRAZYPOD_PLAYLIST_PATHS][MAX_PATH];
-static const char *queue_build_paths[CRAZYPOD_QUEUE_CAPACITY];
 static char search_cache_query[CRAZYPOD_SEARCH_CACHE_QUERY_SIZE];
 static int track_count;
 static int artist_count;
@@ -91,6 +94,7 @@ static volatile unsigned scan_generation;
 static volatile bool catalog_ready;
 static volatile enum crazypod_music_catalog_validation
     catalog_validation;
+static volatile enum crazypod_music_scan_failure scan_failure;
 static struct music_source_fingerprint catalog_fingerprint;
 static struct music_source_fingerprint scan_fingerprint;
 static unsigned search_cache_generation;
@@ -241,7 +245,7 @@ static bool music_cache_contents_valid(
     }
     for(i = 0; i < header->playlist_count; ++i) {
         const struct crazypod_playlist *playlist = &playlists[i];
-        uint32_t end = (uint32_t)playlist->first_track +
+        uint64_t end = (uint64_t)playlist->first_track +
             playlist->track_count;
 
         if(memchr(playlist->name, '\0',
@@ -301,9 +305,17 @@ static bool music_cache_load(void)
         header.playlist_entry_size == sizeof(playlists[0]) &&
         header.playlist_index_size ==
             sizeof(playlist_track_indices[0]) &&
-        header.track_count <= CRAZYPOD_MAX_TRACKS &&
+        header.track_count <= INT_MAX &&
         header.playlist_count <= CRAZYPOD_MAX_PLAYLISTS &&
         header.playlist_track_count <= CRAZYPOD_MAX_PLAYLIST_TRACKS;
+    if(valid) {
+        valid = crazypod_music_storage_allocate_tracks(
+                    &catalog_storage, header.track_count) &&
+                crazypod_music_storage_allocate_groups(
+                    &catalog_storage, header.track_count);
+        if(!valid)
+            scan_failure = CRAZYPOD_MUSIC_SCAN_NO_MEMORY;
+    }
     if(valid) {
         valid =
             read_exact(
@@ -321,8 +333,10 @@ static bool music_cache_load(void)
     close(fd);
     if(!valid ||
        header.checksum != music_cache_checksum(&header) ||
-       !music_cache_contents_valid(&header))
+       !music_cache_contents_valid(&header)) {
+        crazypod_music_storage_release(&catalog_storage);
         return false;
+    }
 
     track_count = (int)header.track_count;
     playlist_count = (int)header.playlist_count;
@@ -458,7 +472,7 @@ static void refresh_search_cache(const char *query)
     search_result_count = 0;
     for(i = 0; i < track_count; ++i) {
         if(track_matches(&tracks[i], query))
-            search_track_indices[search_result_count++] = (uint16_t)i;
+            search_track_indices[search_result_count++] = (uint32_t)i;
     }
     search_cache_generation = scan_generation;
 }
@@ -552,9 +566,9 @@ static int compare_artist_track_indices(const void *left_ptr,
                                         const void *right_ptr)
 {
     const struct crazypod_track *left =
-        &tracks[*(const uint16_t *)left_ptr];
+        &tracks[*(const uint32_t *)left_ptr];
     const struct crazypod_track *right =
-        &tracks[*(const uint16_t *)right_ptr];
+        &tracks[*(const uint32_t *)right_ptr];
     int result = crazypod_collation_compare(
         left->artist, right->artist);
 
@@ -565,9 +579,9 @@ static int compare_album_track_indices(const void *left_ptr,
                                        const void *right_ptr)
 {
     const struct crazypod_track *left =
-        &tracks[*(const uint16_t *)left_ptr];
+        &tracks[*(const uint32_t *)left_ptr];
     const struct crazypod_track *right =
-        &tracks[*(const uint16_t *)right_ptr];
+        &tracks[*(const uint32_t *)right_ptr];
     int result = crazypod_collation_compare(
         left->album, right->album);
 
@@ -581,11 +595,70 @@ static int compare_path_track_indices(const void *left_ptr,
                                       const void *right_ptr)
 {
     const struct crazypod_track *left =
-        &tracks[*(const uint16_t *)left_ptr];
+        &tracks[*(const uint32_t *)left_ptr];
     const struct crazypod_track *right =
-        &tracks[*(const uint16_t *)right_ptr];
+        &tracks[*(const uint32_t *)right_ptr];
 
     return compare_text(left->path, right->path);
+}
+
+static bool count_directory_tracks(
+    const char *path, int depth, uint32_t *count)
+{
+    DIR *directory;
+    struct DIRENT *entry;
+    unsigned visited = 0;
+
+    if(depth > CRAZYPOD_SCAN_DEPTH)
+        return true;
+    directory = opendir(path);
+    if(directory == NULL)
+        return true;
+
+    while(!scan_abort_requested &&
+          scan_failure == CRAZYPOD_MUSIC_SCAN_OK) {
+        struct dirinfo info;
+        char child[MAX_PATH];
+
+        wait_for_scan_resume();
+        if(scan_abort_requested)
+            break;
+        entry = readdir(directory);
+        if(entry == NULL)
+            break;
+        if(strcmp(entry->d_name, ".") == 0 ||
+           strcmp(entry->d_name, "..") == 0 ||
+           entry->d_name[0] == '.')
+            continue;
+        if(!append_path(child, sizeof(child), path, entry->d_name))
+            continue;
+
+        info = dir_get_info(directory, entry);
+        if(info.attribute & ATTR_DIRECTORY) {
+            if(!should_skip_directory(entry->d_name) &&
+               !count_directory_tracks(child, depth + 1, count)) {
+                closedir(directory);
+                return false;
+            }
+        }
+        else if(!is_playlist_file(child) &&
+                !is_artwork_file(child) &&
+                probe_file_format(child) != AFMT_UNKNOWN) {
+            if(*count >= INT_MAX) {
+                scan_failure = CRAZYPOD_MUSIC_SCAN_NO_MEMORY;
+                closedir(directory);
+                return false;
+            }
+            ++*count;
+        }
+
+        if((++visited & 15) == 0)
+            yield();
+    }
+
+    closedir(directory);
+    return !scan_abort_requested &&
+        scan_failure == CRAZYPOD_MUSIC_SCAN_OK;
 }
 
 /* Keep the large metadata frame out of recursive scan_directory frames. */
@@ -597,9 +670,14 @@ static void NO_INLINE add_track(const char *path, off_t source_size,
     int fd;
 
     wait_for_scan_resume();
-    if(scan_abort_requested ||
-       track_count >= CRAZYPOD_MAX_TRACKS)
+    if(scan_abort_requested)
         return;
+    if((size_t)track_count >= catalog_storage.track_capacity) {
+        /* Files changed between the capacity pass and metadata pass. Never
+         * publish a silently truncated library; a later scan can retry. */
+        scan_failure = CRAZYPOD_MUSIC_SCAN_LIBRARY_CHANGED;
+        return;
+    }
     if(format == AFMT_UNKNOWN)
         return;
 
@@ -666,7 +744,8 @@ static void scan_directory(const char *path, int depth,
     if(directory == NULL)
         return;
 
-    while(!scan_abort_requested) {
+    while(!scan_abort_requested &&
+          scan_failure == CRAZYPOD_MUSIC_SCAN_OK) {
         struct dirinfo info;
         char child[MAX_PATH];
 
@@ -712,7 +791,8 @@ static void scan_directory(const char *path, int depth,
             }
         }
 
-        if(scan_abort_requested)
+        if(scan_abort_requested ||
+           scan_failure != CRAZYPOD_MUSIC_SCAN_OK)
             break;
         if((++visited & 15) == 0)
             yield();
@@ -787,20 +867,22 @@ static void build_groups(void)
     int i;
 
     for(i = 0; i < track_count; ++i) {
-        artist_track_indices[i] = (uint16_t)i;
-        album_track_indices[i] = (uint16_t)i;
-        path_track_indices[i] = (uint16_t)i;
+        artist_track_indices[i] = (uint32_t)i;
+        album_track_indices[i] = (uint32_t)i;
+        path_track_indices[i] = (uint32_t)i;
     }
 
-    qsort(artist_track_indices, track_count,
-          sizeof(artist_track_indices[0]),
-          compare_artist_track_indices);
-    qsort(album_track_indices, track_count,
-          sizeof(album_track_indices[0]),
-          compare_album_track_indices);
-    qsort(path_track_indices, track_count,
-          sizeof(path_track_indices[0]),
-          compare_path_track_indices);
+    if(track_count > 1) {
+        qsort(artist_track_indices, track_count,
+              sizeof(artist_track_indices[0]),
+              compare_artist_track_indices);
+        qsort(album_track_indices, track_count,
+              sizeof(album_track_indices[0]),
+              compare_album_track_indices);
+        qsort(path_track_indices, track_count,
+              sizeof(path_track_indices[0]),
+              compare_path_track_indices);
+    }
 
     artist_count = 0;
     for(i = 0; i < track_count; ++i) {
@@ -813,7 +895,7 @@ static void build_groups(void)
             copy_text(artists[artist_count],
                       sizeof(artists[artist_count]),
                       track->artist, CP_TR("Unknown Artist"));
-            artist_first_tracks[artist_count] = (uint16_t)i;
+            artist_first_tracks[artist_count] = (uint32_t)i;
             artist_track_counts[artist_count] = 0;
             ++artist_count;
         }
@@ -836,7 +918,7 @@ static void build_groups(void)
                       track->album, CP_TR("Unknown Album"));
             copy_text(album->artist, sizeof(album->artist),
                       track->album_artist, CP_TR("Unknown Artist"));
-            album->first_track = (uint16_t)i;
+            album->first_track = (uint32_t)i;
             album->track_count = 0;
         }
         ++album->track_count;
@@ -987,7 +1069,7 @@ static void refresh_favorites_playlist(void)
               CRAZYPOD_FAVORITES_NAME, "");
     favorites_playlist.first_track = 0;
     favorites_playlist.track_count =
-        (uint16_t)favorite_track_count;
+        (uint32_t)favorite_track_count;
 }
 
 static int favorite_position(int track_index)
@@ -997,7 +1079,7 @@ static int favorite_position(int track_index)
     for(position = 0;
         position < favorite_track_count;
         ++position) {
-        if(favorite_track_indices[position] == track_index)
+        if(favorite_track_indices[position] == (uint32_t)track_index)
             return position;
     }
     return -1;
@@ -1055,7 +1137,7 @@ static void load_favorites(void)
     favorites_playlist_exists = true;
 
     while(!scan_abort_requested &&
-          favorite_track_count < CRAZYPOD_MAX_TRACKS &&
+          favorite_track_count < track_count &&
           read_playlist_line(fd, line, sizeof(line)) >= 0) {
         int track_index;
         size_t length;
@@ -1078,7 +1160,7 @@ static void load_favorites(void)
         if(track_index >= 0 &&
            favorite_position(track_index) < 0)
             favorite_track_indices[favorite_track_count++] =
-                (uint16_t)track_index;
+                (uint32_t)track_index;
     }
     close(fd);
     refresh_favorites_playlist();
@@ -1162,6 +1244,8 @@ static int compare_track_order(const struct crazypod_track *left,
 
 void crazypod_music_init(void)
 {
+    crazypod_music_storage_release(&catalog_storage);
+    crazypod_music_storage_init(&catalog_storage);
     track_count = 0;
     artist_count = 0;
     album_count = 0;
@@ -1176,6 +1260,7 @@ void crazypod_music_init(void)
     scan_abort_requested = false;
     scan_suspended = false;
     scan_generation = 0;
+    scan_failure = CRAZYPOD_MUSIC_SCAN_OK;
     memset(&catalog_fingerprint, 0,
            sizeof(catalog_fingerprint));
     memset(&scan_fingerprint, 0,
@@ -1196,38 +1281,76 @@ void crazypod_music_init(void)
 
 void crazypod_music_scan(void)
 {
+    uint32_t candidate_count = 0;
+
     scanning = true;
     catalog_ready = false;
+    scan_failure = CRAZYPOD_MUSIC_SCAN_OK;
+    crazypod_music_storage_release(&catalog_storage);
     track_count = 0;
+    artist_count = 0;
+    album_count = 0;
+    playlist_count = 0;
+    playlist_track_count = 0;
     playlist_path_count = 0;
     favorite_track_count = 0;
     favorites_playlist_exists = false;
     refresh_favorites_playlist();
     memset(&scan_fingerprint, 0,
            sizeof(scan_fingerprint));
-    scan_directory("/Music", 0, true);
-    if(!scan_abort_requested)
+
+    if(!count_directory_tracks("/Music", 0, &candidate_count) ||
+       (!scan_abort_requested &&
+        !count_directory_tracks("/Podcasts", 0, &candidate_count))) {
+        if(!scan_abort_requested &&
+           scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
+            scan_failure = CRAZYPOD_MUSIC_SCAN_LIBRARY_CHANGED;
+    }
+    if(!scan_abort_requested &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK &&
+       !crazypod_music_storage_allocate_tracks(
+           &catalog_storage, candidate_count))
+        scan_failure = CRAZYPOD_MUSIC_SCAN_NO_MEMORY;
+
+    if(!scan_abort_requested &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
+        scan_directory("/Music", 0, true);
+    if(!scan_abort_requested &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
         scan_directory("/Podcasts", 0, true);
-    if(!scan_abort_requested)
+    if(!scan_abort_requested &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
         scan_directory(ROCKBOX_DIR "/albumart", 0, false);
-    if(!scan_abort_requested) {
+    if(!scan_abort_requested &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK) {
+        crazypod_music_storage_shrink_tracks(
+            &catalog_storage, (size_t)track_count);
+        if(!crazypod_music_storage_allocate_groups(
+               &catalog_storage, (size_t)track_count))
+            scan_failure = CRAZYPOD_MUSIC_SCAN_NO_MEMORY;
+    }
+    if(!scan_abort_requested &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK) {
         wait_for_scan_resume();
-        if(!scan_abort_requested)
+        if(!scan_abort_requested && track_count > 1)
             qsort(tracks, track_count, sizeof(tracks[0]), compare_tracks);
     }
-    if(!scan_abort_requested) {
+    if(!scan_abort_requested &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK) {
         wait_for_scan_resume();
         if(!scan_abort_requested)
             build_groups();
     }
-    if(!scan_abort_requested) {
+    if(!scan_abort_requested &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK) {
         wait_for_scan_resume();
         if(!scan_abort_requested) {
             parse_playlists();
             load_favorites();
         }
     }
-    if(!scan_abort_requested) {
+    if(!scan_abort_requested &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK) {
         wait_for_scan_resume();
         if(!scan_abort_requested) {
             (void)music_cache_save();
@@ -1239,7 +1362,9 @@ void crazypod_music_scan(void)
             }
         }
     }
-    if(scan_abort_requested) {
+    if(scan_abort_requested ||
+       scan_failure != CRAZYPOD_MUSIC_SCAN_OK) {
+        crazypod_music_storage_release(&catalog_storage);
         track_count = 0;
         artist_count = 0;
         album_count = 0;
@@ -1382,6 +1507,12 @@ bool crazypod_music_catalog_ready(void)
     return catalog_ready;
 }
 
+enum crazypod_music_scan_failure
+crazypod_music_scan_failure_reason(void)
+{
+    return scan_failure;
+}
+
 void crazypod_music_invalidate_catalog(void)
 {
     mark_media_cache_invalid();
@@ -1441,7 +1572,7 @@ const struct crazypod_track *crazypod_music_artist_track(int artist_index,
     if(!catalog_ready ||
        artist_index < 0 || artist_index >= artist_count ||
        track_index < 0 ||
-       track_index >= artist_track_counts[artist_index])
+       (uint32_t)track_index >= artist_track_counts[artist_index])
         return NULL;
     pool_index = artist_first_tracks[artist_index] + track_index;
     return &tracks[artist_track_indices[pool_index]];
@@ -1472,7 +1603,7 @@ const struct crazypod_track *crazypod_music_album_track(int album_index,
     int pool_index;
 
     if(album == NULL || track_index < 0 ||
-       track_index >= album->track_count)
+       (uint32_t)track_index >= album->track_count)
         return NULL;
     pool_index = album->first_track + track_index;
     return &tracks[album_track_indices[pool_index]];
@@ -1505,7 +1636,7 @@ const struct crazypod_track *crazypod_music_playlist_track(int playlist_index,
     int pool_index;
 
     if(playlist == NULL || track_index < 0 ||
-       track_index >= playlist->track_count)
+       (uint32_t)track_index >= playlist->track_count)
         return NULL;
     if(favorites_playlist_exists &&
        playlist_index == playlist_count)
@@ -1537,10 +1668,10 @@ bool crazypod_music_toggle_favorite(const char *path)
         return false;
     position = favorite_position(track_index);
     if(position < 0) {
-        if(favorite_track_count >= CRAZYPOD_MAX_TRACKS)
+        if(favorite_track_count >= track_count)
             return false;
         favorite_track_indices[favorite_track_count++] =
-            (uint16_t)track_index;
+            (uint32_t)track_index;
         refresh_favorites_playlist();
         if(!save_favorites()) {
             --favorite_track_count;
@@ -1567,7 +1698,7 @@ bool crazypod_music_toggle_favorite(const char *path)
                 favorite_track_indices[next] =
                     favorite_track_indices[next - 1];
             favorite_track_indices[position] =
-                (uint16_t)track_index;
+                (uint32_t)track_index;
             favorites_playlist_exists = existed;
             ++favorite_track_count;
             refresh_favorites_playlist();
@@ -1600,79 +1731,127 @@ const struct crazypod_track *crazypod_music_search_track(const char *query,
 bool crazypod_music_play_track(int library_index)
 {
     const struct crazypod_track *track = crazypod_music_track(library_index);
+    const char *path[1];
+
     if(track == NULL)
         return false;
-    queue_build_paths[0] = track->path;
-    crazypod_queue_replace(queue_build_paths, 1, 0);
-    return true;
+    path[0] = track->path;
+    return crazypod_queue_replace(path, 1, 0);
+}
+
+static const char **allocate_queue_paths(int count, int *handle)
+{
+    size_t bytes;
+
+    *handle = 0;
+    if(count <= 0 || (size_t)count > SIZE_MAX / sizeof(const char *))
+        return NULL;
+    bytes = (size_t)count * sizeof(const char *);
+    *handle = core_alloc(bytes);
+    if(*handle <= 0)
+        return NULL;
+    core_pin(*handle);
+    return core_get_data(*handle);
+}
+
+static void release_queue_paths(int handle)
+{
+    if(handle > 0) {
+        core_unpin(handle);
+        core_free(handle);
+    }
 }
 
 bool crazypod_music_play_search(const char *query, int selected_index)
 {
+    const char **queue_paths;
+    int queue_handle;
     int count = 0;
     int start = -1;
     int i;
+    bool queued;
 
     if(!catalog_ready)
         return false;
     refresh_search_cache(query);
-    for(i = 0; i < search_result_count &&
-               count < CRAZYPOD_QUEUE_CAPACITY; ++i) {
+    queue_paths = allocate_queue_paths(search_result_count, &queue_handle);
+    if(queue_paths == NULL)
+        return false;
+    for(i = 0; i < search_result_count; ++i) {
         int track_index = search_track_indices[i];
 
         if(i == selected_index)
             start = count;
-        queue_build_paths[count++] = tracks[track_index].path;
+        queue_paths[count++] = tracks[track_index].path;
     }
-    if(count <= 0)
-        return false;
     if(start < 0)
         start = 0;
-    crazypod_queue_replace(queue_build_paths, count, start);
-    return true;
+    queued = crazypod_queue_replace(queue_paths, count, start);
+    release_queue_paths(queue_handle);
+    return queued;
 }
 
 bool crazypod_music_play(enum crazypod_music_scope scope, int group_index,
                          int selected_index)
 {
+    const char **queue_paths;
     const char *selected_path = NULL;
+    int queue_handle;
+    int requested_count;
     int count = 0;
     int start = -1;
     int i;
+    bool queued;
 
     if(!catalog_ready)
         return false;
     if(scope == CRAZYPOD_SCOPE_PLAYLIST) {
         const struct crazypod_playlist *playlist =
             crazypod_music_playlist(group_index);
-        if(playlist == NULL)
+        requested_count = playlist != NULL && playlist->track_count <= INT_MAX
+            ? (int)playlist->track_count : 0;
+    }
+    else if(scope == CRAZYPOD_SCOPE_ALBUM)
+        requested_count = crazypod_music_album_track_count(group_index);
+    else if(scope == CRAZYPOD_SCOPE_ARTIST)
+        requested_count = crazypod_music_artist_track_count(group_index);
+    else
+        requested_count = track_count;
+    queue_paths = allocate_queue_paths(requested_count, &queue_handle);
+    if(queue_paths == NULL)
+        return false;
+
+    if(scope == CRAZYPOD_SCOPE_PLAYLIST) {
+        const struct crazypod_playlist *playlist =
+            crazypod_music_playlist(group_index);
+        if(playlist == NULL) {
+            release_queue_paths(queue_handle);
             return false;
-        for(i = 0; i < playlist->track_count &&
-                   count < CRAZYPOD_QUEUE_CAPACITY; ++i) {
+        }
+        for(i = 0; i < (int)playlist->track_count; ++i) {
             const struct crazypod_track *track =
                 crazypod_music_playlist_track(group_index, i);
             if(track != NULL) {
                 if(i == selected_index)
                     start = count;
-                queue_build_paths[count++] = track->path;
+                queue_paths[count++] = track->path;
             }
         }
     }
     else if(scope == CRAZYPOD_SCOPE_ALBUM) {
         int album_tracks = crazypod_music_album_track_count(group_index);
-        for(i = 0; i < album_tracks &&
-                   count < CRAZYPOD_QUEUE_CAPACITY; ++i) {
+        for(i = 0; i < album_tracks; ++i) {
             const struct crazypod_track *track =
                 crazypod_music_album_track(group_index, i);
             if(track != NULL) {
                 if(i == selected_index)
                     selected_path = track->path;
-                queue_build_paths[count++] = track->path;
+                queue_paths[count++] = track->path;
             }
         }
         if(selected_path != NULL) {
             for(i = 0; i < count; ++i) {
-                if(strcmp(queue_build_paths[i], selected_path) == 0) {
+                if(strcmp(queue_paths[i], selected_path) == 0) {
                     start = i;
                     break;
                 }
@@ -1684,7 +1863,7 @@ bool crazypod_music_play(enum crazypod_music_scope scope, int group_index,
             ? crazypod_music_artist(group_index) : NULL;
         int visible_index = 0;
 
-        for(i = 0; i < track_count && count < CRAZYPOD_QUEUE_CAPACITY; ++i) {
+        for(i = 0; i < track_count; ++i) {
             bool include = scope == CRAZYPOD_SCOPE_ALL;
             if(scope == CRAZYPOD_SCOPE_ARTIST && artist != NULL)
                 include = compare_text(tracks[i].artist, artist) == 0;
@@ -1692,33 +1871,42 @@ bool crazypod_music_play(enum crazypod_music_scope scope, int group_index,
             if(include) {
                 if(visible_index == selected_index)
                     start = count;
-                queue_build_paths[count++] = tracks[i].path;
+                queue_paths[count++] = tracks[i].path;
                 ++visible_index;
             }
         }
     }
 
-    if(count <= 0)
+    if(count <= 0) {
+        release_queue_paths(queue_handle);
         return false;
+    }
     if(start < 0)
         start = 0;
-    crazypod_queue_replace(queue_build_paths, count, start);
-    return true;
+    queued = crazypod_queue_replace(queue_paths, count, start);
+    release_queue_paths(queue_handle);
+    return queued;
 }
 
 bool crazypod_music_shuffle_all(unsigned int seed)
 {
+    const char **queue_paths;
+    int queue_handle;
     int count = track_count;
     int i;
+    bool queued;
 
     if(!catalog_ready || count <= 0)
         return false;
-    if(count > CRAZYPOD_QUEUE_CAPACITY)
-        count = CRAZYPOD_QUEUE_CAPACITY;
+    queue_paths = allocate_queue_paths(count, &queue_handle);
+    if(queue_paths == NULL)
+        return false;
     for(i = 0; i < count; ++i)
-        queue_build_paths[i] = tracks[i].path;
-    crazypod_queue_replace_shuffled(queue_build_paths, count, seed);
-    return true;
+        queue_paths[i] = tracks[i].path;
+    queued = crazypod_queue_replace_shuffled(
+        queue_paths, count, seed);
+    release_queue_paths(queue_handle);
+    return queued;
 }
 
 #endif

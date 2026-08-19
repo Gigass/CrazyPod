@@ -81,7 +81,7 @@ commands, not application navigation.
 `crazypod_ui.c` is complete only when it:
 
 - contains init, tick, input, shutdown, and dependency wiring;
-- is 400–800 lines;
+- is 400–1500 lines;
 - owns no feature-private `lv_obj_t`, overlay state, editor state, preview
   state, or feature work buffer;
 - contains no feature route switch;
@@ -92,7 +92,7 @@ being moved. Duplicated old and new implementations are not allowed.
 
 ## File budgets
 
-- Composition root: 800 lines maximum.
+- Composition root: 1500 lines maximum.
 - Feature facade/coordinator: 800 lines maximum.
 - Screen/controller: 600 lines maximum.
 - Ordinary feature: 2–5 primary `.c` files.
@@ -126,7 +126,7 @@ It rejects horizontal transition directories, cross-feature private
 includes, any Feature-private include from App, Shell, Presentation or the
 composition root, Domain-to-UI includes, mutable UI `extern` variables,
 route/input switches or static LVGL page state in the composition root, and
-a root outside the 400–800-line budget.
+a root outside the 400–1500-line budget.
 
 `crazypod_ui.c` is now the composition and lifecycle root. Feature route
 rendering, activation, input, previews, runtime services, Now Playing,

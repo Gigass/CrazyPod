@@ -51,8 +51,19 @@ cc -std=c99 -Wall -Wextra -Werror \
 cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-playlist-stubs" \
     -I"$repo_root/apps/crazypod" \
+    "$repo_root/tests/crazypod_core_alloc_host_stub.c" \
     "$repo_root/apps/crazypod/crazypod_playlist.c" \
     "$repo_root/tests/crazypod_playlist_host_test.c" \
     -o "$test_root/crazypod_playlist_host_test"
 
 "$test_root/crazypod_playlist_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-playlist-stubs" \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/tests/crazypod_core_alloc_host_stub.c" \
+    "$repo_root/apps/crazypod/crazypod_music_storage.c" \
+    "$repo_root/tests/crazypod_music_storage_host_test.c" \
+    -o "$test_root/crazypod_music_storage_host_test"
+
+"$test_root/crazypod_music_storage_host_test"

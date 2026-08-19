@@ -167,6 +167,7 @@ void crazypod_appearance_load(void)
 
     memset(&appearance, 0, sizeof(appearance));
     appearance.icon_scale = 4;
+    appearance.sound_wave_style = CRAZYPOD_SOUND_WAVE_MINI_LED_METER;
     appearance.glow = 1;
     appearance.highlight_style = 1;
     appearance.primary_color = 1;

@@ -19,7 +19,7 @@
 
 static lv_point_precise_t
     sound_wave_points[SOUND_WAVE_POINT_SLOTS][SOUND_WAVE_MAX_POINTS];
-static int16_t sound_wave_taper[LCD_WIDTH];
+static int32_t sound_wave_taper[LCD_WIDTH];
 static int sound_wave_taper_width;
 
 static const char *const sound_wave_style_names[
@@ -73,7 +73,7 @@ static int wave_taper(int x, int width)
     if(sound_wave_taper_width != width) {
         for(index = 0; index < width; ++index)
             sound_wave_taper[index] =
-                (int16_t)wave_sin(index * 180 / (width - 1));
+                wave_sin(index * 180 / (width - 1));
         sound_wave_taper_width = width;
     }
     return sound_wave_taper[x];
@@ -258,11 +258,25 @@ static void draw_torrent(lv_layer_t *layer, const lv_area_t *area,
      * where it supplies useful separation, but not for the full-width wave.
      */
     if(ball) {
+        int width = area_width(area);
+        int center_x = area->x1 + width / 2;
+        int center_y = area->y1 + height / 2;
+        int radius = (width < height ? width : height) * 34 / 100;
+        int orbit_angle = phase * 17;
+
         count = build_wave_points(
             area, 2, point_step, phase * 17 + 240,
             highlight_cycles, highlight_amp);
         draw_polyline(layer, 2, count, 1, highlight,
                       playing ? 151 : 55);
+        if(playing)
+            draw_dot(
+                layer,
+                center_x +
+                    (wave_cos(orbit_angle) * radius >> LV_TRIGO_SHIFT),
+                center_y +
+                    (wave_sin(orbit_angle) * radius >> LV_TRIGO_SHIFT),
+                1, highlight, 190);
     }
 }
 
@@ -309,8 +323,8 @@ static void draw_radial_spectrum(
     int phase, bool playing, uint32_t primary, uint32_t secondary,
     uint32_t highlight)
 {
-    static int16_t direction_x[SOUND_WAVE_BALL_RADIAL_RAYS];
-    static int16_t direction_y[SOUND_WAVE_BALL_RADIAL_RAYS];
+    static int32_t direction_x[SOUND_WAVE_BALL_RADIAL_RAYS];
+    static int32_t direction_y[SOUND_WAVE_BALL_RADIAL_RAYS];
     static bool directions_ready;
     int width = area_width(area);
     int height = area_height(area);
@@ -328,8 +342,8 @@ static void draw_radial_spectrum(
             int angle =
                 index * 360 / SOUND_WAVE_BALL_RADIAL_RAYS;
 
-            direction_x[index] = (int16_t)wave_cos(angle);
-            direction_y[index] = (int16_t)wave_sin(angle);
+            direction_x[index] = wave_cos(angle);
+            direction_y[index] = wave_sin(angle);
         }
         directions_ready = true;
     }
@@ -754,8 +768,8 @@ static void draw_particle_pulse_ball(
     int phase, bool playing, uint32_t primary, uint32_t secondary,
     uint32_t highlight)
 {
-    static int16_t base_x[SOUND_WAVE_BALL_PARTICLES];
-    static int16_t base_y[SOUND_WAVE_BALL_PARTICLES];
+    static int32_t base_x[SOUND_WAVE_BALL_PARTICLES];
+    static int32_t base_y[SOUND_WAVE_BALL_PARTICLES];
     static bool directions_ready;
     int lane_cos[4];
     int lane_sin[4];
@@ -774,8 +788,8 @@ static void draw_particle_pulse_ball(
             ++index) {
             int angle = index * 137;
 
-            base_x[index] = (int16_t)wave_cos(angle);
-            base_y[index] = (int16_t)wave_sin(angle);
+            base_x[index] = wave_cos(angle);
+            base_y[index] = wave_sin(angle);
         }
         directions_ready = true;
     }

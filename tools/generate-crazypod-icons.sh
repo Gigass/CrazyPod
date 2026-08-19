@@ -6,7 +6,8 @@ cd "$(dirname "$0")/.."
 SOURCE_ROOT="${MAXPOD_ASSETS_ROOT:-../../MaxPodApp/ios/MaxPodApp/Assets.xcassets}"
 OUTPUT_ROOT="assets/crazypod-icons"
 WALLPAPER_OUTPUT="assets/crazypod/default-home.bmp"
-THEMES="basic cel_frame anime_pop mecha_spec toy y2k flat skeuo lucid_pop noize_bloom soft_skeuo acrylic ink sticker sticker2 voxel"
+THEMES="cel_frame anime_pop mecha_spec toy y2k flat skeuo lucid_pop noize_bloom soft_skeuo acrylic ink sticker sticker2 voxel"
+PREBUILT_THEME="basic"
 APPS="music podcasts mini_apps shuffle screen_lock photos diy fitness books notes clock contacts calendar stopwatch extras settings"
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
@@ -34,10 +35,17 @@ for theme in $THEMES; do
     done
 done
 
+for app in $APPS; do
+    if [ ! -f "$OUTPUT_ROOT/$PREBUILT_THEME/$app.bmp" ]; then
+        echo "Error: missing prebuilt ${PREBUILT_THEME}/${app}.bmp." >&2
+        exit 1
+    fi
+done
+
 mkdir -p "$(dirname "$WALLPAPER_OUTPUT")"
 ffmpeg -hide_banner -loglevel error \
     -i "$SOURCE_ROOT/default_home_wallpaper.imageset/default_home_wallpaper.jpg" \
     -vf "scale=320:240:flags=lanczos" -pix_fmt bgra \
     -y "$WALLPAPER_OUTPUT"
 
-echo "CrazyPod: generated 16 icon themes in $OUTPUT_ROOT"
+echo "CrazyPod: generated 15 source themes and kept prebuilt default $PREBUILT_THEME in $OUTPUT_ROOT"

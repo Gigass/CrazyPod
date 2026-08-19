@@ -31,7 +31,7 @@ static int item_total(
     case CP_MEDIA_LIBRARY_PLAYLIST_TRACKS: {
         const struct crazypod_playlist *playlist =
             crazypod_music_playlist(request->group_index);
-        return playlist != NULL ? playlist->track_count : -1;
+        return playlist != NULL ? (int)playlist->track_count : -1;
     }
     case CP_MEDIA_LIBRARY_SEARCH_TRACKS:
         return request->query[0] != '\0'
@@ -77,7 +77,7 @@ static bool fill_group_item(
             return false;
         strlcpy(item->primary, album->title, sizeof(item->primary));
         strlcpy(item->secondary, album->artist, sizeof(item->secondary));
-        item->value = album->track_count;
+        item->value = (int32_t)album->track_count;
         return true;
     }
     if(kind == CP_MEDIA_LIBRARY_PLAYLISTS) {
@@ -86,7 +86,7 @@ static bool fill_group_item(
         if(playlist == NULL)
             return false;
         strlcpy(item->primary, playlist->name, sizeof(item->primary));
-        item->value = playlist->track_count;
+        item->value = (int32_t)playlist->track_count;
         return true;
     }
     return false;

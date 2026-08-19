@@ -4,6 +4,7 @@
 
 #include "backlight.h"
 #include "file.h"
+#include "font.h"
 #include "kernel.h"
 #include "powermgmt.h"
 #include "usb.h"
@@ -233,11 +234,17 @@ void crazypod_system_prompts_usb_connected(intptr_t data)
      * video catalogs from being rejected on the next boot when Music was
      * never opened. A crash before this point leaves it for boot cleanup. */
     remove(MEDIA_INVALID_PATH);
+    /* Cached runtime fonts keep their .fnt descriptors open. Close them
+     * before acknowledging exclusive storage so unmount cannot leave stale
+     * descriptors behind in the font slots. */
+    font_disable_all();
     usb_acknowledge(SYS_USB_CONNECTED_ACK, data);
 }
 
 void crazypod_system_prompts_usb_disconnected(void)
 {
+    /* SYS_USB_DISCONNECTED is broadcast after storage has been remounted. */
+    font_enable_all();
     prompts.storage_active = false;
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
     if(crazypod_usb_prompt_data_blocking())

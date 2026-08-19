@@ -5,11 +5,9 @@
 
 #include "file.h"
 
-#define CRAZYPOD_QUEUE_CAPACITY 2048
-
-void crazypod_queue_replace(const char *const *paths, int count,
+bool crazypod_queue_replace(const char *const *paths, int count,
                             int start_index);
-void crazypod_queue_replace_shuffled(const char *const *paths, int count,
+bool crazypod_queue_replace_shuffled(const char *const *paths, int count,
                                      unsigned int seed);
 void crazypod_queue_restore_begin(void);
 bool crazypod_queue_restore_add(const char *path);

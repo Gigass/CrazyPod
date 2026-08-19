@@ -2,19 +2,23 @@
 
 #ifdef IPOD_6G
 
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "audio.h"
+#include "core_alloc.h"
 #include "metadata.h"
 #include "playlist.h"
 #include "settings.h"
 
 #include "crazypod_playlist.h"
 
-static char queue_paths[CRAZYPOD_QUEUE_CAPACITY][MAX_PATH];
-static char original_paths[CRAZYPOD_QUEUE_CAPACITY][MAX_PATH];
+static int queue_storage_handle;
+static int queue_capacity;
+static char (*queue_paths)[MAX_PATH];
+static char (*original_paths)[MAX_PATH];
 static int queue_length;
 static int queue_index;
 static bool queue_started;
@@ -22,6 +26,55 @@ static bool queue_shuffle;
 static uint32_t shuffle_state = 0x43505f36;
 static unsigned queue_generation;
 static struct playlist_info queue_info;
+
+static bool queue_storage_reserve(int required)
+{
+    char (*new_paths)[MAX_PATH];
+    char (*new_original_paths)[MAX_PATH];
+    size_t row_bytes = sizeof(*queue_paths);
+    size_t bytes;
+    int new_capacity;
+    int new_handle;
+
+    if(required <= queue_capacity)
+        return true;
+    if(required <= 0 ||
+       (size_t)required > SIZE_MAX / row_bytes / 2)
+        return false;
+
+    new_capacity = queue_capacity > 0 ? queue_capacity : 64;
+    while(new_capacity < required) {
+        if(new_capacity > INT_MAX / 2) {
+            new_capacity = required;
+            break;
+        }
+        new_capacity *= 2;
+    }
+    bytes = (size_t)new_capacity * row_bytes * 2;
+    new_handle = core_alloc(bytes);
+    if(new_handle <= 0)
+        return false;
+    core_pin(new_handle);
+    new_paths = core_get_data(new_handle);
+    new_original_paths = new_paths + new_capacity;
+    if(queue_length > 0) {
+        queue_paths = core_get_data(queue_storage_handle);
+        original_paths = queue_paths + queue_capacity;
+        memcpy(new_paths, queue_paths,
+               (size_t)queue_length * row_bytes);
+        memcpy(new_original_paths, original_paths,
+               (size_t)queue_length * row_bytes);
+    }
+    if(queue_storage_handle > 0) {
+        core_unpin(queue_storage_handle);
+        queue_storage_handle = core_free(queue_storage_handle);
+    }
+    queue_storage_handle = new_handle;
+    queue_capacity = new_capacity;
+    queue_paths = new_paths;
+    original_paths = new_original_paths;
+    return true;
+}
 
 static int normalize_index(int index, bool allow_repeat)
 {
@@ -66,10 +119,17 @@ static bool path_is_excluded_ipod_music(const char *path)
 
 void playlist_init(void)
 {
+    if(queue_storage_handle > 0) {
+        core_unpin(queue_storage_handle);
+        queue_storage_handle = core_free(queue_storage_handle);
+    }
+    queue_capacity = 0;
+    queue_paths = NULL;
+    original_paths = NULL;
     memset(&queue_info, 0, sizeof(queue_info));
     mutex_init(&queue_info.mutex);
     queue_info.index = 0;
-    queue_info.max_playlist_size = CRAZYPOD_QUEUE_CAPACITY;
+    queue_info.max_playlist_size = INT_MAX;
     queue_info.fd = -1;
     queue_info.control_fd = -1;
     queue_length = 0;
@@ -110,7 +170,8 @@ int playlist_insert_track(struct playlist_info *playlist, const char *filename,
     (void)sync;
 
     if(filename == NULL || path_is_excluded_ipod_music(filename) ||
-       queue_length >= CRAZYPOD_QUEUE_CAPACITY)
+       queue_length == INT_MAX ||
+       !queue_storage_reserve(queue_length + 1))
         return -1;
 
     if(position == PLAYLIST_PREPEND || position == PLAYLIST_INSERT_FIRST)
@@ -277,19 +338,20 @@ void playlist_resume_track(int start_index, unsigned int crc,
     playlist_start(start_index, elapsed, offset);
 }
 
-static void queue_replace(const char *const *paths, int count,
+static bool queue_replace(const char *const *paths, int count,
                           int start_index, bool preserve_selected)
 {
     char selected[MAX_PATH];
     int i;
 
+    if(count < 0 || (count > 0 && paths == NULL))
+        return false;
     audio_stop();
+    if(count > 0 && !queue_storage_reserve(count))
+        return false;
     queue_length = 0;
     queue_index = 0;
     queue_started = false;
-
-    if(count > CRAZYPOD_QUEUE_CAPACITY)
-        count = CRAZYPOD_QUEUE_CAPACITY;
 
     for(i = 0; i < count; ++i) {
         copy_path(queue_paths[i], paths[i]);
@@ -321,22 +383,31 @@ static void queue_replace(const char *const *paths, int count,
     }
     ++queue_generation;
     playlist_start(start_index, 0, 0);
+    return true;
 }
 
-void crazypod_queue_replace(const char *const *paths, int count,
+bool crazypod_queue_replace(const char *const *paths, int count,
                             int start_index)
 {
-    queue_replace(paths, count, start_index, true);
+    return queue_replace(paths, count, start_index, true);
 }
 
-void crazypod_queue_replace_shuffled(const char *const *paths, int count,
+bool crazypod_queue_replace_shuffled(const char *const *paths, int count,
                                      unsigned int seed)
 {
+    bool previous_shuffle = queue_shuffle;
+    uint32_t previous_shuffle_state = shuffle_state;
+
     shuffle_state ^= (uint32_t)seed + 0x9e3779b9u +
         (shuffle_state << 6) + (shuffle_state >> 2);
     queue_shuffle = true;
     global_settings.playlist_shuffle = true;
-    queue_replace(paths, count, 0, false);
+    if(queue_replace(paths, count, 0, false))
+        return true;
+    shuffle_state = previous_shuffle_state;
+    queue_shuffle = previous_shuffle;
+    global_settings.playlist_shuffle = previous_shuffle;
+    return false;
 }
 
 void crazypod_queue_restore_begin(void)
@@ -354,7 +425,8 @@ bool crazypod_queue_restore_add(const char *path)
 {
     if(path == NULL || path[0] != '/' ||
        path_is_excluded_ipod_music(path) ||
-       queue_length >= CRAZYPOD_QUEUE_CAPACITY)
+       queue_length == INT_MAX ||
+       !queue_storage_reserve(queue_length + 1))
         return false;
     copy_path(queue_paths[queue_length], path);
     copy_path(original_paths[queue_length], path);

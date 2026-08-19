@@ -11,6 +11,7 @@
 
 #include "albumart.h"
 #include "bmp.h"
+#include "core_alloc.h"
 #include "dir.h"
 #include "file.h"
 #include "jpeg_load.h"
@@ -223,7 +224,8 @@ static int artwork_prime_next;
 static int artwork_prime_completed;
 static int artwork_prime_total;
 static int artwork_prime_persisted;
-static uint16_t artwork_prime_order[CRAZYPOD_MAX_TRACKS];
+static int artwork_prime_order_handle;
+static uint32_t *artwork_prime_order;
 static struct artwork_candidate
     artwork_candidates[CRAZYPOD_ARTWORK_CANDIDATE_COUNT];
 static struct artwork_directory_cache artwork_track_directory;
@@ -1131,8 +1133,8 @@ static bool album_request(
 static int compare_prime_album_paths(const void *left_ptr,
                                      const void *right_ptr)
 {
-    int left_index = *(const uint16_t *)left_ptr;
-    int right_index = *(const uint16_t *)right_ptr;
+    int left_index = (int)*(const uint32_t *)left_ptr;
+    int right_index = (int)*(const uint32_t *)right_ptr;
     const struct crazypod_track *left =
         crazypod_music_album_track(left_index, 0);
     const struct crazypod_track *right =
@@ -1143,6 +1145,16 @@ static int compare_prime_album_paths(const void *left_ptr,
     if(right == NULL)
         return -1;
     return strcmp(left->path, right->path);
+}
+
+static void artwork_prime_order_release(void)
+{
+    if(artwork_prime_order_handle > 0) {
+        core_unpin(artwork_prime_order_handle);
+        artwork_prime_order_handle =
+            core_free(artwork_prime_order_handle);
+    }
+    artwork_prime_order = NULL;
 }
 
 static uint32_t artwork_library_key(void)
@@ -1657,6 +1669,8 @@ void crazypod_artwork_init(void)
     artwork_prime_completed = 0;
     artwork_prime_total = 0;
     artwork_prime_persisted = 0;
+    artwork_prime_order_handle = 0;
+    artwork_prime_order = NULL;
     memset(&artwork_track_directory, 0,
            sizeof(artwork_track_directory));
     memset(&artwork_parent_directory, 0,
@@ -1677,11 +1691,36 @@ void crazypod_artwork_prime_library(void)
     int album_index;
 
     crazypod_artwork_cancel_library_prime();
+    if(total > 0 &&
+       (size_t)total <= SIZE_MAX / sizeof(*artwork_prime_order)) {
+        artwork_prime_order_handle = core_alloc(
+            (size_t)total * sizeof(*artwork_prime_order));
+        if(artwork_prime_order_handle <= 0) {
+            mutex_lock(&artwork_mutex);
+            artwork_prime_failed = true;
+            artwork_prime_active = false;
+            artwork_prime_total = total;
+            mutex_unlock(&artwork_mutex);
+            return;
+        }
+        core_pin(artwork_prime_order_handle);
+        artwork_prime_order =
+            core_get_data(artwork_prime_order_handle);
+    }
+    else if(total > 0) {
+        mutex_lock(&artwork_mutex);
+        artwork_prime_failed = true;
+        artwork_prime_active = false;
+        artwork_prime_total = total;
+        mutex_unlock(&artwork_mutex);
+        return;
+    }
     for(album_index = 0; album_index < total; ++album_index)
-        artwork_prime_order[album_index] = (uint16_t)album_index;
-    qsort(artwork_prime_order, (size_t)total,
-          sizeof(artwork_prime_order[0]),
-          compare_prime_album_paths);
+        artwork_prime_order[album_index] = (uint32_t)album_index;
+    if(total > 1)
+        qsort(artwork_prime_order, (size_t)total,
+              sizeof(artwork_prime_order[0]),
+              compare_prime_album_paths);
     start_index = artwork_progress_load(total);
     mutex_lock(&artwork_mutex);
     artwork_prime_next = start_index;
@@ -1788,6 +1827,7 @@ void crazypod_artwork_cancel_library_prime(void)
     artwork_prime_total = 0;
     artwork_prime_failed = false;
     mutex_unlock(&artwork_mutex);
+    artwork_prime_order_release();
 }
 
 void crazypod_artwork_cancel_product_requests(void)

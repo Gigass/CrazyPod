@@ -28,7 +28,6 @@ struct usb_prompt_state {
     lv_obj_t *panel;
     lv_obj_t *rows[2];
     lv_obj_t *markers[2];
-    lv_obj_t *hints[2];
     int selected;
     unsigned request;
     struct crazypod_usb_prompt_callbacks callbacks;
@@ -108,8 +107,6 @@ static void refresh_prompt(void)
             selected ? LV_SYMBOL_PLAY : LV_SYMBOL_BULLET);
         lv_obj_set_style_text_opa(
             prompt.markers[index], selected ? 210 : 90, 0);
-        lv_obj_set_style_text_opa(
-            prompt.hints[index], selected ? 190 : 120, 0);
     }
 }
 
@@ -124,7 +121,6 @@ void crazypod_usb_prompt_dismiss(void)
     prompt.panel = NULL;
     memset(prompt.rows, 0, sizeof(prompt.rows));
     memset(prompt.markers, 0, sizeof(prompt.markers));
-    memset(prompt.hints, 0, sizeof(prompt.hints));
     prompt.selected = 0;
     prompt.request = 0;
     prompt.data_blocking = false;
@@ -146,9 +142,6 @@ static void apply_charge_mode(void)
 void crazypod_usb_prompt_show(unsigned request)
 {
     static const char *const titles[] = { CP_TR("Charge"), CP_TR("Data") };
-    static const char *const hints[] = {
-        CP_TR("Keep CrazyPod running"), CP_TR("Mount disk on computer")
-    };
     static const char *const symbols[] = {
         LV_SYMBOL_CHARGE, LV_SYMBOL_DOWNLOAD
     };
@@ -202,16 +195,9 @@ void crazypod_usb_prompt_show(unsigned request)
         label = make_label(
             prompt.rows[index], titles[index],
             &lv_font_montserrat_10, COLOR_WHITE, 235);
-        lv_obj_set_pos(label, 39, 4);
         lv_obj_set_size(label, 86, 14);
+        lv_obj_align(label, LV_ALIGN_LEFT_MID, 39, 0);
         lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-        prompt.hints[index] = make_label(
-            prompt.rows[index], hints[index],
-            &lv_font_montserrat_8, COLOR_WHITE, 130);
-        lv_obj_set_pos(prompt.hints[index], 39, 17);
-        lv_obj_set_size(prompt.hints[index], 142, 11);
-        lv_label_set_long_mode(
-            prompt.hints[index], LV_LABEL_LONG_MODE_DOTS);
         prompt.markers[index] = make_label(
             prompt.rows[index], LV_SYMBOL_BULLET,
             &lv_font_montserrat_8, COLOR_WHITE, 90);
@@ -237,7 +223,6 @@ static void show_data_blocker(void)
     prompt.panel = NULL;
     memset(prompt.rows, 0, sizeof(prompt.rows));
     memset(prompt.markers, 0, sizeof(prompt.markers));
-    memset(prompt.hints, 0, sizeof(prompt.hints));
     prompt.data_blocking = true;
 
     lv_obj_set_style_bg_color(prompt.root, lv_color_hex(0x000000), 0);
@@ -256,14 +241,7 @@ static void show_data_blocker(void)
         COLOR_WHITE, 235);
     lv_obj_set_size(label, LCD_WIDTH, 20);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 0, 103);
-
-    label = make_label(
-        prompt.root, CP_TR("Eject CrazyPod before unplugging the cable"),
-        &lv_font_montserrat_10, COLOR_WHITE, 150);
-    lv_obj_set_size(label, LCD_WIDTH - 32, 16);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 16, 136);
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 
     /*
      * The USB worker is released immediately after this function returns.

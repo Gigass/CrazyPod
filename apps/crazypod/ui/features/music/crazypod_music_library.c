@@ -24,6 +24,7 @@ struct music_library_state {
     bool loaded;
     bool loading;
     bool scan_start_failed;
+    enum crazypod_music_scan_failure scan_failure;
     bool artwork_cache_failed;
     bool scan_pending;
     bool artwork_preparing;
@@ -32,6 +33,19 @@ struct music_library_state {
 };
 
 static struct music_library_state library;
+
+static const char *scan_failure_detail(void)
+{
+    switch(library.scan_failure) {
+    case CRAZYPOD_MUSIC_SCAN_NO_MEMORY:
+        return CP_FMT("Not enough memory to build the music library");
+    case CRAZYPOD_MUSIC_SCAN_LIBRARY_CHANGED:
+        return CP_FMT("Music files changed during the library scan");
+    case CRAZYPOD_MUSIC_SCAN_OK:
+    default:
+        return CP_FMT("No background thread was available");
+    }
+}
 
 static void render_loading(void)
 {
@@ -52,7 +66,8 @@ static void render_loading(void)
         library.host.parent,
         library.artwork_cache_failed
             ? CP_TR("Artwork Cache Failed")
-            : library.scan_start_failed
+            : library.scan_start_failed ||
+                library.scan_failure != CRAZYPOD_MUSIC_SCAN_OK
                 ? CP_TR("Library Scan Failed")
                 : library.artwork_preparing
                     ? CP_TR("Preparing Album Artwork")
@@ -74,8 +89,9 @@ static void render_loading(void)
             detail, sizeof(detail), "%s",
             library.artwork_cache_failed
                 ? CP_FMT("Could not commit the album artwork cache")
-                : library.scan_start_failed
-                    ? CP_FMT("No background thread was available")
+                : library.scan_start_failed ||
+                    library.scan_failure != CRAZYPOD_MUSIC_SCAN_OK
+                    ? scan_failure_detail()
                     : crazypod_music_catalog_validation() ==
                         CRAZYPOD_MUSIC_VALIDATION_RUNNING
                         ? CP_FMT("Checking local file names, sizes and dates")
@@ -142,6 +158,7 @@ void crazypod_music_library_initialize(long now)
     library.loaded = false;
     library.loading = false;
     library.scan_start_failed = false;
+    library.scan_failure = CRAZYPOD_MUSIC_SCAN_OK;
     library.artwork_cache_failed = false;
     library.artwork_preparing = false;
     library.scan_pending = !catalog_ready;
@@ -160,6 +177,7 @@ void crazypod_music_library_begin(long now)
         library.loaded = false;
         library.loading = true;
         library.scan_start_failed = false;
+        library.scan_failure = CRAZYPOD_MUSIC_SCAN_OK;
         render_loading();
         lv_refr_now(NULL);
         return;
@@ -172,6 +190,7 @@ void crazypod_music_library_begin(long now)
     library.loaded = false;
     library.loading = true;
     library.scan_start_failed = false;
+    library.scan_failure = CRAZYPOD_MUSIC_SCAN_OK;
     library.artwork_cache_failed = false;
     library.scan_generation_seen = crazypod_music_scan_generation();
     library.scan_pending = true;
@@ -189,6 +208,7 @@ void crazypod_music_library_leave(long now)
     library.loading = false;
     library.loading_detail = NULL;
     library.scan_start_failed = false;
+    library.scan_failure = CRAZYPOD_MUSIC_SCAN_OK;
     library.artwork_cache_failed = false;
     library.artwork_preparing = false;
     library.scan_generation_seen =
@@ -237,6 +257,7 @@ void crazypod_music_library_service(long now, bool storage_active)
     library.scan_generation_seen = crazypod_music_scan_generation();
     library.artwork_preparing = false;
     library.artwork_cache_failed = false;
+    library.scan_failure = CRAZYPOD_MUSIC_SCAN_OK;
     crazypod_artwork_cancel_library_prime();
     if(!crazypod_music_scan_async()) {
         library.scan_start_failed = true;
@@ -257,6 +278,13 @@ bool crazypod_music_library_update(void)
             crazypod_music_scan_generation();
         if(crazypod_music_catalog_ready())
             begin_artwork_preparation();
+        else {
+            library.scan_failure =
+                crazypod_music_scan_failure_reason();
+            if(library.scan_failure != CRAZYPOD_MUSIC_SCAN_OK &&
+               library.loading)
+                render_loading();
+        }
     }
     if(!library.artwork_preparing &&
        !library.artwork_cache_failed &&
@@ -305,6 +333,7 @@ void crazypod_music_library_schedule_rescan(long not_before)
     library.scan_not_before = not_before;
     library.loaded = false;
     library.artwork_preparing = false;
+    library.scan_failure = CRAZYPOD_MUSIC_SCAN_OK;
     crazypod_artwork_cancel_library_prime();
     if(library.host.route_visible != NULL &&
        library.host.route_visible()) {

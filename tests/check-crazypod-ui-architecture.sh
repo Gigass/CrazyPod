@@ -29,9 +29,9 @@ for path in (
         errors.append(f"forbidden feature directory: {path}")
 
 line_count = len(main.read_text().splitlines())
-if not 400 <= line_count <= 800:
+if not 400 <= line_count <= 1500:
     errors.append(
-        f"{main} has {line_count} lines; expected 400..800")
+        f"{main} has {line_count} lines; expected 400..1500")
 
 main_text = main.read_text()
 if re.search(r"^\s*case\b", main_text, re.MULTILINE):

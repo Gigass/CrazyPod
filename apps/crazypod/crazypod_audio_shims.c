@@ -2,6 +2,7 @@
 
 #ifdef IPOD_6G
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -16,7 +17,6 @@
 #include "voice_thread.h"
 #include "string-extra.h"
 
-#include "crazypod_music.h"
 #include "crazypod_sharp_pop_pcm.inc"
 
 struct user_settings global_settings;
@@ -263,7 +263,7 @@ void crazypod_audio_settings_init(void)
     global_settings.stereo_width = 100;
     global_settings.repeat_mode = REPEAT_OFF;
     global_settings.single_mode = SINGLE_MODE_OFF;
-    global_settings.max_files_in_playlist = CRAZYPOD_MAX_TRACKS;
+    global_settings.max_files_in_playlist = INT_MAX;
     global_settings.poweroff = 10;
 #ifdef HAVE_BACKLIGHT
     global_settings.backlight_timeout = 30;

@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 
+void crazypod_coverflow_configure(void (*boost)(int ticks));
 void crazypod_coverflow_enter(int selected);
 bool crazypod_coverflow_warm(int selected);
 void crazypod_coverflow_leave(void);

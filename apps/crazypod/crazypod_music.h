@@ -7,7 +7,6 @@
 
 #include "file.h"
 
-#define CRAZYPOD_MAX_TRACKS 2048
 #define CRAZYPOD_MAX_PLAYLISTS 64
 #define CRAZYPOD_MAX_PLAYLIST_TRACKS 8192
 
@@ -32,15 +31,15 @@ struct crazypod_track {
 
 struct crazypod_playlist {
     char name[72];
-    uint16_t first_track;
-    uint16_t track_count;
+    uint32_t first_track;
+    uint32_t track_count;
 };
 
 struct crazypod_album {
     char title[72];
     char artist[72];
-    uint16_t first_track;
-    uint16_t track_count;
+    uint32_t first_track;
+    uint32_t track_count;
 };
 
 enum crazypod_music_scope {
@@ -58,6 +57,12 @@ enum crazypod_music_catalog_validation {
     CRAZYPOD_MUSIC_VALIDATION_FAILED,
 };
 
+enum crazypod_music_scan_failure {
+    CRAZYPOD_MUSIC_SCAN_OK,
+    CRAZYPOD_MUSIC_SCAN_NO_MEMORY,
+    CRAZYPOD_MUSIC_SCAN_LIBRARY_CHANGED,
+};
+
 void crazypod_music_init(void);
 void crazypod_music_scan(void);
 bool crazypod_music_scan_async(void);
@@ -70,6 +75,8 @@ void crazypod_music_cancel_scan(void);
 bool crazypod_music_is_scanning(void);
 unsigned crazypod_music_scan_generation(void);
 bool crazypod_music_catalog_ready(void);
+enum crazypod_music_scan_failure
+crazypod_music_scan_failure_reason(void);
 void crazypod_music_invalidate_catalog(void);
 void crazypod_music_set_scan_suspended(bool suspended);
 
