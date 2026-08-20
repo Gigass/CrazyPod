@@ -240,6 +240,48 @@ bool crazypod_music_feature_item_title(
     return true;
 }
 
+enum crazypod_menu_icon crazypod_music_feature_item_icon(
+    const struct route_state *state, int index)
+{
+    static const enum crazypod_menu_icon root_icons[] = {
+        CRAZYPOD_MENU_ICON_NOW_PLAYING,
+        CRAZYPOD_MENU_ICON_ALBUM_FLOW,
+        CRAZYPOD_MENU_ICON_MUSIC_LIBRARY,
+        CRAZYPOD_MENU_ICON_PLAYLIST,
+        CRAZYPOD_MENU_ICON_ARTIST,
+        CRAZYPOD_MENU_ICON_ALBUM,
+        CRAZYPOD_MENU_ICON_SONG,
+        CRAZYPOD_MENU_ICON_SEARCH,
+    };
+
+    if(index < 0)
+        return CRAZYPOD_MENU_ICON_NONE;
+    switch(state->route) {
+    case MUSIC_ROUTE_MENU:
+        return index < (int)(sizeof(root_icons) / sizeof(root_icons[0]))
+            ? root_icons[index] : CRAZYPOD_MENU_ICON_NONE;
+    case MUSIC_ROUTE_ALBUM_FLOW:
+    case MUSIC_ROUTE_ALBUMS:
+        return CRAZYPOD_MENU_ICON_ALBUM;
+    case MUSIC_ROUTE_PLAYLISTS:
+        return CRAZYPOD_MENU_ICON_PLAYLIST;
+    case MUSIC_ROUTE_ARTISTS:
+        return CRAZYPOD_MENU_ICON_ARTIST;
+    case MUSIC_ROUTE_ALL:
+    case MUSIC_ROUTE_PLAYLIST_SONGS:
+    case MUSIC_ROUTE_ARTIST_SONGS:
+    case MUSIC_ROUTE_ALBUM_SONGS:
+    case MUSIC_ROUTE_SONGS:
+    case MUSIC_ROUTE_SEARCH_RESULTS:
+        return CRAZYPOD_MENU_ICON_SONG;
+    case PODCASTS_ROUTE_MENU:
+        return CRAZYPOD_MENU_ICON_PODCAST;
+    case MUSIC_ROUTE_SEARCH:
+    default:
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
+}
+
 static bool alpha_jump_route(enum crazypod_route route)
 {
     switch(route) {

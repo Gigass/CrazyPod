@@ -119,6 +119,51 @@ const char *crazypod_route_query_item_title(
     return handled ? title : "";
 }
 
+enum crazypod_menu_icon crazypod_route_query_item_icon(
+    const struct route_state *state, int index)
+{
+    const struct crazypod_feature *feature =
+        crazypod_route_registry_feature(state->route);
+
+    if(index < 0)
+        return CRAZYPOD_MENU_ICON_NONE;
+    if(feature == NULL) {
+        if(crazypod_route_registry_is_shell(state->route)) {
+            const struct crazypod_app_descriptor *app =
+                crazypod_app_catalog_find(
+                    crazypod_apps_hidden_id(index));
+
+            return app != NULL
+                ? app->menu_icon : CRAZYPOD_MENU_ICON_NONE;
+        }
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
+
+    switch(feature->id) {
+    case CRAZYPOD_FEATURE_MUSIC:
+        return crazypod_music_feature_item_icon(state, index);
+    case CRAZYPOD_FEATURE_NOW_PLAYING:
+        return crazypod_now_playing_feature_item_icon(state, index);
+    case CRAZYPOD_FEATURE_BOOKS:
+        return crazypod_books_feature_item_icon(state, index);
+    case CRAZYPOD_FEATURE_NOTES:
+        return crazypod_notes_feature_item_icon(state, index);
+    case CRAZYPOD_FEATURE_PHOTOS:
+        return crazypod_photos_feature_item_icon(state, index);
+    case CRAZYPOD_FEATURE_ORGANIZER:
+        return crazypod_organizer_feature_item_icon(state, index);
+    case CRAZYPOD_FEATURE_CUSTOMIZE:
+        return crazypod_customize_feature_item_icon(state, index);
+    case CRAZYPOD_FEATURE_SETTINGS:
+        return crazypod_settings_feature_item_icon(state, index);
+    case CRAZYPOD_FEATURE_MINIAPPS:
+        return crazypod_miniapps_feature_item_icon(state, index);
+    case CRAZYPOD_FEATURE_COUNT:
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
+    return CRAZYPOD_MENU_ICON_NONE;
+}
+
 const char *crazypod_route_query_title(
     const struct route_state *state)
 {

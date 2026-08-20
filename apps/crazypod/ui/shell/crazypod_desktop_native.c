@@ -7,8 +7,12 @@
 #include "lcd.h"
 #include "system.h"
 
+#include "lvgl.h"
+#include "src/misc/cache/instance/lv_image_cache.h"
+
 #include "../../crazypod_frameclock.h"
 #include "../../crazypod_icons.h"
+#include "../../crazypod_image.h"
 #include "../../platform/crazypod_platform_display.h"
 #include "crazypod_app_catalog.h"
 #include "crazypod_desktop_native.h"
@@ -23,6 +27,9 @@
 
 static fb_data backdrop[LCD_WIDTH * NATIVE_HEIGHT]
     CACHEALIGN_AT_LEAST_ATTR(16);
+static fb_data modal_underlay[LCD_WIDTH * NATIVE_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static lv_image_dsc_t modal_underlay_descriptor;
 static uint8_t scaled_icons
     [CRAZYPOD_ICON_COUNT]
     [NATIVE_MAX_ICON_SIZE * NATIVE_MAX_ICON_SIZE * 4]
@@ -32,6 +39,7 @@ static uint16_t sample_x_next_offset[NATIVE_MAX_ICON_SIZE];
 static uint8_t sample_x_fraction[NATIVE_MAX_ICON_SIZE];
 static bool scaled_valid[CRAZYPOD_ICON_COUNT];
 static int scaled_size;
+static bool preserve_modal_underlay;
 static bool rendered_bounds_valid;
 static int rendered_left;
 static int rendered_top;
@@ -126,6 +134,45 @@ void crazypod_desktop_native_invalidate_icons(void)
     scaled_size = 0;
     invalidate_scaled_icons();
     dirty = true;
+}
+
+lv_obj_t *crazypod_desktop_native_create_modal_underlay(
+    lv_obj_t *parent)
+{
+    const fb_data *framebuffer =
+        (const fb_data *)crazypod_platform_display_framebuffer();
+    lv_obj_t *image;
+
+    if(parent == NULL || framebuffer == NULL)
+        return NULL;
+    if(!preserve_modal_underlay) {
+        if(modal_underlay_descriptor.header.magic ==
+           LV_IMAGE_HEADER_MAGIC)
+            lv_image_cache_drop(&modal_underlay_descriptor);
+        memcpy(
+            modal_underlay,
+            framebuffer + NATIVE_TOP * LCD_WIDTH,
+            sizeof(modal_underlay));
+        if(!crazypod_image_configure_rgb565(
+               &modal_underlay_descriptor, modal_underlay,
+               LCD_WIDTH, NATIVE_HEIGHT))
+            return NULL;
+    }
+    preserve_modal_underlay = false;
+    if(modal_underlay_descriptor.header.magic != LV_IMAGE_HEADER_MAGIC)
+        return NULL;
+    image = lv_image_create(parent);
+    lv_image_set_src(image, &modal_underlay_descriptor);
+    lv_obj_set_pos(image, 0, NATIVE_TOP);
+    lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_move_background(image);
+    return image;
+}
+
+void crazypod_desktop_native_preserve_modal_underlay(void)
+{
+    preserve_modal_underlay =
+        modal_underlay_descriptor.header.magic == LV_IMAGE_HEADER_MAGIC;
 }
 
 void crazypod_desktop_native_capture_flush(const lv_area_t *area)

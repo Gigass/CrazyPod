@@ -22,7 +22,7 @@ static void chip(
     bool active, uint32_t primary_color)
 {
     lv_obj_t *box = crazypod_ui_widget_box(
-        parent, x, 194, 58, 18, 9,
+        parent, x, 196, 58, 21, 9,
         active ? primary_color : WHITE, active ? 210 : 20);
     lv_obj_t *label = crazypod_ui_widget_label(
         box, title, &lv_font_montserrat_8,
@@ -30,7 +30,7 @@ static void chip(
 
     lv_obj_set_width(label, 58);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 0, 5);
+    lv_obj_set_pos(label, 0, 3);
 }
 
 static int bar_y(int gain)
@@ -121,7 +121,7 @@ void crazypod_eq_studio_screen_render(
         parent, 14, 163, 292, 1, 0, WHITE, 18);
     label = crazypod_ui_widget_label(
         parent, CP_TR("0 dB"), &lv_font_montserrat_8, WHITE, 95);
-    lv_obj_set_pos(label, 16, 113);
+    lv_obj_set_pos(label, 16, 106);
 
     for(index = 0; index < EQ_NUM_BANDS; ++index) {
         int gain = model->bands[index].gain;
@@ -156,32 +156,32 @@ void crazypod_eq_studio_screen_render(
             index == model->band ? 235 : 110);
         lv_obj_set_width(label, 28);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(label, x - 14, 168);
+        lv_obj_set_pos(label, x - 14, 159);
     }
 
     crazypod_ui_widget_box(
-        parent, 0, 184, LCD_WIDTH, 34, 0, 0x111119, 235);
+        parent, 0, 174, LCD_WIDTH, 44, 0, 0x111119, 235);
     label = crazypod_ui_widget_label(
         parent, fixed_labels[model->band],
         &lv_font_montserrat_16, WHITE, 245);
-    lv_obj_set_pos(label, 14, 188);
+    lv_obj_set_pos(label, 14, 175);
     lv_obj_set_width(label, 44);
     label = crazypod_ui_widget_label(
         parent, crazypod_eq_studio_band_role(model->band),
         &lv_font_montserrat_8, WHITE, 120);
-    lv_obj_set_pos(label, 62, 190);
+    lv_obj_set_pos(label, 62, 177);
     lv_obj_set_width(label, 75);
     label = crazypod_ui_widget_label(
         parent, crazypod_eq_studio_mode_title(model->mode),
         &lv_font_montserrat_10, CYAN, 225);
-    lv_obj_set_pos(label, 142, 189);
+    lv_obj_set_pos(label, 142, 176);
     lv_obj_set_width(label, 60);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     label = crazypod_ui_widget_label(
         parent,
         model->editing ? CP_TR("Wheel adjusts") : CP_TR("Wheel selects"),
         &lv_font_montserrat_8, WHITE, 115);
-    lv_obj_set_pos(label, 205, 190);
+    lv_obj_set_pos(label, 205, 177);
     lv_obj_set_width(label, 98);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
 

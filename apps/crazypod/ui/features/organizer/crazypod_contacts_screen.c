@@ -84,7 +84,7 @@ void crazypod_contacts_screen_render(lv_obj_t *content, int contact_index)
         contact != NULL && contact->phone[0] != '\0'
             ? 225 : 105);
     lv_obj_set_width(label, 118);
-    lv_obj_set_height(label, 16);
+    lv_obj_set_height(label, 19);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_pos(label, 31, 8);
 
@@ -105,7 +105,7 @@ void crazypod_contacts_screen_render(lv_obj_t *content, int contact_index)
         contact != NULL && contact->email[0] != '\0'
             ? 190 : 90);
     lv_obj_set_width(label, 118);
-    lv_obj_set_height(label, 16);
+    lv_obj_set_height(label, 19);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_pos(label, 31, 8);
 }

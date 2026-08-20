@@ -718,7 +718,6 @@ static void lv_obj_draw(lv_event_t * e)
             lv_draw_blur_dsc_t blur_dsc;
             lv_draw_blur_dsc_init(&blur_dsc);
             lv_obj_init_draw_blur_dsc(obj, LV_PART_MAIN, &blur_dsc);
-            blur_dsc.corner_radius = draw_dsc.radius;
             blur_dsc.base.layer = layer;
             lv_draw_blur(layer, &blur_dsc, &coords);
         }

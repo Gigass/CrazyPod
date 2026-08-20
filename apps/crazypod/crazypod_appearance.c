@@ -19,7 +19,7 @@
 #define APPEARANCE_PATH APPEARANCE_DIRECTORY "/appearance.bin"
 #define APPEARANCE_TEMP_PATH APPEARANCE_DIRECTORY "/appearance.tmp"
 #define APPEARANCE_MAGIC 0x43504150u
-#define APPEARANCE_VERSION 3u
+#define APPEARANCE_VERSION 4u
 
 struct crazypod_appearance_v1 {
     int icon_theme;
@@ -74,6 +74,7 @@ struct appearance_disk_v1 {
 };
 
 static struct crazypod_appearance appearance;
+static bool lock_inheritance_migrated;
 
 static const char *const theme_names[CRAZYPOD_ICON_THEME_COUNT] = {
     CP_TR("Basic"), CP_TR("Cel Frame"), CP_TR("Anime Pop"), CP_TR("Mecha Spec"),
@@ -127,6 +128,22 @@ static bool valid_wallpaper_path(const char *path)
     return length == 0 || path[0] == '/';
 }
 
+static void migrate_lock_inheritance(
+    struct crazypod_appearance *value)
+{
+    if(value->lock_background != 0 ||
+       value->lock_wallpaper[0] != '\0')
+        return;
+    if(value->home_wallpaper[0] != '\0') {
+        snprintf(value->lock_wallpaper,
+                 sizeof(value->lock_wallpaper), "%s",
+                 value->home_wallpaper);
+    }
+    else {
+        value->lock_background = value->home_background;
+    }
+}
+
 bool crazypod_appearance_valid(const struct crazypod_appearance *value)
 {
     if(value == NULL)
@@ -166,12 +183,15 @@ void crazypod_appearance_load(void)
     int fd;
 
     memset(&appearance, 0, sizeof(appearance));
+    lock_inheritance_migrated = false;
     appearance.icon_scale = 4;
     appearance.sound_wave_style = CRAZYPOD_SOUND_WAVE_MINI_LED_METER;
     appearance.glow = 1;
     appearance.highlight_style = 1;
     appearance.primary_color = 1;
     appearance.secondary_color = 2;
+    appearance.screen_top_radius = 8;
+    appearance.screen_bottom_radius = 8;
 
     fd = open(APPEARANCE_PATH, O_RDONLY);
     if(fd < 0)
@@ -182,12 +202,17 @@ void crazypod_appearance_load(void)
         return;
     }
     if(header[0] == APPEARANCE_MAGIC &&
-       header[1] == APPEARANCE_VERSION &&
+       (header[1] == APPEARANCE_VERSION || header[1] == 3u) &&
        header[2] == sizeof(disk) &&
        read(fd, &disk, sizeof(disk)) == (ssize_t)sizeof(disk) &&
        disk.checksum == disk_checksum(&disk) &&
        crazypod_appearance_valid(&disk.value)) {
         appearance = disk.value;
+        if(header[1] == 3u) {
+            migrate_lock_inheritance(&appearance);
+            lock_inheritance_migrated = true;
+            crazypod_appearance_save();
+        }
     }
     else if(header[0] == APPEARANCE_MAGIC &&
             header[1] == 2u &&
@@ -215,8 +240,11 @@ void crazypod_appearance_load(void)
         snprintf(appearance.menu_wallpaper,
                  sizeof(appearance.menu_wallpaper), "%s",
                  disk_v2.value.menu_wallpaper);
-        if(crazypod_appearance_valid(&appearance))
+        migrate_lock_inheritance(&appearance);
+        if(crazypod_appearance_valid(&appearance)) {
+            lock_inheritance_migrated = true;
             crazypod_appearance_save();
+        }
     }
     else if(header[0] == APPEARANCE_MAGIC &&
             header[1] == 1u &&
@@ -238,8 +266,13 @@ void crazypod_appearance_load(void)
         appearance.secondary_color = disk_v1.value.secondary_color;
         appearance.home_background = disk_v1.value.home_background;
         appearance.menu_background = disk_v1.value.menu_background;
-        if(crazypod_appearance_valid(&appearance))
+        appearance.screen_top_radius = 0;
+        appearance.screen_bottom_radius = 0;
+        migrate_lock_inheritance(&appearance);
+        if(crazypod_appearance_valid(&appearance)) {
+            lock_inheritance_migrated = true;
             crazypod_appearance_save();
+        }
     }
     close(fd);
 }
@@ -363,6 +396,14 @@ bool crazypod_appearance_set_wallpaper(
     appearance = next;
     crazypod_appearance_save();
     return true;
+}
+
+bool crazypod_appearance_take_lock_inheritance_migration(void)
+{
+    bool migrated = lock_inheritance_migrated;
+
+    lock_inheritance_migrated = false;
+    return migrated;
 }
 
 const char *crazypod_icon_theme_name(int theme)

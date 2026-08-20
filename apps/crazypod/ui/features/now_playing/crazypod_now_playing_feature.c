@@ -231,6 +231,14 @@ int crazypod_now_playing_feature_item_count(
     return state->route == MUSIC_ROUTE_NOW_PLAYING ? 1 : 0;
 }
 
+enum crazypod_menu_icon crazypod_now_playing_feature_item_icon(
+    const struct route_state *state, int index)
+{
+    return state->route == MUSIC_ROUTE_QUEUE && index >= 0
+        ? CRAZYPOD_MENU_ICON_QUEUE
+        : CRAZYPOD_MENU_ICON_NONE;
+}
+
 const char *crazypod_now_playing_feature_title(
     const struct route_state *state)
 {

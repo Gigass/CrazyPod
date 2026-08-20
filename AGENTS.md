@@ -42,6 +42,41 @@ Exercise affected simulator routes and click-wheel controls for UI changes.
 Report hardware testing separately for LCD, storage, USB, power, audio, or
 native Mini App work.
 
+Match verification effort to risk. For typo, wording, formatting, and narrow
+constant or default-value changes that preserve types, valid ranges, control
+flow, storage layouts, interfaces, and build configuration, inspect the diff
+and run only cheap, directly relevant checks such as `git diff --check`. Do not
+run full test suites, simulator or hardware builds, or device tests for these
+confirmatory changes unless the user requests them or concrete evidence shows
+broader risk. Never report an unrun check as passed.
+
+## Real-Device Flashing
+
+When the user asks to flash a connected iPod, use the shortest safe path. First
+confirm that the only selected external device is the intended iPod 6G and that
+the artifact targets `ipod6g`. Do not rerun the full test suite, perform routine
+pre- or post-flash filesystem scans, compare every packaged file, or add other
+extended checks unless the user requests them or the device reports a concrete
+storage error.
+
+Do not create a device backup during routine flashing. Merge the generated
+`.rockbox` package into the existing device tree without delete mirroring.
+Preserve `iPod_Control`, `Music`, `.crazypod`, user settings, application data,
+media, and every unrelated device file. Never clean, format, repartition,
+repair, or remove stale files as part of flashing unless the user explicitly
+requests that separate operation.
+
+For firmware updates, copy the generated `.rockbox` contents directly and
+write `rockbox.ipod` last. Treat successful copy commands and the installed
+firmware file's presence as the routine completion check. For bootloader
+updates, require DFU mode and use `mks5lboot --bl-inst`; never pass `--single`
+unless the user explicitly requests single-boot and accepts destruction of the
+Apple NOR boot path.
+
+This section controls agent-driven routine device updates. The longer backup,
+filesystem-audit, and per-file comparison checklist in `BUILD.md` remains a
+manual release-validation procedure, not the default flashing workflow.
+
 ## Commit & Pull Request Guidelines
 
 History mixes terse English, Chinese summaries, and version tags; no enforced

@@ -332,6 +332,119 @@ bool crazypod_organizer_feature_item_title(
     }
 }
 
+static enum crazypod_menu_icon workout_activity_icon(int activity)
+{
+    switch(activity) {
+    case 0: return CRAZYPOD_MENU_ICON_RUN;
+    case 1: return CRAZYPOD_MENU_ICON_WALK;
+    case 2: return CRAZYPOD_MENU_ICON_CYCLING;
+    case 3: return CRAZYPOD_MENU_ICON_HIKING;
+    case 4: return CRAZYPOD_MENU_ICON_STAIRS;
+    case 5: return CRAZYPOD_MENU_ICON_WORKOUT;
+    case 6: return CRAZYPOD_MENU_ICON_ROWING;
+    case 7:
+    case 8:
+    case 9:
+    case 10:
+        return CRAZYPOD_MENU_ICON_STRENGTH;
+    case 11:
+    case 12:
+    case 13:
+        return CRAZYPOD_MENU_ICON_YOGA;
+    case 14: return CRAZYPOD_MENU_ICON_MUSIC;
+    case 15: return CRAZYPOD_MENU_ICON_TENNIS;
+    case 16: return CRAZYPOD_MENU_ICON_BASKETBALL;
+    case 17: return CRAZYPOD_MENU_ICON_SOCCER;
+    case 18: return CRAZYPOD_MENU_ICON_WORKOUT;
+    case 19: return CRAZYPOD_MENU_ICON_COOLDOWN;
+    default: return CRAZYPOD_MENU_ICON_WORKOUT;
+    }
+}
+
+enum crazypod_menu_icon crazypod_organizer_feature_item_icon(
+    const struct route_state *state, int index)
+{
+    const struct crazypod_workout *workout;
+    int count;
+
+    if(index < 0)
+        return CRAZYPOD_MENU_ICON_NONE;
+    switch(state->route) {
+    case CLOCK_ROUTE_MENU:
+        return index == 0 ? CRAZYPOD_MENU_ICON_CLOCK :
+            index == 1 ? CRAZYPOD_MENU_ICON_SLEEP_TIMER :
+            index == 2 ? CRAZYPOD_MENU_ICON_STOPWATCH :
+            CRAZYPOD_MENU_ICON_NONE;
+    case CLOCK_ROUTE_SLEEP_TIMER:
+        if(get_sleep_timer_active())
+            return index == 0 ? CRAZYPOD_MENU_ICON_SLEEP_TIMER :
+                index == 1 ? CRAZYPOD_MENU_ICON_POWER :
+                CRAZYPOD_MENU_ICON_NONE;
+        return CRAZYPOD_MENU_ICON_SLEEP_TIMER;
+    case CLOCK_ROUTE_VIEW:
+        return CRAZYPOD_MENU_ICON_CLOCK;
+    case STOPWATCH_ROUTE_VIEW:
+        return CRAZYPOD_MENU_ICON_STOPWATCH;
+    case WORKOUT_ROUTE_MENU:
+        return index == 0 ? CRAZYPOD_MENU_ICON_START :
+            index == 1 ? CRAZYPOD_MENU_ICON_HISTORY :
+            index == 2 ? CRAZYPOD_MENU_ICON_SUMMARY :
+            CRAZYPOD_MENU_ICON_NONE;
+    case WORKOUT_ROUTE_TYPES:
+        return workout_activity_icon(index);
+    case WORKOUT_ROUTE_HISTORY:
+        workout = crazypod_workout_get(index);
+        return workout != NULL
+            ? workout_activity_icon(workout->activity)
+            : CRAZYPOD_MENU_ICON_WORKOUT;
+    case WORKOUT_ROUTE_READY:
+    case WORKOUT_ROUTE_ACTIVE:
+        return CRAZYPOD_MENU_ICON_START;
+    case WORKOUT_ROUTE_FINISH_CONFIRM:
+        return CRAZYPOD_MENU_ICON_SAVE;
+    case WORKOUT_ROUTE_SUMMARY:
+        return CRAZYPOD_MENU_ICON_SUMMARY;
+    case WORKOUT_ROUTE_DETAIL:
+        return CRAZYPOD_MENU_ICON_DETAILS;
+    case WORKOUT_ROUTE_DELETE_CONFIRM:
+        return CRAZYPOD_MENU_ICON_TRASH;
+    case CALENDAR_ROUTE_MENU:
+        return index == 0 ? CRAZYPOD_MENU_ICON_TODAY :
+            index == 1 ? CRAZYPOD_MENU_ICON_UPCOMING :
+            index == 2 ? CRAZYPOD_MENU_ICON_MONTH :
+            index == 3 ? CRAZYPOD_MENU_ICON_ADD_EVENT :
+            CRAZYPOD_MENU_ICON_NONE;
+    case CALENDAR_ROUTE_TODAY:
+    case CALENDAR_ROUTE_UPCOMING:
+    case CALENDAR_ROUTE_DAY_EVENTS:
+        count = event_count(state);
+        return index == count
+            ? CRAZYPOD_MENU_ICON_ADD_EVENT : CRAZYPOD_MENU_ICON_EVENT;
+    case CALENDAR_ROUTE_MONTH:
+        return CRAZYPOD_MENU_ICON_MONTH;
+    case CALENDAR_ROUTE_EDITOR:
+        return index == 0 ? CRAZYPOD_MENU_ICON_TITLE :
+            index == 1 ? CRAZYPOD_MENU_ICON_DATE :
+            index == 2 ? CRAZYPOD_MENU_ICON_TIME :
+            index == 3 ? CRAZYPOD_MENU_ICON_SAVE :
+            CRAZYPOD_MENU_ICON_NONE;
+    case CALENDAR_ROUTE_DETAIL:
+        return CRAZYPOD_MENU_ICON_EVENT;
+    case CALENDAR_ROUTE_ACTIONS:
+        return index == 0 ? CRAZYPOD_MENU_ICON_EDIT :
+            index == 1 ? CRAZYPOD_MENU_ICON_TRASH :
+            CRAZYPOD_MENU_ICON_NONE;
+    case CALENDAR_ROUTE_DELETE_CONFIRM:
+        return CRAZYPOD_MENU_ICON_TRASH;
+    case CONTACTS_ROUTE_LIST:
+    case CONTACTS_ROUTE_DETAIL:
+        return CRAZYPOD_MENU_ICON_CONTACT;
+    case CALENDAR_ROUTE_TITLE_EDITOR:
+    default:
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
+}
+
 bool crazypod_organizer_feature_service(
     enum crazypod_route route, long now,
     long ticks_per_second)

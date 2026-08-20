@@ -14,6 +14,7 @@
 #include "../../crazypod_artwork.h"
 #include "../../crazypod_artwork_palette.h"
 #include "../../crazypod_soundwave.h"
+#include "../../crazypod_state.h"
 #include "../../crazypod_wallpaper.h"
 #include "../presentation/crazypod_glass_sampler.h"
 #include "../presentation/crazypod_marquee.h"
@@ -25,11 +26,23 @@
 #define CAPSULE_TINT_COLOR 0x11131A
 #define CAPSULE_TINT_OPA 48
 #define CAPSULE_FALLBACK_OPA 34
+#define CAPSULE_X 0
+#define CAPSULE_Y 174
+#define CAPSULE_WIDTH LCD_WIDTH
+#define CAPSULE_HEIGHT (LCD_HEIGHT - CAPSULE_Y)
+#define CAPSULE_CONTENT_X_OFFSET 8
+#define CAPSULE_CONTENT_Y_OFFSET 4
+#define CAPSULE_ENTRY_DURATION_MS 240
+#define CAPSULE_ENTRY_FADE_MS 160
+#define CAPSULE_REDUCED_FADE_MS 100
+#define CAPSULE_ENTRY_START_OPA 96
 #define SPECTRUM_FRAME_TICKS ((HZ / 10) > 0 ? (HZ / 10) : 1)
 
 struct capsule_view {
     lv_obj_t *root;
+    lv_obj_t *material;
     lv_obj_t *glass;
+    lv_obj_t *glass_border;
     lv_obj_t *track;
     lv_obj_t *artist;
     lv_obj_t *progress;
@@ -50,9 +63,20 @@ struct capsule_view {
     long spectrum_tick;
     bool spectrum_playing;
     bool marquee_active;
+    bool entry_prepared;
 };
 
 static struct capsule_view capsule;
+
+static void entry_translate_y(void *target, int32_t value)
+{
+    lv_obj_set_style_translate_y(target, value, 0);
+}
+
+static void entry_opacity(void *target, int32_t value)
+{
+    lv_obj_set_style_opa(target, (lv_opa_t)value, 0);
+}
 
 void crazypod_now_capsule_initialize_artwork(void)
 {
@@ -128,34 +152,75 @@ static void set_hidden_if_changed(lv_obj_t *object, bool hidden)
         lv_obj_remove_flag(object, LV_OBJ_FLAG_HIDDEN);
 }
 
+static int bottom_corner_radius(void)
+{
+    int radius = crazypod_appearance_get()->screen_bottom_radius;
+
+    if(radius < 0)
+        return 0;
+    if(radius > CAPSULE_HEIGHT)
+        return CAPSULE_HEIGHT;
+    return radius;
+}
+
+static void refresh_bottom_corners(void)
+{
+    int radius;
+
+    if(capsule.root == NULL || capsule.material == NULL)
+        return;
+    radius = bottom_corner_radius();
+
+    /* The material extends above the root by one radius.  Its top corners are
+     * clipped away by the root, leaving a square top edge and only the two
+     * configured bottom corners visible. */
+    lv_obj_set_pos(capsule.material, 0, -radius);
+    lv_obj_set_size(
+        capsule.material, CAPSULE_WIDTH, CAPSULE_HEIGHT + radius);
+    lv_obj_set_style_radius(capsule.material, radius, 0);
+    lv_obj_set_style_clip_corner(capsule.material, radius > 0, 0);
+
+    if(capsule.glass != NULL)
+        lv_obj_set_pos(capsule.glass, 0, radius);
+    if(capsule.glass_border != NULL) {
+        lv_obj_set_pos(capsule.glass_border, 0, -radius);
+        lv_obj_set_size(
+            capsule.glass_border,
+            CAPSULE_WIDTH, CAPSULE_HEIGHT + radius);
+        lv_obj_set_style_radius(capsule.glass_border, radius, 0);
+    }
+
+    lv_obj_invalidate(capsule.root);
+}
+
 void crazypod_now_capsule_refresh_material(void)
 {
     const lv_image_dsc_t *glass = NULL;
 
-    if(capsule.root == NULL)
+    if(capsule.root == NULL || capsule.material == NULL)
         return;
     if(crazypod_wallpaper_prepare_frosted_capsule(
            CAPSULE_TINT_COLOR, CAPSULE_TINT_OPA))
         glass = crazypod_frosted_wallpaper_capsule();
     if(glass != NULL) {
         if(capsule.glass == NULL) {
-            capsule.glass = lv_image_create(capsule.root);
-            lv_obj_set_pos(capsule.glass, 0, 0);
+            capsule.glass = lv_image_create(capsule.material);
+            lv_obj_set_pos(
+                capsule.glass, 0, bottom_corner_radius());
             lv_obj_remove_flag(capsule.glass, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_move_to_index(capsule.glass, 0);
         }
         lv_image_set_src(capsule.glass, glass);
         lv_obj_set_style_image_opa(capsule.glass, LV_OPA_COVER, 0);
         lv_obj_remove_flag(capsule.glass, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_style_bg_opa(capsule.root, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_bg_opa(capsule.material, LV_OPA_TRANSP, 0);
     }
     else {
         if(capsule.glass != NULL)
             lv_obj_add_flag(capsule.glass, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_bg_color(
-            capsule.root, lv_color_hex(COLOR_WHITE), 0);
+            capsule.material, lv_color_hex(COLOR_WHITE), 0);
         lv_obj_set_style_bg_opa(
-            capsule.root, CAPSULE_FALLBACK_OPA, 0);
+            capsule.material, CAPSULE_FALLBACK_OPA, 0);
     }
 }
 
@@ -165,6 +230,7 @@ void crazypod_now_capsule_refresh_appearance(void)
         (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
         (audio_status() & AUDIO_STATUS_PAUSE) == 0;
 
+    refresh_bottom_corners();
     if(!capsule.palette_from_artwork)
         use_fallback_wave_palette();
     if(capsule.wave_ball != NULL) {
@@ -218,16 +284,27 @@ static void draw_spectrum(lv_event_t *event)
 void crazypod_now_capsule_create(
     lv_obj_t *parent, const lv_font_t *metadata_font)
 {
+    lv_obj_t *glass_top_border;
     lv_obj_t *progress_track;
-    lv_obj_t *glass_border;
+    lv_opa_t border_opacity;
 
     memset(&capsule, 0, sizeof(capsule));
     use_fallback_wave_palette();
     capsule.root = crazypod_ui_widget_box(
-        parent, 8, 174, 304, 58, 29,
+        parent, CAPSULE_X, CAPSULE_Y,
+        CAPSULE_WIDTH, CAPSULE_HEIGHT, 0,
+        COLOR_WHITE, LV_OPA_TRANSP);
+    capsule.material = crazypod_ui_widget_box(
+        capsule.root, 0, 0,
+        CAPSULE_WIDTH, CAPSULE_HEIGHT, 0,
         COLOR_WHITE, CAPSULE_FALLBACK_OPA);
+    lv_obj_set_style_clip_corner(capsule.material, true, 0);
+    lv_obj_remove_flag(capsule.material, LV_OBJ_FLAG_CLICKABLE);
     capsule.artwork = crazypod_ui_widget_box(
-        capsule.root, 17, 8, 42, 42, 9, 0x941FFC, LV_OPA_COVER);
+        capsule.root,
+        17 + CAPSULE_CONTENT_X_OFFSET,
+        8 + CAPSULE_CONTENT_Y_OFFSET,
+        42, 42, 9, 0x941FFC, LV_OPA_COVER);
     lv_obj_set_style_bg_grad_color(
         capsule.artwork, lv_color_hex(0x2E5CFA), 0);
     lv_obj_set_style_bg_grad_dir(
@@ -245,22 +322,31 @@ void crazypod_now_capsule_create(
     capsule.track = crazypod_ui_widget_label(
         capsule.root, CP_TR("No Track"), metadata_font,
         COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_pos(capsule.track, 70, 7);
-    lv_obj_set_size(capsule.track, 171, 17);
+    lv_obj_set_pos(
+        capsule.track,
+        70 + CAPSULE_CONTENT_X_OFFSET,
+        6 + CAPSULE_CONTENT_Y_OFFSET);
+    lv_obj_set_size(capsule.track, 171, 23);
     lv_obj_set_style_text_align(
         capsule.track, LV_TEXT_ALIGN_CENTER, 0);
     crazypod_marquee_configure(capsule.track, false);
     capsule.artist = crazypod_ui_widget_label(
-        capsule.root, CP_TR("Local Music"), metadata_font,
+        capsule.root, CP_TR("Local Music"), &lv_font_montserrat_8,
         COLOR_WHITE, 190);
-    lv_obj_set_pos(capsule.artist, 70, 25);
-    lv_obj_set_size(capsule.artist, 171, 17);
+    lv_obj_set_pos(
+        capsule.artist,
+        70 + CAPSULE_CONTENT_X_OFFSET,
+        28 + CAPSULE_CONTENT_Y_OFFSET);
+    lv_obj_set_size(capsule.artist, 171, 19);
     lv_obj_set_style_text_align(
         capsule.artist, LV_TEXT_ALIGN_CENTER, 0);
     crazypod_marquee_configure(capsule.artist, false);
 
     progress_track = crazypod_ui_widget_box(
-        capsule.root, 70, 45, 171, 3,
+        capsule.root,
+        70 + CAPSULE_CONTENT_X_OFFSET,
+        47 + CAPSULE_CONTENT_Y_OFFSET,
+        171, 3,
         LV_RADIUS_CIRCLE, COLOR_WHITE, 31);
     capsule.progress = crazypod_ui_widget_box(
         progress_track, 0, 0, 6, 3, LV_RADIUS_CIRCLE,
@@ -271,7 +357,10 @@ void crazypod_now_capsule_create(
         capsule.progress, LV_GRAD_DIR_HOR, 0);
 
     capsule.wave_ball = crazypod_ui_widget_box(
-        capsule.root, 253, 8, 42, 42,
+        capsule.root,
+        253 + CAPSULE_CONTENT_X_OFFSET,
+        8 + CAPSULE_CONTENT_Y_OFFSET,
+        42, 42,
         LV_RADIUS_CIRCLE, 0x080A14, LV_OPA_COVER);
     lv_obj_set_style_bg_grad_color(
         capsule.wave_ball, lv_color_hex(0x1A1F38), 0);
@@ -294,17 +383,28 @@ void crazypod_now_capsule_create(
     lv_obj_add_event_cb(
         capsule.spectrum, draw_spectrum, LV_EVENT_DRAW_MAIN, NULL);
 
-    glass_border = crazypod_ui_widget_box(
-        capsule.root, 0, 0, 304, 58, 29,
+    border_opacity = crazypod_glass_material_border_opa(
+        CRAZYPOD_GLASS_HOME_CAPSULE);
+    capsule.glass_border = crazypod_ui_widget_box(
+        capsule.root, 0, 0,
+        CAPSULE_WIDTH, CAPSULE_HEIGHT, 0,
         COLOR_WHITE, LV_OPA_TRANSP);
-    lv_obj_set_style_border_width(glass_border, 1, 0);
+    lv_obj_set_style_border_width(capsule.glass_border, 1, 0);
+    lv_obj_set_style_border_side(
+        capsule.glass_border,
+        LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_RIGHT |
+            LV_BORDER_SIDE_BOTTOM,
+        0);
     lv_obj_set_style_border_color(
-        glass_border, lv_color_hex(COLOR_WHITE), 0);
+        capsule.glass_border, lv_color_hex(COLOR_WHITE), 0);
     lv_obj_set_style_border_opa(
-        glass_border,
-        crazypod_glass_material_border_opa(
-            CRAZYPOD_GLASS_HOME_CAPSULE), 0);
-    lv_obj_remove_flag(glass_border, LV_OBJ_FLAG_CLICKABLE);
+        capsule.glass_border, border_opacity, 0);
+    lv_obj_remove_flag(
+        capsule.glass_border, LV_OBJ_FLAG_CLICKABLE);
+    glass_top_border = crazypod_ui_widget_box(
+        capsule.root, 0, 0, CAPSULE_WIDTH, 1, 0,
+        COLOR_WHITE, border_opacity);
+    lv_obj_remove_flag(glass_top_border, LV_OBJ_FLAG_CLICKABLE);
     crazypod_now_capsule_refresh_appearance();
 }
 
@@ -419,6 +519,65 @@ void crazypod_now_capsule_update(
     }
     if(lv_obj_get_width(capsule.progress) != width)
         lv_obj_set_width(capsule.progress, width);
+}
+
+void crazypod_now_capsule_prepare_entry(void)
+{
+    if(capsule.root == NULL)
+        return;
+    lv_anim_delete(capsule.root, entry_translate_y);
+    lv_anim_delete(capsule.root, entry_opacity);
+    capsule.entry_prepared = true;
+    lv_obj_set_style_translate_y(
+        capsule.root,
+        crazypod_state_reduce_motion() ? 0 : CAPSULE_HEIGHT, 0);
+    lv_obj_set_style_opa(capsule.root, LV_OPA_TRANSP, 0);
+}
+
+void crazypod_now_capsule_start_entry(void)
+{
+    lv_anim_t animation;
+
+    if(capsule.root == NULL || !capsule.entry_prepared)
+        return;
+    capsule.entry_prepared = false;
+    if(crazypod_state_reduce_motion()) {
+        lv_obj_set_style_translate_y(capsule.root, 0, 0);
+        lv_anim_init(&animation);
+        lv_anim_set_var(&animation, capsule.root);
+        lv_anim_set_exec_cb(&animation, entry_opacity);
+        lv_anim_set_values(
+            &animation, LV_OPA_TRANSP, LV_OPA_COVER);
+        lv_anim_set_duration(
+            &animation, CAPSULE_REDUCED_FADE_MS);
+        lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+        lv_anim_set_early_apply(&animation, true);
+        lv_anim_start(&animation);
+        return;
+    }
+
+    lv_obj_set_style_translate_y(
+        capsule.root, CAPSULE_HEIGHT, 0);
+    lv_obj_set_style_opa(
+        capsule.root, CAPSULE_ENTRY_START_OPA, 0);
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, capsule.root);
+    lv_anim_set_exec_cb(&animation, entry_translate_y);
+    lv_anim_set_values(&animation, CAPSULE_HEIGHT, 0);
+    lv_anim_set_duration(&animation, CAPSULE_ENTRY_DURATION_MS);
+    lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+    lv_anim_set_early_apply(&animation, true);
+    lv_anim_start(&animation);
+
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, capsule.root);
+    lv_anim_set_exec_cb(&animation, entry_opacity);
+    lv_anim_set_values(
+        &animation, CAPSULE_ENTRY_START_OPA, LV_OPA_COVER);
+    lv_anim_set_duration(&animation, CAPSULE_ENTRY_FADE_MS);
+    lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+    lv_anim_set_early_apply(&animation, true);
+    lv_anim_start(&animation);
 }
 
 void crazypod_now_capsule_reset_motion(long now)

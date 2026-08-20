@@ -154,22 +154,27 @@ void crazypod_app_input_configure(
 int crazypod_app_input_wait_ticks(long now)
 {
     long remaining;
+    int wait = crazypod_choice_coordinator_wait_ticks(now);
 
     if(!home_hold_pending)
-        return HZ > 0 ? HZ : 1;
+        return wait;
     remaining = home_hold_deadline - now;
     if(remaining <= 0)
         return 1;
-    return remaining > HZ ? HZ : (int)remaining;
+    if(remaining < wait)
+        wait = (int)remaining;
+    return wait;
 }
 
 void crazypod_app_input_tick(long now, bool locked)
 {
     bool home_active =
         !locked && !crazypod_shell_product_active() &&
-        !host.power_prompt_visible();
+        !host.power_prompt_visible() &&
+        !host.headphone_prompt_visible();
     int feedback;
 
+    crazypod_choice_coordinator_tick(now);
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
     home_active = home_active && !host.usb_prompt_visible();
 #endif
@@ -185,7 +190,8 @@ void crazypod_app_input_tick(long now, bool locked)
         return;
     if(locked ||
        crazypod_shell_product_active() ||
-       host.power_prompt_visible()
+       host.power_prompt_visible() ||
+       host.headphone_prompt_visible()
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
        || host.usb_prompt_visible()
 #endif
@@ -248,6 +254,18 @@ void crazypod_app_input_handle(
         return;
     }
 #endif
+    if(host.headphone_prompt_visible()) {
+        if(button_base(button) == BUTTON_PLAY)
+            play_short_press_pending = false;
+        wheel_feedback(button);
+        if(button & BUTTON_REL)
+            return;
+        repeated = (button & BUTTON_REPEAT) != 0;
+        backlight_on();
+        (void)host.handle_headphone_prompt(
+            button_base(button), repeated, data);
+        return;
+    }
     if(host.handle_power_hold(button)) {
         if(base == BUTTON_PLAY &&
            (button & BUTTON_REPEAT) != 0)
@@ -316,7 +334,9 @@ void crazypod_app_input_handle(
        crazypod_ui_routes_depth() > 0 &&
        base == BUTTON_SELECT && repeated &&
        host.handle_confirmation(
-           crazypod_ui_routes_current()))
+           crazypod_choice_coordinator_confirmation_visible()
+               ? crazypod_choice_coordinator_route_state()
+               : crazypod_ui_routes_current()))
         return;
     if(!crazypod_shell_product_active()) {
         const struct crazypod_input_event event =
@@ -347,16 +367,6 @@ void crazypod_app_input_handle(
         return;
     }
     state = crazypod_ui_routes_current();
-    {
-        const struct crazypod_input_event event =
-            crazypod_input_event_make(button, data);
-
-        if(crazypod_feature_input_dispatch(
-               state, &event,
-               CRAZYPOD_FEATURE_INPUT_PRESSED,
-               host.feature_bindings))
-            return;
-    }
     if(crazypod_choice_coordinator_visible()) {
         if(base == BUTTON_SCROLL_FWD)
             crazypod_choice_coordinator_move(
@@ -369,10 +379,20 @@ void crazypod_app_input_handle(
         else if(base == BUTTON_LEFT)
             crazypod_choice_coordinator_move(-1);
         else if(base == BUTTON_SELECT && !repeated)
-            crazypod_choice_coordinator_activate();
+            crazypod_choice_coordinator_activate(now);
         else if(base == BUTTON_MENU && !repeated)
-            crazypod_choice_coordinator_dismiss(true);
+            (void)crazypod_choice_coordinator_back();
         return;
+    }
+    {
+        const struct crazypod_input_event event =
+            crazypod_input_event_make(button, data);
+
+        if(crazypod_feature_input_dispatch(
+               state, &event,
+               CRAZYPOD_FEATURE_INPUT_PRESSED,
+               host.feature_bindings))
+            return;
     }
     if(state->route == MUSIC_ROUTE_NOW_PLAYING &&
        crazypod_now_playing_overlay_visible() &&

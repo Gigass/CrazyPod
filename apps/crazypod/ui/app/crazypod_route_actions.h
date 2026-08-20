@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include "../../crazypod_apps.h"
 #include "../navigation/crazypod_ui_routes.h"
 
 struct crazypod_route_actions_host {
@@ -24,6 +25,8 @@ void crazypod_route_actions_push_selected(
 void crazypod_route_actions_pop(void);
 void crazypod_route_actions_request_now_playing(void);
 void crazypod_route_actions_activate(long now);
+void crazypod_route_actions_activate_overlay_state(
+    const struct route_state *state, long now);
 void crazypod_route_actions_move(int direction, long now);
 bool crazypod_route_actions_alpha_jump(
     int direction, long now);
@@ -35,5 +38,12 @@ bool crazypod_route_actions_confirm_photos(
     long feedback_ticks);
 bool crazypod_route_actions_note_dirty(void);
 void crazypod_route_actions_service_notes(void);
+enum crazypod_app_id crazypod_route_actions_selected_app(void);
+void crazypod_route_actions_main_menu_changed(
+    enum crazypod_app_id preferred,
+    enum crazypod_app_id changed);
+void crazypod_route_actions_begin_main_menu_reorder(
+    enum crazypod_app_id id);
+void crazypod_route_actions_commit_pending_main_menu_reorder(void);
 
 #endif

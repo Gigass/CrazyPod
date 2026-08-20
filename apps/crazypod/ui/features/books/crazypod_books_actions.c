@@ -110,8 +110,10 @@ struct crazypod_books_action crazypod_books_actions_activate(
         if(state->selected == 2)
             return push(BOOKS_ROUTE_CHAPTERS, state->group);
         if(state->selected == 3) {
-            crazypod_book_toggle_favorite(state->group);
-            return action(CRAZYPOD_BOOKS_ACTION_RENDER);
+            return action(crazypod_book_toggle_favorite(
+                    state->group)
+                ? CRAZYPOD_BOOKS_ACTION_RENDER
+                : CRAZYPOD_BOOKS_ACTION_FAILED);
         }
         if(state->selected == 4)
             return push(BOOKS_ROUTE_INFO, state->group);

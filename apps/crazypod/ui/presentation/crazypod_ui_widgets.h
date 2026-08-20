@@ -23,6 +23,8 @@ enum crazypod_ui_row_label_role {
 };
 
 void crazypod_ui_widget_make_plain(lv_obj_t *obj);
+const lv_font_t *crazypod_ui_widget_resolve_font(
+    const char *text, const lv_font_t *font);
 lv_obj_t *crazypod_ui_widget_label(lv_obj_t *parent, const char *text,
                                    const lv_font_t *font, uint32_t color,
                                    lv_opa_t opacity);

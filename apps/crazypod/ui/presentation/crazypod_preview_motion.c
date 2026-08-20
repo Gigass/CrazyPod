@@ -8,6 +8,7 @@
 #include "lvgl.h"
 
 #include "../presentation/crazypod_ui_widgets.h"
+#include "crazypod_preview_primitives.h"
 #include "crazypod_preview_motion.h"
 
 #define CRAZYPOD_PREVIEW_PART_COUNT 20
@@ -16,8 +17,6 @@
 #define CRAZYPOD_PREVIEW_REDUCED_DURATION_MS 80
 #define CRAZYPOD_PREVIEW_PART_TIME_NUMERATOR 3
 #define CRAZYPOD_PREVIEW_PART_TIME_DENOMINATOR 2
-#define CRAZYPOD_MENU_PANEL_WIDTH 160
-#define CRAZYPOD_STATUS_BAR_HEIGHT 32
 
 struct menu_preview_motion_part {
     lv_obj_t *object;
@@ -115,8 +114,8 @@ static void settle_menu_preview_scene(struct menu_preview_scene *scene)
         lv_anim_delete(scene->content, NULL);
         lv_obj_set_pos(
             scene->content,
-            -CRAZYPOD_MENU_PANEL_WIDTH,
-            -CRAZYPOD_STATUS_BAR_HEIGHT);
+            -CRAZYPOD_PREVIEW_PANE_X,
+            -CRAZYPOD_PREVIEW_PANE_Y);
         lv_obj_set_style_opa(scene->content, LV_OPA_COVER, 0);
     }
     for(index = 0; index < scene->part_count; ++index) {
@@ -270,13 +269,13 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
         lv_obj_set_pos(
             content,
             menu_preview_lerp(
-                -CRAZYPOD_MENU_PANEL_WIDTH + 8,
-                -CRAZYPOD_MENU_PANEL_WIDTH,
+                -CRAZYPOD_PREVIEW_PANE_X + 8,
+                -CRAZYPOD_PREVIEW_PANE_X,
                 content_position_progress),
             menu_preview_lerp(
-                -CRAZYPOD_STATUS_BAR_HEIGHT +
+                -CRAZYPOD_PREVIEW_PANE_Y +
                     menu_preview_navigation_direction * 5,
-                -CRAZYPOD_STATUS_BAR_HEIGHT,
+                -CRAZYPOD_PREVIEW_PANE_Y,
                 menu_preview_ease_out(content_raw_progress)));
         lv_obj_set_style_opa(
             content,
@@ -337,12 +336,12 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
         lv_obj_set_pos(
             content,
             menu_preview_lerp(
-                -CRAZYPOD_MENU_PANEL_WIDTH,
-                -CRAZYPOD_MENU_PANEL_WIDTH - 6,
+                -CRAZYPOD_PREVIEW_PANE_X,
+                -CRAZYPOD_PREVIEW_PANE_X - 6,
                 progress),
             menu_preview_lerp(
-                -CRAZYPOD_STATUS_BAR_HEIGHT,
-                -CRAZYPOD_STATUS_BAR_HEIGHT -
+                -CRAZYPOD_PREVIEW_PANE_Y,
+                -CRAZYPOD_PREVIEW_PANE_Y -
                     menu_preview_navigation_direction * 4,
                 progress));
         lv_obj_set_style_opa(
@@ -448,12 +447,12 @@ static void reset_menu_preview_root(void)
         menu_preview_root = lv_obj_create(motion_parent);
         crazypod_ui_widget_make_plain(menu_preview_root);
         lv_obj_set_pos(menu_preview_root,
-                       CRAZYPOD_MENU_PANEL_WIDTH,
-                       CRAZYPOD_STATUS_BAR_HEIGHT);
+                       CRAZYPOD_PREVIEW_PANE_X,
+                       CRAZYPOD_PREVIEW_PANE_Y);
         lv_obj_set_size(
             menu_preview_root,
-            LCD_WIDTH - CRAZYPOD_MENU_PANEL_WIDTH,
-            LCD_HEIGHT - CRAZYPOD_STATUS_BAR_HEIGHT);
+            LCD_WIDTH - CRAZYPOD_PREVIEW_PANE_X,
+            LCD_HEIGHT - CRAZYPOD_PREVIEW_PANE_Y);
         lv_obj_set_style_bg_opa(
             menu_preview_root, LV_OPA_TRANSP, 0);
         lv_obj_remove_flag(
@@ -471,8 +470,8 @@ static void reset_menu_preview_root(void)
     menu_preview_content = lv_obj_create(menu_preview_root);
     crazypod_ui_widget_make_plain(menu_preview_content);
     lv_obj_set_pos(menu_preview_content,
-                   -CRAZYPOD_MENU_PANEL_WIDTH,
-                   -CRAZYPOD_STATUS_BAR_HEIGHT);
+                   -CRAZYPOD_PREVIEW_PANE_X,
+                   -CRAZYPOD_PREVIEW_PANE_Y);
     lv_obj_set_size(menu_preview_content, LCD_WIDTH, LCD_HEIGHT);
     lv_obj_set_style_bg_opa(
         menu_preview_content, LV_OPA_TRANSP, 0);

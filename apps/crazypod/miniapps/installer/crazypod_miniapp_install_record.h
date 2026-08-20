@@ -26,6 +26,9 @@ bool crazypod_miniapp_install_record_write(
     uint32_t version_code);
 bool crazypod_miniapp_install_record_read(
     const char *directory, struct install_record *record);
+bool crazypod_miniapp_install_record_matches_package(
+    const char *directory, const struct cpk_reader *reader,
+    uint32_t version_code);
 bool crazypod_miniapp_install_directory_validate(
     const char *directory, const char *expected_id,
     struct crazypod_miniapp_metadata *metadata,

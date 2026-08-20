@@ -20,6 +20,7 @@
 #include "../features/settings/crazypod_settings_feature.h"
 #include "../navigation/crazypod_route_registry.h"
 #include "../presentation/crazypod_glass_slots.h"
+#include "../presentation/crazypod_marquee.h"
 #include "../presentation/crazypod_preview_motion.h"
 #include "../presentation/crazypod_preview_primitives.h"
 #include "../presentation/crazypod_ui_widgets.h"
@@ -96,7 +97,9 @@ static void render_editor(
     lv_obj_t *label;
 
     card = crazypod_ui_widget_box(
-        parent, 181, 78, 118, 64, 14,
+        parent, crazypod_preview_centered_x(118),
+        crazypod_preview_visual_y(64),
+        118, 64, 14,
         primary_color(), 210);
     lv_obj_set_style_bg_grad_color(
         card, lv_color_hex(secondary_color()), 0);
@@ -113,20 +116,12 @@ static void render_editor(
         &lv_font_montserrat_12, COLOR_WHITE,
         value != NULL && value[0] != '\0' ? 255 : 130);
     lv_obj_set_pos(label, 10, 35);
-    lv_obj_set_width(label, 98);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_size(label, 98, 23);
+    crazypod_marquee_configure_centered(label, true);
 
-    card = crazypod_preview_make_text_panel(
-        parent, 154, 46);
-    label = crazypod_ui_widget_label(
-        card, detail, &lv_font_montserrat_8,
-        COLOR_WHITE, 125);
-    lv_obj_set_pos(label, 11, 8);
-    lv_obj_set_width(label, 118);
-    lv_obj_set_style_text_align(
-        label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(
-        label, LV_LABEL_LONG_MODE_WRAP);
+    crazypod_preview_make_caption(
+        parent, detail, &lv_font_montserrat_8,
+        "", &lv_font_montserrat_8);
 }
 
 static void render_photos(

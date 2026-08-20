@@ -7,9 +7,10 @@
 #include <string.h>
 
 #include "crazypod_marquee.h"
+#include "crazypod_menu_icon_assets.h"
 #include "crazypod_menu_list.h"
 
-#define CRAZYPOD_MENU_LIST_ROWS 7
+#define CRAZYPOD_MENU_LIST_ROWS 6
 
 struct crazypod_menu_list_view {
     bool valid;
@@ -19,7 +20,6 @@ struct crazypod_menu_list_view {
     lv_obj_t *markers[CRAZYPOD_MENU_LIST_ROWS];
     lv_obj_t *circles[CRAZYPOD_MENU_LIST_ROWS];
     lv_obj_t *icons[CRAZYPOD_MENU_LIST_ROWS];
-    bool text_icons[CRAZYPOD_MENU_LIST_ROWS];
     lv_obj_t *scroll_thumb;
 };
 
@@ -53,13 +53,12 @@ void crazypod_menu_list_bind_row(int row, lv_obj_t *box,
 }
 
 void crazypod_menu_list_bind_icon(int row, lv_obj_t *circle,
-                                  lv_obj_t *icon, bool text_icon)
+                                  lv_obj_t *icon)
 {
     if(row < 0 || row >= CRAZYPOD_MENU_LIST_ROWS)
         return;
     view.circles[row] = circle;
     view.icons[row] = icon;
-    view.text_icons[row] = text_icon;
 }
 
 void crazypod_menu_list_bind_scroll_thumb(lv_obj_t *thumb)
@@ -70,7 +69,8 @@ void crazypod_menu_list_bind_scroll_thumb(lv_obj_t *thumb)
 void crazypod_menu_list_refresh_row(
     int row, bool visible, const char *title, bool selected,
     lv_opa_t label_opa, uint32_t panel_color, uint32_t primary_color,
-    uint32_t secondary_color, bool gradient, const char *icon_text,
+    uint32_t secondary_color, bool gradient,
+    enum crazypod_menu_icon icon,
     lv_opa_t icon_opa, const char *marker_text, lv_opa_t marker_opa)
 {
     lv_obj_t *box;
@@ -110,13 +110,9 @@ void crazypod_menu_list_refresh_row(
         lv_obj_set_style_bg_opa(
             view.circles[row], selected ? 45 : 18, 0);
         if(view.icons[row] != NULL) {
-            if(view.text_icons[row])
-                CP_LV_LABEL_SET_TEXT(
-                    view.icons[row], icon_text != NULL ? icon_text : "");
-            if(view.text_icons[row])
-                lv_obj_set_style_text_opa(view.icons[row], icon_opa, 0);
-            else
-                lv_obj_set_style_opa(view.icons[row], icon_opa, 0);
+            lv_image_set_src(
+                view.icons[row], crazypod_menu_icon_asset(icon));
+            lv_obj_set_style_opa(view.icons[row], icon_opa, 0);
         }
     }
     if(view.markers[row] != NULL) {

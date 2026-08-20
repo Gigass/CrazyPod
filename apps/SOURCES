@@ -110,6 +110,7 @@ crazypod/ui/presentation/crazypod_marquee.c
 crazypod/ui/presentation/crazypod_alpha_jump_hud.c
 crazypod/ui/presentation/crazypod_artwork_widget.c
 crazypod/ui/presentation/crazypod_choice_overlay.c
+crazypod/ui/presentation/crazypod_popup_layout.c
 crazypod/ui/presentation/crazypod_popup_motion.c
 crazypod/ui/presentation/crazypod_preview_motion.c
 crazypod/ui/presentation/crazypod_overlay_glass.c
@@ -169,6 +170,7 @@ crazypod/ui/features/organizer/crazypod_calendar_input.c
 crazypod/ui/features/organizer/crazypod_clock_activation.c
 crazypod/ui/features/photos/crazypod_photo_screen.c
 crazypod/ui/features/customize/crazypod_wallpaper_crop_screen.c
+crazypod/ui/presentation/crazypod_menu_icon_assets.c
 crazypod/ui/presentation/crazypod_menu_list.c
 crazypod/ui/presentation/crazypod_menu_preview_motion.c
 crazypod/ui/features/now_playing/crazypod_now_presentation.c
@@ -185,6 +187,7 @@ crazypod/ui/features/organizer/crazypod_workout_screen.c
 crazypod/ui/shell/crazypod_status_bar.c
 crazypod/ui/shell/crazypod_shell.c
 crazypod/ui/shell/crazypod_system_prompts.c
+crazypod/ui/shell/crazypod_headphone_popup.c
 crazypod/ui/shell/crazypod_lock_screen.c
 crazypod/ui/shell/crazypod_power_prompt.c
 crazypod/ui/shell/crazypod_usb_prompt.c

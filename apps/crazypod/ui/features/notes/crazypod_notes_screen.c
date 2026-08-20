@@ -73,17 +73,17 @@ void crazypod_notes_screen_render_composer(
                 title_display, sizeof(title_display)),
         CRAZYPOD_NOTES_FONT, 0x30291F,
         (*model->editor).title[0] != '\0' ? 255 : 125);
-    lv_obj_set_pos(label, 48, 45);
+    lv_obj_set_pos(label, 48, 47);
     lv_obj_set_width(label, 232);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    crazypod_ui_widget_box(paper, 48, 66, 232, 1, 0,
+    crazypod_ui_widget_box(paper, 48, 68, 232, 1, 0,
              model->body_active ? 0x8C7958 : 0xBC4034,
              model->body_active ? 55 : 145);
 
     label = crazypod_ui_widget_label(paper, CP_TR("BODY"), &lv_font_montserrat_8,
                        model->body_active ? 0x94291F : 0x8C7958,
                        230);
-    lv_obj_set_pos(label, 48, 72);
+    lv_obj_set_pos(label, 48, 74);
     label = crazypod_ui_widget_label(
         paper,
         !model->body_active
@@ -94,29 +94,32 @@ void crazypod_notes_screen_render_composer(
                 body_display, sizeof(body_display)),
         CRAZYPOD_NOTES_FONT, 0x2A261F,
         (*model->editor).body[0] != '\0' ? 235 : 115);
-    lv_obj_set_pos(label, 48, 86);
+    lv_obj_set_pos(label, 48, 90);
     lv_obj_set_width(label, 232);
-    lv_obj_set_height(label, 75);
+    lv_obj_set_height(label, 44);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_CLIP);
 
-    key = crazypod_ui_widget_box(paper, 48, 158, 232, 24, 7,
-                   0x74422F, 225);
+    key = crazypod_ui_widget_box(paper, 48, 138, 232, 50, 7,
+                   0x74422F, LV_OPA_COVER);
     lv_obj_set_style_border_width(key, 1, 0);
     lv_obj_set_style_border_color(key, lv_color_hex(CRAZYPOD_NOTES_WHITE), 0);
     lv_obj_set_style_border_opa(key, 75, 0);
     label = crazypod_ui_widget_label(
         key, selection != NULL ? selection : "",
-        CRAZYPOD_NOTES_FONT, CRAZYPOD_NOTES_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(label, 60);
+        &lv_font_montserrat_12,
+        CRAZYPOD_NOTES_WHITE, LV_OPA_COVER);
+    lv_obj_set_width(label, 224);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 4, 4);
+    lv_obj_set_pos(label, 4, 3);
     label = crazypod_ui_widget_label(
         key,
         CP_TR("Wheel choose  ·  Center type  ·  PLAY field"),
         &lv_font_montserrat_8, CRAZYPOD_NOTES_WHITE, 155);
-    lv_obj_set_width(label, 164);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(label, 64, 7);
+    lv_obj_set_width(label, 216);
+    lv_obj_set_height(label, 30);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 8, 20);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
 }
 
 void crazypod_notes_screen_render_reader(

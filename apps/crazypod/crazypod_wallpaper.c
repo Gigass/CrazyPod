@@ -33,11 +33,11 @@
 #define WALLPAPER_DECODE_BYTES \
     (WALLPAPER_PIXEL_BYTES + 64 * 1024)
 #define WALLPAPER_PATH "/.rockbox/crazypod/default-home.bmp"
-#define FROSTED_CAPSULE_X 8
+#define FROSTED_CAPSULE_X 0
 #define FROSTED_CAPSULE_Y 174
-#define FROSTED_CAPSULE_WIDTH 304
-#define FROSTED_CAPSULE_HEIGHT 58
-#define FROSTED_CORNER_RADIUS 29
+#define FROSTED_CAPSULE_WIDTH WALLPAPER_WIDTH
+#define FROSTED_CAPSULE_HEIGHT \
+    (WALLPAPER_HEIGHT - FROSTED_CAPSULE_Y)
 #define FROSTED_CAPSULE_ROW_BYTES \
     (FROSTED_CAPSULE_WIDTH * sizeof(fb_data))
 #define FROSTED_CAPSULE_BYTES \
@@ -236,6 +236,9 @@ void crazypod_wallpaper_reload_custom(void)
 {
     const struct crazypod_appearance *appearance =
         crazypod_appearance_get();
+    bool inherited_lock =
+        crazypod_appearance_take_lock_inheritance_migration();
+    bool clone_home_to_lock;
 
     custom_home_valid = appearance->home_wallpaper[0] != '\0' &&
         load_custom_wallpaper(
@@ -245,63 +248,32 @@ void crazypod_wallpaper_reload_custom(void)
         load_custom_wallpaper(
             CRAZYPOD_WALLPAPER_MENU, appearance->menu_wallpaper,
             custom_menu_pixels, &custom_menu_descriptor);
-    custom_lock_valid = appearance->lock_wallpaper[0] != '\0' &&
-        load_custom_wallpaper(
-            CRAZYPOD_WALLPAPER_LOCK, appearance->lock_wallpaper,
-            custom_lock_pixels, &custom_lock_descriptor);
+    clone_home_to_lock =
+        inherited_lock &&
+        custom_home_valid &&
+        appearance->lock_wallpaper[0] != '\0' &&
+        strcmp(appearance->home_wallpaper,
+               appearance->lock_wallpaper) == 0;
+    if(clone_home_to_lock) {
+        memcpy(custom_lock_pixels, custom_home_pixels,
+               WALLPAPER_PIXEL_BYTES);
+        custom_lock_valid = crazypod_image_configure_rgb565(
+            &custom_lock_descriptor, custom_lock_pixels,
+            WALLPAPER_WIDTH, WALLPAPER_HEIGHT);
+        if(custom_lock_valid) {
+            (void)crazypod_wallpaper_store_save(
+                CRAZYPOD_WALLPAPER_LOCK,
+                appearance->lock_wallpaper,
+                custom_lock_pixels, NULL);
+        }
+    }
+    else {
+        custom_lock_valid = appearance->lock_wallpaper[0] != '\0' &&
+            load_custom_wallpaper(
+                CRAZYPOD_WALLPAPER_LOCK, appearance->lock_wallpaper,
+                custom_lock_pixels, &custom_lock_descriptor);
+    }
     release_frosted_capsule();
-}
-
-static int clamp_coordinate(int value, int maximum)
-{
-    if(value < 0)
-        return 0;
-    if(value >= maximum)
-        return maximum - 1;
-    return value;
-}
-
-static uint8_t rounded_capsule_alpha(int x, int y)
-{
-    const int inner_radius = FROSTED_CORNER_RADIUS - 1;
-    const int inner_squared = inner_radius * inner_radius;
-    const int outer_squared =
-        FROSTED_CORNER_RADIUS * FROSTED_CORNER_RADIUS;
-    int dx = 0;
-    int dy = 0;
-    int distance_squared;
-
-    if(x < FROSTED_CORNER_RADIUS)
-        dx = inner_radius - x;
-    else if(x >= FROSTED_CAPSULE_WIDTH - FROSTED_CORNER_RADIUS)
-        dx = x - (FROSTED_CAPSULE_WIDTH - FROSTED_CORNER_RADIUS);
-    if(y < FROSTED_CORNER_RADIUS)
-        dy = inner_radius - y;
-    else if(y >= FROSTED_CAPSULE_HEIGHT - FROSTED_CORNER_RADIUS)
-        dy = y - (FROSTED_CAPSULE_HEIGHT - FROSTED_CORNER_RADIUS);
-
-    distance_squared = dx * dx + dy * dy;
-    if(distance_squared <= inner_squared)
-        return 255;
-    if(distance_squared >= outer_squared)
-        return 0;
-    return (uint8_t)(
-        (outer_squared - distance_squared) * 255 /
-        (outer_squared - inner_squared));
-}
-
-static fb_data blend_capsule_edge(
-    fb_data material, fb_data background, unsigned alpha)
-{
-    unsigned inverse_alpha = 255 - alpha;
-
-    return LCD_RGBPACK(
-        (RGB_UNPACK_RED(material) * alpha +
-         RGB_UNPACK_RED(background) * inverse_alpha + 127) / 255,
-        (RGB_UNPACK_GREEN(material) * alpha +
-         RGB_UNPACK_GREEN(background) * inverse_alpha + 127) / 255,
-        (RGB_UNPACK_BLUE(material) * alpha +
-         RGB_UNPACK_BLUE(background) * inverse_alpha + 127) / 255);
 }
 
 void crazypod_wallpaper_init(void)
@@ -563,41 +535,6 @@ bool crazypod_wallpaper_prepare_frosted_capsule(
         core_free(workspace_handle);
         frosted_capsule_handle = core_free(frosted_capsule_handle);
         return false;
-    }
-    {
-        int y;
-
-        for(y = 0; y < FROSTED_CAPSULE_HEIGHT; ++y) {
-            int x;
-
-            for(x = 0; x < FROSTED_CAPSULE_WIDTH; ++x) {
-                unsigned alpha = rounded_capsule_alpha(x, y);
-                int sample_x;
-                int sample_y;
-                fb_data background;
-                fb_data *material;
-
-                if(alpha == 255)
-                    continue;
-                sample_x = clamp_coordinate(
-                    source_x +
-                        x * source_region_width /
-                            FROSTED_CAPSULE_WIDTH,
-                    source_width);
-                sample_y = clamp_coordinate(
-                    source_y +
-                        y * source_region_height /
-                            FROSTED_CAPSULE_HEIGHT,
-                    source_height);
-                background =
-                    source_pixels[sample_y * source_stride + sample_x];
-                material =
-                    frosted_capsule_pixels +
-                    y * FROSTED_CAPSULE_WIDTH + x;
-                *material =
-                    blend_capsule_edge(*material, background, alpha);
-            }
-        }
     }
     core_free(workspace_handle);
     if(!crazypod_image_configure_rgb565(

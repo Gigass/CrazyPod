@@ -31,6 +31,11 @@ static struct {
     struct crazypod_miniapp_metadata metadata;
     struct crazypod_miniapp_metadata verified_metadata;
     char manifest[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
+    DIR *scan_directory;
+    int scan_count;
+    int scan_result;
+    uint8_t scan_source;
+    bool scan_publication_changed;
     bool in_progress;
     bool rescan_in_progress;
     bool initialized;
@@ -119,7 +124,7 @@ int crazypod_miniapps_install(const char *package_path)
 {
     struct cpk_reader reader;
     struct crazypod_miniapp_metadata *metadata = &installer.metadata;
-    uint32_t installed_version;
+    struct crazypod_miniapp_metadata installed_metadata;
     uint32_t extracted_size = sizeof(struct install_record);
     int result;
     int index;
@@ -153,10 +158,19 @@ int crazypod_miniapps_install(const char *package_path)
         result = CRAZYPOD_MINIAPP_ERROR_FORMAT;
         goto done;
     }
-    if(crazypod_miniapp_registry_installed_version(
-           metadata->id, &installed_version)) {
-        if(installed_version > metadata->version_code) {
+    if(crazypod_miniapp_registry_installed_metadata(
+           metadata->id, &installed_metadata)) {
+        if(installed_metadata.version_code > metadata->version_code) {
             result = CRAZYPOD_MINIAPP_DOWNGRADE_IGNORED;
+            goto done;
+        }
+        if(installed_metadata.version_code == metadata->version_code &&
+           crazypod_miniapp_install_record_matches_package(
+               installed_metadata.install_path, &reader,
+               metadata->version_code)) {
+            crazypod_miniapp_verification_cache_mark(
+                metadata->id, metadata->version_code);
+            result = CRAZYPOD_MINIAPP_ALREADY_INSTALLED;
             goto done;
         }
     }
@@ -244,53 +258,89 @@ static bool cached_package_ready(
     return true;
 }
 
-static int scan_directory(
-    const char *path, uint8_t source,
-    bool *publication_changed)
+static const char *scan_path(uint8_t source)
 {
-    DIR *directory = opendir(path);
-    struct dirent *entry;
-    int first_error = CRAZYPOD_MINIAPP_OK;
-    int scanned = 0;
-
-    if(directory == NULL)
-        return CRAZYPOD_MINIAPP_OK;
-    while((entry = readdir(directory)) != NULL && scanned < SCAN_LIMIT) {
-        struct dirinfo info;
-        char package[MAX_PATH];
-        int result;
-        if(!has_cpk_extension(entry->d_name))
-            continue;
-        info = dir_get_info(directory, entry);
-        if((info.attribute & ATTR_DIRECTORY) != 0 ||
-           !make_path(package, sizeof(package), path, entry->d_name))
-            continue;
-        ++scanned;
-        if(cached_package_ready(source, entry->d_name, &info))
-            continue;
-        result = crazypod_miniapps_install(package);
-        if(result >= CRAZYPOD_MINIAPP_OK) {
-            (void)crazypod_miniapp_package_index_note(
-                source, entry->d_name,
-                info.size > 0 ? (uint64_t)info.size : 0,
-                info.mtime > 0 ? (int64_t)info.mtime : 0,
-                installer.metadata.id,
-                installer.metadata.version_code);
-            if(result == CRAZYPOD_MINIAPP_OK)
-                *publication_changed = true;
-        }
-        if(result < 0 && first_error == CRAZYPOD_MINIAPP_OK)
-            first_error = result;
-    }
-    closedir(directory);
-    return first_error;
+    return source == CRAZYPOD_MINIAPP_PACKAGE_SYSTEM
+        ? SYSTEM_PACKAGES : USER_ROOT;
 }
 
-static int rescan_packages(void)
+static bool scan_one_package(void)
+{
+    while(installer.scan_source <= CRAZYPOD_MINIAPP_PACKAGE_USER) {
+        struct dirent *entry;
+        const char *path = scan_path(installer.scan_source);
+
+        if(installer.scan_directory == NULL) {
+            installer.scan_directory = opendir(path);
+            installer.scan_count = 0;
+            if(installer.scan_directory == NULL) {
+                ++installer.scan_source;
+                continue;
+            }
+        }
+        while(installer.scan_count < SCAN_LIMIT &&
+              (entry = readdir(installer.scan_directory)) != NULL) {
+            struct dirinfo info;
+            char package[MAX_PATH];
+            int result;
+
+            if(!has_cpk_extension(entry->d_name))
+                continue;
+            info = dir_get_info(installer.scan_directory, entry);
+            if((info.attribute & ATTR_DIRECTORY) != 0 ||
+               !make_path(package, sizeof(package), path, entry->d_name))
+                continue;
+            ++installer.scan_count;
+            if(cached_package_ready(
+                   installer.scan_source, entry->d_name, &info))
+                return true;
+            result = crazypod_miniapps_install(package);
+            if(result >= CRAZYPOD_MINIAPP_OK) {
+                (void)crazypod_miniapp_package_index_note(
+                    installer.scan_source, entry->d_name,
+                    info.size > 0 ? (uint64_t)info.size : 0,
+                    info.mtime > 0 ? (int64_t)info.mtime : 0,
+                    installer.metadata.id,
+                    installer.metadata.version_code);
+                if(result == CRAZYPOD_MINIAPP_OK)
+                    installer.scan_publication_changed = true;
+            }
+            if(result < 0 &&
+               installer.scan_result == CRAZYPOD_MINIAPP_OK)
+                installer.scan_result = result;
+            return true;
+        }
+        closedir(installer.scan_directory);
+        installer.scan_directory = NULL;
+        ++installer.scan_source;
+    }
+    return false;
+}
+
+static void finish_rescan(void)
+{
+    if(installer.scan_directory != NULL) {
+        closedir(installer.scan_directory);
+        installer.scan_directory = NULL;
+    }
+    (void)crazypod_miniapp_package_index_finish();
+    if(installer.scan_publication_changed)
+        (void)crazypod_miniapp_registry_rebuild();
+    installer.rescan_in_progress = false;
+}
+
+int crazypod_miniapps_rescan_begin(void)
 {
     int result;
-    int user_result;
-    bool publication_changed = false;
+
+    if(crazypod_miniapps_is_open() || installer.in_progress ||
+       installer.rescan_in_progress)
+        return CRAZYPOD_MINIAPP_ERROR_BUSY;
+    if(!installer.initialized) {
+        result = crazypod_miniapps_init();
+        if(result < 0)
+            return result;
+    }
 
     crazypod_miniapp_verification_cache_clear();
     (void)ensure_directory("/.crazypod");
@@ -298,39 +348,54 @@ static int rescan_packages(void)
     (void)ensure_directory(DATA_ROOT);
     (void)ensure_directory(USER_ROOT);
     crazypod_miniapp_package_index_begin();
+    installer.scan_directory = NULL;
+    installer.scan_count = 0;
+    installer.scan_result = CRAZYPOD_MINIAPP_OK;
+    installer.scan_source = CRAZYPOD_MINIAPP_PACKAGE_SYSTEM;
+    installer.scan_publication_changed = false;
     installer.rescan_in_progress = true;
-    result = scan_directory(
-        SYSTEM_PACKAGES, CRAZYPOD_MINIAPP_PACKAGE_SYSTEM,
-        &publication_changed);
-    user_result = scan_directory(
-        USER_ROOT, CRAZYPOD_MINIAPP_PACKAGE_USER,
-        &publication_changed);
-    installer.rescan_in_progress = false;
-    (void)crazypod_miniapp_package_index_finish();
-    if(publication_changed)
-        (void)crazypod_miniapp_registry_rebuild();
-    return result < 0 ? result : user_result;
+    return CRAZYPOD_MINIAPP_OK;
+}
+
+bool crazypod_miniapps_rescan_step(void)
+{
+    if(!installer.rescan_in_progress)
+        return false;
+    if(scan_one_package())
+        return true;
+    finish_rescan();
+    return false;
+}
+
+bool crazypod_miniapps_rescan_active(void)
+{
+    return installer.rescan_in_progress;
+}
+
+int crazypod_miniapps_rescan_result(void)
+{
+    return installer.rescan_in_progress
+        ? CRAZYPOD_MINIAPP_ERROR_BUSY : installer.scan_result;
 }
 
 int crazypod_miniapps_rescan(void)
 {
     int result;
 
-    if(crazypod_miniapps_is_open())
-        return CRAZYPOD_MINIAPP_ERROR_BUSY;
-    if(!installer.initialized) {
-        result = crazypod_miniapps_init();
-        if(result < 0)
-            return result;
+    result = crazypod_miniapps_rescan_begin();
+    if(result < 0)
+        return result;
+    while(crazypod_miniapps_rescan_step()) {
     }
-    return rescan_packages();
+    return crazypod_miniapps_rescan_result();
 }
 
 int crazypod_miniapps_init(void)
 {
     int result;
 
-    if(crazypod_miniapps_is_open())
+    if(crazypod_miniapps_is_open() || installer.in_progress ||
+       installer.rescan_in_progress)
         return CRAZYPOD_MINIAPP_ERROR_BUSY;
     if(installer.initialized)
         return CRAZYPOD_MINIAPP_OK;

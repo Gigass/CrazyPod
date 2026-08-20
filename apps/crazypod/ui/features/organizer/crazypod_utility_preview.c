@@ -87,7 +87,6 @@ void crazypod_utility_preview_render(
     uint32_t color = 0x4F9BFF;
     lv_obj_t *swatch;
     lv_obj_t *label;
-    lv_obj_t *text_panel;
     char detail_text[96];
 
     if(state->route == UTILITIES_ROUTE_MENU) {
@@ -219,7 +218,10 @@ void crazypod_utility_preview_render(
             int day;
             char month[20];
 
-            swatch = make_box(parent, 190, 58, 100, 92, 10,
+            swatch = make_box(
+                parent, crazypod_preview_centered_x(100),
+                crazypod_preview_visual_y(92),
+                100, 92, 10,
                               0xF4F0E8, LV_OPA_COVER);
             make_box(swatch, 0, 0, 100, 20, 10,
                      color, LV_OPA_COVER);
@@ -300,26 +302,18 @@ void crazypod_utility_preview_render(
     if(state->route != CALENDAR_ROUTE_TODAY &&
        state->route != CALENDAR_ROUTE_UPCOMING &&
        state->route != CALENDAR_ROUTE_DAY_EVENTS) {
-        swatch = make_box(parent, 204, 76, 72, 72, 16,
+        swatch = make_box(
+            parent, crazypod_preview_centered_x(72),
+            crazypod_preview_visual_y(72),
+            72, 72, 16,
                           color, LV_OPA_COVER);
         label = make_label(swatch, symbol, &lv_font_montserrat_24,
                            COLOR_WHITE, 230);
         lv_obj_center(label);
     }
-    text_panel = crazypod_preview_make_text_panel(parent, 158, 50);
-    label = make_label(text_panel, title != NULL ? title : "",
-                       metadata_font,
-                       COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 7, 5);
-    label = make_label(text_panel, detail, metadata_font,
-                       COLOR_WHITE, 135);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 7, 29);
+    crazypod_preview_make_caption(
+        parent, title != NULL ? title : "", metadata_font,
+        detail, &lv_font_montserrat_8);
 }
 
 

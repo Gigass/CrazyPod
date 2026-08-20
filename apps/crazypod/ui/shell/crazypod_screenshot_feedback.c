@@ -6,6 +6,7 @@
 
 #include "lvgl.h"
 
+#include "../presentation/crazypod_popup_layout.h"
 #include "../presentation/crazypod_popup_motion.h"
 #include "../presentation/crazypod_ui_widgets.h"
 #include "crazypod_screenshot_feedback.h"
@@ -16,10 +17,7 @@
 #define COLOR_FAILURE 0xFF5A67
 #define FLASH_DURATION_MS 180
 #define PROMPT_DURATION_MS 1500
-#define PROMPT_X 53
 #define PROMPT_Y 42
-#define PROMPT_WIDTH 214
-#define PROMPT_HEIGHT 42
 #define PROMPT_SHADOW_MARGIN 14
 
 static lv_obj_t *prompt;
@@ -58,9 +56,22 @@ static void start_flash(void)
 static lv_obj_t *create_prompt(bool saved)
 {
     uint32_t accent = saved ? COLOR_SUCCESS : COLOR_FAILURE;
+    const char *message = saved
+        ? CP_TR("Saved to Photos")
+        : CP_TR("Screenshot failed");
+    int text_width = crazypod_popup_text_width(
+        message, &lv_font_montserrat_10);
+    int height = lv_font_get_line_height(
+        &lv_font_montserrat_12) + 26;
+    struct crazypod_popup_geometry geometry =
+        crazypod_popup_centered_geometry(
+            crazypod_popup_clamp_width(
+                text_width + 26, 14,
+                148, LCD_WIDTH - 32),
+            height);
     lv_obj_t *panel = crazypod_ui_widget_box(
-        lv_layer_top(), PROMPT_X, PROMPT_Y,
-        PROMPT_WIDTH, PROMPT_HEIGHT, 13,
+        lv_layer_top(), geometry.x, PROMPT_Y,
+        geometry.width, geometry.height, 13,
         COLOR_PANEL, 244);
     lv_obj_t *icon;
     lv_obj_t *label;
@@ -79,15 +90,21 @@ static lv_obj_t *create_prompt(bool saved)
     icon = crazypod_ui_widget_label(
         panel, saved ? LV_SYMBOL_OK : LV_SYMBOL_CLOSE,
         &lv_font_montserrat_12, accent, LV_OPA_COVER);
-    lv_obj_set_pos(icon, 15, 14);
+    lv_obj_set_pos(
+        icon, 14,
+        (geometry.height -
+         lv_font_get_line_height(&lv_font_montserrat_12)) / 2);
     label = crazypod_ui_widget_label(
-        panel,
-        saved ? CP_TR("Saved to Photos")
-              : CP_TR("Screenshot failed"),
+        panel, message,
         &lv_font_montserrat_10, COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(label, 166);
+    lv_obj_set_width(label, geometry.width - 54);
+    lv_obj_set_style_text_align(
+        label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 39, 13);
+    lv_obj_set_pos(
+        label, 40,
+        (geometry.height -
+         lv_font_get_line_height(&lv_font_montserrat_10)) / 2);
     return panel;
 }
 
@@ -102,7 +119,7 @@ void crazypod_screenshot_feedback_show(bool saved)
     prompt = create_prompt(saved);
     lv_obj_null_on_delete(&prompt);
     lv_obj_move_foreground(prompt);
-    crazypod_popup_animate(prompt, PROMPT_Y);
+    crazypod_popup_animate(prompt, lv_obj_get_y(prompt));
     lv_obj_delete_delayed(prompt, PROMPT_DURATION_MS);
 }
 

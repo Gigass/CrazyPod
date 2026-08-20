@@ -71,25 +71,25 @@ void crazypod_album_flow_screen_render(
     album_title = make_label(
         parent, "", metadata_font, COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(album_title, 260);
-    lv_obj_set_height(album_title, 18);
+    lv_obj_set_height(album_title, 23);
     lv_obj_set_style_text_align(
         album_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(album_title, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(album_title, 30, 195);
+    lv_obj_set_pos(album_title, 30, 180);
     album_artist = make_label(
-        parent, "", metadata_font, COLOR_WHITE, 145);
+        parent, "", &lv_font_montserrat_10, COLOR_WHITE, 145);
     lv_obj_set_width(album_artist, 260);
-    lv_obj_set_height(album_artist, 16);
+    lv_obj_set_height(album_artist, 19);
     lv_obj_set_style_text_align(
         album_artist, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(album_artist, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(album_artist, 30, 213);
+    lv_obj_set_pos(album_artist, 30, 204);
     album_position = make_label(
         parent, "", &lv_font_montserrat_8, COLOR_WHITE, 70);
     lv_obj_set_width(album_position, 60);
     lv_obj_set_style_text_align(
         album_position, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(album_position, 130, 228);
+    lv_obj_set_pos(album_position, 130, 225);
 
     set_metadata(state->selected);
     crazypod_coverflow_enter(state->selected);

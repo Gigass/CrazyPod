@@ -6,7 +6,7 @@
 #include "../../../crazypod_appearance.h"
 #include "../../../crazypod_wallpaper.h"
 
-#define CRAZYPOD_CUSTOMIZE_MENU_COUNT 6
+#define CRAZYPOD_CUSTOMIZE_MENU_COUNT 7
 #define CRAZYPOD_CUSTOMIZE_PRESET_ACTION_COUNT 3
 #define CRAZYPOD_CUSTOMIZE_PRESET_EDIT_COUNT 3
 #define CRAZYPOD_CUSTOMIZE_DETAIL_COUNT 6

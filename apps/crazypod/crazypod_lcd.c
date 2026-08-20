@@ -425,8 +425,8 @@ static const lv_font_t *lcd_localized_font(const lv_font_t *font,
 static void show_message(const char *title, const char *message,
                          fb_data background)
 {
-    const lv_font_t *title_font = &lv_font_montserrat_12;
-    const lv_font_t *body_font = &lv_font_montserrat_8;
+    const lv_font_t *title_font = &lv_font_montserrat_16;
+    const lv_font_t *body_font = &lv_font_montserrat_12;
     const fb_data foreground = LCD_RGBPACK(255, 255, 255);
     const char *cursor;
     int x = 14;
@@ -532,7 +532,7 @@ static void compose_video_controls(
     uint32_t duration_seconds, int volume,
     bool paused, const char *message)
 {
-    const int panel_height = 32;
+    const int panel_height = 42;
     const int panel_y = LCD_HEIGHT - panel_height;
     const fb_data white = LCD_RGBPACK(255, 255, 255);
     const fb_data muted = LCD_RGBPACK(154, 160, 168);
@@ -550,22 +550,22 @@ static void compose_video_controls(
         crazypod_framebuffer[panel_y][row] =
             LCD_RGBPACK(42, 46, 53);
 
-    draw_text(&lv_font_montserrat_8,
+    draw_text(&lv_font_montserrat_12,
               paused ? CP_TR("PAUSED") : CP_TR("PLAYING"),
               8, panel_y + 3, 62, paused ? muted : accent);
     if(message != NULL && message[0] != '\0')
-        draw_text(&lv_font_montserrat_8, message,
+        draw_text(&lv_font_montserrat_12, message,
                   66, panel_y + 3, 312, white);
     else
-        draw_text(&lv_font_montserrat_8, title,
+        draw_text(&lv_font_montserrat_12, title,
                   66, panel_y + 3, 312, white);
 
     for(row = 8; row < 312; ++row) {
-        crazypod_framebuffer[panel_y + 15][row] =
+        crazypod_framebuffer[panel_y + 19][row] =
             LCD_RGBPACK(48, 52, 60);
-        crazypod_framebuffer[panel_y + 16][row] =
+        crazypod_framebuffer[panel_y + 20][row] =
             LCD_RGBPACK(48, 52, 60);
-        crazypod_framebuffer[panel_y + 17][row] =
+        crazypod_framebuffer[panel_y + 21][row] =
             LCD_RGBPACK(48, 52, 60);
     }
     if(duration_seconds > 0) {
@@ -575,23 +575,23 @@ static void compose_video_controls(
             progress_width = 304;
     }
     for(row = 8; row < 8 + progress_width; ++row) {
-        crazypod_framebuffer[panel_y + 15][row] = accent;
-        crazypod_framebuffer[panel_y + 16][row] = accent;
-        crazypod_framebuffer[panel_y + 17][row] = accent;
+        crazypod_framebuffer[panel_y + 19][row] = accent;
+        crazypod_framebuffer[panel_y + 20][row] = accent;
+        crazypod_framebuffer[panel_y + 21][row] = accent;
     }
 
     format_video_time(elapsed, sizeof(elapsed), elapsed_seconds);
     format_video_time(duration, sizeof(duration), duration_seconds);
     snprintf(volume_text, sizeof(volume_text), CP_FMT("VOL %d"), volume);
-    draw_text(&lv_font_montserrat_8, elapsed,
-              8, panel_y + 21, 75, muted);
-    draw_text(&lv_font_montserrat_8, duration,
-              78, panel_y + 21, 152, muted);
-    draw_text(&lv_font_montserrat_8,
+    draw_text(&lv_font_montserrat_12, elapsed,
+              8, panel_y + 25, 70, muted);
+    draw_text(&lv_font_montserrat_12, duration,
+              72, panel_y + 25, 134, muted);
+    draw_text(&lv_font_montserrat_12,
               CP_TR("PLAY  -10s  +10s  MENU"),
-              158, panel_y + 21, 276, muted);
-    draw_text(&lv_font_montserrat_8, volume_text,
-              278, panel_y + 21, 318, white);
+              136, panel_y + 25, 266, muted);
+    draw_text(&lv_font_montserrat_12, volume_text,
+              268, panel_y + 25, 318, white);
 }
 
 void crazypod_lcd_draw_video_frame(

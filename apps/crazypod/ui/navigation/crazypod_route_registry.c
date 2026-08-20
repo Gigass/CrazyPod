@@ -248,6 +248,9 @@ routes[CRAZYPOD_ROUTE_COUNT] = {
     FEATURE_ROUTE(
         DIY_ROUTE_NOW_PLAYING_THEMES,
         CRAZYPOD_FEATURE_CUSTOMIZE),
+    FEATURE_ROUTE(
+        DIY_ROUTE_HEADPHONE_POPUP,
+        CRAZYPOD_FEATURE_CUSTOMIZE),
 };
 
 const struct crazypod_route_descriptor *

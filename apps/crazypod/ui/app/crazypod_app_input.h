@@ -15,6 +15,9 @@ struct crazypod_app_input_host {
     bool (*usb_prompt_visible)(void);
     bool (*handle_usb_prompt)(
         long base, bool repeated, intptr_t data);
+    bool (*headphone_prompt_visible)(void);
+    bool (*handle_headphone_prompt)(
+        long base, bool repeated, intptr_t data);
     bool (*handle_power_hold)(long button);
     bool (*handle_lock)(long button, intptr_t data);
     void (*close_product)(void);

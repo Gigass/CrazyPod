@@ -23,5 +23,10 @@ LVGL 9.5.0 is vendored under lib/lvgl and retains its upstream license.
 Additional inherited third-party components are documented in docs/LICENSES
 and their respective source directories.
 
+CrazyPod menu row icons are generated from Google Material Symbols, licensed
+under Apache License 2.0:
+
+  https://github.com/google/material-design-icons
+
 The former Apple2026 UI and Apple-derived SF bitmap fonts are not included in
 the CrazyPod product revision.

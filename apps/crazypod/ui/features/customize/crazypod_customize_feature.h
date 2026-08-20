@@ -6,12 +6,14 @@
 
 #include "lvgl.h"
 
+#include "../../crazypod_menu_icon.h"
 #include "../../navigation/crazypod_ui_routes.h"
 #include "../crazypod_feature.h"
 #include "../../navigation/crazypod_input_event.h"
 
 struct crazypod_customize_activation_host {
     void (*render)(bool transition);
+    void (*operation_failed)(void);
     void (*push)(enum crazypod_route route, int group);
     void (*push_selected)(
         enum crazypod_route route, int group, int selected);
@@ -40,6 +42,8 @@ const char *crazypod_customize_feature_title(
 bool crazypod_customize_feature_item_title(
     const struct route_state *state, int index,
     const char **title);
+enum crazypod_menu_icon crazypod_customize_feature_item_icon(
+    const struct route_state *state, int index);
 bool crazypod_customize_feature_item_is_current(
     const struct route_state *state, int index);
 void crazypod_customize_feature_render_preview(

@@ -1,6 +1,33 @@
 #include "crazypod_ui_widgets.h"
 
 #include "../../crazypod_l10n.h"
+#include "../../crazypod_runtime_font.h"
+
+static bool text_is_symbol(const char *text)
+{
+    const unsigned char *bytes = (const unsigned char *)text;
+
+    return bytes != NULL && bytes[0] == 0xef && bytes[1] >= 0x80;
+}
+
+static const lv_font_t *readable_text_font(
+    const lv_font_t *font, const char *text)
+{
+    if(text == NULL || text[0] == '\0')
+        return font;
+    if(text_is_symbol(text))
+        return font;
+    if(font == &lv_font_montserrat_8 ||
+       font == &lv_font_crazypod_i18n_8)
+        return crazypod_runtime_font_at_size(12);
+    if(font == &lv_font_montserrat_10 ||
+       font == &lv_font_crazypod_i18n_10)
+        return crazypod_runtime_font_at_size(15);
+    if(font == &lv_font_montserrat_12 ||
+       font == &lv_font_crazypod_i18n_12)
+        return crazypod_runtime_font_at_size(18);
+    return font;
+}
 
 static bool text_needs_i18n_font(const char *source, const char *resolved)
 {
@@ -33,6 +60,17 @@ static const lv_font_t *localized_font(const lv_font_t *font)
     return font;
 }
 
+const lv_font_t *crazypod_ui_widget_resolve_font(
+    const char *text, const lv_font_t *font)
+{
+    const char *resolved = crazypod_l10n_text(text);
+
+    font = readable_text_font(font, resolved);
+    if(text_needs_i18n_font(text, resolved))
+        font = localized_font(font);
+    return font;
+}
+
 void crazypod_ui_widget_make_plain(lv_obj_t *obj)
 {
     lv_obj_remove_style_all(obj);
@@ -49,8 +87,7 @@ lv_obj_t *crazypod_ui_widget_label(lv_obj_t *parent, const char *text,
 
     lv_obj_remove_style_all(label);
     lv_label_set_text(label, resolved);
-    if(text_needs_i18n_font(text, resolved))
-        font = localized_font(font);
+    font = crazypod_ui_widget_resolve_font(text, font);
     lv_obj_set_style_text_font(label, font, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
     lv_obj_set_style_text_opa(label, opacity, 0);
@@ -60,14 +97,12 @@ lv_obj_t *crazypod_ui_widget_label(lv_obj_t *parent, const char *text,
 void crazypod_ui_widget_set_label_text(lv_obj_t *label, const char *text)
 {
     const char *resolved = crazypod_l10n_text(text);
+    const lv_font_t *font = lv_obj_get_style_text_font(
+        label, LV_PART_MAIN);
 
     lv_label_set_text(label, resolved);
-    if(text_needs_i18n_font(text, resolved)) {
-        const lv_font_t *font = lv_obj_get_style_text_font(
-            label, LV_PART_MAIN);
-
-        lv_obj_set_style_text_font(label, localized_font(font), 0);
-    }
+    font = crazypod_ui_widget_resolve_font(text, font);
+    lv_obj_set_style_text_font(label, font, 0);
 }
 
 void crazypod_ui_widget_align_row_label(

@@ -171,6 +171,9 @@ static void test_route_registry(void)
     assert(crazypod_route_registry_feature(
                DIY_ROUTE_WALLPAPER_CROP)->id ==
            CRAZYPOD_FEATURE_CUSTOMIZE);
+    assert(crazypod_route_registry_feature(
+               DIY_ROUTE_HEADPHONE_POPUP)->id ==
+           CRAZYPOD_FEATURE_CUSTOMIZE);
     assert(crazypod_route_registry_feature(MINIAPP_ROUTE_VIEW)->id ==
            CRAZYPOD_FEATURE_MINIAPPS);
     assert(crazypod_route_registry_has_flag(

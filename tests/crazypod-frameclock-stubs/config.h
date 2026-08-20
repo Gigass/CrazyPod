@@ -1,0 +1,9 @@
+#ifndef CRAZYPOD_FRAMECLOCK_TEST_CONFIG_H
+#define CRAZYPOD_FRAMECLOCK_TEST_CONFIG_H
+
+#define IPOD_6G 1
+#define HZ 100
+#define LCD_WIDTH 320
+#define LCD_HEIGHT 240
+
+#endif

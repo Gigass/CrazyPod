@@ -158,89 +158,69 @@ void crazypod_music_item_preview_render(
     const struct crazypod_track *track,
     const lv_font_t *metadata_font)
 {
-    lv_obj_t *text_panel = crazypod_preview_make_text_panel(parent, 153, 70);
-    lv_obj_t *title;
-    lv_obj_t *detail;
-    char text[96];
+    const char *title = "";
+    const char *detail = "";
+    char text[192];
 
     if(state->route == MUSIC_ROUTE_ARTISTS) {
         const char *artist = crazypod_music_artist(state->selected);
         int count = crazypod_music_artist_track_count(state->selected);
+
         make_music_preview_icon(
-            parent, CRAZYPOD_PREVIEW_ICON_ARTIST, 192, 52);
-        title = make_label(text_panel, artist != NULL ? artist : "",
-                           metadata_font,
-                           COLOR_WHITE, LV_OPA_COVER);
+            parent, CRAZYPOD_PREVIEW_ICON_ARTIST,
+            crazypod_preview_centered_x(96),
+            crazypod_preview_visual_y(96));
+        title = artist != NULL ? artist : "";
         snprintf(text, sizeof(text), CP_FMT("%d songs"), count);
-        detail = make_label(text_panel, text, &lv_font_montserrat_8,
-                            COLOR_WHITE, 130);
+        detail = text;
     }
     else if(state->route == MUSIC_ROUTE_ALBUMS) {
         const struct crazypod_album *album =
             crazypod_music_album(state->selected);
+
         track = crazypod_music_album_track(state->selected, 0);
-        create_artwork(parent, track, 204, 76, 72,
+        create_artwork(
+            parent, track, crazypod_preview_centered_x(72),
+            crazypod_preview_visual_y(72), 72,
                        CRAZYPOD_PREVIEW_ARTWORK_SLOT);
-        title = make_label(text_panel,
-                           album != NULL ? album->title : "",
-                           metadata_font,
-                           COLOR_WHITE, LV_OPA_COVER);
-        detail = make_label(text_panel,
-                            album != NULL ? album->artist : "",
-                            metadata_font, COLOR_WHITE, 135);
+        title = album != NULL ? album->title : "";
+        detail = album != NULL ? album->artist : "";
     }
     else if(state->route == MUSIC_ROUTE_PLAYLISTS) {
         const struct crazypod_playlist *playlist =
             crazypod_music_playlist(state->selected);
+
         make_music_preview_icon(
-            parent, CRAZYPOD_PREVIEW_ICON_PLAYLISTS, 192, 52);
-        title = make_label(text_panel,
-                           playlist != NULL ? playlist->name : "",
-                           metadata_font,
-                           COLOR_WHITE, LV_OPA_COVER);
+            parent, CRAZYPOD_PREVIEW_ICON_PLAYLISTS,
+            crazypod_preview_centered_x(96),
+            crazypod_preview_visual_y(96));
+        title = playlist != NULL ? playlist->name : "";
         snprintf(text, sizeof(text), CP_FMT("%d songs"),
                  playlist != NULL ? playlist->track_count : 0);
-        detail = make_label(text_panel, text, &lv_font_montserrat_8,
-                            COLOR_WHITE, 130);
+        detail = text;
     }
     else {
         char duration[16];
-        create_artwork(parent, track, 204, 72, 72,
+
+        create_artwork(
+            parent, track, crazypod_preview_centered_x(72),
+            crazypod_preview_visual_y(72), 72,
                        CRAZYPOD_PREVIEW_ARTWORK_SLOT);
-        title = make_label(text_panel,
-                           track != NULL ? track->title : CP_TR("No Track"),
-                           metadata_font,
-                           COLOR_WHITE, LV_OPA_COVER);
-        detail = make_label(text_panel,
-                            track != NULL ? track->artist : "",
-                            metadata_font, COLOR_WHITE, 155);
+        title = track != NULL ? track->title : CP_TR("No Track");
         if(track != NULL) {
             format_time_ms(track->duration_ms, duration, sizeof(duration));
-            snprintf(text, sizeof(text), "%s  " LV_SYMBOL_BULLET "  %s",
-                     track->album, duration);
-            {
-                lv_obj_t *album = make_label(text_panel, text,
-                                              metadata_font,
-                                              COLOR_WHITE, 95);
-                lv_obj_set_width(album, 126);
-                lv_obj_set_height(album, 16);
-                lv_label_set_long_mode(album, LV_LABEL_LONG_MODE_DOTS);
-                lv_obj_set_style_text_align(album, LV_TEXT_ALIGN_CENTER, 0);
-                lv_obj_set_pos(album, 7, 49);
-            }
+            snprintf(
+                text, sizeof(text),
+                "%s  " LV_SYMBOL_BULLET "  %s  "
+                LV_SYMBOL_BULLET "  %s",
+                track->artist, track->album, duration);
+            detail = text;
         }
     }
 
-    lv_obj_set_width(title, 126);
-    lv_obj_set_height(title, 18);
-    lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 7, 6);
-    lv_obj_set_width(detail, 126);
-    lv_obj_set_height(detail, 16);
-    lv_label_set_long_mode(detail, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(detail, 7, 29);
+    crazypod_preview_make_caption(
+        parent, title, metadata_font,
+        detail, &lv_font_montserrat_8);
 }
 
 

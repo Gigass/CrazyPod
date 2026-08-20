@@ -5,6 +5,7 @@
 #include "button.h"
 #include "events.h"
 #include "kernel.h"
+#include "queue.h"
 
 #include "crazypod_system_event.h"
 #include "crazypod_usb_prompt.h"
@@ -26,6 +27,15 @@ bool crazypod_system_event_handle(
         actions->usb_connected(data);
     else if(event == SYS_USB_DISCONNECTED)
         actions->usb_disconnected();
+#ifdef HAVE_HEADPHONE_DETECTION
+    else if(event == SYS_PHONE_PLUGGED ||
+            event == SYS_PHONE_UNPLUGGED) {
+        bool inserted = event == SYS_PHONE_PLUGGED;
+
+        if(actions->headphone_changed != NULL)
+            actions->headphone_changed(inserted);
+    }
+#endif
     else if(event == SYS_POWEROFF)
         actions->power_off();
     else if(event == SYS_REBOOT)

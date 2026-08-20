@@ -11,6 +11,8 @@
 
 #include "../../../crazypod_photos.h"
 #include "../../../crazypod_presets.h"
+#include "../../../crazypod_state.h"
+#include "../../presentation/crazypod_marquee.h"
 #include "../../presentation/crazypod_preview_primitives.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_customize_catalog.h"
@@ -65,6 +67,10 @@ static const char *current_value(const struct route_state *state)
     if(state->route == DIY_ROUTE_NOW_PLAYING_THEMES)
         return crazypod_now_playing_theme_choice_current(state->selected)
             ? CP_TR("Current selection") : CP_TR("Apply");
+    if(state->route == DIY_ROUTE_HEADPHONE_POPUP)
+        return state->selected ==
+                (int)crazypod_state_headphone_popup_style()
+            ? CP_TR("Current selection") : CP_TR("Select to apply");
     if(state->route == DIY_ROUTE_CHOICES) {
         field = (enum crazypod_appearance_field)state->group;
         current = crazypod_customize_field_value(field);
@@ -84,8 +90,7 @@ static const char *current_value(const struct route_state *state)
         if(path[0] != '\0')
             return basename(path);
         return color == 0
-            ? background == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
-                ? CP_TR("Follow Home") : CP_TR("Default")
+            ? CP_TR("Default")
             : crazypod_appearance_color_name(color - 1);
     }
     if(state->route == DIY_ROUTE_BACKGROUND_CHOICES) {
@@ -137,6 +142,7 @@ static void preview_model_build(
             state->selected == 2 ? CP_TR("Wave, size, glow and colors") :
             state->selected == 3 ? CP_TR("Home, menu and lock pictures") :
             state->selected == 4 ? CP_TR("Themes") :
+            state->selected == 5 ? CP_TR("Choose the insert animation") :
                                    CP_TR("Screen corner radius");
     }
     else if(state->route == DIY_ROUTE_PRESETS) {
@@ -214,6 +220,8 @@ static void preview_model_build(
         model->symbol = LV_SYMBOL_SHUFFLE;
     else if(state->route == DIY_ROUTE_NOW_PLAYING_THEMES)
         model->symbol = LV_SYMBOL_AUDIO;
+    else if(state->route == DIY_ROUTE_HEADPHONE_POPUP)
+        model->symbol = LV_SYMBOL_AUDIO;
     else if(state->route == DIY_ROUTE_DETAILS) {
         if(state->selected == 1)
             model->symbol = LV_SYMBOL_AUDIO;
@@ -228,7 +236,9 @@ static void render_editor(
     uint32_t primary_color, uint32_t secondary_color)
 {
     lv_obj_t *card = crazypod_ui_widget_box(
-        parent, 181, 78, 118, 64, 14, primary_color, 210);
+        parent, crazypod_preview_centered_x(118),
+        crazypod_preview_visual_y(64),
+        118, 64, 14, primary_color, 210);
     lv_obj_t *label;
 
     lv_obj_set_style_bg_grad_color(
@@ -243,17 +253,12 @@ static void render_editor(
         &lv_font_montserrat_12, COLOR_WHITE,
         value != NULL && value[0] != '\0' ? 255 : 130);
     lv_obj_set_pos(label, 10, 35);
-    lv_obj_set_width(label, 98);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    lv_obj_set_size(label, 98, 23);
+    crazypod_marquee_configure_centered(label, true);
 
-    card = crazypod_preview_make_text_panel(parent, 154, 46);
-    label = crazypod_ui_widget_label(
-        card, CP_TR("Wheel selects characters; center adds."),
-        &lv_font_montserrat_8, COLOR_WHITE, 125);
-    lv_obj_set_pos(label, 11, 8);
-    lv_obj_set_width(label, 118);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+    crazypod_preview_make_caption(
+        parent, CP_TR("Wheel selects characters; center adds."),
+        &lv_font_montserrat_8, "", &lv_font_montserrat_8);
 }
 
 void crazypod_customize_feature_render_preview(
@@ -262,7 +267,6 @@ void crazypod_customize_feature_render_preview(
     uint32_t secondary_color, const char *editor_value)
 {
     struct crazypod_customize_preview_model model;
-    lv_obj_t *text_panel;
     lv_obj_t *swatch;
     lv_obj_t *label;
 
@@ -275,7 +279,8 @@ void crazypod_customize_feature_render_preview(
     }
 
     swatch = crazypod_ui_widget_box(
-        parent, 204, 76, 72, 72, 16,
+        parent, crazypod_preview_centered_x(72),
+        crazypod_preview_visual_y(72), 72, 72, 16,
         model.swatch_color, LV_OPA_COVER);
     if(model.gradient) {
         lv_obj_set_style_bg_grad_color(
@@ -286,22 +291,9 @@ void crazypod_customize_feature_render_preview(
         swatch, model.symbol, &lv_font_montserrat_24,
         COLOR_WHITE, 225);
     lv_obj_center(label);
-
-    text_panel = crazypod_preview_make_text_panel(parent, 158, 50);
-    label = crazypod_ui_widget_label(
-        text_panel, model.title, &lv_font_montserrat_12,
-        COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 7, 6);
-    label = crazypod_ui_widget_label(
-        text_panel, model.detail, &lv_font_montserrat_8,
-        COLOR_WHITE, 135);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 7, 30);
+    crazypod_preview_make_caption(
+        parent, model.title, &lv_font_montserrat_12,
+        model.detail, &lv_font_montserrat_8);
 }
 
 #endif

@@ -118,6 +118,26 @@ bool crazypod_miniapp_install_record_read(
            record->checksum == checksum(record);
 }
 
+bool crazypod_miniapp_install_record_matches_package(
+    const char *directory, const struct cpk_reader *reader,
+    uint32_t version_code)
+{
+    struct install_record record;
+    int index;
+
+    if(reader == NULL ||
+       reader->entry_count != MINIAPP_CPK_ENTRIES ||
+       !crazypod_miniapp_install_record_read(directory, &record) ||
+       record.version_code != version_code)
+        return false;
+    for(index = 0; index < MINIAPP_CPK_ENTRIES; ++index) {
+        if(record.files[index].size != reader->entries[index].size ||
+           record.files[index].crc32 != reader->entries[index].crc32)
+            return false;
+    }
+    return true;
+}
+
 static bool file_has_size(const char *path, uint32_t size)
 {
     int fd = open(path, O_RDONLY);

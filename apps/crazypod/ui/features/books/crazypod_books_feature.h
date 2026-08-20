@@ -3,11 +3,13 @@
 
 #include "lvgl.h"
 
+#include "../../crazypod_menu_icon.h"
 #include "../../navigation/crazypod_ui_routes.h"
 #include "../crazypod_feature.h"
 
 struct crazypod_books_activation_host {
     void (*render)(bool transition);
+    void (*operation_failed)(void);
     void (*push)(enum crazypod_route route, int group);
     void (*pop)(void);
     void (*show_font_size)(int selected);
@@ -39,6 +41,8 @@ const char *crazypod_books_feature_title(
 bool crazypod_books_feature_item_title(
     const struct route_state *state, int index,
     const char **title);
+enum crazypod_menu_icon crazypod_books_feature_item_icon(
+    const struct route_state *state, int index);
 bool crazypod_books_feature_activate(
     const struct route_state *state,
     const struct crazypod_books_activation_host *host);

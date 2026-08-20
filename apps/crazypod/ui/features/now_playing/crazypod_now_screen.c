@@ -345,17 +345,17 @@ void crazypod_now_screen_render(
                 track != NULL ? track->title : CP_TR("No Track"),
                 context->metadata_font,
                 COLOR_WHITE, LV_OPA_COVER);
-            lv_obj_set_size(title, 96, 17);
+            lv_obj_set_size(title, 96, 23);
             lv_obj_set_style_text_align(
                 title, LV_TEXT_ALIGN_CENTER, 0);
             crazypod_marquee_configure(title, true);
-            lv_obj_set_pos(title, 24, 120);
+            lv_obj_set_pos(title, 24, 117);
             artist = make_label(
                 context->parent,
                 track != NULL ? track->artist : CP_TR("Local Music"),
                 context->metadata_font,
                 COLOR_WHITE, 180);
-            lv_obj_set_size(artist, 96, 17);
+            lv_obj_set_size(artist, 96, 23);
             lv_obj_set_style_text_align(
                 artist, LV_TEXT_ALIGN_CENTER, 0);
             crazypod_marquee_configure(artist, true);
@@ -398,7 +398,7 @@ void crazypod_now_screen_render(
                 track != NULL ? track->title : CP_TR("No Track"),
                 context->metadata_font,
                 content_color, LV_OPA_COVER);
-            lv_obj_set_size(title, 158, 18);
+            lv_obj_set_size(title, 158, 23);
             lv_obj_set_style_text_align(
                 title, LV_TEXT_ALIGN_CENTER, 0);
             crazypod_marquee_configure(title, true);
@@ -409,7 +409,7 @@ void crazypod_now_screen_render(
                 track != NULL ? track->artist : CP_TR("Local Music"),
                 context->metadata_font,
                 content_color, 220);
-            lv_obj_set_size(artist, 158, 18);
+            lv_obj_set_size(artist, 158, 23);
             lv_obj_set_style_text_align(
                 artist, LV_TEXT_ALIGN_CENTER, 0);
             crazypod_marquee_configure(artist, true);
@@ -421,7 +421,7 @@ void crazypod_now_screen_render(
                     ? track->album : "",
                 context->metadata_font,
                 content_color, 190);
-            lv_obj_set_size(album, 158, 16);
+            lv_obj_set_size(album, 158, 23);
             lv_obj_set_style_text_align(
                 album, LV_TEXT_ALIGN_CENTER, 0);
             crazypod_marquee_configure(album, true);

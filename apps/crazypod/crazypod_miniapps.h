@@ -150,6 +150,10 @@ void crazypod_miniapps_ui_reset_handle_high_water(void);
 
 int crazypod_miniapps_init(void);
 int crazypod_miniapps_prepare(void);
+int crazypod_miniapps_rescan_begin(void);
+bool crazypod_miniapps_rescan_step(void);
+bool crazypod_miniapps_rescan_active(void);
+int crazypod_miniapps_rescan_result(void);
 int crazypod_miniapps_rescan(void);
 int crazypod_miniapps_install(const char *package_path);
 

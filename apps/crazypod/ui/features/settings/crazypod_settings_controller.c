@@ -3,6 +3,8 @@
 #include "crazypod_settings_model.h"
 #include "crazypod_settings_catalog.h"
 
+static enum crazypod_app_id reorder_id = CRAZYPOD_APP_INVALID;
+
 static struct crazypod_settings_command command(
     enum crazypod_settings_command_kind kind)
 {
@@ -58,8 +60,8 @@ struct crazypod_settings_command crazypod_settings_activate(
         id = crazypod_apps_ordered_id(state->selected);
         if(!crazypod_apps_is_known(id))
             return command(CRAZYPOD_SETTINGS_COMMAND_NONE);
-        result = command(CRAZYPOD_SETTINGS_COMMAND_PUSH_ROUTE);
-        result.route = SETTINGS_ROUTE_MAIN_MENU_ACTIONS;
+        result = command(
+            CRAZYPOD_SETTINGS_COMMAND_SHOW_MAIN_MENU_ACTIONS);
         result.app_id = id;
         return result;
     }
@@ -90,4 +92,35 @@ struct crazypod_settings_command crazypod_settings_activate(
     }
 
     return command(CRAZYPOD_SETTINGS_COMMAND_NONE);
+}
+
+void crazypod_settings_begin_main_menu_reorder(
+    enum crazypod_app_id id)
+{
+    reorder_id = crazypod_apps_is_known(id)
+        ? id : CRAZYPOD_APP_INVALID;
+}
+
+bool crazypod_settings_main_menu_reordering(void)
+{
+    return reorder_id != CRAZYPOD_APP_INVALID;
+}
+
+enum crazypod_app_id crazypod_settings_main_menu_reorder_id(void)
+{
+    return reorder_id;
+}
+
+bool crazypod_settings_move_main_menu_item(int direction)
+{
+    return crazypod_settings_main_menu_reordering() &&
+        crazypod_apps_move(reorder_id, direction);
+}
+
+enum crazypod_app_id crazypod_settings_finish_main_menu_reorder(void)
+{
+    enum crazypod_app_id result = reorder_id;
+
+    reorder_id = CRAZYPOD_APP_INVALID;
+    return result;
 }

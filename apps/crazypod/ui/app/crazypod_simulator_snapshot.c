@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "audio.h"
 #include "button.h"
 #include "dir.h"
 #include "file.h"
@@ -22,6 +23,7 @@
 #include "../../crazypod_notes.h"
 #include "../../crazypod_organizer.h"
 #include "../../crazypod_runtime_font.h"
+#include "../../crazypod_state.h"
 #include "../../crazypod_videos.h"
 #include "../../crazypod_workouts.h"
 #include "../features/books/crazypod_books_feature.h"
@@ -31,6 +33,8 @@
 #include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../navigation/crazypod_route_query.h"
+#include "../shell/crazypod_headphone_popup.h"
+#include "../shell/crazypod_lock_screen.h"
 #include "../shell/crazypod_shell.h"
 #include "crazypod_app_input.h"
 #include "crazypod_simulator_snapshot.h"
@@ -711,6 +715,42 @@ static bool open_now_playing_default_media(
         open_now_playing_theme_snapshot(host, NULL);
 }
 
+static bool open_lock_playback_snapshot(
+    const struct crazypod_simulator_snapshot_host *host,
+    bool paused)
+{
+    if(host->show_lock == NULL ||
+       crazypod_music_track_count() <= 0 ||
+       !crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0))
+        return false;
+    if(paused)
+        audio_pause();
+    host->show_lock(false);
+    return true;
+}
+
+static bool open_lock_cjk_snapshot(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    const struct crazypod_lock_media_snapshot snapshot = {
+        .active = true,
+        .playing = true,
+        .track_path = "/Music/crazypod-lock-cjk-test.mp3",
+        .title = "夜航测试歌曲",
+        .artist = "疯狂播客乐队",
+        .album = "嵌入封面专辑",
+        .elapsed_ms = 42000,
+        .length_ms = 198000,
+    };
+
+    if(host->show_lock == NULL)
+        return false;
+    audio_stop();
+    host->show_lock(false);
+    crazypod_lock_screen_update_media(&snapshot);
+    return true;
+}
+
 static bool open_now_playing_default_lyrics(
     const struct crazypod_simulator_snapshot_host *host)
 {
@@ -939,9 +979,41 @@ bool crazypod_simulator_snapshot_prepare(
     }
     if(screen == NULL || strcmp(screen, "home") == 0)
         return true;
-    if(strcmp(screen, "runtime-font-catalog") == 0)
+    if(strcmp(screen, "headphone-wired") == 0 ||
+       strcmp(screen, "headphone-over-ear") == 0 ||
+       strcmp(screen, "headphone-airpods") == 0) {
+        crazypod_state_set_headphone_popup_style(
+            strcmp(screen, "headphone-airpods") == 0
+                ? CRAZYPOD_HEADPHONE_POPUP_AIRPODS
+                : strcmp(screen, "headphone-over-ear") == 0
+                    ? CRAZYPOD_HEADPHONE_POPUP_OVER_EAR
+                    : CRAZYPOD_HEADPHONE_POPUP_WIRED_EARBUDS);
+        crazypod_headphone_popup_simulator_show();
+        return true;
+    }
+    if(strcmp(screen, "lock") == 0) {
+        audio_stop();
+        host->show_lock(false);
+    }
+    else if(strcmp(screen, "lock-progress") == 0) {
+        audio_stop();
+        host->show_lock(false);
+        crazypod_lock_screen_simulator_set_progress(58);
+    }
+    else if(strcmp(screen, "lock-playing-progress") == 0) {
+        if(!open_lock_playback_snapshot(host, false))
+            return false;
+        crazypod_lock_screen_simulator_set_progress(58);
+    }
+    else if(strcmp(screen, "lock-playing") == 0)
+        return open_lock_playback_snapshot(host, false);
+    else if(strcmp(screen, "lock-playing-cjk") == 0)
+        return open_lock_cjk_snapshot(host);
+    else if(strcmp(screen, "lock-paused") == 0)
+        return open_lock_playback_snapshot(host, true);
+    else if(strcmp(screen, "runtime-font-catalog") == 0)
         return open_runtime_font_catalog();
-    if(strcmp(screen, "power") == 0)
+    else if(strcmp(screen, "power") == 0)
         host->show_power_prompt();
     else if(sscanf(screen, "music-%d", &preview_index) == 1) {
         host->open_app(CRAZYPOD_APP_MUSIC);
@@ -1025,14 +1097,34 @@ bool crazypod_simulator_snapshot_prepare(
         host->open_app(CRAZYPOD_APP_EXTRAS);
         select_bounded(host, 1);
     }
+    else if(sscanf(
+                screen, "settings-main-menu-reorder-%d",
+                &preview_index) == 1) {
+        host->open_root_route(SETTINGS_ROUTE_MAIN_MENU);
+        select_bounded(host, preview_index);
+        host->activate_selected();
+        host->move_selection(1);
+        host->activate_selected();
+        host->move_selection(1);
+    }
+    else if(sscanf(
+                screen, "settings-main-menu-actions-%d",
+                &preview_index) == 1) {
+        host->open_root_route(SETTINGS_ROUTE_MAIN_MENU);
+        select_bounded(host, preview_index);
+        host->activate_selected();
+    }
     else if(strcmp(screen, "settings-main-menu") == 0)
         host->open_root_route(SETTINGS_ROUTE_MAIN_MENU);
     else if(strcmp(screen, "settings-power") == 0)
         host->open_root_route(SETTINGS_ROUTE_POWER);
-    else if(strcmp(screen, "settings-language") == 0) {
+    else if(strcmp(screen, "settings-language") == 0 ||
+            strcmp(screen, "settings-language-receipt") == 0) {
         host->open_root_route(SETTINGS_ROUTE_MENU);
         select_bounded(host, item_count() - 1);
         host->activate_selected();
+        if(strcmp(screen, "settings-language-receipt") == 0)
+            host->activate_selected();
     }
     else if(strcmp(screen, "settings-reduce-motion") == 0) {
         host->open_root_route(SETTINGS_ROUTE_DISPLAY);
@@ -1044,6 +1136,13 @@ bool crazypod_simulator_snapshot_prepare(
         host->open_app(CRAZYPOD_APP_MINI_APPS);
     else if(strcmp(screen, "customize") == 0)
         host->open_app(CRAZYPOD_APP_CUSTOMIZE);
+    else if(strcmp(screen, "customize-headphones") == 0) {
+        crazypod_state_set_headphone_popup_style(
+            CRAZYPOD_HEADPHONE_POPUP_WIRED_EARBUDS);
+        host->open_app(CRAZYPOD_APP_CUSTOMIZE);
+        select_bounded(host, 5);
+        host->activate_selected();
+    }
     else if(strcmp(screen, "now-playing-theme") == 0)
         return open_now_playing_theme_snapshot(
             host, "now-playing-neon");
@@ -1110,6 +1209,17 @@ bool crazypod_simulator_snapshot_prepare(
         host->open_app(CRAZYPOD_APP_NOTES);
         host->begin_note_composer(0, false);
     }
+    else if(strcmp(screen, "note-exit-actions") == 0) {
+        host->open_app(CRAZYPOD_APP_NOTES);
+        host->begin_note_composer(0, false);
+        host->push_route(NOTES_ROUTE_EXIT_ACTIONS, -1);
+    }
+    else if(strcmp(screen, "note-exit-failure") == 0) {
+        host->open_app(CRAZYPOD_APP_NOTES);
+        host->begin_note_composer(0, false);
+        host->push_route(NOTES_ROUTE_EXIT_ACTIONS, -1);
+        host->activate_selected();
+    }
     else if(strcmp(screen, "books") == 0)
         host->open_app(CRAZYPOD_APP_BOOKS);
     else if(strcmp(screen, "books-reading") == 0) {
@@ -1143,6 +1253,12 @@ bool crazypod_simulator_snapshot_prepare(
         crazypod_organizer_feature_simulator_workout(
             0, 62 * HZ, current_tick, true);
         host->open_root_route(WORKOUT_ROUTE_ACTIVE);
+    }
+    else if(strcmp(screen, "workout-finish-confirm") == 0) {
+        crazypod_organizer_feature_simulator_workout(
+            0, 62 * HZ, current_tick, true);
+        host->open_root_route(WORKOUT_ROUTE_ACTIVE);
+        host->push_route(WORKOUT_ROUTE_FINISH_CONFIRM, -1);
     }
     else if(strcmp(screen, "workout-detail") == 0) {
         host->open_root_route(WORKOUT_ROUTE_HISTORY);

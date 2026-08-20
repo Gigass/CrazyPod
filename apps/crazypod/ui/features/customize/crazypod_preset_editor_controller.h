@@ -15,6 +15,7 @@ enum crazypod_preset_command_action {
     CRAZYPOD_PRESET_COMMAND_POP,
     CRAZYPOD_PRESET_COMMAND_APPLIED,
     CRAZYPOD_PRESET_COMMAND_DELETED,
+    CRAZYPOD_PRESET_COMMAND_FAILED,
 };
 
 struct crazypod_preset_command_result {

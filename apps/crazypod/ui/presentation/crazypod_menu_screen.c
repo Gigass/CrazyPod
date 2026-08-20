@@ -6,42 +6,29 @@
 
 #include "lvgl.h"
 
-#include "../../crazypod_apps.h"
-#include "../../crazypod_miniapps.h"
 #include "crazypod_ui_menu_layout.h"
 #include "crazypod_ui_widgets.h"
-#include "../features/customize/crazypod_customize_feature.h"
-#include "../shell/crazypod_app_catalog.h"
 #include "crazypod_empty_state.h"
+#include "crazypod_menu_icon_assets.h"
 #include "crazypod_menu_list.h"
 #include "../navigation/crazypod_route_query.h"
-#include "../features/settings/crazypod_settings_feature.h"
 #include "crazypod_marquee.h"
 #include "crazypod_menu_screen.h"
 
 #define COLOR_WHITE 0xFFFFFF
-#define CRAZYPOD_VISIBLE_ROWS 7
+#define CRAZYPOD_VISIBLE_ROWS 6
 #define CRAZYPOD_MENU_HEADER_X 16
-#define CRAZYPOD_MENU_HEADER_Y 42
+#define CRAZYPOD_MENU_HEADER_Y 38
 #define CRAZYPOD_MENU_HEADER_WIDTH 128
-#define CRAZYPOD_MENU_HEADER_HEIGHT 20
+#define CRAZYPOD_MENU_HEADER_HEIGHT 24
 #define CRAZYPOD_MENU_ROW_X 8
 #define CRAZYPOD_MENU_ROW_Y 64
 #define CRAZYPOD_MENU_ROW_WIDTH 140
-#define CRAZYPOD_MENU_ROW_HEIGHT 24
-#define CRAZYPOD_MENU_ROW_STEP 24
+#define CRAZYPOD_MENU_ROW_HEIGHT 28
+#define CRAZYPOD_MENU_ROW_STEP 28
 #define CRAZYPOD_MENU_SCROLL_X 153
 #define CRAZYPOD_MENU_SCROLL_Y 66
 #define CRAZYPOD_MENU_SCROLL_HEIGHT 164
-
-static const char *const music_menu_symbols[] = {
-    LV_SYMBOL_AUDIO, LV_SYMBOL_IMAGE, LV_SYMBOL_LOOP, LV_SYMBOL_LIST,
-    LV_SYMBOL_HOME, LV_SYMBOL_DIRECTORY, LV_SYMBOL_AUDIO,
-    LV_SYMBOL_EYE_OPEN
-};
-static const char *const photos_menu_symbols[] = {
-    LV_SYMBOL_IMAGE, LV_SYMBOL_PLAY, LV_SYMBOL_OK, LV_SYMBOL_TRASH
-};
 
 static lv_obj_t *make_box(
     lv_obj_t *parent, int x, int y, int width, int height,
@@ -57,39 +44,6 @@ static lv_obj_t *make_label(
 {
     return crazypod_ui_widget_label(
         parent, text, font, color, opacity);
-}
-
-static void make_pixel_heart(
-    lv_obj_t *parent, int x, int y, int unit,
-    uint32_t color, lv_opa_t opacity)
-{
-    crazypod_ui_widget_pixel_heart(
-        parent, x, y, unit, color, opacity);
-}
-
-static const struct crazypod_app_descriptor *route_app(
-    const struct route_state *state, int index)
-{
-    enum crazypod_app_id id;
-
-    if(state->route == SETTINGS_ROUTE_MAIN_MENU)
-        id = crazypod_apps_ordered_id(index);
-    else if(state->route == EXTRAS_ROUTE_MENU)
-        id = crazypod_apps_hidden_id(index);
-    else if(state->route == SETTINGS_ROUTE_MAIN_MENU_ACTIONS)
-        id = (enum crazypod_app_id)state->group;
-    else
-        return NULL;
-    return crazypod_app_catalog_find(id);
-}
-
-static const char *miniapp_symbol(int index)
-{
-    const struct crazypod_miniapp_metadata *metadata =
-        crazypod_miniapps_metadata(index);
-
-    return metadata != NULL && metadata->symbol[0] != '\0'
-        ? metadata->symbol : LV_SYMBOL_FILE;
 }
 
 void crazypod_menu_screen_render(
@@ -223,53 +177,32 @@ void crazypod_menu_screen_render(
             lv_obj_set_style_border_opa(row_box, 90, 0);
         }
 
-        if(state->route == MUSIC_ROUTE_MENU ||
-           state->route == PHOTOS_ROUTE_MENU ||
-           state->route == SETTINGS_ROUTE_MENU ||
-           state->route == SETTINGS_ROUTE_MAIN_MENU ||
-           state->route == EXTRAS_ROUTE_MENU ||
-           state->route == UTILITIES_ROUTE_MENU ||
-           state->route == DIY_ROUTE_MENU) {
-            const struct crazypod_app_descriptor *route_app_item =
-                route_app(state, index);
-            const char *icon_text = route_app_item != NULL
-                ? route_app_item->symbol :
-                state->route == MUSIC_ROUTE_MENU
-                    ? music_menu_symbols[index]
-                : state->route == PHOTOS_ROUTE_MENU
-                    ? photos_menu_symbols[index]
-                : state->route == SETTINGS_ROUTE_MENU
-                    ? crazypod_settings_feature_menu_symbol(index)
-                : state->route == UTILITIES_ROUTE_MENU
-                    ? miniapp_symbol(index)
-                    : crazypod_customize_feature_menu_symbol(index);
-            lv_obj_t *circle = make_box(row_box, 0, 0, 21, 21,
-                                        LV_RADIUS_CIRCLE, COLOR_WHITE,
-                                        selected ? 45 : 18);
-            lv_obj_t *icon;
+        {
+            enum crazypod_menu_icon icon_id =
+                crazypod_route_query_item_icon(state, index);
+            const lv_image_dsc_t *icon_asset =
+                crazypod_menu_icon_asset(icon_id);
 
-            lv_obj_align(circle, LV_ALIGN_LEFT_MID, 6, 0);
-            if(state->route == PHOTOS_ROUTE_MENU && index == 2) {
-                icon = make_box(circle, 0, 0, 8, 6, 0,
-                                COLOR_WHITE, LV_OPA_TRANSP);
-                make_pixel_heart(icon, 0, 0, 1,
-                                 0xFF375F, LV_OPA_COVER);
-                lv_obj_center(icon);
+            if(icon_asset != NULL) {
+                lv_obj_t *circle = make_box(
+                    row_box, 0, 0, 21, 21,
+                    LV_RADIUS_CIRCLE, COLOR_WHITE,
+                    selected ? 45 : 18);
+                lv_obj_t *icon = lv_image_create(circle);
+
+                lv_obj_align(circle, LV_ALIGN_LEFT_MID, 6, 0);
+                lv_image_set_src(icon, icon_asset);
+                lv_obj_set_style_image_recolor(
+                    icon, lv_color_hex(COLOR_WHITE), 0);
+                lv_obj_set_style_image_recolor_opa(
+                    icon, LV_OPA_COVER, 0);
                 lv_obj_set_style_opa(
                     icon, selected ? 255 : 170, 0);
-            }
-            else {
-                icon = make_label(circle, icon_text,
-                                  &lv_font_montserrat_10,
-                                  COLOR_WHITE,
-                                  selected ? 255 : 170);
                 lv_obj_center(icon);
+                crazypod_menu_list_bind_icon(row, circle, icon);
+                text_x = 34;
+                text_width = 88;
             }
-            crazypod_menu_list_bind_icon(
-                row, circle, icon,
-                !(state->route == PHOTOS_ROUTE_MENU && index == 2));
-            text_x = 34;
-            text_width = 88;
         }
         title = context->item_title(state, index);
         if(title == NULL)

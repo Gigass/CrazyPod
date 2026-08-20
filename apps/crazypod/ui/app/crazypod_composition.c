@@ -217,6 +217,7 @@ void crazypod_composition_configure(
     const struct crazypod_system_prompts_host prompts = {
         .now = new_host->now,
         .close_product = new_host->close_product,
+        .present = crazypod_present_now,
     };
     const struct crazypod_choice_coordinator_host choices = {
         .parent = crazypod_shell_product_content(),
@@ -227,6 +228,17 @@ void crazypod_composition_configure(
             crazypod_route_actions_push_selected,
         .appearance_changed =
             crazypod_desktop_refresh_appearance,
+        .item_count = new_host->item_count,
+        .item_title = new_host->item_title,
+        .item_is_current = new_host->item_is_current,
+        .activate_route =
+            crazypod_route_actions_activate_overlay_state,
+        .selected_app =
+            crazypod_route_actions_selected_app,
+        .main_menu_changed =
+            crazypod_route_actions_main_menu_changed,
+        .begin_main_menu_reorder =
+            crazypod_route_actions_begin_main_menu_reorder,
     };
     const struct crazypod_books_runtime_host books = {
         .parent = crazypod_shell_product_content(),

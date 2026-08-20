@@ -207,6 +207,63 @@ bool crazypod_books_feature_item_title(
     }
 }
 
+enum crazypod_menu_icon crazypod_books_feature_item_icon(
+    const struct route_state *state, int index)
+{
+    static const enum crazypod_menu_icon root_icons[] = {
+        CRAZYPOD_MENU_ICON_RECENTS,
+        CRAZYPOD_MENU_ICON_BOOK,
+        CRAZYPOD_MENU_ICON_FAVORITE,
+        CRAZYPOD_MENU_ICON_STATS,
+        CRAZYPOD_MENU_ICON_READING,
+    };
+    int logical;
+
+    if(index < 0)
+        return CRAZYPOD_MENU_ICON_NONE;
+    switch(state->route) {
+    case BOOKS_ROUTE_MENU:
+        if(has_continue() && index == 0)
+            return CRAZYPOD_MENU_ICON_READING;
+        logical = index - (has_continue() ? 1 : 0);
+        return logical >= 0 &&
+            logical < (int)(sizeof(root_icons) / sizeof(root_icons[0]))
+                ? root_icons[logical] : CRAZYPOD_MENU_ICON_NONE;
+    case BOOKS_ROUTE_RECENTS:
+    case BOOKS_ROUTE_LIBRARY:
+        return CRAZYPOD_MENU_ICON_BOOK;
+    case BOOKS_ROUTE_FAVORITES:
+        return CRAZYPOD_MENU_ICON_FAVORITE;
+    case BOOKS_ROUTE_ACTIONS:
+        return index == 0 ? CRAZYPOD_MENU_ICON_READING :
+            index == 1 ? CRAZYPOD_MENU_ICON_BOOKMARK :
+            index == 2 ? CRAZYPOD_MENU_ICON_CHAPTERS :
+            index == 3 ? CRAZYPOD_MENU_ICON_FAVORITE :
+            index == 4 ? CRAZYPOD_MENU_ICON_DETAILS :
+            index == 5 ? CRAZYPOD_MENU_ICON_TRASH :
+            CRAZYPOD_MENU_ICON_NONE;
+    case BOOKS_ROUTE_CHAPTERS:
+        return CRAZYPOD_MENU_ICON_CHAPTERS;
+    case BOOKS_ROUTE_BOOKMARKS:
+        return CRAZYPOD_MENU_ICON_BOOKMARK;
+    case BOOKS_ROUTE_READING_SETTINGS:
+        return index == 0 ? CRAZYPOD_MENU_ICON_TEXT_SIZE :
+            index == 1 ? CRAZYPOD_MENU_ICON_PAGE_THEME :
+            index == 2 ? CRAZYPOD_MENU_ICON_IMPORT :
+            CRAZYPOD_MENU_ICON_NONE;
+    case BOOKS_ROUTE_DELETE_CONFIRM:
+        return CRAZYPOD_MENU_ICON_TRASH;
+    case BOOKS_ROUTE_STATS:
+        return CRAZYPOD_MENU_ICON_STATS;
+    case BOOKS_ROUTE_INFO:
+        return CRAZYPOD_MENU_ICON_DETAILS;
+    case BOOKS_ROUTE_READER:
+        return CRAZYPOD_MENU_ICON_READING;
+    default:
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
+}
+
 bool crazypod_books_feature_activate(
     const struct route_state *state,
     const struct crazypod_books_activation_host *host)
@@ -219,6 +276,9 @@ bool crazypod_books_feature_activate(
     switch(action.kind) {
     case CRAZYPOD_BOOKS_ACTION_RENDER:
         host->render(false);
+        break;
+    case CRAZYPOD_BOOKS_ACTION_FAILED:
+        host->operation_failed();
         break;
     case CRAZYPOD_BOOKS_ACTION_PUSH:
         host->push(action.route, action.group);

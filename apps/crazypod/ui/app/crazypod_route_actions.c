@@ -6,6 +6,7 @@
 #include "playlist.h"
 #include "timefuncs.h"
 
+#include "../../crazypod_l10n.h"
 #include "../../crazypod_apps.h"
 #include "../../crazypod_coverflow.h"
 #include "../../crazypod_music.h"
@@ -40,6 +41,12 @@
     ((HZ * 760 / 1000) > 0 ? (HZ * 760 / 1000) : 1)
 
 static struct crazypod_route_actions_host host;
+static bool overlay_dispatch;
+static bool overlay_changed;
+static bool overlay_transition;
+static bool overlay_failed;
+static enum crazypod_app_id reorder_preferred =
+    CRAZYPOD_APP_INVALID;
 
 static struct route_state *current_route(void)
 {
@@ -61,14 +68,60 @@ void crazypod_route_actions_configure(
         host = *new_host;
 }
 
-void crazypod_route_actions_push_selected(
+static void transaction_render(bool transition)
+{
+    if(overlay_dispatch) {
+        overlay_changed = true;
+        overlay_transition = overlay_transition || transition;
+        return;
+    }
+    host.render(transition);
+}
+
+static void transaction_failed(void)
+{
+    if(overlay_dispatch) {
+        overlay_failed = true;
+        return;
+    }
+    host.render(false);
+    crazypod_choice_coordinator_show_receipt(
+        CP_TR("Failed"), false, current_tick, false);
+}
+
+static bool push_route_state(
     enum crazypod_route route, int group, int selected)
 {
     if(crazypod_route_registry_get(route) == NULL ||
        !crazypod_ui_routes_push(route, group, selected))
-        return;
+        return false;
     crazypod_menu_preview_prefetch(current_route());
-    host.render(true);
+    return true;
+}
+
+void crazypod_route_actions_push_selected(
+    enum crazypod_route route, int group, int selected)
+{
+    if(route == SETTINGS_ROUTE_MAIN_MENU_ACTIONS) {
+        crazypod_choice_coordinator_show(
+            CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS,
+            group, selected);
+        return;
+    }
+    if(route == DIY_ROUTE_NOW_PLAYING_THEMES) {
+        crazypod_choice_coordinator_show(
+            CRAZYPOD_CHOICE_NOW_PLAYING_THEME,
+            0, selected);
+        return;
+    }
+    if(crazypod_choice_coordinator_route_should_overlay(route)) {
+        crazypod_choice_coordinator_show_route(
+            route, group, selected);
+        return;
+    }
+    if(!push_route_state(route, group, selected))
+        return;
+    transaction_render(true);
 }
 
 void crazypod_route_actions_push(
@@ -87,12 +140,26 @@ bool crazypod_route_actions_confirm_photos(
     const struct route_state *state, long now,
     long feedback_ticks)
 {
+    bool overlay =
+        crazypod_choice_coordinator_owns_route_state(state);
     struct crazypod_photos_confirmation_result result =
         crazypod_photos_feature_confirm(
-            state, now, feedback_ticks);
+            state, now, overlay ? 0 : feedback_ticks);
 
     if(!result.handled)
         return false;
+    if(overlay) {
+        struct route_state *parent = current_route();
+
+        if(parent != NULL &&
+           parent->route == result.return_route)
+            parent->selected = result.selected;
+        crazypod_choice_coordinator_show_receipt(
+            result.deleted
+                ? CP_TR("Deleted") : CP_TR("Delete Failed"),
+            result.deleted, now, true);
+        return true;
+    }
     if(result.deleted && crazypod_ui_routes_depth() > 1) {
         struct route_state *parent;
 
@@ -118,7 +185,7 @@ void crazypod_route_actions_pop(void)
     }
     if(crazypod_ui_routes_depth() > 1) {
         crazypod_ui_routes_pop();
-        host.render(true);
+        transaction_render(true);
     }
     else
         host.close_product();
@@ -197,14 +264,18 @@ void crazypod_route_actions_service_notes(void)
 
 static void commit_note_editor(void)
 {
+    bool transaction = overlay_dispatch;
     uint32_t id = crazypod_notes_feature_commit_editor();
 
     if(id == 0) {
-        host.render(false);
+        transaction_failed();
         return;
     }
     crazypod_ui_routes_reset(NOTES_ROUTE_MENU, -1, 0);
     open_note_reader(id);
+    if(!transaction)
+        crazypod_choice_coordinator_show_receipt(
+            CP_TR("Saved"), true, current_tick, false);
 }
 
 static void begin_calendar_editor(uint32_t id, int date)
@@ -240,16 +311,20 @@ void crazypod_route_actions_show_calendar_day(int date)
 
 static bool commit_calendar_editor(void)
 {
+    bool transaction = overlay_dispatch;
     int date;
     uint32_t id =
         crazypod_organizer_feature_commit_editor(&date);
 
     if(id == 0) {
-        host.render(false);
+        transaction_failed();
         return false;
     }
     crazypod_route_actions_show_calendar_day(date);
-    host.render(true);
+    transaction_render(true);
+    if(!transaction)
+        crazypod_choice_coordinator_show_receipt(
+            CP_TR("Saved"), true, current_tick, false);
     return true;
 }
 
@@ -269,27 +344,58 @@ static void persist_main_menu(
     crazypod_state_save(true);
 }
 
-static enum crazypod_app_id selected_app(void)
+enum crazypod_app_id crazypod_route_actions_selected_app(void)
 {
     return crazypod_apps_visible_id(
         crazypod_desktop_selected());
 }
 
-static void main_menu_changed(
+void crazypod_route_actions_main_menu_changed(
     enum crazypod_app_id preferred,
     enum crazypod_app_id changed)
 {
-    struct route_state *parent =
-        crazypod_ui_routes_depth() > 1
-            ? crazypod_ui_routes_at(
-                crazypod_ui_routes_depth() - 2)
-            : NULL;
+    struct route_state *parent = current_route();
 
-    if(parent != NULL &&
-       parent->route == SETTINGS_ROUTE_MAIN_MENU)
+    if(parent != NULL && parent->route ==
+       SETTINGS_ROUTE_MAIN_MENU)
         parent->selected =
             crazypod_apps_order_index(changed);
     persist_main_menu(preferred);
+}
+
+void crazypod_route_actions_begin_main_menu_reorder(
+    enum crazypod_app_id id)
+{
+    struct route_state *state = current_route();
+
+    if(state == NULL ||
+       state->route != SETTINGS_ROUTE_MAIN_MENU ||
+       !crazypod_apps_is_known(id))
+        return;
+    reorder_preferred =
+        crazypod_route_actions_selected_app();
+    crazypod_settings_feature_begin_main_menu_reorder(id);
+    state->selected = crazypod_apps_order_index(id);
+    host.render(false);
+}
+
+void crazypod_route_actions_commit_pending_main_menu_reorder(void)
+{
+    enum crazypod_app_id id;
+
+    if(!crazypod_settings_feature_main_menu_reordering())
+        return;
+    id = crazypod_settings_feature_finish_main_menu_reorder();
+    if(crazypod_apps_is_known(id))
+        persist_main_menu(reorder_preferred);
+    reorder_preferred = CRAZYPOD_APP_INVALID;
+}
+
+static void show_main_menu_actions(enum crazypod_app_id id)
+{
+    crazypod_choice_coordinator_show(
+        CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS,
+        id, 0);
 }
 
 static void show_setting_choices(int item, int selected)
@@ -301,12 +407,14 @@ static void show_setting_choices(int item, int selected)
 static void appearance_changed(void)
 {
     crazypod_desktop_refresh_appearance();
-    host.render(false);
+    transaction_render(false);
 }
 
 static void preset_deleted(void)
 {
-    int depth = crazypod_ui_routes_depth() - 2;
+    int depth = overlay_dispatch
+        ? crazypod_ui_routes_depth()
+        : crazypod_ui_routes_depth() - 2;
 
     crazypod_ui_routes_truncate(depth < 1 ? 1 : depth);
     if(current_route()->route == DIY_ROUTE_PRESET_LIBRARY &&
@@ -314,7 +422,7 @@ static void preset_deleted(void)
         current_route()->selected =
             crazypod_preset_count() > 0
                 ? crazypod_preset_count() - 1 : 0;
-    host.render(false);
+    transaction_render(false);
 }
 
 static void pop_note_composer(void)
@@ -322,6 +430,31 @@ static void pop_note_composer(void)
     crazypod_route_actions_pop();
     if(current_route()->route == NOTES_ROUTE_COMPOSER)
         crazypod_route_actions_pop();
+}
+
+static void action_pop(void)
+{
+    bool renamed = current_route() != NULL &&
+        current_route()->route == DIY_ROUTE_PRESET_RENAME;
+
+    if(overlay_dispatch) {
+        overlay_changed = true;
+        return;
+    }
+    crazypod_route_actions_pop();
+    if(renamed)
+        crazypod_choice_coordinator_show_receipt(
+            CP_TR("Saved"), true, current_tick, false);
+}
+
+static bool transition_needs_receipt(
+    const struct route_state *state)
+{
+    return state != NULL &&
+        ((state->route == NOTES_ROUTE_EXIT_ACTIONS &&
+          (state->selected == 0 || state->selected == 1)) ||
+         (state->route == NOTES_ROUTE_ACTIONS &&
+          state->selected == 2));
 }
 
 static void reset_open_note_reader(uint32_t id)
@@ -342,7 +475,7 @@ static bool activate_music(
     if(feature->id == CRAZYPOD_FEATURE_MUSIC ||
        feature->id == CRAZYPOD_FEATURE_NOW_PLAYING) {
         const struct crazypod_music_activation_host actions = {
-            .render = host.render,
+            .render = transaction_render,
             .push = crazypod_route_actions_push,
             .push_selected =
                 crazypod_route_actions_push_selected,
@@ -385,9 +518,10 @@ static bool activate_domain(
         return activate_music(state, now);
     if(feature->id == CRAZYPOD_FEATURE_BOOKS) {
         const struct crazypod_books_activation_host actions = {
-            .render = host.render,
+            .render = transaction_render,
+            .operation_failed = transaction_failed,
             .push = crazypod_route_actions_push,
-            .pop = crazypod_route_actions_pop,
+            .pop = action_pop,
             .show_font_size = show_book_font_size,
             .show_theme = show_book_theme,
         };
@@ -397,9 +531,10 @@ static bool activate_domain(
     }
     if(feature->id == CRAZYPOD_FEATURE_NOTES) {
         const struct crazypod_notes_activation_host actions = {
-            .render = host.render,
+            .render = transaction_render,
+            .operation_failed = transaction_failed,
             .push = crazypod_route_actions_push,
-            .pop = crazypod_route_actions_pop,
+            .pop = action_pop,
             .pop_composer = pop_note_composer,
             .open_composer =
                 crazypod_route_actions_begin_note,
@@ -416,7 +551,7 @@ static bool activate_domain(
             .push = crazypod_route_actions_push,
             .push_selected =
                 crazypod_route_actions_push_selected,
-            .render = host.render,
+            .render = transaction_render,
         };
 
         return crazypod_photos_feature_activate(
@@ -424,9 +559,9 @@ static bool activate_domain(
     }
     if(feature->id == CRAZYPOD_FEATURE_ORGANIZER) {
         const struct crazypod_organizer_activation_host actions = {
-            .render = host.render,
+            .render = transaction_render,
             .push = crazypod_route_actions_push,
-            .pop = crazypod_route_actions_pop,
+            .pop = action_pop,
             .begin_editor = begin_calendar_editor,
             .commit_editor = commit_calendar_editor,
         };
@@ -436,10 +571,14 @@ static bool activate_domain(
     }
     if(feature->id == CRAZYPOD_FEATURE_SETTINGS) {
         const struct crazypod_settings_activation_host actions = {
-            .selected_app = selected_app,
+            .selected_app =
+                crazypod_route_actions_selected_app,
             .push = crazypod_route_actions_push,
-            .render = host.render,
-            .main_menu_changed = main_menu_changed,
+            .render = transaction_render,
+            .main_menu_changed =
+                crazypod_route_actions_main_menu_changed,
+            .show_main_menu_actions =
+                show_main_menu_actions,
             .show_choices = show_setting_choices,
         };
 
@@ -449,7 +588,7 @@ static bool activate_domain(
     if(feature->id == CRAZYPOD_FEATURE_MINIAPPS) {
         const struct crazypod_miniapps_activation_host actions = {
             .push = crazypod_route_actions_push,
-            .render = host.render,
+            .render = transaction_render,
         };
 
         /*
@@ -485,11 +624,12 @@ static void show_background_choices(int group, int selected)
 static bool activate_customize(struct route_state *state)
 {
     const struct crazypod_customize_activation_host actions = {
-        .render = host.render,
+        .render = transaction_render,
+        .operation_failed = transaction_failed,
         .push = crazypod_route_actions_push,
         .push_selected =
             crazypod_route_actions_push_selected,
-        .pop = crazypod_route_actions_pop,
+        .pop = action_pop,
         .appearance_changed = appearance_changed,
         .show_icon_choices = show_icon_choices,
         .show_appearance_choices = show_appearance_choices,
@@ -506,13 +646,30 @@ void crazypod_route_actions_activate(long now)
     struct route_state *state = current_route();
     const struct crazypod_feature *feature;
 
+    if(state == NULL)
+        return;
+    if(state->route == SETTINGS_ROUTE_MAIN_MENU &&
+       crazypod_settings_feature_main_menu_reordering()) {
+        enum crazypod_app_id id =
+            crazypod_settings_feature_finish_main_menu_reorder();
+
+        if(crazypod_apps_is_known(id)) {
+            state->selected = crazypod_apps_order_index(id);
+            persist_main_menu(reorder_preferred);
+            reorder_preferred = CRAZYPOD_APP_INVALID;
+            host.render(false);
+            crazypod_choice_coordinator_show_receipt(
+                CP_TR("Saved"), true, now, false);
+        }
+        return;
+    }
     if(state->route == MUSIC_ROUTE_NOW_PLAYING &&
        crazypod_now_playing_overlay_visible()) {
         crazypod_now_playing_overlay_activate();
         return;
     }
     if(crazypod_choice_coordinator_visible()) {
-        crazypod_choice_coordinator_activate();
+        crazypod_choice_coordinator_activate(now);
         return;
     }
     feature = crazypod_route_registry_feature(state->route);
@@ -535,12 +692,83 @@ void crazypod_route_actions_activate(long now)
     play_selected_track(state);
 }
 
+void crazypod_route_actions_activate_overlay_state(
+    const struct route_state *source, long now)
+{
+    struct route_state state;
+    const struct crazypod_feature *feature;
+
+    if(source == NULL)
+        return;
+    state = *source;
+    overlay_dispatch = true;
+    overlay_changed = false;
+    overlay_transition = false;
+    overlay_failed = false;
+    feature = crazypod_route_registry_feature(state.route);
+    if(feature != NULL &&
+       feature->id == CRAZYPOD_FEATURE_CUSTOMIZE)
+        (void)activate_customize(&state);
+    else
+        (void)activate_domain(&state, now);
+    overlay_dispatch = false;
+
+    if(overlay_failed) {
+        crazypod_choice_coordinator_show_receipt(
+            CP_TR("Failed"), false, now, false);
+    }
+    else if(overlay_transition &&
+            transition_needs_receipt(&state)) {
+        crazypod_choice_coordinator_show_receipt(
+            CP_TR("Saved"), true, now, true);
+    }
+    else if(overlay_transition) {
+        crazypod_choice_coordinator_dismiss(false);
+        host.render(true);
+    }
+    else if(overlay_changed) {
+        if(state.route == NOTES_ROUTE_DELETED_ACTIONS) {
+            struct route_state *parent = current_route();
+            int count = parent != NULL
+                ? host.item_count(parent) : 0;
+
+            if(parent != NULL &&
+               parent->route == NOTES_ROUTE_DELETED &&
+               parent->selected >= count)
+                parent->selected = count > 0 ? count - 1 : 0;
+        }
+        crazypod_choice_coordinator_show_receipt(
+            CP_TR("Saved"), true, now, true);
+    }
+}
+
 void crazypod_route_actions_move(int direction, long now)
 {
     struct route_state *state = current_route();
-    int count = host.item_count(state);
+    int count;
     int next;
 
+    if(state == NULL)
+        return;
+    if(state->route == SETTINGS_ROUTE_MAIN_MENU &&
+       crazypod_settings_feature_main_menu_reordering()) {
+        int step = direction < 0 ? -1 : 1;
+        int remaining = direction < 0 ? -direction : direction;
+        enum crazypod_app_id id =
+            crazypod_settings_feature_main_menu_reorder_id();
+        bool changed = false;
+
+        while(remaining-- > 0)
+            changed =
+                crazypod_settings_feature_move_main_menu_item(step) ||
+                changed;
+        if(changed) {
+            state->selected = crazypod_apps_order_index(id);
+            host.render(false);
+        }
+        return;
+    }
+    count = host.item_count(state);
     if(crazypod_choice_coordinator_visible()) {
         crazypod_choice_coordinator_move(direction);
         return;

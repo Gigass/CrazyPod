@@ -71,10 +71,18 @@ static void preview_model_build(
         model->symbol = app != NULL ? app->symbol : LV_SYMBOL_LIST;
         model->swatch_color =
             app != NULL ? app->color : input->primary_color;
-        snprintf(model->detail_buffer, sizeof(model->detail_buffer),
-                 CP_FMT("%s · Position %d"),
-                 crazypod_apps_is_enabled(id) ? CP_FMT("Visible") : CP_FMT("In More"),
-                 state->selected + 1);
+        if(crazypod_settings_feature_main_menu_reordering())
+            snprintf(model->detail_buffer,
+                     sizeof(model->detail_buffer),
+                     CP_FMT("%s · %s"),
+                     CP_FMT("Wheel adjusts"),
+                     CP_FMT("Menu Done"));
+        else
+            snprintf(model->detail_buffer, sizeof(model->detail_buffer),
+                     CP_FMT("%s · Position %d"),
+                     crazypod_apps_is_enabled(id)
+                        ? CP_FMT("Visible") : CP_FMT("In More"),
+                     state->selected + 1);
         model->detail = model->detail_buffer;
         return;
     }
@@ -118,13 +126,13 @@ void crazypod_settings_feature_render_preview(
         .repeat_enabled = repeat_enabled,
     };
     struct crazypod_settings_preview_model model;
-    lv_obj_t *text_panel;
     lv_obj_t *swatch;
     lv_obj_t *label;
 
     preview_model_build(&input, &model);
     swatch = crazypod_ui_widget_box(
-        parent, 204, 76, 72, 72, 16,
+        parent, crazypod_preview_centered_x(72),
+        crazypod_preview_visual_y(72), 72, 72, 16,
         model.swatch_color, LV_OPA_COVER);
     if(crazypod_appearance_get()->highlight_style != 0) {
         lv_obj_set_style_bg_grad_color(
@@ -135,22 +143,9 @@ void crazypod_settings_feature_render_preview(
         swatch, model.symbol, &lv_font_montserrat_24,
         COLOR_WHITE, 225);
     lv_obj_center(label);
-
-    text_panel = crazypod_preview_make_text_panel(parent, 158, 50);
-    label = crazypod_ui_widget_label(
-        text_panel, model.title, &lv_font_montserrat_12,
-        COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 7, 6);
-    label = crazypod_ui_widget_label(
-        text_panel, model.detail, &lv_font_montserrat_8,
-        COLOR_WHITE, 135);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 7, 30);
+    crazypod_preview_make_caption(
+        parent, model.title, &lv_font_montserrat_12,
+        model.detail, &lv_font_montserrat_8);
 }
 
 #endif

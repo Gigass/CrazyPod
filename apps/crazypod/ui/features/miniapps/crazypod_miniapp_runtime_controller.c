@@ -7,6 +7,7 @@
 static struct {
     struct crazypod_miniapp_input_queue input;
     bool render_pending;
+    bool rescan_requested;
     int last_error;
     long last_service_tick;
 } runtime;
@@ -19,13 +20,47 @@ void crazypod_miniapp_runtime_initialize(void)
 
 int crazypod_miniapp_runtime_prepare(void)
 {
+    if(runtime.rescan_requested || crazypod_miniapps_rescan_active()) {
+        runtime.last_error = CRAZYPOD_MINIAPP_ERROR_BUSY;
+        return runtime.last_error;
+    }
     runtime.last_error = crazypod_miniapps_prepare();
     return runtime.last_error;
 }
 
 void crazypod_miniapp_runtime_rescan(void)
 {
+    runtime.rescan_requested = false;
     runtime.last_error = crazypod_miniapps_rescan();
+}
+
+void crazypod_miniapp_runtime_request_rescan(void)
+{
+    runtime.rescan_requested = true;
+}
+
+void crazypod_miniapp_runtime_service_rescan(void)
+{
+    int result;
+
+    if(runtime.rescan_requested && !crazypod_miniapps_rescan_active()) {
+        result = crazypod_miniapps_rescan_begin();
+        if(result == CRAZYPOD_MINIAPP_OK)
+            runtime.rescan_requested = false;
+        else if(result != CRAZYPOD_MINIAPP_ERROR_BUSY) {
+            runtime.rescan_requested = false;
+            runtime.last_error = result;
+        }
+    }
+    if(!crazypod_miniapps_rescan_active())
+        return;
+    if(!crazypod_miniapps_rescan_step())
+        runtime.last_error = crazypod_miniapps_rescan_result();
+}
+
+bool crazypod_miniapp_runtime_rescan_pending(void)
+{
+    return runtime.rescan_requested || crazypod_miniapps_rescan_active();
 }
 
 void crazypod_miniapp_runtime_note_error(int error)

@@ -7,6 +7,7 @@
 #include "lvgl.h"
 
 #include "../../../crazypod_apps.h"
+#include "../../crazypod_menu_icon.h"
 #include "../../navigation/crazypod_ui_routes.h"
 #include "../crazypod_feature.h"
 
@@ -17,6 +18,8 @@ struct crazypod_settings_activation_host {
     void (*main_menu_changed)(
         enum crazypod_app_id preferred,
         enum crazypod_app_id changed);
+    void (*show_main_menu_actions)(
+        enum crazypod_app_id id);
     void (*show_choices)(int item, int selected);
 };
 
@@ -27,6 +30,8 @@ const char *crazypod_settings_feature_title(
 bool crazypod_settings_feature_item_title(
     const struct route_state *state, int index,
     const char **title);
+enum crazypod_menu_icon crazypod_settings_feature_item_icon(
+    const struct route_state *state, int index);
 bool crazypod_settings_feature_item_is_current(
     const struct route_state *state, int index);
 void crazypod_settings_feature_render_preview(
@@ -52,5 +57,13 @@ const char *crazypod_settings_feature_choice_title(
     int item, int index);
 void crazypod_settings_feature_apply_choice(
     int item, int index);
+void crazypod_settings_feature_begin_main_menu_reorder(
+    enum crazypod_app_id id);
+bool crazypod_settings_feature_main_menu_reordering(void);
+enum crazypod_app_id
+crazypod_settings_feature_main_menu_reorder_id(void);
+bool crazypod_settings_feature_move_main_menu_item(int direction);
+enum crazypod_app_id
+crazypod_settings_feature_finish_main_menu_reorder(void);
 
 #endif

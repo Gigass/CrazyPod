@@ -232,7 +232,6 @@ void crazypod_music_root_preview_render(
 {
     lv_obj_t *text_panel;
     lv_obj_t *title;
-    lv_obj_t *detail;
     lv_obj_t *stage;
     lv_obj_t *part;
     char count_text[96];
@@ -656,17 +655,6 @@ void crazypod_music_root_preview_render(
     }
     }
 
-    text_panel = crazypod_preview_make_text_panel(parent, 158, 58);
-    title = crazypod_ui_widget_label(
-        text_panel,
-        selected == 0 && current_track() != NULL
-            ? current_track()->title : music_menu_titles[selected],
-        &lv_font_montserrat_12,
-        COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(title, 132);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(title, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(title, 4, 6);
     if(selected == 0 && current_track() != NULL)
         snprintf(count_text, sizeof(count_text), "%s",
                  current_track()->artist);
@@ -680,13 +668,12 @@ void crazypod_music_root_preview_render(
                  selected == 5 || selected == 1
                      ? CP_FMT("%d albums") : CP_FMT("%d songs"),
                  count);
-    detail = crazypod_ui_widget_label(text_panel, count_text,
-                        &lv_font_montserrat_8,
-                        COLOR_WHITE, 125);
-    lv_obj_set_width(detail, 132);
-    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(detail, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(detail, 4, 32);
+    text_panel = crazypod_preview_make_caption(
+        parent,
+        selected == 0 && current_track() != NULL
+            ? current_track()->title : music_menu_titles[selected],
+        &lv_font_montserrat_12,
+        count_text, &lv_font_montserrat_8);
     crazypod_preview_motion_register(
         text_panel, 0, 10, 246, 0, 0, 70, 220,
         0, 6, 246, 0);

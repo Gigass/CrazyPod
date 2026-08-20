@@ -12,7 +12,7 @@
 #include "../../../crazypod_videos.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_photo_screen.h"
-#include "../../presentation/crazypod_menu_preview_motion.h"
+#include "../../presentation/crazypod_preview_motion.h"
 #include "../../presentation/crazypod_preview_primitives.h"
 #include "crazypod_photos_preview.h"
 
@@ -146,8 +146,6 @@ void crazypod_videos_preview_render(
         ? crazypod_video_resume_seconds(index) : 0;
     uint32_t duration = index >= 0
         ? crazypod_video_duration_seconds(index) : 0;
-    lv_obj_t *text_panel;
-    lv_obj_t *label;
     char time[24];
     char detail[64];
 
@@ -161,22 +159,9 @@ void crazypod_videos_preview_render(
                  (unsigned long)(resume % 60u), time);
     else
         snprintf(detail, sizeof(detail), CP_FMT("%s  ·  MPEG"), time);
-    text_panel = crazypod_preview_make_text_panel(
-        context->parent, 160, 52);
-    label = make_label(
-        text_panel, name, &lv_font_montserrat_10,
-        COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(label, 128);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 6, 6);
-    label = make_label(
-        text_panel, detail, &lv_font_montserrat_8,
-        COLOR_WHITE, 120);
-    lv_obj_set_width(label, 128);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 6, 28);
+    crazypod_preview_make_caption(
+        context->parent, name, &lv_font_montserrat_10,
+        detail, &lv_font_montserrat_8);
 }
 
 void crazypod_photos_preview_render(
@@ -233,7 +218,7 @@ void crazypod_photos_preview_render(
             if(i == 1)
                 make_box(preview, 22, 0, 14, 4, 1, 0xD2B879, 185);
             lv_obj_set_style_transform_rotation(preview, angle[i], 0);
-            crazypod_menu_preview_motion_register(
+            crazypod_preview_motion_register(
                 preview, (i - 1) * 28, 25 + i * 4, 194,
                 angle[i] + (i - 1) * 110, 0,
                 i * 45, 280, (i - 1) * 23, -16, 194,
@@ -247,7 +232,7 @@ void crazypod_photos_preview_render(
             context, video_index, 173, 48, 134, 102);
         make_box(parent, 209, 146, 60, 6, 3, 0x252A31, 210);
         if(preview != NULL)
-            crazypod_menu_preview_motion_register(
+            crazypod_preview_motion_register(
                 preview, 18, 0, 205, 55, 0,
                 0, 280, 18, -4, 205, 80);
     }
@@ -313,11 +298,11 @@ void crazypod_photos_preview_render(
                 pin, 29, 29, 0xF0CE91, 0x310914);
             crazypod_ui_widget_pixel_heart(
                 pin, 6, 8, 2, 0xFFE2A8, LV_OPA_COVER);
-            crazypod_menu_preview_motion_register(
+            crazypod_preview_motion_register(
                 pin, 13, -14, 170, 120, 0,
                 80, 240, 11, -11, 170, 180);
         }
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             preview, 17, 0, 214, 65, 0,
             0, 280, 18, -5, 214, 95);
     }
@@ -338,7 +323,7 @@ void crazypod_photos_preview_render(
             &lv_font_montserrat_24,
             0xFF8A84, LV_OPA_COVER);
         lv_obj_center(label);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             preview, 12, 6, 210, 35, 0,
             0, 260, 12, -5, 210, 65);
     }
@@ -351,24 +336,14 @@ void crazypod_photos_preview_render(
                      ? (count == 1 ? CP_FMT("%d video") : CP_FMT("%d videos"))
                      : (count == 1 ? CP_FMT("%d photo") : CP_FMT("%d photos")),
                  count);
-    text_panel = crazypod_preview_make_text_panel(parent, 166, 52);
-    label = make_label(
-        text_panel, detail, &lv_font_montserrat_10,
-        COLOR_WHITE, 190);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 7, 6);
-    label = make_label(
-        text_panel,
+    text_panel = crazypod_preview_make_caption(
+        parent, detail, &lv_font_montserrat_10,
         state->selected == 0 ? CP_TR("All pictures in /Pictures")
         : state->selected == 1 ? CP_TR("Converted MPEG files in /Videos")
         : state->selected == 2 ? CP_TR("Saved favorites")
                                : CP_TR("Erase Forever"),
-        &lv_font_montserrat_8, COLOR_WHITE, 100);
-    lv_obj_set_width(label, 132);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 4, 25);
-    crazypod_menu_preview_motion_register(
+        &lv_font_montserrat_8);
+    crazypod_preview_motion_register(
         text_panel, 0, 9, 246, 0, 0, 70, 220,
         0, 6, 246, 0);
 }

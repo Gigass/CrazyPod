@@ -6,6 +6,7 @@
 
 #include "lvgl.h"
 
+#include "../../crazypod_menu_icon.h"
 #include "../../navigation/crazypod_ui_routes.h"
 #include "../crazypod_feature.h"
 
@@ -45,6 +46,8 @@ bool crazypod_organizer_feature_item_title(
     const struct route_state *state, int index,
     bool stopwatch_running, bool workout_running,
     const char **title);
+enum crazypod_menu_icon crazypod_organizer_feature_item_icon(
+    const struct route_state *state, int index);
 bool crazypod_organizer_feature_service(
     enum crazypod_route route, long now,
     long ticks_per_second);

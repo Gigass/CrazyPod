@@ -115,6 +115,43 @@ bool crazypod_photos_feature_item_title(
     }
 }
 
+enum crazypod_menu_icon crazypod_photos_feature_item_icon(
+    const struct route_state *state, int index)
+{
+    static const enum crazypod_menu_icon root_icons[] = {
+        CRAZYPOD_MENU_ICON_PHOTO,
+        CRAZYPOD_MENU_ICON_VIDEO,
+        CRAZYPOD_MENU_ICON_FAVORITE,
+        CRAZYPOD_MENU_ICON_TRASH,
+    };
+
+    if(index < 0)
+        return CRAZYPOD_MENU_ICON_NONE;
+    switch(state->route) {
+    case PHOTOS_ROUTE_MENU:
+        return index < (int)(sizeof(root_icons) / sizeof(root_icons[0]))
+            ? root_icons[index] : CRAZYPOD_MENU_ICON_NONE;
+    case PHOTOS_ROUTE_LIBRARY:
+    case PHOTOS_ROUTE_FAVORITES:
+    case PHOTOS_ROUTE_DELETE_PHOTOS:
+        return CRAZYPOD_MENU_ICON_PHOTO;
+    case PHOTOS_ROUTE_VIDEOS:
+    case PHOTOS_ROUTE_DELETE_VIDEOS:
+        return CRAZYPOD_MENU_ICON_VIDEO;
+    case PHOTOS_ROUTE_DELETE_MENU:
+        return index == 0 ? CRAZYPOD_MENU_ICON_PHOTO :
+            index == 1 ? CRAZYPOD_MENU_ICON_VIDEO :
+            CRAZYPOD_MENU_ICON_NONE;
+    case PHOTOS_ROUTE_DELETE_PHOTO_CONFIRM:
+    case PHOTOS_ROUTE_DELETE_VIDEO_CONFIRM:
+        return CRAZYPOD_MENU_ICON_TRASH;
+    case PHOTOS_ROUTE_DETAIL:
+        return CRAZYPOD_MENU_ICON_DISPLAY;
+    default:
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
+}
+
 int crazypod_photos_feature_route_index(
     const struct route_state *state, int position)
 {
@@ -316,11 +353,14 @@ crazypod_photos_feature_confirm(
     result.selected = state->group;
     if(result.selected >= count)
         result.selected = count > 0 ? count - 1 : 0;
-    delete_feedback_success = result.deleted;
-    delete_feedback_route = result.deleted
-        ? result.return_route : state->route;
-    delete_feedback_until = now +
-        (feedback_ticks > 0 ? feedback_ticks : 1);
+    if(feedback_ticks > 0) {
+        delete_feedback_success = result.deleted;
+        delete_feedback_route = result.deleted
+            ? result.return_route : state->route;
+        delete_feedback_until = now + feedback_ticks;
+    }
+    else
+        delete_feedback_until = 0;
     return result;
 }
 

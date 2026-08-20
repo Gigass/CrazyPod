@@ -9,6 +9,7 @@ struct crazypod_system_event_actions {
     void (*usb_prompt_done)(unsigned request);
     void (*usb_connected)(intptr_t data);
     void (*usb_disconnected)(void);
+    void (*headphone_changed)(bool inserted);
     void (*power_off)(void);
     void (*reboot)(void);
 };

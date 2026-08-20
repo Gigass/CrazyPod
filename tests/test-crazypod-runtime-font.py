@@ -17,7 +17,7 @@ SCENE_RENDERER = ROOT / (
 
 SPECS = {
     *(('system', 400, size) for size in
-      (6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 22, 24, 28, 32, 40)),
+      (6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 18, 22, 24, 28, 32, 40)),
     *(('system', weight, size) for weight, size in
       ((500, 32), (700, 16), (700, 32), (900, 32))),
     *(('serif', 400, size) for size in (11, 12, 14, 16, 28)),
@@ -27,6 +27,36 @@ SPECS = {
     *(('mono', 700, size) for size in (8, 11, 14, 22)),
 }
 LOCALES = ("jp", "kr", "sc", "tc")
+CJK_ADVANCE_SAMPLES = {
+    "sc": "设置正在播放中文",
+    "tc": "設定正在播放中文",
+    "jp": "設定再生日本語かなカナ",
+    "kr": "설정재생한국어",
+}
+CJK_ADVANCE_UNITS = {"sc": 1000, "tc": 1000, "jp": 1000, "kr": 920}
+CJK_UNITS_PER_EM = 1000
+CONVTTF_DPI = 60
+
+
+def rb12_glyph_width(data, codepoint):
+    max_width = struct.unpack_from("<H", data, 4)[0]
+    first, _, count = struct.unpack_from("<III", data, 12)
+    bitmap_size, offset_count, width_count = struct.unpack_from(
+        "<III", data, 24
+    )
+    if not first <= codepoint < first + count:
+        raise ValueError(f"U+{codepoint:04X} is outside the RB12 range")
+    if width_count == 0:
+        return max_width
+
+    offset_size = 4 if bitmap_size >= 0xFFDB else 2
+    bitmap_end = 36 + bitmap_size
+    table_start = ((bitmap_end + offset_size - 1) // offset_size) * offset_size
+    width_start = table_start + offset_count * offset_size
+    width_index = codepoint - first
+    if width_index >= width_count or width_start + width_index >= len(data):
+        raise ValueError(f"missing width for U+{codepoint:04X}")
+    return data[width_start + width_index]
 
 if len(sys.argv) != 2:
     raise SystemExit("usage: test-crazypod-runtime-font.py FONT_DIR")
@@ -101,9 +131,35 @@ for key, regional_metrics in metrics.items():
             f"{sorted(regional_metrics)}"
         )
 
+# These pinned Noto faces use a 1000-unit em.  CJK ideographs/kana advance by
+# 1000 units and Hangul by 920.  A stored width below the scaled advance means
+# convttf has discarded the font's side bearings.  One extra pixel is allowed
+# where hinted ink overhangs the nominal cell and must not be clipped.
+for size in sorted(spec_size for family, weight, spec_size in SPECS
+                   if family == "system" and weight == 400):
+    for locale, sample in CJK_ADVANCE_SAMPLES.items():
+        path = font_dir / f"{locale}-system-400-{size}.fnt"
+        data = path.read_bytes()
+        widths = {char: rb12_glyph_width(data, ord(char)) for char in sample}
+        numerator = size * CONVTTF_DPI * CJK_ADVANCE_UNITS[locale]
+        denominator = 72 * CJK_UNITS_PER_EM
+        nominal_advance = (numerator + denominator // 2) // denominator
+        if any(not nominal_advance <= width <= nominal_advance + 1
+               for width in widths.values()):
+            raise SystemExit(
+                f"{path.name} does not preserve CJK advances "
+                f"({nominal_advance}px nominal): {widths}"
+            )
+        space_width = rb12_glyph_width(data, ord(" "))
+        if not 0 < space_width < min(widths.values()):
+            raise SystemExit(
+                f"{path.name} has invalid space/CJK advances: "
+                f"space={space_width}, CJK={widths}"
+            )
+
 for license_name in ("OFL-Noto-CJK.txt", "SOURCE"):
     if not (font_dir / license_name).is_file():
         raise SystemExit(f"missing {license_name}")
 
-print("Noto AOT runtime fonts: 3 semantic families, 37 tuples, "
+print("Noto AOT runtime fonts: 3 semantic families, 38 tuples, "
       "4 regional faces, identical regional line metrics")

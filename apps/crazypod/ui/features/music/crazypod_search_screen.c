@@ -15,17 +15,17 @@
 #include "crazypod_search_screen.h"
 
 #define COLOR_WHITE 0xFFFFFF
-#define CRAZYPOD_VISIBLE_ROWS 7
-#define CRAZYPOD_SEARCH_PREVIEW_ROWS 4
+#define CRAZYPOD_VISIBLE_ROWS 6
+#define CRAZYPOD_SEARCH_PREVIEW_ROWS 2
 #define CRAZYPOD_MENU_HEADER_X 16
-#define CRAZYPOD_MENU_HEADER_Y 42
+#define CRAZYPOD_MENU_HEADER_Y 38
 #define CRAZYPOD_MENU_HEADER_WIDTH 128
-#define CRAZYPOD_MENU_HEADER_HEIGHT 20
+#define CRAZYPOD_MENU_HEADER_HEIGHT 24
 #define CRAZYPOD_MENU_ROW_X 8
 #define CRAZYPOD_MENU_ROW_Y 64
 #define CRAZYPOD_MENU_ROW_WIDTH 140
-#define CRAZYPOD_MENU_ROW_HEIGHT 24
-#define CRAZYPOD_MENU_ROW_STEP 24
+#define CRAZYPOD_MENU_ROW_HEIGHT 28
+#define CRAZYPOD_MENU_ROW_STEP 28
 
 static lv_obj_t *make_box(
     lv_obj_t *parent, int x, int y, int width, int height,
@@ -93,7 +93,7 @@ void crazypod_search_screen_render(
                        context->query[0] != '\0' ? 255 : 120);
     lv_obj_set_pos(label, 31, 10);
     lv_obj_set_width(label, 92);
-    lv_obj_set_height(label, 18);
+    lv_obj_set_height(label, 23);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
 
     start = crazypod_ui_menu_window_start(
@@ -189,7 +189,7 @@ void crazypod_search_screen_render(
         for(i = 0; i < shown; ++i) {
             const struct crazypod_track *track =
                 crazypod_music_search_track(context->query, i);
-            int y = 124 + i * 17;
+            int y = 124 + i * 30;
             if(track == NULL)
                 continue;
             label = make_label(context->parent, track->title,
@@ -197,14 +197,14 @@ void crazypod_search_screen_render(
                                COLOR_WHITE, i == 0 ? 210 : 145);
             lv_obj_set_pos(label, 182, y);
             lv_obj_set_width(label, 112);
-            lv_obj_set_height(label, 10);
+            lv_obj_set_height(label, 15);
             lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
             label = make_label(context->parent, track->artist,
                                &lv_font_montserrat_8,
                                COLOR_WHITE, 75);
-            lv_obj_set_pos(label, 182, y + 9);
+            lv_obj_set_pos(label, 182, y + 15);
             lv_obj_set_width(label, 112);
-            lv_obj_set_height(label, 10);
+            lv_obj_set_height(label, 15);
             lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
         }
     }
@@ -213,7 +213,7 @@ void crazypod_search_screen_render(
                        CP_TR("Wheel Choose  Select Action"),
                        &lv_font_montserrat_8,
                        COLOR_WHITE, 125);
-    lv_obj_set_pos(label, 174, 202);
+    lv_obj_set_pos(label, 174, 200);
     lv_obj_set_width(label, 128);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     label = make_label(context->parent,

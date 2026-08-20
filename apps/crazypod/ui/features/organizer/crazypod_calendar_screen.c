@@ -60,13 +60,13 @@ void crazypod_calendar_screen_render_grid(
         panel, CP_TR("CALENDAR"), &lv_font_montserrat_8,
         0x949494, LV_OPA_COVER);
     lv_obj_set_style_text_letter_space(label, 2, 0);
-    lv_obj_set_pos(label, 14, 9);
+    lv_obj_set_pos(label, 14, 5);
     snprintf(text, sizeof(text), CP_FMT("%s %d"),
              months[date->month], date->year);
     label = crazypod_ui_widget_label(
         panel, text, &lv_font_montserrat_16,
         0x0E0E0E, LV_OPA_COVER);
-    lv_obj_set_pos(label, 14, 23);
+    lv_obj_set_pos(label, 14, 22);
     snprintf(text, sizeof(text), CP_FMT("%s %d"),
              compact_weekdays[
                  crazypod_ui_calendar_weekday(
@@ -93,7 +93,7 @@ void crazypod_calendar_screen_render_grid(
         int column = slot % 7;
         int row = slot / 7;
         int x = 10 + column * 40;
-        int y = 75 + row * 18;
+        int y = 75 + row * 19;
         int relative_day = slot - first + 1;
         int day;
         int year = date->year;
@@ -137,11 +137,11 @@ void crazypod_calendar_screen_render_grid(
         }
         if(selected)
             crazypod_ui_widget_box(
-                panel, x + 2, y - 1, 36, 17, 7,
+                panel, x + 2, y - 1, 36, 19, 7,
                 0x0E0E0E, LV_OPA_COVER);
         else if(is_today) {
             lv_obj_t *today_box = crazypod_ui_widget_box(
-                panel, x + 2, y - 1, 36, 17, 7,
+                panel, x + 2, y - 1, 36, 19, 7,
                 0xFFFFFF, LV_OPA_TRANSP);
             lv_obj_set_style_border_width(today_box, 1, 0);
             lv_obj_set_style_border_color(
@@ -159,7 +159,7 @@ void crazypod_calendar_screen_render_grid(
         lv_obj_set_pos(label, x, y);
         if(has_event)
             crazypod_ui_widget_box(
-                panel, x + 19, y + 13, 3, 3,
+                panel, x + 19, y + 15, 3, 3,
                 LV_RADIUS_CIRCLE,
                 selected ? CALENDAR_WHITE : 0x0E0E0E,
                 in_month ? 205 : 70);
@@ -188,13 +188,13 @@ void crazypod_calendar_screen_render_day(
         overlay, CP_TR("SCHEDULE"), &lv_font_montserrat_8,
         0x949494, LV_OPA_COVER);
     lv_obj_set_style_text_letter_space(label, 2, 0);
-    lv_obj_set_pos(label, 14, 9);
+    lv_obj_set_pos(label, 14, 5);
     snprintf(text, sizeof(text), CP_FMT("%04d-%02d-%02d"),
              date->year, date->month + 1, date->day);
     label = crazypod_ui_widget_label(
         overlay, text, &lv_font_montserrat_16,
         0x0E0E0E, LV_OPA_COVER);
-    lv_obj_set_pos(label, 14, 23);
+    lv_obj_set_pos(label, 14, 22);
     snprintf(text, sizeof(text), CP_FMT("%d item%s"),
              events->count, events->count == 1 ? "" : "s");
     label = crazypod_ui_widget_label(

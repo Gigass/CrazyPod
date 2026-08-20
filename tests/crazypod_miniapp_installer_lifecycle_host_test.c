@@ -25,8 +25,10 @@ static int package_open_count;
 static int publish_count;
 static int installed_verify_count;
 static int package_crc_count;
+static int package_match_count;
 static int verification_mark_count;
 static bool installed_same_version;
+static bool package_matches_install_record;
 static bool package_cached[3];
 static struct crazypod_miniapp_metadata catalog_metadata;
 
@@ -199,8 +201,21 @@ bool crazypod_miniapp_registry_installed_metadata(
     memset(verified_metadata, 0, sizeof(*verified_metadata));
     snprintf(verified_metadata->id,
              sizeof(verified_metadata->id), "test");
+    snprintf(verified_metadata->install_path,
+             sizeof(verified_metadata->install_path), "/installed/test");
     verified_metadata->version_code = 1;
     return true;
+}
+
+bool crazypod_miniapp_install_record_matches_package(
+    const char *directory, const struct cpk_reader *reader,
+    uint32_t version_code)
+{
+    assert(strcmp(directory, "/installed/test") == 0);
+    assert(reader != NULL);
+    assert(version_code == 1);
+    ++package_match_count;
+    return package_matches_install_record;
 }
 
 int crazypod_miniapp_installed_verify(
@@ -385,6 +400,7 @@ static void assert_same_version_changed_package_republishes(void)
 
     assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
     assert(package_open_count == 2);
+    assert(package_match_count == 2);
     assert(installed_verify_count == 0);
     assert(verification_mark_count == 2);
     assert(package_crc_count == MINIAPP_CPK_ENTRIES * 2);
@@ -403,6 +419,51 @@ static void assert_same_version_changed_package_republishes(void)
     assert(verification_mark_count == 4);
 }
 
+static void assert_same_package_timestamp_change_is_noop(void)
+{
+    assert_boot_work();
+    installed_same_version = true;
+    package_matches_install_record = true;
+
+    assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
+    assert(package_open_count == 2);
+    assert(package_match_count == 2);
+    assert(package_crc_count == 0);
+    assert(publish_count == 0);
+    assert(registry_rebuild_count == 1);
+    assert(verification_mark_count == 2);
+
+    assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
+    assert(package_open_count == 2);
+    assert(package_match_count == 2);
+    assert(package_crc_count == 0);
+    assert(publish_count == 0);
+    assert(registry_rebuild_count == 1);
+    assert(verification_mark_count == 4);
+}
+
+static void assert_incremental_rescan_yields_per_package(void)
+{
+    assert_boot_work();
+
+    assert(crazypod_miniapps_rescan_begin() == CRAZYPOD_MINIAPP_OK);
+    assert(crazypod_miniapps_rescan_active());
+    assert(crazypod_miniapps_rescan_step());
+    assert(open_count == 1);
+    assert(package_open_count == 1);
+    assert(publish_count == 1);
+    assert(crazypod_miniapps_rescan_active());
+    assert(crazypod_miniapps_rescan_step());
+    assert(open_count == 2);
+    assert(package_open_count == 2);
+    assert(publish_count == 2);
+    assert(crazypod_miniapps_rescan_active());
+    assert(!crazypod_miniapps_rescan_step());
+    assert(!crazypod_miniapps_rescan_active());
+    assert(crazypod_miniapps_rescan_result() == CRAZYPOD_MINIAPP_OK);
+    assert(registry_rebuild_count == 2);
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 2);
@@ -410,9 +471,13 @@ int main(int argc, char **argv)
         assert_cold_boot_rescan_prepares_registry();
     else if(strcmp(argv[1], "usb") == 0) {
         assert_usb_rescan_keeps_entry_immediate();
-    } else {
-        assert(strcmp(argv[1], "same") == 0);
+    } else if(strcmp(argv[1], "same") == 0) {
         assert_same_version_changed_package_republishes();
+    } else if(strcmp(argv[1], "identical") == 0) {
+        assert_same_package_timestamp_change_is_noop();
+    } else {
+        assert(strcmp(argv[1], "incremental") == 0);
+        assert_incremental_rescan_yields_per_package();
     }
     return 0;
 }

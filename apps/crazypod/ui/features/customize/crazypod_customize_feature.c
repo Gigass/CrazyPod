@@ -10,6 +10,7 @@
 #include "../../../crazypod_icons.h"
 #include "../../../crazypod_photos.h"
 #include "../../../crazypod_presets.h"
+#include "../../../crazypod_state.h"
 #include "crazypod_customize_catalog.h"
 #include "crazypod_customize_controller.h"
 #include "crazypod_customize_feature.h"
@@ -83,6 +84,8 @@ int crazypod_customize_feature_item_count(
         return CRAZYPOD_CUSTOMIZE_LAYOUT_COUNT;
     case DIY_ROUTE_NOW_PLAYING_THEMES:
         return crazypod_now_playing_theme_choice_count();
+    case DIY_ROUTE_HEADPHONE_POPUP:
+        return CRAZYPOD_HEADPHONE_POPUP_STYLE_COUNT;
     default:
         return 0;
     }
@@ -138,6 +141,8 @@ const char *crazypod_customize_feature_title(
         return CP_TR("LAYOUT");
     case DIY_ROUTE_NOW_PLAYING_THEMES:
         return CP_TR("Themes");
+    case DIY_ROUTE_HEADPHONE_POPUP:
+        return CP_TR("HEADPHONES");
     default:
         return "";
     }
@@ -152,6 +157,9 @@ bool crazypod_customize_feature_item_is_current(
     switch(state->route) {
     case DIY_ROUTE_NOW_PLAYING_THEMES:
         return crazypod_now_playing_theme_choice_current(index);
+    case DIY_ROUTE_HEADPHONE_POPUP:
+        return index ==
+            (int)crazypod_state_headphone_popup_style();
     case DIY_ROUTE_ICONS:
         return index == appearance->icon_theme;
     case DIY_ROUTE_CHOICES: {
@@ -249,9 +257,7 @@ bool crazypod_customize_feature_item_title(
         return true;
     case DIY_ROUTE_BACKGROUND_CHOICES:
         if(index == 0)
-            *title = state->group ==
-                CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
-                    ? CP_TR("Follow Home") : CP_TR("Default");
+            *title = CP_TR("Default");
         else if(index <= CRAZYPOD_APPEARANCE_COLOR_COUNT)
             *title = crazypod_appearance_color_name(index - 1);
         else
@@ -270,6 +276,14 @@ bool crazypod_customize_feature_item_title(
         return true;
     case DIY_ROUTE_NOW_PLAYING_THEMES:
         *title = crazypod_now_playing_theme_choice_title(index);
+        return true;
+    case DIY_ROUTE_HEADPHONE_POPUP:
+        *title = index == CRAZYPOD_HEADPHONE_POPUP_WIRED_EARBUDS
+            ? CP_TR("Wired In-Ear")
+            : index == CRAZYPOD_HEADPHONE_POPUP_OVER_EAR
+                ? CP_TR("Over-Ear")
+                : index == CRAZYPOD_HEADPHONE_POPUP_AIRPODS
+                    ? CP_TR("AirPods") : "";
         return true;
     default:
         return false;
@@ -381,12 +395,124 @@ bool crazypod_customize_feature_activate(
         case CRAZYPOD_PRESET_COMMAND_RENDER:
             host->render(false);
             break;
+        case CRAZYPOD_PRESET_COMMAND_FAILED:
+            host->operation_failed();
+            break;
         case CRAZYPOD_PRESET_COMMAND_NONE:
         default:
             break;
         }
     }
     return true;
+}
+
+static enum crazypod_menu_icon appearance_field_icon(int field)
+{
+    switch((enum crazypod_appearance_field)field) {
+    case CRAZYPOD_APPEARANCE_ICON_THEME:
+        return CRAZYPOD_MENU_ICON_ICONS;
+    case CRAZYPOD_APPEARANCE_ICON_SCALE:
+        return CRAZYPOD_MENU_ICON_ICON_SIZE;
+    case CRAZYPOD_APPEARANCE_SOUND_WAVE_STYLE:
+        return CRAZYPOD_MENU_ICON_WAVE;
+    case CRAZYPOD_APPEARANCE_GLOW:
+        return CRAZYPOD_MENU_ICON_GLOW;
+    case CRAZYPOD_APPEARANCE_HIGHLIGHT_STYLE:
+        return CRAZYPOD_MENU_ICON_HIGHLIGHT;
+    case CRAZYPOD_APPEARANCE_PRIMARY:
+        return CRAZYPOD_MENU_ICON_PRIMARY_COLOR;
+    case CRAZYPOD_APPEARANCE_SECONDARY:
+        return CRAZYPOD_MENU_ICON_SECONDARY_COLOR;
+    case CRAZYPOD_APPEARANCE_HOME_BACKGROUND:
+        return CRAZYPOD_MENU_ICON_HOME;
+    case CRAZYPOD_APPEARANCE_MENU_BACKGROUND:
+        return CRAZYPOD_MENU_ICON_MENU;
+    case CRAZYPOD_APPEARANCE_LOCK_BACKGROUND:
+        return CRAZYPOD_MENU_ICON_LOCK;
+    case CRAZYPOD_APPEARANCE_SCREEN_TOP_RADIUS:
+        return CRAZYPOD_MENU_ICON_TOP;
+    case CRAZYPOD_APPEARANCE_SCREEN_BOTTOM_RADIUS:
+        return CRAZYPOD_MENU_ICON_BOTTOM;
+    default:
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
+}
+
+enum crazypod_menu_icon crazypod_customize_feature_item_icon(
+    const struct route_state *state, int index)
+{
+    static const enum crazypod_menu_icon root_icons[] = {
+        CRAZYPOD_MENU_ICON_PRESETS,
+        CRAZYPOD_MENU_ICON_ICONS,
+        CRAZYPOD_MENU_ICON_DETAILS,
+        CRAZYPOD_MENU_ICON_BACKGROUNDS,
+        CRAZYPOD_MENU_ICON_THEMES,
+        CRAZYPOD_MENU_ICON_SOUND,
+        CRAZYPOD_MENU_ICON_LAYOUT,
+    };
+    static const enum crazypod_menu_icon detail_icons[] = {
+        CRAZYPOD_MENU_ICON_ICON_SIZE,
+        CRAZYPOD_MENU_ICON_WAVE,
+        CRAZYPOD_MENU_ICON_GLOW,
+        CRAZYPOD_MENU_ICON_HIGHLIGHT,
+        CRAZYPOD_MENU_ICON_PRIMARY_COLOR,
+        CRAZYPOD_MENU_ICON_SECONDARY_COLOR,
+    };
+
+    if(index < 0)
+        return CRAZYPOD_MENU_ICON_NONE;
+    switch(state->route) {
+    case DIY_ROUTE_MENU:
+        return index < (int)(sizeof(root_icons) / sizeof(root_icons[0]))
+            ? root_icons[index] : CRAZYPOD_MENU_ICON_NONE;
+    case DIY_ROUTE_PRESETS:
+        return index == 0 ? CRAZYPOD_MENU_ICON_SAVE :
+            index == 1 ? CRAZYPOD_MENU_ICON_PRESETS :
+            index == 2 ? CRAZYPOD_MENU_ICON_IMPORT :
+            CRAZYPOD_MENU_ICON_NONE;
+    case DIY_ROUTE_PRESET_LIBRARY:
+        return CRAZYPOD_MENU_ICON_PRESETS;
+    case DIY_ROUTE_PRESET_ACTIONS:
+        return index == 0 ? CRAZYPOD_MENU_ICON_APPLY :
+            index == 1 ? CRAZYPOD_MENU_ICON_EXPORT :
+            index == 2 ? CRAZYPOD_MENU_ICON_EDIT :
+            CRAZYPOD_MENU_ICON_NONE;
+    case DIY_ROUTE_PRESET_EDIT:
+        return index == 0 ? CRAZYPOD_MENU_ICON_TITLE :
+            index == 1 ? CRAZYPOD_MENU_ICON_APPLY :
+            index == 2 ? CRAZYPOD_MENU_ICON_TRASH :
+            CRAZYPOD_MENU_ICON_NONE;
+    case DIY_ROUTE_ICONS:
+        return CRAZYPOD_MENU_ICON_ICONS;
+    case DIY_ROUTE_DETAILS:
+        return index < (int)(sizeof(detail_icons) / sizeof(detail_icons[0]))
+            ? detail_icons[index] : CRAZYPOD_MENU_ICON_NONE;
+    case DIY_ROUTE_CHOICES:
+        return appearance_field_icon(state->group);
+    case DIY_ROUTE_BACKGROUNDS:
+        return index == 0 ? CRAZYPOD_MENU_ICON_HOME :
+            index == 1 ? CRAZYPOD_MENU_ICON_MENU :
+            index == 2 ? CRAZYPOD_MENU_ICON_LOCK :
+            CRAZYPOD_MENU_ICON_NONE;
+    case DIY_ROUTE_BACKGROUND_CHOICES:
+        return index == CRAZYPOD_APPEARANCE_COLOR_COUNT + 1
+            ? CRAZYPOD_MENU_ICON_WALLPAPER
+            : appearance_field_icon(state->group);
+    case DIY_ROUTE_WALLPAPER_FILES:
+        return CRAZYPOD_MENU_ICON_PHOTO;
+    case DIY_ROUTE_LAYOUT:
+        return index == 0 ? CRAZYPOD_MENU_ICON_TOP :
+            index == 1 ? CRAZYPOD_MENU_ICON_BOTTOM :
+            CRAZYPOD_MENU_ICON_NONE;
+    case DIY_ROUTE_NOW_PLAYING_THEMES:
+        return CRAZYPOD_MENU_ICON_THEMES;
+    case DIY_ROUTE_HEADPHONE_POPUP:
+        return CRAZYPOD_MENU_ICON_SOUND;
+    case DIY_ROUTE_PRESET_RENAME:
+    case DIY_ROUTE_WALLPAPER_CROP:
+    default:
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
 }
 
 bool crazypod_customize_feature_render(

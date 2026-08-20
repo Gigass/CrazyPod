@@ -513,26 +513,41 @@ void print_raw_glyph( FT_Face face)
     printf("----End-----\n");
 }
 
+static int fixed_26_6_to_int( FT_Pos value )
+{
+    if (value >= 0)
+        return (int)((value + 32) >> 6);
+
+    return -(int)(((-value) + 32) >> 6);
+}
+
 int glyph_width( FT_Face face, FT_Long code, FT_Long digit_width )
 {
+    FT_GlyphSlot slot = face->glyph;
+    FT_Pos spacing = (FT_Pos)(between_chr * (1 << 6));
+    int ink_right;
     int width;
 
     if (code >= '0' && code <= '9' && digit_width)
     {
-        width = digit_width;
+        width = digit_width + fixed_26_6_to_int(spacing);
     }
     else
     {
-        int pitch, h_adv;
-        unsigned spacing = (unsigned)(between_chr * (1<<6));/* convert to fixed point */
-
-        pitch = ABS(face->glyph->bitmap.pitch);
-        h_adv = face->glyph->metrics.horiAdvance >> 6;
-        width = (face->glyph->metrics.width + spacing) >> 6;
-
-        if(pitch == 0)    pitch = h_adv;
-        if(width < pitch) width = pitch;
+        /* Rockbox uses the stored width as both the bitmap cell width and the
+         * cursor advance.  The advance, not the ink bounds or bitmap pitch,
+         * carries the typeface's intended side bearings. */
+        width = fixed_26_6_to_int(slot->advance.x + spacing);
     }
+
+    /* Keep overhanging ink on the right inside the bitmap cell.  Negative
+     * left bearings cannot be represented by RB12 and are clipped when the
+     * glyph is copied below, without changing the designed advance. */
+    ink_right = slot->bitmap_left + (int)slot->bitmap.width;
+    if (width < ink_right)
+        width = ink_right;
+    if (width < 1)
+        width = 1;
 
     return width;
 }
@@ -559,7 +574,7 @@ FT_Long check_digit_width( FT_Face face )
         last_advance = metrics->horiAdvance;
     }
 
-    return last_advance >> 6;
+    return fixed_26_6_to_int(last_advance);
 }
 
 void trim_glyph( FT_GlyphSlot glyph, int *empty_first_col,
@@ -751,12 +766,13 @@ void convttf(char* path, char* destfile, FT_Long face_index)
         int start_y;
 
         int glyph_height;
-        int stride;
+        int bitmap_width;
+        int source_pitch;
         unsigned char* buf;
-        unsigned char* endbuf;
 
-        /* insert empty pixels on the left */
-        int col_off;
+        int copy_x;
+        int first_bitmap_col;
+        int last_bitmap_col;
         int numbits;
         unsigned int field;
 
@@ -807,34 +823,45 @@ void convttf(char* path, char* destfile, FT_Long face_index)
         start_y =  export_font.header.ascent - slot->bitmap_top;
 
         glyph_height = source->rows;
-        stride = source->pitch;
+        bitmap_width = source->width;
+        source_pitch = source->pitch;
         buf = tmpbuf;
-        endbuf = tmpbuf + w*h;
 
-        err = 0;
-        /* insert empty pixels on the left */
-        col_off = w - stride;
-        if (col_off > 1) col_off /= 2;
-        if (col_off < 0) col_off = 0;
+        /* Preserve FreeType's horizontal bearing.  Centering the ink inside
+         * the cell discards the typeface metrics and visibly squeezes CJK. */
+        copy_x = slot->bitmap_left;
+        first_bitmap_col = empty_first_col;
+        last_bitmap_col = bitmap_width - empty_last_col;
+        if (trimming)
+        {
+            int trimmed_width = last_bitmap_col - first_bitmap_col;
+            copy_x = (w - trimmed_width) / 2 - first_bitmap_col;
+        }
 
         for(row=0; row < glyph_height; row++)
         {
+            const unsigned char *source_row;
+
             if(row+start_y < 0 || row+start_y >= h)
                 continue;
-            for(col = empty_first_col; col < stride; col++)
+
+            if (source_pitch >= 0)
+                source_row = src + source_pitch * row;
+            else
+                source_row = src + (-source_pitch) * (glyph_height - 1 - row);
+
+            for(col = first_bitmap_col; col < last_bitmap_col; col++)
             {
-                unsigned char *tsrc, *dst;
-                dst = buf + (w*(start_y+row)) + col + col_off;
-                tsrc = src + stride*row + col;
-                if (dst < endbuf && dst >= tmpbuf)
-                    *dst = 0xff - *tsrc;
-                else {
-                    err = 1;
-                    printf("Error! row: %3d col: %3d\n", row, col);
-                }
+                int destination_x = copy_x + col;
+                unsigned char *dst;
+
+                if (destination_x < 0 || destination_x >= w)
+                    continue;
+
+                dst = buf + (w * (start_y + row)) + destination_x;
+                *dst = 0xff - source_row[col];
             }
         }
-        if(err) print_raw_glyph(face);
 
         buf = tmpbuf;
         field = 0;

@@ -2,11 +2,30 @@
 
 #ifdef IPOD_6G
 
+#include "crazypod_marquee.h"
 #include "crazypod_preview_primitives.h"
 #include "crazypod_ui_widgets.h"
 
+#define COLOR_WHITE 0xFFFFFF
 #define TEXT_PANEL_WIDTH 140
 #define TEXT_PANEL_MAX_HEIGHT 70
+#define CAPTION_TEXT_X 7
+#define CAPTION_TEXT_WIDTH 126
+#define CAPTION_TITLE_Y 4
+#define CAPTION_TITLE_HEIGHT 22
+#define CAPTION_DETAIL_Y 29
+#define CAPTION_DETAIL_HEIGHT 18
+
+int crazypod_preview_centered_x(int width)
+{
+    return CRAZYPOD_PREVIEW_PANE_X +
+        (CRAZYPOD_PREVIEW_PANE_WIDTH - width) / 2;
+}
+
+int crazypod_preview_visual_y(int height)
+{
+    return CRAZYPOD_PREVIEW_VISUAL_CENTER_Y - height / 2;
+}
 
 void crazypod_preview_add_bevel(
     lv_obj_t *object, int width, int height,
@@ -91,6 +110,53 @@ lv_obj_t *crazypod_preview_make_text_panel(
     crazypod_preview_add_fastener(panel, 5, 5, 0xAEB7BB);
     crazypod_preview_add_fastener(
         panel, TEXT_PANEL_WIDTH - 10, 5, 0xAEB7BB);
+    return panel;
+}
+
+static lv_obj_t *make_caption_label(
+    lv_obj_t *parent, const char *text,
+    const lv_font_t *font, int y, int height,
+    lv_opa_t opacity)
+{
+    lv_obj_t *label = crazypod_ui_widget_label(
+        parent, text != NULL ? text : "",
+        font, COLOR_WHITE, opacity);
+
+    lv_obj_set_pos(label, CAPTION_TEXT_X, y);
+    lv_obj_set_size(label, CAPTION_TEXT_WIDTH, height);
+    crazypod_marquee_configure_centered(label, true);
+    return label;
+}
+
+lv_obj_t *crazypod_preview_make_caption(
+    lv_obj_t *parent,
+    const char *title, const lv_font_t *title_font,
+    const char *detail, const lv_font_t *detail_font)
+{
+    lv_obj_t *panel = crazypod_preview_make_text_panel(
+        parent, CRAZYPOD_PREVIEW_CAPTION_Y,
+        CRAZYPOD_PREVIEW_CAPTION_HEIGHT);
+
+    if(detail == NULL || detail[0] == '\0') {
+        int line_height = lv_font_get_line_height(title_font);
+        int y;
+
+        if(line_height > CAPTION_TITLE_HEIGHT)
+            line_height = CAPTION_TITLE_HEIGHT;
+        y = (CRAZYPOD_PREVIEW_CAPTION_HEIGHT - line_height) / 2;
+        make_caption_label(
+            panel, title, title_font, y, line_height,
+            LV_OPA_COVER);
+        return panel;
+    }
+
+    make_caption_label(
+        panel, title, title_font,
+        CAPTION_TITLE_Y, CAPTION_TITLE_HEIGHT,
+        LV_OPA_COVER);
+    make_caption_label(
+        panel, detail, detail_font,
+        CAPTION_DETAIL_Y, CAPTION_DETAIL_HEIGHT, 135);
     return panel;
 }
 

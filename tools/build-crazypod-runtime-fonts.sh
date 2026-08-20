@@ -11,6 +11,9 @@ source_dir=${CRAZYPOD_NOTO_DIR:-"$repo_root/.cache/crazypod-noto"}
 cache_dir=${CRAZYPOD_AOT_FONT_CACHE:-"$repo_root/.cache/crazypod-noto-aot"}
 destination="$1/crazypod-aot"
 converter=${CRAZYPOD_CONVTTF:-"$repo_root/tools/convttf"}
+# Bump this whenever convttf changes the meaning of stored glyph metrics.
+# Prefixing the cache entry keeps older artifacts available but unusable.
+cache_revision=advance-bearing-v1
 
 if [ ! -f "$source_dir/SHA256SUMS" ]; then
     "$repo_root/tools/fetch-crazypod-noto.sh" "$source_dir"
@@ -90,7 +93,7 @@ build_one()
     face=$(locale_face "$locale" "$family")
     source="$source_dir/$collection-$physical.ttc"
     name="$locale-$family-$weight-$size.fnt"
-    cached="$cache_dir/$name"
+    cached="$cache_dir/$cache_revision-$name"
 
     if [ ! -f "$source" ]; then
         echo "Error: missing pinned Noto source '$source'." >&2
@@ -110,7 +113,7 @@ build_one()
 # another RN size or weight.
 font_specs='system:400:6 system:400:7 system:400:8 system:400:9
 system:400:10 system:400:11 system:400:12 system:400:14
-system:400:15 system:400:16 system:400:22 system:400:24
+system:400:15 system:400:16 system:400:18 system:400:22 system:400:24
 system:400:28 system:400:32 system:400:40
 system:500:32 system:700:16 system:700:32 system:900:32
 serif:400:12 serif:400:14 serif:400:16 serif:400:28

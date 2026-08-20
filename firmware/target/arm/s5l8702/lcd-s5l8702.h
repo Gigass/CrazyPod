@@ -77,7 +77,33 @@ struct lcd_info_rec {
 #ifdef BOOTLOADER
     void *seq_init;
 #endif
+#ifdef IPOD_6G
+    void *seq_frame_sync;
+#endif
 };
+
+#ifdef IPOD_6G
+enum lcd_frame_sync_method {
+    LCD_FRAME_SYNC_PROBING = 0,
+    LCD_FRAME_SYNC_MARKER,
+    LCD_FRAME_SYNC_SCANLINE,
+    LCD_FRAME_SYNC_UNAVAILABLE,
+};
+
+struct lcd_frame_sync_diagnostics {
+    int panel_type;
+    enum lcd_frame_sync_method method;
+    uint32_t waits;
+    uint32_t marker_waits;
+    uint32_t scanline_waits;
+    uint32_t timeouts;
+    uint32_t last_wait_us;
+    uint32_t max_wait_us;
+};
+
+void lcd_get_frame_sync_diagnostics(
+    struct lcd_frame_sync_diagnostics *diagnostics);
+#endif
 
 void lcd_awake(void);
 

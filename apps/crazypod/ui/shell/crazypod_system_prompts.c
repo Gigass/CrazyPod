@@ -3,9 +3,11 @@
 #ifdef IPOD_6G
 
 #include "backlight.h"
+#include "button.h"
 #include "file.h"
 #include "font.h"
 #include "kernel.h"
+#include "lvgl.h"
 #include "powermgmt.h"
 #include "usb.h"
 
@@ -27,6 +29,7 @@
 #include "../presentation/crazypod_preview_motion.h"
 #include "crazypod_desktop.h"
 #include "crazypod_desktop_native.h"
+#include "crazypod_headphone_popup.h"
 #include "crazypod_power_prompt.h"
 #include "crazypod_system_prompts.h"
 #include "crazypod_usb_prompt.h"
@@ -39,8 +42,13 @@ static struct {
     bool storage_active;
 } prompts;
 
+static void dismissed(void);
+
 static void before_show(void)
 {
+    if(crazypod_headphone_popup_visible())
+        crazypod_desktop_native_preserve_modal_underlay();
+    crazypod_headphone_popup_dismiss(false);
     if(crazypod_choice_coordinator_visible())
         crazypod_choice_coordinator_dismiss(false);
     if(crazypod_now_playing_overlay_visible())
@@ -52,6 +60,34 @@ static void before_show(void)
     crazypod_overlay_glass_prepare(false);
     crazypod_desktop_native_invalidate(true);
 }
+
+#ifdef HAVE_HEADPHONE_DETECTION
+static bool headphone_can_show(void)
+{
+    return !prompts.storage_active &&
+        !crazypod_power_prompt_visible() &&
+        !crazypod_usb_prompt_visible();
+}
+
+static void headphone_before_show(void)
+{
+    backlight_on();
+    crazypod_overlay_glass_prepare(false);
+}
+
+static void configure_headphone(void)
+{
+    const struct crazypod_headphone_popup_callbacks callbacks = {
+        .can_show = headphone_can_show,
+        .before_show = headphone_before_show,
+        .create_panel = crazypod_overlay_glass_panel,
+        .dismissed = dismissed,
+    };
+
+    crazypod_headphone_popup_configure(
+        lv_layer_top(), &callbacks);
+}
+#endif
 
 static void dismissed(void)
 {
@@ -71,7 +107,7 @@ static void execute(enum shutdown_type type)
 static void power_execute(int selected)
 {
     execute(selected == 0
-        ? SHUTDOWN_POWER_OFF : SHUTDOWN_REBOOT);
+        ? SHUTDOWN_REBOOT : SHUTDOWN_POWER_OFF);
 }
 
 static void configure_power(void)
@@ -93,6 +129,8 @@ static void configure_power(void)
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
 static void usb_before_show(void)
 {
+    if(crazypod_power_prompt_visible())
+        crazypod_desktop_native_preserve_modal_underlay();
     crazypod_power_prompt_dismiss();
     before_show();
 }
@@ -127,8 +165,46 @@ void crazypod_system_prompts_initialize_usb(void)
 
 void crazypod_system_prompts_set_ui_ready(void)
 {
+#ifdef HAVE_HEADPHONE_DETECTION
+    configure_headphone();
+    crazypod_headphone_popup_set_ui_ready(
+        headphones_inserted());
+#endif
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
     crazypod_usb_prompt_set_ui_ready(true);
+#endif
+}
+
+bool crazypod_system_prompts_headphone_visible(void)
+{
+#ifdef HAVE_HEADPHONE_DETECTION
+    return crazypod_headphone_popup_visible();
+#else
+    return false;
+#endif
+}
+
+bool crazypod_system_prompts_handle_headphone(
+    long base, bool repeated, intptr_t data)
+{
+#ifdef HAVE_HEADPHONE_DETECTION
+    return crazypod_headphone_popup_handle_button(
+        base, repeated, data);
+#else
+    (void)base;
+    (void)repeated;
+    (void)data;
+    return false;
+#endif
+}
+
+void crazypod_system_prompts_headphone_changed(bool inserted)
+{
+#ifdef HAVE_HEADPHONE_DETECTION
+    configure_headphone();
+    crazypod_headphone_popup_connection_changed(inserted);
+#else
+    (void)inserted;
 #endif
 }
 
@@ -211,6 +287,7 @@ void crazypod_system_prompts_usb_done(unsigned request)
 
 void crazypod_system_prompts_usb_connected(intptr_t data)
 {
+    crazypod_headphone_popup_dismiss(false);
     /*
      * The host may replace any storage-backed catalog while it owns mass
      * storage. Drop every product route now so stale numeric selections
@@ -218,6 +295,10 @@ void crazypod_system_prompts_usb_connected(intptr_t data)
      * close_product() is a no-op when Home is already visible.
      */
     prompts.host.close_product();
+    if(crazypod_miniapps_feature_is_open()) {
+        crazypod_miniapps_feature_reset_input();
+        crazypod_miniapps_feature_close();
+    }
     prompts.storage_active = true;
     crazypod_music_library_schedule_rescan(
         prompts.host.now() + HZ / 2);
@@ -250,18 +331,24 @@ void crazypod_system_prompts_usb_disconnected(void)
     if(crazypod_usb_prompt_data_blocking())
         crazypod_usb_prompt_dismiss();
 #endif
+    /* Commit the first non-USB frame before starting any catalog work. */
+    crazypod_desktop_native_invalidate(true);
+    lv_refr_now(NULL);
+    if(prompts.host.present != NULL)
+        prompts.host.present();
     crazypod_books_invalidate_scan();
     crazypod_organizer_invalidate();
     crazypod_artwork_resume();
     crazypod_photos_resume();
     crazypod_videos_resume();
-    crazypod_miniapps_feature_rescan();
+    crazypod_miniapps_feature_request_rescan();
     crazypod_music_library_schedule_rescan(
         prompts.host.now() + HZ / 2);
 }
 
 void crazypod_system_prompts_power_off(void)
 {
+    crazypod_headphone_popup_dismiss(false);
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
     if(crazypod_usb_prompt_visible())
         crazypod_usb_prompt_finish(USB_MODE_CHARGE);
@@ -272,6 +359,7 @@ void crazypod_system_prompts_power_off(void)
 
 void crazypod_system_prompts_reboot(void)
 {
+    crazypod_headphone_popup_dismiss(false);
     crazypod_power_prompt_dismiss();
     execute(SHUTDOWN_REBOOT);
 }

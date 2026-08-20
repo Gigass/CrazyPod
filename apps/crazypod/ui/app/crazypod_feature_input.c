@@ -103,6 +103,8 @@ static bool handle_settings_pressed(
     const struct crazypod_feature_input_context input = {
         .now = host.now(),
         .render = host.render,
+        .move = move,
+        .activate = activate,
         .pop = crazypod_route_actions_pop,
     };
 

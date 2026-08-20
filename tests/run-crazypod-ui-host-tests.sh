@@ -22,6 +22,17 @@ cc -std=c99 -Wall -Wextra -Werror \
 "$test_root/crazypod_ui_pure_host_test"
 
 cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-frameclock-stubs" \
+    -I"$repo_root/apps/crazypod" \
+    -I"$repo_root/apps/crazypod/ui" \
+    "$repo_root/apps/crazypod/crazypod_apps.c" \
+    "$repo_root/apps/crazypod/ui/features/settings/crazypod_settings_controller.c" \
+    "$repo_root/tests/crazypod_settings_reorder_host_test.c" \
+    -o "$test_root/crazypod_settings_reorder_host_test"
+
+"$test_root/crazypod_settings_reorder_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-lyrics-stubs" \
     -I"$repo_root/apps/crazypod" \
     "$repo_root/apps/crazypod/crazypod_lyrics.c" \
@@ -67,3 +78,14 @@ cc -std=c99 -Wall -Wextra -Werror \
     -o "$test_root/crazypod_music_storage_host_test"
 
 "$test_root/crazypod_music_storage_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-frameclock-stubs" \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/apps/crazypod/crazypod_frameclock.c" \
+    "$repo_root/tests/crazypod_frameclock_host_test.c" \
+    -o "$test_root/crazypod_frameclock_host_test"
+
+"$test_root/crazypod_frameclock_host_test"
+
+python3 "$repo_root/tests/test-crazypod-menu-icons.py"

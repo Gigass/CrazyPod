@@ -46,7 +46,6 @@ void crazypod_extras_preview_render(
         app != NULL ? crazypod_app_catalog_index(app->id) : -1;
     const struct crazypod_icon *icon =
         app_index >= 0 ? crazypod_icon_get(app_index) : NULL;
-    lv_obj_t *text_panel;
     lv_obj_t *label;
 
     make_box(
@@ -63,11 +62,14 @@ void crazypod_extras_preview_render(
         icon_descriptor.data_size = icon->stride * icon->height;
         icon_descriptor.data = icon->pixels;
         crazypod_photos_feature_render_image(
-            parent, &icon_descriptor, 174, 37, 132, 132);
+            parent, &icon_descriptor,
+            crazypod_preview_centered_x(132),
+            crazypod_preview_visual_y(132), 132, 132);
     }
     else {
         lv_obj_t *fallback = make_box(
-            parent, 196, 57, 88, 88, 20,
+            parent, crazypod_preview_centered_x(88),
+            crazypod_preview_visual_y(88), 88, 88, 20,
             app != NULL ? app->color : 0x59606B,
             LV_OPA_COVER);
         label = make_label(
@@ -76,25 +78,14 @@ void crazypod_extras_preview_render(
             &lv_font_montserrat_24, COLOR_WHITE, 230);
         lv_obj_center(label);
     }
-    text_panel =
-        crazypod_preview_make_text_panel(parent, 168, 52);
-    label = make_label(
-        text_panel,
+    crazypod_preview_make_caption(
+        parent,
         app != NULL ? app->name : CP_TR("More Features"),
-        metadata_font, COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 7, 5);
-    label = make_label(
-        text_panel,
+        metadata_font,
         app != NULL
             ? CP_TR("Hidden from Main Menu")
             : CP_TR("No hidden applications"),
-        &lv_font_montserrat_8, COLOR_WHITE, 135);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 7, 30);
+        &lv_font_montserrat_8);
 }
 
 #endif

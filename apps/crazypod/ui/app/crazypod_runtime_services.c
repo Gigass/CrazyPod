@@ -28,6 +28,7 @@
 #include "../shell/crazypod_shell.h"
 #include "../shell/crazypod_system_prompts.h"
 #include "crazypod_route_actions.h"
+#include "crazypod_choice_coordinator.h"
 #include "crazypod_miniapp_repro.h"
 #include "crazypod_runtime_services.h"
 #include "crazypod_screen_off_policy.h"
@@ -90,10 +91,19 @@ static int runtime_wait_ticks(void)
 {
     int status;
 
+    if(crazypod_miniapps_feature_rescan_pending())
+        return CRAZYPOD_MEDIA_WAIT_TICKS;
     if(crazypod_lock_screen_is_locked()) {
-        return crazypod_lock_screen_motion_active()
-            ? CRAZYPOD_FRAME_WAIT_TICKS
-            : CRAZYPOD_STATIC_WAIT_TICKS;
+        if(crazypod_lock_screen_motion_active())
+            return CRAZYPOD_FRAME_WAIT_TICKS;
+        if(is_backlight_on(true)) {
+            if(crazypod_artwork_busy())
+                return CRAZYPOD_MEDIA_WAIT_TICKS;
+            status = audio_status();
+            if((status & AUDIO_STATUS_PLAY) != 0)
+                return CRAZYPOD_PLAYBACK_WAIT_TICKS;
+        }
+        return CRAZYPOD_STATIC_WAIT_TICKS;
     }
     if(crazypod_miniapps_feature_motion_active() ||
        lv_anim_count_running() ||
@@ -191,9 +201,11 @@ void crazypod_runtime_services_tick(
 
     crazypod_miniapp_alarm_tick(
         crazypod_miniapp_host_epoch_seconds());
+    crazypod_miniapps_feature_service_rescan();
 
     crazypod_music_set_scan_suspended(locked);
-    crazypod_artwork_set_lock_suspended(locked);
+    crazypod_artwork_set_lock_suspended(
+        locked && !is_backlight_on(true));
     crazypod_photos_set_lock_suspended(locked);
     crazypod_videos_set_lock_suspended(locked);
     crazypod_photos_set_route_suspended(!photos_route);
@@ -209,7 +221,8 @@ void crazypod_runtime_services_tick(
     if(!locked && routed)
         crazypod_photos_runtime_service(state, now);
     if(!locked && routed &&
-       crazypod_photos_feature_service_feedback(now))
+       crazypod_photos_feature_service_feedback(now) &&
+       !crazypod_choice_coordinator_visible())
         render_route(false);
     if(!locked)
         crazypod_wallpaper_crop_runtime_service(now);
@@ -218,7 +231,8 @@ void crazypod_runtime_services_tick(
              crazypod_system_prompts_storage_active());
     crazypod_route_actions_service_notes();
     if(!locked && routed && crazypod_organizer_feature_service(
-           state->route, now, HZ))
+           state->route, now, HZ) &&
+       !crazypod_choice_coordinator_visible())
         render_route(false);
     if(miniapp_active && crazypod_now_playing_theme_open()) {
         crazypod_now_playing_artwork_sync();

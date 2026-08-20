@@ -1733,6 +1733,14 @@
         "apps/crazypod/ui/shell/crazypod_lock_screen.c:83"
       ]
     },
+    "Failed": {
+      "locations": [
+        "apps/crazypod/crazypod_ui.c:415",
+        "apps/crazypod/crazypod_ui.c:473",
+        "apps/crazypod/ui/app/crazypod_choice_coordinator.c:542",
+        "apps/crazypod/ui/app/crazypod_route_actions.c:674"
+      ]
+    },
     "Favorite": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:153",
@@ -2567,6 +2575,12 @@
     "Mount disk on computer": {
       "locations": [
         "apps/crazypod/ui/shell/crazypod_usb_prompt.c:148"
+      ]
+    },
+    "Move": {
+      "locations": [
+        "apps/crazypod/ui/app/crazypod_choice_coordinator.c:244",
+        "apps/crazypod/ui/app/crazypod_choice_coordinator.c:248"
       ]
     },
     "Music": {
@@ -3768,7 +3782,7 @@
         "apps/crazypod/ui/features/settings/crazypod_settings_model.c:111"
       ]
     },
-    "Shut Down": {
+    "Shutdown": {
       "locations": [
         "apps/crazypod/ui/shell/crazypod_power_prompt.c:113"
       ]
@@ -4472,6 +4486,57 @@
     "by ": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_screen.c:142"
+      ]
+    },
+    "AirPods": {
+      "keepEnglish": true,
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_headphone_popup.c"
+      ]
+    },
+    "Choose the insert animation": {
+      "locations": [
+        "apps/crazypod/ui/features/customize/crazypod_customize_preview.c"
+      ]
+    },
+    "Connected": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_headphone_popup.c"
+      ]
+    },
+    "Connecting...": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_headphone_popup.c"
+      ]
+    },
+    "HEADPHONES": {
+      "locations": [
+        "apps/crazypod/ui/features/customize/crazypod_customize_feature.c"
+      ]
+    },
+    "Headphones": {
+      "locations": [
+        "apps/crazypod/ui/features/customize/crazypod_customize_catalog.c"
+      ]
+    },
+    "Over-Ear Headphones": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_headphone_popup.c"
+      ]
+    },
+    "Over-Ear": {
+      "locations": [
+        "apps/crazypod/ui/features/customize/crazypod_customize_feature.c"
+      ]
+    },
+    "Wired Earphones": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_headphone_popup.c"
+      ]
+    },
+    "Wired In-Ear": {
+      "locations": [
+        "apps/crazypod/ui/features/customize/crazypod_customize_feature.c"
       ]
     },
     "Language": {

@@ -3,6 +3,7 @@
 
 #include "lvgl.h"
 
+#include "../../crazypod_menu_icon.h"
 #include "../../navigation/crazypod_ui_routes.h"
 #include "../../navigation/crazypod_input_event.h"
 #include "../crazypod_feature.h"
@@ -46,6 +47,8 @@ const char *crazypod_photos_feature_title(
 bool crazypod_photos_feature_item_title(
     const struct route_state *state, int index,
     const char **title);
+enum crazypod_menu_icon crazypod_photos_feature_item_icon(
+    const struct route_state *state, int index);
 int crazypod_photos_feature_route_index(
     const struct route_state *state, int position);
 void crazypod_photos_feature_initialize_media(void);

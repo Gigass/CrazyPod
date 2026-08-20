@@ -4,6 +4,8 @@
 
 #ifdef IPOD_6G
 
+#include "button.h"
+
 #include "../../../crazypod_apps.h"
 #include "crazypod_settings_model.h"
 #include "crazypod_eq_studio_controller.h"
@@ -70,6 +72,9 @@ const char *crazypod_settings_feature_title(
 bool crazypod_settings_feature_item_is_current(
     const struct route_state *state, int index)
 {
+    if(state->route == SETTINGS_ROUTE_MAIN_MENU &&
+       crazypod_settings_main_menu_reordering())
+        return false;
     return state->route == SETTINGS_ROUTE_MAIN_MENU &&
         crazypod_apps_is_enabled(crazypod_apps_ordered_id(index));
 }
@@ -127,6 +132,114 @@ bool crazypod_settings_feature_item_title(
     }
 }
 
+static enum crazypod_menu_icon settings_item_icon(int item)
+{
+    switch(item) {
+    case SETTINGS_ITEM_LANGUAGE:
+        return CRAZYPOD_MENU_ICON_LANGUAGE;
+    case SETTINGS_ITEM_EQ_ENABLED:
+        return CRAZYPOD_MENU_ICON_EQUALIZER;
+    case SETTINGS_ITEM_BASS:
+        return CRAZYPOD_MENU_ICON_BASS;
+    case SETTINGS_ITEM_TREBLE:
+        return CRAZYPOD_MENU_ICON_TREBLE;
+    case SETTINGS_ITEM_BALANCE:
+        return CRAZYPOD_MENU_ICON_BALANCE;
+    case SETTINGS_ITEM_BRIGHTNESS:
+        return CRAZYPOD_MENU_ICON_BRIGHTNESS;
+    case SETTINGS_ITEM_BACKLIGHT_TIMEOUT:
+        return CRAZYPOD_MENU_ICON_BACKLIGHT;
+    case SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED:
+        return CRAZYPOD_MENU_ICON_CHARGING;
+    case SETTINGS_ITEM_LCD_SLEEP:
+        return CRAZYPOD_MENU_ICON_DISPLAY_SLEEP;
+    case SETTINGS_ITEM_REDUCE_MOTION:
+        return CRAZYPOD_MENU_ICON_MOTION_OFF;
+    case SETTINGS_ITEM_SHUFFLE:
+        return CRAZYPOD_MENU_ICON_SHUFFLE;
+    case SETTINGS_ITEM_REPEAT:
+        return CRAZYPOD_MENU_ICON_REPEAT;
+    case SETTINGS_ITEM_IDLE_POWEROFF:
+        return CRAZYPOD_MENU_ICON_POWER_TIMER;
+    case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
+        return CRAZYPOD_MENU_ICON_SLEEP_TIMER;
+    case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
+        return CRAZYPOD_MENU_ICON_TIMER_BOOT;
+    case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
+        return CRAZYPOD_MENU_ICON_RESET_TIMER;
+#ifdef HAVE_USB_CHARGING_ENABLE
+    case SETTINGS_ITEM_USB_CHARGING:
+        return CRAZYPOD_MENU_ICON_USB;
+#endif
+#ifdef HAVE_DISK_STORAGE
+    case SETTINGS_ITEM_STORAGE_MODE:
+        return CRAZYPOD_MENU_ICON_STORAGE;
+#endif
+    case SETTINGS_ITEM_BEEP:
+        return CRAZYPOD_MENU_ICON_BEEP;
+    case SETTINGS_ITEM_KEYCLICK:
+        return CRAZYPOD_MENU_ICON_KEYCLICK;
+#ifdef HAVE_HARDWARE_CLICK
+    case SETTINGS_ITEM_SPEAKER_CLICK:
+        return CRAZYPOD_MENU_ICON_SPEAKER;
+#endif
+    case SETTINGS_ITEM_KEYCLICK_REPEATS:
+        return CRAZYPOD_MENU_ICON_REPEAT_CLICKS;
+    default:
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
+}
+
+enum crazypod_menu_icon crazypod_settings_feature_item_icon(
+    const struct route_state *state, int index)
+{
+    static const enum crazypod_menu_icon root_icons[] = {
+        CRAZYPOD_MENU_ICON_SOUND,
+        CRAZYPOD_MENU_ICON_DISPLAY,
+        CRAZYPOD_MENU_ICON_PLAYBACK,
+        CRAZYPOD_MENU_ICON_POWER,
+        CRAZYPOD_MENU_ICON_CONTROLS,
+        CRAZYPOD_MENU_ICON_MENU,
+        CRAZYPOD_MENU_ICON_LANGUAGE,
+    };
+
+    if(index < 0)
+        return CRAZYPOD_MENU_ICON_NONE;
+    switch(state->route) {
+    case SETTINGS_ROUTE_MENU:
+        return index < (int)(sizeof(root_icons) / sizeof(root_icons[0]))
+            ? root_icons[index] : CRAZYPOD_MENU_ICON_NONE;
+    case SETTINGS_ROUTE_SOUND:
+    case SETTINGS_ROUTE_DISPLAY:
+    case SETTINGS_ROUTE_PLAYBACK:
+    case SETTINGS_ROUTE_POWER:
+    case SETTINGS_ROUTE_CONTROLS:
+        return settings_item_icon(
+            crazypod_settings_catalog_item(state->route, index));
+    case SETTINGS_ROUTE_EQ_STUDIO:
+        return CRAZYPOD_MENU_ICON_EQUALIZER;
+    case SETTINGS_ROUTE_MAIN_MENU: {
+        const struct crazypod_app_descriptor *app =
+            crazypod_app_catalog_find(crazypod_apps_ordered_id(index));
+
+        return app != NULL ? app->menu_icon : CRAZYPOD_MENU_ICON_NONE;
+    }
+    case SETTINGS_ROUTE_MAIN_MENU_ACTIONS:
+        if(!crazypod_apps_is_fixed(
+               (enum crazypod_app_id)state->group)) {
+            return index == 0 ? CRAZYPOD_MENU_ICON_VISIBILITY :
+                index == 1 ? CRAZYPOD_MENU_ICON_MOVE_UP :
+                index == 2 ? CRAZYPOD_MENU_ICON_MOVE_DOWN :
+                CRAZYPOD_MENU_ICON_NONE;
+        }
+        return index == 0 ? CRAZYPOD_MENU_ICON_MOVE_UP :
+            index == 1 ? CRAZYPOD_MENU_ICON_MOVE_DOWN :
+            CRAZYPOD_MENU_ICON_NONE;
+    default:
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
+}
+
 bool crazypod_settings_feature_activate(
     const struct route_state *state,
     const struct crazypod_settings_activation_host *host)
@@ -159,6 +272,10 @@ bool crazypod_settings_feature_activate(
         host->show_choices(
             command.item,
             crazypod_ui_settings_choice_index(command.item));
+    }
+    else if(command.kind ==
+            CRAZYPOD_SETTINGS_COMMAND_SHOW_MAIN_MENU_ACTIONS) {
+        host->show_main_menu_actions(command.app_id);
     }
     else if(state->route == SETTINGS_ROUTE_MAIN_MENU_ACTIONS)
         host->render(false);
@@ -196,6 +313,20 @@ bool crazypod_settings_feature_handle_input(
         .leave = context->pop,
     };
 
+    if(state->route == SETTINGS_ROUTE_MAIN_MENU &&
+       crazypod_settings_main_menu_reordering()) {
+        if(event->base == BUTTON_SCROLL_FWD ||
+           event->base == BUTTON_RIGHT)
+            context->move(1);
+        else if(event->base == BUTTON_SCROLL_BACK ||
+                event->base == BUTTON_LEFT)
+            context->move(-1);
+        else if((event->base == BUTTON_SELECT ||
+                 event->base == BUTTON_MENU) &&
+                !event->repeated)
+            context->activate();
+        return true;
+    }
     if(state->route != SETTINGS_ROUTE_EQ_STUDIO)
         return false;
     settings_input_context = *context;
@@ -234,6 +365,34 @@ void crazypod_settings_feature_apply_choice(
     int item, int index)
 {
     crazypod_ui_settings_apply_choice(item, index);
+}
+
+void crazypod_settings_feature_begin_main_menu_reorder(
+    enum crazypod_app_id id)
+{
+    crazypod_settings_begin_main_menu_reorder(id);
+}
+
+bool crazypod_settings_feature_main_menu_reordering(void)
+{
+    return crazypod_settings_main_menu_reordering();
+}
+
+enum crazypod_app_id
+crazypod_settings_feature_main_menu_reorder_id(void)
+{
+    return crazypod_settings_main_menu_reorder_id();
+}
+
+bool crazypod_settings_feature_move_main_menu_item(int direction)
+{
+    return crazypod_settings_move_main_menu_item(direction);
+}
+
+enum crazypod_app_id
+crazypod_settings_feature_finish_main_menu_reorder(void)
+{
+    return crazypod_settings_finish_main_menu_reorder();
 }
 
 #endif

@@ -4,11 +4,13 @@
 #include <stdint.h>
 
 #include "../../crazypod_apps.h"
+#include "../crazypod_menu_icon.h"
 
 struct crazypod_app_descriptor {
     enum crazypod_app_id id;
     const char *name;
     const char *symbol;
+    enum crazypod_menu_icon menu_icon;
     uint32_t color;
 };
 

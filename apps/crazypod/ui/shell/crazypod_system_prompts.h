@@ -6,6 +6,7 @@
 struct crazypod_system_prompts_host {
     long (*now)(void);
     void (*close_product)(void);
+    void (*present)(void);
 };
 
 void crazypod_system_prompts_configure(
@@ -24,6 +25,10 @@ void crazypod_system_prompts_show_power(void);
 bool crazypod_system_prompts_usb_visible(void);
 bool crazypod_system_prompts_handle_usb(
     long base, bool repeated, intptr_t data);
+bool crazypod_system_prompts_headphone_visible(void);
+bool crazypod_system_prompts_handle_headphone(
+    long base, bool repeated, intptr_t data);
+void crazypod_system_prompts_headphone_changed(bool inserted);
 void crazypod_system_prompts_show_usb(unsigned request);
 void crazypod_system_prompts_usb_done(unsigned request);
 void crazypod_system_prompts_usb_connected(intptr_t data);

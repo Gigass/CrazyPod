@@ -37,6 +37,7 @@
 #include "uc87xx.h"
 #endif
 #include "clocking-s5l8702.h"
+#include "lcd-s5l8702.h"
 
 #define DEBUG_CANCEL BUTTON_MENU
 
@@ -70,13 +71,35 @@ bool dbg_hw_info(void)
 
         if(state == 0)
         {
+#ifdef IPOD_6G
+            struct lcd_frame_sync_diagnostics sync;
+#endif
             unsigned cpu_hz;
+
+#ifdef IPOD_6G
+            lcd_get_frame_sync_diagnostics(&sync);
+#endif
             get_system_freqs(&cpu_hz, NULL, NULL);
             _DEBUG_PRINTF("CPU:");
             _DEBUG_PRINTF("speed: %d MHz", cpu_hz / 1000000);
             _DEBUG_PRINTF("current_tick: %d", (unsigned int)current_tick);
             line++;
             _DEBUG_PRINTF("LCD type: %d", lcd_type);
+#ifdef IPOD_6G
+            _DEBUG_PRINTF("sync: %s",
+                sync.method == LCD_FRAME_SYNC_MARKER ? "marker" :
+                sync.method == LCD_FRAME_SYNC_SCANLINE ? "scanline" :
+                sync.method == LCD_FRAME_SYNC_UNAVAILABLE ? "unavailable" :
+                "probing");
+            _DEBUG_PRINTF("waits: %u timeout: %u",
+                (unsigned)sync.waits, (unsigned)sync.timeouts);
+            _DEBUG_PRINTF("marker: %u scan: %u",
+                (unsigned)sync.marker_waits,
+                (unsigned)sync.scanline_waits);
+            _DEBUG_PRINTF("wait us: %u max: %u",
+                (unsigned)sync.last_wait_us,
+                (unsigned)sync.max_wait_us);
+#endif
             line++;
             _DEBUG_PRINTF("capture HW type: %d", rec_hw_ver);
             line++;
@@ -247,4 +270,3 @@ bool dbg_ports(void)
     lcd_setfont(FONT_UI);
     return false;
 }
-

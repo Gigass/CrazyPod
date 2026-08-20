@@ -4,6 +4,7 @@
 #include "lvgl.h"
 
 #include "../../../crazypod_music.h"
+#include "../../crazypod_menu_icon.h"
 #include "../../navigation/crazypod_ui_routes.h"
 #include "../crazypod_feature.h"
 #include "../../presentation/crazypod_glass_slots.h"
@@ -36,6 +37,8 @@ const char *crazypod_music_feature_title(
 bool crazypod_music_feature_item_title(
     const struct route_state *state, int index,
     const char *search_query, const char **title);
+enum crazypod_menu_icon crazypod_music_feature_item_icon(
+    const struct route_state *state, int index);
 bool crazypod_music_feature_alpha_jump_available(
     const struct route_state *state);
 bool crazypod_music_feature_alpha_jump_target(

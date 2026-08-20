@@ -101,13 +101,17 @@ crazypod_preset_controller_select(
             break;
         }
         if(selected == 0) {
-            crazypod_preset_apply(group);
-            crazypod_wallpaper_reload_custom();
-            result.action = CRAZYPOD_PRESET_COMMAND_APPLIED;
+            if(crazypod_preset_apply(group)) {
+                crazypod_wallpaper_reload_custom();
+                result.action = CRAZYPOD_PRESET_COMMAND_APPLIED;
+            }
+            else
+                result.action = CRAZYPOD_PRESET_COMMAND_FAILED;
         }
         else if(selected == 1) {
-            crazypod_preset_export(group);
-            result.action = CRAZYPOD_PRESET_COMMAND_RENDER;
+            result.action = crazypod_preset_export(group)
+                ? CRAZYPOD_PRESET_COMMAND_RENDER
+                : CRAZYPOD_PRESET_COMMAND_FAILED;
         }
         else if(!preset->builtin)
             result.action = CRAZYPOD_PRESET_COMMAND_PUSH_EDIT;
@@ -119,11 +123,14 @@ crazypod_preset_controller_select(
             result.action = CRAZYPOD_PRESET_COMMAND_PUSH_RENAME;
         }
         else if(selected == 1) {
-            crazypod_preset_update(group);
-            result.action = CRAZYPOD_PRESET_COMMAND_RENDER;
+            result.action = crazypod_preset_update(group)
+                ? CRAZYPOD_PRESET_COMMAND_RENDER
+                : CRAZYPOD_PRESET_COMMAND_FAILED;
         }
-        else if(crazypod_preset_delete(group))
-            result.action = CRAZYPOD_PRESET_COMMAND_DELETED;
+        else
+            result.action = crazypod_preset_delete(group)
+                ? CRAZYPOD_PRESET_COMMAND_DELETED
+                : CRAZYPOD_PRESET_COMMAND_FAILED;
         break;
     case DIY_ROUTE_PRESET_RENAME:
         if(editor_character != NULL)
@@ -132,8 +139,10 @@ crazypod_preset_controller_select(
             crazypod_preset_editor_append(" ");
         else if(selected == PRESET_EDITOR_CHARACTER_COUNT + 1)
             crazypod_preset_editor_backspace();
-        else if(crazypod_preset_editor_commit(group))
-            result.action = CRAZYPOD_PRESET_COMMAND_POP;
+        else
+            result.action = crazypod_preset_editor_commit(group)
+                ? CRAZYPOD_PRESET_COMMAND_POP
+                : CRAZYPOD_PRESET_COMMAND_FAILED;
         if(result.action == CRAZYPOD_PRESET_COMMAND_NONE)
             result.action = CRAZYPOD_PRESET_COMMAND_RENDER;
         break;

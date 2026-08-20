@@ -123,7 +123,9 @@ bool crazypod_runtime_font_init(void)
     if(initialized)
         return true;
     initialized = true;
-    return crazypod_runtime_font_at_size(12) != NULL;
+    return crazypod_runtime_font_at_size(12) != NULL &&
+        crazypod_runtime_font_at_size(15) != NULL &&
+        crazypod_runtime_font_at_size(18) != NULL;
 }
 
 const lv_font_t *crazypod_runtime_font_resolve(
@@ -153,6 +155,12 @@ bool crazypod_runtime_fonts_ready(void)
 {
     return crazypod_runtime_font_resolve(
                CRAZYPOD_FONT_FAMILY_SYSTEM, 12, 400,
+               CRAZYPOD_FONT_STYLE_NORMAL, 0) != NULL &&
+        crazypod_runtime_font_resolve(
+               CRAZYPOD_FONT_FAMILY_SYSTEM, 15, 400,
+               CRAZYPOD_FONT_STYLE_NORMAL, 0) != NULL &&
+        crazypod_runtime_font_resolve(
+               CRAZYPOD_FONT_FAMILY_SYSTEM, 18, 400,
                CRAZYPOD_FONT_STYLE_NORMAL, 0) != NULL &&
         crazypod_runtime_font_resolve(
                CRAZYPOD_FONT_FAMILY_SERIF, 12, 400,

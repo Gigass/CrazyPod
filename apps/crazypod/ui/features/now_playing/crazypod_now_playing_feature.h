@@ -4,6 +4,7 @@
 #include "lvgl.h"
 
 #include "../../../crazypod_music.h"
+#include "../../crazypod_menu_icon.h"
 #include "../../navigation/crazypod_input_event.h"
 #include "../../navigation/crazypod_ui_routes.h"
 
@@ -50,6 +51,8 @@ const char *crazypod_now_playing_feature_title(
 bool crazypod_now_playing_feature_item_title(
     const struct route_state *state, int index,
     const char **title);
+enum crazypod_menu_icon crazypod_now_playing_feature_item_icon(
+    const struct route_state *state, int index);
 
 void crazypod_now_playing_overlay_configure(
     const struct crazypod_now_playing_overlay_host *host);

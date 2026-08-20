@@ -19,6 +19,8 @@ void crazypod_now_capsule_update_artwork(
 void crazypod_now_capsule_initialize_artwork(void);
 void crazypod_now_capsule_poll_artwork(
     const struct crazypod_track *track);
+void crazypod_now_capsule_prepare_entry(void);
+void crazypod_now_capsule_start_entry(void);
 void crazypod_now_capsule_reset_motion(long now);
 void crazypod_now_capsule_tick(long now, bool home_active);
 

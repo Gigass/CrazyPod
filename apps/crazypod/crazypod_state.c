@@ -32,7 +32,7 @@
 #define QUEUE_PATH STATE_DIRECTORY "/queue.m3u8"
 #define QUEUE_TEMP_PATH STATE_DIRECTORY "/queue.tmp"
 #define STATE_MAGIC 0x43505354u
-#define STATE_VERSION 11u
+#define STATE_VERSION 14u
 #define STATE_SAVE_INTERVAL (30 * HZ)
 #define STATE_SAVE_RETRY_INTERVAL (30 * HZ)
 #define STATE_SAVE_MAX_RETRY_SHIFT 3
@@ -364,7 +364,7 @@ struct crazypod_state_disk_v10 {
     uint32_t checksum;
 };
 
-struct crazypod_state_disk {
+struct crazypod_state_disk_v11 {
     uint32_t magic;
     uint32_t version;
     uint32_t size;
@@ -403,6 +403,86 @@ struct crazypod_state_disk {
     uint32_t checksum;
 };
 
+struct crazypod_state_disk_v12 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t usb_charging;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t menu_count;
+    uint32_t menu_enabled_mask;
+    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    int32_t reduce_motion;
+    int32_t storage_mode;
+    int32_t language;
+    int32_t poweroff;
+    int32_t headphone_popup_style;
+    uint32_t checksum;
+};
+
+struct crazypod_state_disk {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t usb_charging;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t menu_count;
+    uint32_t menu_enabled_mask;
+    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    int32_t reduce_motion;
+    int32_t storage_mode;
+    int32_t language;
+    int32_t poweroff;
+    int32_t headphone_popup_style;
+    uint32_t checksum;
+};
+
 static unsigned long resume_elapsed;
 static unsigned long last_saved_elapsed;
 static long last_save_tick;
@@ -414,6 +494,7 @@ static bool saved_queue_snapshot_valid;
 static unsigned state_save_failures;
 static bool state_dirty;
 static bool reduce_motion;
+static enum crazypod_headphone_popup_style headphone_popup_style;
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 {
@@ -521,6 +602,22 @@ static uint32_t state_v10_checksum(
         offsetof(struct crazypod_state_disk_v10, checksum));
 }
 
+static uint32_t state_v11_checksum(
+    const struct crazypod_state_disk_v11 *state)
+{
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v11, checksum));
+}
+
+static uint32_t state_v12_checksum(
+    const struct crazypod_state_disk_v12 *state)
+{
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v12, checksum));
+}
+
 static bool read_exact(int fd, void *buffer, size_t size)
 {
     unsigned char *bytes = buffer;
@@ -602,6 +699,46 @@ static bool load_header(
        header[2] == sizeof(*state)) {
         valid = read_exact(fd, state, sizeof(*state)) &&
                 state->checksum == state_checksum(state);
+    }
+    else if(header[0] == STATE_MAGIC &&
+            (header[1] == 12u || header[1] == 13u) &&
+            header[2] == sizeof(struct crazypod_state_disk_v12)) {
+        struct crazypod_state_disk_v12 state_v12;
+
+        valid = read_exact(fd, &state_v12, sizeof(state_v12)) &&
+                state_v12.checksum == state_v12_checksum(&state_v12);
+        if(valid) {
+            memcpy(state, &state_v12,
+                   offsetof(struct crazypod_state_disk_v12, checksum));
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+            /* v12 and transient v13 both migrate to the new default. */
+            if((header[1] == 12u &&
+                state_v12.headphone_popup_style == 1) ||
+               (header[1] == 13u &&
+                state_v12.headphone_popup_style == 2))
+                state->headphone_popup_style =
+                    CRAZYPOD_HEADPHONE_POPUP_AIRPODS;
+            else
+                state->headphone_popup_style =
+                    CRAZYPOD_HEADPHONE_POPUP_WIRED_EARBUDS;
+        }
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 11u &&
+            header[2] == sizeof(struct crazypod_state_disk_v11)) {
+        struct crazypod_state_disk_v11 state_v11;
+
+        valid = read_exact(fd, &state_v11, sizeof(state_v11)) &&
+                state_v11.checksum == state_v11_checksum(&state_v11);
+        if(valid) {
+            memcpy(state, &state_v11,
+                   offsetof(struct crazypod_state_disk_v11, checksum));
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+        }
     }
     else if(header[0] == STATE_MAGIC &&
             header[1] == 10u &&
@@ -863,7 +1000,11 @@ static bool load_header(
         }
     }
     if(valid && header[1] < STATE_VERSION) {
-        state->poweroff = global_settings.poweroff;
+        if(header[1] < 11u)
+            state->poweroff = global_settings.poweroff;
+        if(header[1] < 12u)
+            state->headphone_popup_style =
+                CRAZYPOD_HEADPHONE_POPUP_WIRED_EARBUDS;
         *migrated = true;
     }
     close(fd);
@@ -1003,6 +1144,8 @@ void crazypod_state_load(void)
     state_save_failures = 0;
     state_dirty = false;
     reduce_motion = false;
+    headphone_popup_style =
+        CRAZYPOD_HEADPHONE_POPUP_WIRED_EARBUDS;
     crazypod_language_set(CRAZYPOD_LANGUAGE_ENGLISH);
     global_settings.storage_mode = 0;
     storage_set_storage_mode(global_settings.storage_mode);
@@ -1015,6 +1158,18 @@ void crazypod_state_load(void)
     state_dirty = migrated;
 
     reduce_motion = state.reduce_motion != 0;
+    if(state.headphone_popup_style >= 0 &&
+       state.headphone_popup_style <
+           CRAZYPOD_HEADPHONE_POPUP_STYLE_COUNT) {
+        headphone_popup_style =
+            (enum crazypod_headphone_popup_style)
+                state.headphone_popup_style;
+    }
+    else {
+        headphone_popup_style =
+            CRAZYPOD_HEADPHONE_POPUP_WIRED_EARBUDS;
+        state_dirty = true;
+    }
     crazypod_language_set(crazypod_language_valid(state.language)
         ? (enum crazypod_language)state.language
         : CRAZYPOD_LANGUAGE_ENGLISH);
@@ -1071,6 +1226,23 @@ void crazypod_state_set_reduce_motion(bool enabled)
     if(reduce_motion == enabled)
         return;
     reduce_motion = enabled;
+    state_dirty = true;
+}
+
+enum crazypod_headphone_popup_style
+crazypod_state_headphone_popup_style(void)
+{
+    return headphone_popup_style;
+}
+
+void crazypod_state_set_headphone_popup_style(
+    enum crazypod_headphone_popup_style style)
+{
+    if((unsigned)style >=
+           (unsigned)CRAZYPOD_HEADPHONE_POPUP_STYLE_COUNT ||
+       headphone_popup_style == style)
+        return;
+    headphone_popup_style = style;
     state_dirty = true;
 }
 
@@ -1217,6 +1389,7 @@ void crazypod_state_save(bool force)
     state.storage_mode = global_settings.storage_mode;
     state.language = crazypod_language_current();
     state.poweroff = global_settings.poweroff;
+    state.headphone_popup_style = headphone_popup_style;
     state.checksum = state_checksum(&state);
 
     fd = open(STATE_TEMP_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);

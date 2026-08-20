@@ -8,6 +8,7 @@
 
 #include "../../../crazypod_appearance.h"
 #include "../../../crazypod_photos.h"
+#include "../../../crazypod_state.h"
 #include "../../../crazypod_wallpaper.h"
 #include "crazypod_wallpaper_crop_controller.h"
 #include "crazypod_customize_catalog.h"
@@ -51,7 +52,8 @@ bool crazypod_customize_controller_handles(enum crazypod_route route)
         route == DIY_ROUTE_BACKGROUND_CHOICES ||
         route == DIY_ROUTE_WALLPAPER_FILES ||
         route == DIY_ROUTE_LAYOUT ||
-        route == DIY_ROUTE_NOW_PLAYING_THEMES;
+        route == DIY_ROUTE_NOW_PLAYING_THEMES ||
+        route == DIY_ROUTE_HEADPHONE_POPUP;
 }
 
 struct crazypod_customize_command_result
@@ -76,8 +78,10 @@ crazypod_customize_controller_select(
             selected == 2 ? DIY_ROUTE_DETAILS :
             selected == 3 ? DIY_ROUTE_BACKGROUNDS :
             selected == 4 ? DIY_ROUTE_NOW_PLAYING_THEMES :
+            selected == 5 ? DIY_ROUTE_HEADPHONE_POPUP :
                             DIY_ROUTE_LAYOUT,
-            -1, 0);
+            -1, selected == 5
+                ? crazypod_state_headphone_popup_style() : 0);
     case DIY_ROUTE_ICONS:
         crazypod_appearance_set_icon_theme(selected);
         return result(
@@ -151,6 +155,12 @@ crazypod_customize_controller_select(
                 ? CRAZYPOD_CUSTOMIZE_COMMAND_RENDER
                 : CRAZYPOD_CUSTOMIZE_COMMAND_NONE,
             route, 0, selected);
+    case DIY_ROUTE_HEADPHONE_POPUP:
+        crazypod_state_set_headphone_popup_style(
+            (enum crazypod_headphone_popup_style)selected);
+        return result(
+            CRAZYPOD_CUSTOMIZE_COMMAND_RENDER,
+            route, 0, selected);
     default:
         return result(
             CRAZYPOD_CUSTOMIZE_COMMAND_NONE, route, 0, 0);
@@ -209,8 +219,7 @@ const char *crazypod_customize_overlay_item_title(
         return crazypod_customize_choice_title(
             (enum crazypod_appearance_field)field, index);
     if(index == 0)
-        return field == CRAZYPOD_APPEARANCE_LOCK_BACKGROUND
-            ? CP_TR("Follow Home") : CP_TR("Default");
+        return CP_TR("Default");
     if(index <= CRAZYPOD_APPEARANCE_COLOR_COUNT)
         return crazypod_appearance_color_name(index - 1);
     return CP_TR("Choose Picture");

@@ -10,7 +10,7 @@
 
 #include "../../../crazypod_books.h"
 #include "../../presentation/crazypod_ui_widgets.h"
-#include "../../presentation/crazypod_menu_preview_motion.h"
+#include "../../presentation/crazypod_preview_motion.h"
 #include "crazypod_book_preview_cover.h"
 #include "../../presentation/crazypod_preview_primitives.h"
 #include "crazypod_books_feature.h"
@@ -112,16 +112,16 @@ static void render_books_menu_stage(
                         0xB43B45, 225);
         make_box(part, 1, 0, 2, 31, 0,
                  0xE77780, 95);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             stage, 0, 11, 225, 0, 0, 0, 250,
             0, 8, 225, 0);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             left_page, 22, 0, 182, 120, 0, 30, 280,
             20, 0, 182, 120);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             right_page, -22, 0, 182, -120, 0, 30, 280,
             -20, 0, 182, -120);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             part, 0, -14, 210, 0, 0, 90, 220,
             0, -9, 210, 0);
         return;
@@ -143,7 +143,7 @@ static void render_books_menu_stage(
                 parent, book,
                 186 + i * 13, 68 - i * 5,
                 70, 86);
-            crazypod_menu_preview_motion_register(
+            crazypod_preview_motion_register(
                 stage, (i - 1) * 20, 14 + i * 3, 195,
                 (i - 1) * 45, 0, (2 - i) * 35, 270,
                 (i - 1) * 18, 9, 195,
@@ -161,7 +161,7 @@ static void render_books_menu_stage(
             parent, 178, 151, 124, 0xB47A3C, 0x3A2416);
         crazypod_preview_add_fastener(stage, 5, 2, 0x9A7655);
         crazypod_preview_add_fastener(stage, 114, 2, 0x9A7655);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             stage, 0, 16, 230, 0, 0, 0, 220,
             0, 12, 230, 0);
         for(i = 0; i < 4; ++i) {
@@ -171,7 +171,7 @@ static void render_books_menu_stage(
                 parent, book, 188 + i * 27,
                 75 + (i % 2) * 7,
                 21, 76 - (i % 2) * 7);
-            crazypod_menu_preview_motion_register(
+            crazypod_preview_motion_register(
                 part, 0, 44 + (i % 2) * 7, 218,
                 (i - 2) * 12, 0, i * 35, 260,
                 0, 35, 218, (i - 2) * -12);
@@ -202,10 +202,10 @@ static void render_books_menu_stage(
                 stage, 26, 26, 0xF0CE86, 0x2D0710);
             make_pixel_heart(stage, 5, 7, 2,
                              0xF7D788, LV_OPA_COVER);
-            crazypod_menu_preview_motion_register(
+            crazypod_preview_motion_register(
                 part, 0, 21, 210, -25, 0, 0, 270,
                 0, 16, 210, 25);
-            crazypod_menu_preview_motion_register(
+            crazypod_preview_motion_register(
                 stage, 12, -13, 165, 120, 0, 70, 240,
                 10, -10, 165, 170);
         }
@@ -230,7 +230,7 @@ static void render_books_menu_stage(
                              0xE8C875, 88);
             make_box(stage, 30, 67, 52, 4, 2,
                      0xD1AE63, 75);
-            crazypod_menu_preview_motion_register(
+            crazypod_preview_motion_register(
                 stage, 0, 20, 208, 0, 0, 0, 260,
                 0, 14, 208, 0);
         }
@@ -293,7 +293,7 @@ static void render_books_menu_stage(
         make_box(stage, 12, 83,
                  crazypod_books_favorite_count() > 0 ? 34 : 4,
                  3, 1, 0x8E7447, 165);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             stage, 13, 0, 220, 30, 0, 0, 270,
             12, 0, 220, 45);
         return;
@@ -334,7 +334,7 @@ static void render_books_menu_stage(
             }
         }
     }
-    crazypod_menu_preview_motion_register(
+    crazypod_preview_motion_register(
         stage, 0, 18, 220, 0, 0, 0, 270,
         -8, 12, 220, -20);
 }
@@ -506,24 +506,11 @@ void crazypod_books_preview_render(
             state->selected == 0)
         title = book->title;
 
-    text_panel = crazypod_preview_make_text_panel(parent, 172, 50);
-    label = make_label(text_panel,
-                       title != NULL ? title : CP_TR("Books"),
-                       metadata_font,
-                       COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 7, 5);
-    label = make_label(text_panel, detail,
-                       &lv_font_montserrat_8,
-                       COLOR_WHITE, 135);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_pos(label, 7, 30);
+    text_panel = crazypod_preview_make_caption(
+        parent, title != NULL ? title : CP_TR("Books"),
+        metadata_font, detail, &lv_font_montserrat_8);
     if(state->route == BOOKS_ROUTE_MENU)
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             text_panel, 0, 9, 246, 0, 0, 70, 220,
             0, 6, 246, 0);
 }

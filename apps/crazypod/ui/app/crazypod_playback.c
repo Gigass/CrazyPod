@@ -8,6 +8,7 @@
 #include "backlight.h"
 #include "kernel.h"
 #include "playlist.h"
+#include "settings.h"
 
 #include "../../crazypod_artwork.h"
 #include "../../crazypod_coverflow.h"
@@ -26,6 +27,7 @@
 #include "../shell/crazypod_now_capsule.h"
 #include "../shell/crazypod_shell.h"
 #include "crazypod_app_launcher.h"
+#include "crazypod_choice_coordinator.h"
 #include "crazypod_menu_preview.h"
 #include "crazypod_playback.h"
 
@@ -41,6 +43,9 @@ static struct {
     int track_library_index;
     int track_album_index;
     long last_album_warm;
+    uint32_t unlock_present_sequence;
+    bool unlock_refresh_pending;
+    bool unlock_capsule_entry;
 } playback;
 
 static struct route_state *current_route(void)
@@ -142,6 +147,38 @@ void crazypod_playback_initialize(void)
     playback.track_library_index = -1;
     playback.track_album_index = -1;
     playback.last_album_warm = 0;
+    playback.unlock_present_sequence = 0;
+    playback.unlock_refresh_pending = false;
+    playback.unlock_capsule_entry = false;
+}
+
+void crazypod_playback_headphone_changed(bool inserted)
+{
+    static bool headphone_caused_pause = true;
+    int status;
+
+    if(global_settings.unplug_mode) {
+        status = audio_status();
+        if(inserted) {
+            backlight_on();
+            if((status & AUDIO_STATUS_PLAY) &&
+               headphone_caused_pause &&
+               global_settings.unplug_mode > 1) {
+                audio_resume();
+                crazypod_now_playing_overlay_refresh_after_playback();
+            }
+            headphone_caused_pause = false;
+        }
+        else if((status & AUDIO_STATUS_PLAY) &&
+                !(status & AUDIO_STATUS_PAUSE)) {
+            headphone_caused_pause = true;
+            audio_pause();
+            crazypod_now_playing_overlay_refresh_after_playback();
+        }
+    }
+#ifdef HAVE_SPEAKER
+    audio_enable_speaker(global_settings.speaker_mode);
+#endif
 }
 
 int crazypod_playback_initial_album_index(void)
@@ -215,14 +252,58 @@ void crazypod_playback_previous_or_restart(void)
         audio_prev();
 }
 
+void crazypod_playback_refresh_lock_screen(void)
+{
+    const struct crazypod_track *track = current_track();
+    struct mp3entry *id3 = audio_current_track();
+    const lv_image_dsc_t *artwork = NULL;
+    const char *artwork_path = NULL;
+    const char *track_path = NULL;
+    unsigned artwork_generation = 0;
+    int status = audio_status();
+    bool active = id3 != NULL &&
+        (status & AUDIO_STATUS_PLAY) != 0;
+    struct crazypod_lock_media_snapshot snapshot = {0};
+
+    if(active) {
+        track_path = track != NULL ? track->path : id3->path;
+        crazypod_now_playing_artwork_sync();
+        artwork = crazypod_now_playing_artwork_committed(
+            &artwork_path, &artwork_generation);
+        if(track_path == NULL || artwork_path == NULL ||
+           strcmp(track_path, artwork_path) != 0)
+            artwork = NULL;
+        snapshot.active = true;
+        snapshot.playing =
+            (status & AUDIO_STATUS_PAUSE) == 0;
+        snapshot.track_path = track_path;
+        snapshot.title = track != NULL && track->title[0] != '\0'
+            ? track->title : id3->title;
+        snapshot.artist = track != NULL && track->artist[0] != '\0'
+            ? track->artist : id3->artist;
+        snapshot.album = track != NULL && track->album[0] != '\0'
+            ? track->album : id3->album;
+        snapshot.elapsed_ms = (uint32_t)id3->elapsed;
+        snapshot.length_ms = (uint32_t)id3->length;
+        snapshot.artwork = artwork;
+        snapshot.artwork_generation = artwork_generation;
+    }
+    crazypod_lock_screen_update_media(&snapshot);
+}
+
 void crazypod_playback_update_timer(lv_timer_t *timer)
 {
     const struct crazypod_track *track;
     struct mp3entry *id3;
 
     (void)timer;
-    if(!is_backlight_on(true) ||
-       crazypod_lock_screen_is_locked())
+    if(!is_backlight_on(true))
+        return;
+    if(crazypod_lock_screen_is_locked()) {
+        crazypod_playback_refresh_lock_screen();
+        return;
+    }
+    if(playback.unlock_refresh_pending)
         return;
     if(crazypod_music_library_update())
         return;
@@ -266,10 +347,52 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
             (uint32_t)id3->length);
 }
 
+void crazypod_playback_request_refresh_after_unlock(
+    uint32_t present_sequence, bool animate_capsule)
+{
+    playback.unlock_present_sequence = present_sequence;
+    playback.unlock_refresh_pending = true;
+    playback.unlock_capsule_entry = animate_capsule;
+    if(animate_capsule)
+        crazypod_now_capsule_prepare_entry();
+}
+
+bool crazypod_playback_refresh_after_unlock_pending(void)
+{
+    return playback.unlock_refresh_pending;
+}
+
+void crazypod_playback_service_after_unlock(
+    uint32_t present_sequence)
+{
+    const struct crazypod_track *track;
+    struct mp3entry *id3;
+    bool animate_capsule;
+
+    if(!playback.unlock_refresh_pending ||
+       present_sequence == playback.unlock_present_sequence)
+        return;
+    animate_capsule = playback.unlock_capsule_entry;
+    playback.unlock_refresh_pending = false;
+    playback.unlock_capsule_entry = false;
+    if(!animate_capsule)
+        return;
+
+    track = current_track();
+    id3 = audio_current_track();
+    crazypod_now_capsule_update(
+        track,
+        id3 != NULL ? (uint32_t)id3->elapsed : 0,
+        id3 != NULL ? (uint32_t)id3->length : 0);
+    crazypod_now_capsule_start_entry();
+}
+
 void crazypod_playback_process_artwork(void)
 {
     unsigned generation;
 
+    if(playback.unlock_refresh_pending)
+        return;
     crazypod_now_playing_artwork_sync();
     crazypod_now_capsule_poll_artwork(current_track());
     if(!crazypod_shell_product_active() ||
@@ -326,7 +449,8 @@ void crazypod_playback_process_media(void)
     enum crazypod_route route;
 
     if(!crazypod_shell_product_active() ||
-       crazypod_ui_routes_depth() <= 0)
+       crazypod_ui_routes_depth() <= 0 ||
+       crazypod_choice_coordinator_visible())
         return;
     route = current_route()->route;
     if(route >= PHOTOS_ROUTE_MENU &&

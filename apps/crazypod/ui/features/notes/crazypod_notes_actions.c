@@ -144,8 +144,10 @@ struct crazypod_notes_action crazypod_notes_actions_activate(
         if(note == NULL)
             return action(CRAZYPOD_NOTES_ACTION_POP);
         if(state->selected == 0) {
-            crazypod_note_set_pinned(id, !note->pinned);
-            return action(CRAZYPOD_NOTES_ACTION_RENDER);
+            return action(crazypod_note_set_pinned(
+                    id, !note->pinned)
+                ? CRAZYPOD_NOTES_ACTION_RENDER
+                : CRAZYPOD_NOTES_ACTION_FAILED);
         }
         if(state->selected == 1) {
             result = action(CRAZYPOD_NOTES_ACTION_OPEN_COMPOSER);
@@ -161,6 +163,8 @@ struct crazypod_notes_action crazypod_notes_actions_activate(
                     CRAZYPOD_NOTES_ACTION_RESET_OPEN_READER;
                 result.note_id = duplicate;
             }
+            else
+                result.kind = CRAZYPOD_NOTES_ACTION_FAILED;
             return result;
         }
         return push(NOTES_ROUTE_DELETE_CONFIRM, (int)id);
@@ -178,8 +182,10 @@ struct crazypod_notes_action crazypod_notes_actions_activate(
         }
     case NOTES_ROUTE_DELETED_ACTIONS:
         if(state->selected == 0) {
-            crazypod_note_restore((uint32_t)state->group);
-            return action(CRAZYPOD_NOTES_ACTION_POP);
+            return action(crazypod_note_restore(
+                    (uint32_t)state->group)
+                ? CRAZYPOD_NOTES_ACTION_POP
+                : CRAZYPOD_NOTES_ACTION_FAILED);
         }
         return push(NOTES_ROUTE_PERMANENT_CONFIRM, state->group);
     default:

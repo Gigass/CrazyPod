@@ -278,6 +278,9 @@ void crazypod_audio_settings_init(void)
     global_settings.lcd_sleep_after_backlight_off = 1;
 #endif
     global_settings.sleeptimer_duration = 30;
+    global_settings.beep = 3;
+    global_settings.keyclick = 3;
+    global_settings.keyclick_repeats = true;
     for(i = 0; i < EQ_NUM_BANDS; ++i)
         global_settings.eq_band_settings[i] = crazypod_eq_defaults[i];
 #ifdef HAVE_DISK_STORAGE

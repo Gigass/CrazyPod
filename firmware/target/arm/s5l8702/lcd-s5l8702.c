@@ -382,24 +382,88 @@ static void displaylcd_wait_dma(void)
 
 #ifdef IPOD_6G
 /*
- * The 8-bit panels expose the current gate scan line through DCS 45h.
- * Start a full-frame GRAM write at the scan counter wrap so the LCD DMA
- * stays ahead of the panel scanout instead of cutting an old/new-frame
- * seam through a moving image.
+ * iPod 6G panels can emit a short TE/FMARK pulse. S5L LCD status bit 8 is
+ * the candidate input route, but its public documentation is incomplete;
+ * validate its edges and pulse duty before trusting it. The 8-bit panels
+ * also expose their gate scan counter through DCS 45h, retained as a
+ * verified fallback when the marker route is unavailable.
  */
-enum lcd_scan_sync_state
+#define LCD_STATUS_FRAME_MARKER          0x100
+#define LCD_FRAME_SYNC_POLL_US               5
+#define LCD_FRAME_SYNC_TIMEOUT_US        25000
+#define LCD_FRAME_SYNC_PROBE_US          25000
+#define LCD_SCAN_SYNC_POLL_US               20
+#define LCD_SCAN_SYNC_PROBE_TIMEOUT_US   40000
+#define LCD_SCAN_SYNC_WRAP_LINES            64
+
+static enum lcd_frame_sync_method lcd_frame_sync_method;
+static bool lcd_frame_marker_idle_high;
+static struct lcd_frame_sync_diagnostics lcd_frame_sync_diagnostics;
+
+static void displaylcd_reset_frame_sync(void)
 {
-    LCD_SCAN_SYNC_UNKNOWN = 0,
-    LCD_SCAN_SYNC_ACTIVE,
-    LCD_SCAN_SYNC_UNAVAILABLE,
-};
+    lcd_frame_sync_method = LCD_FRAME_SYNC_PROBING;
+    lcd_frame_marker_idle_high = false;
+}
 
-static enum lcd_scan_sync_state lcd_scan_sync;
+static bool displaylcd_probe_frame_marker(void) ICODE_ATTR;
+static bool displaylcd_probe_frame_marker(void)
+{
+    unsigned deadline = USEC_TIMER + LCD_FRAME_SYNC_PROBE_US;
+    unsigned high_samples = 0;
+    unsigned low_samples = 0;
+    unsigned transitions = 0;
+    bool previous = (LCD_STATUS & LCD_STATUS_FRAME_MARKER) != 0;
 
-#define LCD_SCAN_SYNC_POLL_US             20
-#define LCD_SCAN_SYNC_TIMEOUT_US       25000
-#define LCD_SCAN_SYNC_PROBE_TIMEOUT_US 40000
-#define LCD_SCAN_SYNC_WRAP_LINES          64
+    while (TIME_BEFORE(USEC_TIMER, deadline))
+    {
+        bool current;
+
+        udelay(LCD_FRAME_SYNC_POLL_US);
+        current = (LCD_STATUS & LCD_STATUS_FRAME_MARKER) != 0;
+        if (current)
+            ++high_samples;
+        else
+            ++low_samples;
+        if (current != previous)
+            ++transitions;
+        previous = current;
+    }
+
+    if (transitions < 2 || high_samples < 3 || low_samples < 3)
+        return false;
+
+    /* FMARK is a pulse, so its inactive level is the majority sample. */
+    if (high_samples > low_samples)
+    {
+        if (low_samples * 4 >= high_samples)
+            return false;
+        lcd_frame_marker_idle_high = true;
+    }
+    else
+    {
+        if (high_samples * 4 >= low_samples)
+            return false;
+        lcd_frame_marker_idle_high = false;
+    }
+    return true;
+}
+
+static bool displaylcd_wait_frame_marker(void) ICODE_ATTR;
+static bool displaylcd_wait_frame_marker(void)
+{
+    unsigned deadline = USEC_TIMER + LCD_FRAME_SYNC_TIMEOUT_US;
+
+    while (TIME_BEFORE(USEC_TIMER, deadline))
+    {
+        bool high = (LCD_STATUS & LCD_STATUS_FRAME_MARKER) != 0;
+
+        if (high != lcd_frame_marker_idle_high)
+            return true;
+        udelay(LCD_FRAME_SYNC_POLL_US);
+    }
+    return false;
+}
 
 static unsigned displaylcd_get_scanline(void) ICODE_ATTR;
 static unsigned displaylcd_get_scanline(void)
@@ -411,18 +475,13 @@ static unsigned displaylcd_get_scanline(void)
     return ((data[1] & 0x03) << 8) | data[2];
 }
 
-static void displaylcd_wait_frame_start(void) ICODE_ATTR;
-static void displaylcd_wait_frame_start(void)
+static bool displaylcd_wait_scanline(bool probe) ICODE_ATTR;
+static bool displaylcd_wait_scanline(bool probe)
 {
-    if (lcd_info->cmdset != LCD_CMDSET_8BIT ||
-        lcd_scan_sync == LCD_SCAN_SYNC_UNAVAILABLE)
-        return;
-
     s5l_lcd_set_command_mode();
 
-    unsigned timeout = lcd_scan_sync == LCD_SCAN_SYNC_UNKNOWN
-                     ? LCD_SCAN_SYNC_PROBE_TIMEOUT_US
-                     : LCD_SCAN_SYNC_TIMEOUT_US;
+    unsigned timeout = probe ? LCD_SCAN_SYNC_PROBE_TIMEOUT_US
+                             : LCD_FRAME_SYNC_TIMEOUT_US;
     unsigned deadline = USEC_TIMER + timeout;
     unsigned previous = displaylcd_get_scanline();
     int direction = 0;
@@ -438,13 +497,10 @@ static void displaylcd_wait_frame_start(void)
         if (delta >= LCD_SCAN_SYNC_WRAP_LINES ||
             delta <= -LCD_SCAN_SYNC_WRAP_LINES)
         {
-            if (lcd_scan_sync == LCD_SCAN_SYNC_ACTIVE || stable_steps >= 3)
-            {
-                lcd_scan_sync = LCD_SCAN_SYNC_ACTIVE;
-                return;
-            }
+            if (!probe || stable_steps >= 3)
+                return true;
 
-            /* The probe started on a frame boundary; validate one full cycle. */
+            /* Probe started on a boundary; validate one full cycle. */
             direction = 0;
             stable_steps = 0;
         }
@@ -466,9 +522,76 @@ static void displaylcd_wait_frame_start(void)
 
         previous = current;
     }
+    return false;
+}
 
-    /* Do not add a permanent frame-sized stall to panels lacking DCS 45h. */
-    lcd_scan_sync = LCD_SCAN_SYNC_UNAVAILABLE;
+static void displaylcd_wait_frame_start(void) ICODE_ATTR;
+static void displaylcd_wait_frame_start(void)
+{
+    unsigned started = USEC_TIMER;
+    bool scanline_probe = false;
+    bool synced = false;
+
+    ++lcd_frame_sync_diagnostics.waits;
+    if (lcd_frame_sync_method == LCD_FRAME_SYNC_PROBING)
+    {
+        if (displaylcd_probe_frame_marker())
+            lcd_frame_sync_method = LCD_FRAME_SYNC_MARKER;
+        else if (lcd_info->cmdset == LCD_CMDSET_8BIT)
+        {
+            lcd_frame_sync_method = LCD_FRAME_SYNC_SCANLINE;
+            scanline_probe = true;
+        }
+        else
+        {
+            ++lcd_frame_sync_diagnostics.timeouts;
+            lcd_frame_sync_method = LCD_FRAME_SYNC_UNAVAILABLE;
+        }
+    }
+
+    if (lcd_frame_sync_method == LCD_FRAME_SYNC_MARKER)
+    {
+        synced = displaylcd_wait_frame_marker();
+        if (synced)
+            ++lcd_frame_sync_diagnostics.marker_waits;
+        else
+        {
+            ++lcd_frame_sync_diagnostics.timeouts;
+            lcd_frame_sync_method = lcd_info->cmdset == LCD_CMDSET_8BIT
+                ? LCD_FRAME_SYNC_SCANLINE
+                : LCD_FRAME_SYNC_UNAVAILABLE;
+            scanline_probe =
+                lcd_frame_sync_method == LCD_FRAME_SYNC_SCANLINE;
+        }
+    }
+
+    if (!synced && lcd_frame_sync_method == LCD_FRAME_SYNC_SCANLINE)
+    {
+        synced = displaylcd_wait_scanline(scanline_probe);
+        if (synced)
+            ++lcd_frame_sync_diagnostics.scanline_waits;
+        else
+        {
+            ++lcd_frame_sync_diagnostics.timeouts;
+            lcd_frame_sync_method = LCD_FRAME_SYNC_UNAVAILABLE;
+        }
+    }
+
+    lcd_frame_sync_diagnostics.last_wait_us = USEC_TIMER - started;
+    if (lcd_frame_sync_diagnostics.last_wait_us >
+        lcd_frame_sync_diagnostics.max_wait_us)
+        lcd_frame_sync_diagnostics.max_wait_us =
+            lcd_frame_sync_diagnostics.last_wait_us;
+}
+
+void lcd_get_frame_sync_diagnostics(
+    struct lcd_frame_sync_diagnostics *diagnostics)
+{
+    if (diagnostics == NULL)
+        return;
+    *diagnostics = lcd_frame_sync_diagnostics;
+    diagnostics->panel_type = lcd_type;
+    diagnostics->method = lcd_frame_sync_method;
 }
 #endif
 
@@ -639,7 +762,8 @@ void lcd_awake(void)
     s5l_lcd_set_command_mode();
     lcd_run_seq(lcd_info->seq_awake);
 #ifdef IPOD_6G
-    lcd_scan_sync = LCD_SCAN_SYNC_UNKNOWN;
+    lcd_run_seq(lcd_info->seq_frame_sync);
+    displaylcd_reset_frame_sync();
 #endif
     lcd_ispowered = true;       // XXX: we have to put the lcd_ispowered before the lcd_update()
 
@@ -713,6 +837,10 @@ void lcd_init_device(void)
 
 #ifdef BOOTLOADER
     lcd_run_seq(lcd_info->seq_init);
+#endif
+#ifdef IPOD_6G
+    lcd_run_seq(lcd_info->seq_frame_sync);
+    displaylcd_reset_frame_sync();
 #endif
 
     lcd_ispowered = true;

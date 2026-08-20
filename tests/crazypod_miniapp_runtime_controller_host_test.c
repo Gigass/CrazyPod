@@ -15,6 +15,9 @@ static int event_count;
 static int tick_count;
 static int push_count;
 static int render_count;
+static int rescan_begin_count;
+static int rescan_step_count;
+static bool rescan_active;
 static uint8_t last_event_steps;
 
 int crazypod_miniapps_init(void)
@@ -30,6 +33,33 @@ int crazypod_miniapps_prepare(void)
 int crazypod_miniapps_rescan(void)
 {
     return CRAZYPOD_MINIAPP_OK;
+}
+
+int crazypod_miniapps_rescan_begin(void)
+{
+    ++rescan_begin_count;
+    rescan_active = true;
+    return CRAZYPOD_MINIAPP_OK;
+}
+
+bool crazypod_miniapps_rescan_step(void)
+{
+    assert(rescan_active);
+    ++rescan_step_count;
+    if(rescan_step_count == 2)
+        rescan_active = false;
+    return rescan_active;
+}
+
+bool crazypod_miniapps_rescan_active(void)
+{
+    return rescan_active;
+}
+
+int crazypod_miniapps_rescan_result(void)
+{
+    return rescan_active
+        ? CRAZYPOD_MINIAPP_ERROR_BUSY : CRAZYPOD_MINIAPP_OK;
 }
 
 bool crazypod_miniapps_is_open(void)
@@ -129,6 +159,20 @@ int main(void)
     };
 
     crazypod_miniapp_runtime_initialize();
+    assert(crazypod_miniapp_runtime_last_error() ==
+           CRAZYPOD_MINIAPP_OK);
+
+    crazypod_miniapp_runtime_request_rescan();
+    assert(crazypod_miniapp_runtime_rescan_pending());
+    assert(crazypod_miniapp_runtime_prepare() ==
+           CRAZYPOD_MINIAPP_ERROR_BUSY);
+    crazypod_miniapp_runtime_service_rescan();
+    assert(rescan_begin_count == 1);
+    assert(rescan_step_count == 1);
+    assert(crazypod_miniapp_runtime_rescan_pending());
+    crazypod_miniapp_runtime_service_rescan();
+    assert(rescan_step_count == 2);
+    assert(!crazypod_miniapp_runtime_rescan_pending());
     assert(crazypod_miniapp_runtime_last_error() ==
            CRAZYPOD_MINIAPP_OK);
 

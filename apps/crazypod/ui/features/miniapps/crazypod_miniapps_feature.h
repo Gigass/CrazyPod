@@ -3,6 +3,7 @@
 
 #include "lvgl.h"
 
+#include "../../crazypod_menu_icon.h"
 #include "../../navigation/crazypod_ui_routes.h"
 #include "../crazypod_feature.h"
 
@@ -15,6 +16,8 @@ const char *crazypod_miniapps_feature_title(
 bool crazypod_miniapps_feature_item_title(
     const struct route_state *state, int index,
     const char **title);
+enum crazypod_menu_icon crazypod_miniapps_feature_item_icon(
+    const struct route_state *state, int index);
 bool crazypod_miniapps_feature_render(
     const struct route_state *state, lv_obj_t *parent,
     uint32_t primary_color);
@@ -45,6 +48,9 @@ bool crazypod_miniapps_feature_motion_active(void);
 void crazypod_miniapps_feature_close(void);
 void crazypod_miniapps_feature_reset_input(void);
 void crazypod_miniapps_feature_rescan(void);
+void crazypod_miniapps_feature_request_rescan(void);
+void crazypod_miniapps_feature_service_rescan(void);
+bool crazypod_miniapps_feature_rescan_pending(void);
 int crazypod_miniapps_feature_last_error(void);
 void crazypod_miniapps_feature_initialize_runtime(void);
 int crazypod_miniapps_feature_prepare(void);

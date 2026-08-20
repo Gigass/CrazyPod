@@ -164,9 +164,9 @@ bool crazypod_miniapp_stage_has_space(uint32_t extracted_size)
     uint64_t free_bytes;
     unsigned int sector_size;
 
-#if (CONFIG_PLATFORM & PLATFORM_NATIVE)
-    volume_recalc_free(IF_MV(0));
-#endif
+    /* Mount and file mutations maintain Rockbox's free-sector count.
+     * Forcing a recount here walks the entire FAT and made every package in
+     * a reconnect scan pay that full-volume cost again. */
     volume_size(IF_MV(0,) NULL, &free_sectors);
 #if (CONFIG_PLATFORM & PLATFORM_NATIVE)
     sector_size = (unsigned int)disk_get_log_sector_size(IF_MD(0));

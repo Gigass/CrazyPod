@@ -217,6 +217,70 @@ bool crazypod_notes_feature_item_title(
     }
 }
 
+enum crazypod_menu_icon crazypod_notes_feature_item_icon(
+    const struct route_state *state, int index)
+{
+    const struct crazypod_note *note;
+
+    if(index < 0)
+        return CRAZYPOD_MENU_ICON_NONE;
+    switch(state->route) {
+    case NOTES_ROUTE_MENU: {
+        int deleted_index = home_deleted_index();
+        int note_index;
+
+        if(index == 0)
+            return CRAZYPOD_MENU_ICON_ADD_NOTE;
+        if(crazypod_notes_controller_draft_available() && index == 1)
+            return CRAZYPOD_MENU_ICON_DRAFT;
+        if(index == deleted_index - 1)
+            return CRAZYPOD_MENU_ICON_SEARCH;
+        if(index == deleted_index)
+            return CRAZYPOD_MENU_ICON_TRASH;
+        note_index = index - home_note_start();
+        note = note_index >= 0
+            ? crazypod_note_get(false, note_index) : NULL;
+        return note != NULL && note->pinned
+            ? CRAZYPOD_MENU_ICON_PIN : CRAZYPOD_MENU_ICON_NOTE;
+    }
+    case NOTES_ROUTE_EXIT_ACTIONS:
+        return index == 0 ? CRAZYPOD_MENU_ICON_SAVE :
+            index == 1 ? CRAZYPOD_MENU_ICON_DRAFT :
+            index == 2 ? CRAZYPOD_MENU_ICON_TRASH :
+            CRAZYPOD_MENU_ICON_NONE;
+    case NOTES_ROUTE_SEARCH_RESULTS:
+        note = crazypod_notes_search_get(
+            crazypod_notes_controller_query(), index);
+        return note != NULL && note->pinned
+            ? CRAZYPOD_MENU_ICON_PIN : CRAZYPOD_MENU_ICON_NOTE;
+    case NOTES_ROUTE_ACTIONS:
+        return index == 0 ? CRAZYPOD_MENU_ICON_PIN :
+            index == 1 ? CRAZYPOD_MENU_ICON_EDIT :
+            index == 2 ? CRAZYPOD_MENU_ICON_DUPLICATE :
+            index == 3 ? CRAZYPOD_MENU_ICON_TRASH :
+            CRAZYPOD_MENU_ICON_NONE;
+    case NOTES_ROUTE_DELETED:
+        return index == crazypod_notes_count(true)
+            ? CRAZYPOD_MENU_ICON_ERASE : CRAZYPOD_MENU_ICON_NOTE;
+    case NOTES_ROUTE_DELETED_ACTIONS:
+        return index == 0 ? CRAZYPOD_MENU_ICON_RESTORE :
+            index == 1 ? CRAZYPOD_MENU_ICON_ERASE :
+            CRAZYPOD_MENU_ICON_NONE;
+    case NOTES_ROUTE_DISCARD_CONFIRM:
+    case NOTES_ROUTE_DELETE_CONFIRM:
+        return CRAZYPOD_MENU_ICON_TRASH;
+    case NOTES_ROUTE_PERMANENT_CONFIRM:
+    case NOTES_ROUTE_EMPTY_TRASH_CONFIRM:
+        return CRAZYPOD_MENU_ICON_ERASE;
+    case NOTES_ROUTE_READER:
+        return CRAZYPOD_MENU_ICON_READING;
+    case NOTES_ROUTE_COMPOSER:
+    case NOTES_ROUTE_SEARCH:
+    default:
+        return CRAZYPOD_MENU_ICON_NONE;
+    }
+}
+
 bool crazypod_notes_feature_activate(
     const struct route_state *state,
     const struct crazypod_notes_activation_host *host)
@@ -229,6 +293,9 @@ bool crazypod_notes_feature_activate(
     switch(action.kind) {
     case CRAZYPOD_NOTES_ACTION_RENDER:
         host->render(false);
+        break;
+    case CRAZYPOD_NOTES_ACTION_FAILED:
+        host->operation_failed();
         break;
     case CRAZYPOD_NOTES_ACTION_PUSH:
         host->push(action.route, action.group);

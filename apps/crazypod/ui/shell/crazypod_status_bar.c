@@ -49,7 +49,7 @@ void crazypod_status_bar_create(int index, lv_obj_t *screen)
     bar->time = crazypod_ui_widget_label(
         screen, "00:00", &lv_font_montserrat_12,
         STATUS_WHITE, LV_OPA_COVER);
-    lv_obj_set_pos(bar->time, 34, 10);
+    lv_obj_set_pos(bar->time, 34, 7);
 
     bar->playing = crazypod_ui_widget_label(
         screen, LV_SYMBOL_PLAY, &lv_font_montserrat_10,

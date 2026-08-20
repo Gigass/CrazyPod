@@ -91,12 +91,12 @@ static void render_theme_font_error(void)
     label = crazypod_ui_widget_label(
         panel, "THEME FONT ERROR",
         &lv_font_montserrat_12, 0xFF453A, LV_OPA_COVER);
-    lv_obj_set_pos(label, 8, 6);
-    lv_obj_set_size(label, 288, 15);
+    lv_obj_set_pos(label, 8, 2);
+    lv_obj_set_size(label, 288, 23);
     label = crazypod_ui_widget_label(
         panel, detail,
         &lv_font_montserrat_8, 0xFFFFFF, LV_OPA_COVER);
-    lv_obj_set_pos(label, 8, 25);
+    lv_obj_set_pos(label, 8, 27);
     lv_obj_set_size(label, 288, 27);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
 }

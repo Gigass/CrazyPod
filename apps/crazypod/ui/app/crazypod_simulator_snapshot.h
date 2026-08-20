@@ -9,12 +9,14 @@
 
 struct crazypod_simulator_snapshot_host {
     void (*show_power_prompt)(void);
+    void (*show_lock)(bool turn_display_off);
     void (*open_app)(enum crazypod_app_id id);
     void (*open_root_route)(enum crazypod_route route);
     void (*push_route)(enum crazypod_route route, int group);
     void (*pop_route)(void);
     void (*render)(bool transition);
     void (*activate_selected)(void);
+    void (*move_selection)(int direction);
     void (*begin_note_composer)(uint32_t id, bool resume_draft);
     void (*show_calendar_day)(int date);
 };

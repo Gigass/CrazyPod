@@ -55,6 +55,7 @@ bool crazypod_appearance_set_value(enum crazypod_appearance_field field,
 void crazypod_appearance_set_icon_theme(int theme);
 bool crazypod_appearance_set_wallpaper(
     enum crazypod_appearance_field field, const char *path);
+bool crazypod_appearance_take_lock_inheritance_migration(void);
 
 const char *crazypod_icon_theme_name(int theme);
 const char *crazypod_appearance_color_name(int color);

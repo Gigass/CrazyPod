@@ -50,7 +50,6 @@
 #define FLOW_VISIBLE_DISTANCE_Q16 (FLOW_POSITION_ONE * 7 / 2)
 #define FLOW_WHEEL_POSITIONS 96
 #define FLOW_WHEEL_CLICKS_PER_ALBUM 12
-#define FLOW_WHEEL_FEEDBACK_CLICKS 4
 #define FLOW_WHEEL_RELEASE_TICKS \
     (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
 
@@ -85,7 +84,7 @@ static int wheel_position;
 static long wheel_last_seen;
 static long wheel_last_motion;
 static uint32_t wheel_last_motion_usec;
-static int wheel_feedback_accumulator;
+static int wheel_feedback_album;
 static int wheel_feedback_direction;
 static void (*boost_cpu)(int ticks);
 
@@ -779,6 +778,7 @@ static void draw_album(int album_index)
 
 static void render_flow(void)
 {
+    uint32_t render_started_us = crazypod_monotonic_usec();
     int count = crazypod_music_album_count();
     int base = position_q16 >> 16;
     int indices[10];
@@ -821,6 +821,9 @@ static void render_flow(void)
      * screen once here so metadata and covers belong to the same LCD frame.
      */
     crazypod_present_queue_full();
+    crazypod_present_note_render(
+        CRAZYPOD_RENDER_MUSIC,
+        crazypod_monotonic_usec() - render_started_us);
 }
 
 void crazypod_coverflow_enter(int selected)
@@ -843,7 +846,7 @@ void crazypod_coverflow_enter(int selected)
     flow_direction = 1;
     gesture_min_album = selected;
     prefetched_visual_album = -1;
-    last_physics_usec = (uint32_t)USEC_TIMER;
+    last_physics_usec = crazypod_monotonic_usec();
     last_prefetch = current_tick;
     last_input = current_tick;
     crazypod_frameclock_reset(&render_clock, current_tick);
@@ -855,7 +858,7 @@ void crazypod_coverflow_enter(int selected)
     wheel_last_seen = 0;
     wheel_last_motion = 0;
     wheel_last_motion_usec = 0;
-    wheel_feedback_accumulator = 0;
+    wheel_feedback_album = selected;
     wheel_feedback_direction = 0;
     flow_active = true;
     flow_dirty = true;
@@ -902,7 +905,7 @@ void crazypod_coverflow_leave(void)
     input_active = false;
     wheel_input_suspended = false;
     wheel_tracking = false;
-    wheel_feedback_accumulator = 0;
+    wheel_feedback_album = -1;
     wheel_feedback_direction = 0;
     prefetch_pending = false;
     prefetch_deep_pending = false;
@@ -936,13 +939,12 @@ void crazypod_coverflow_set_input_suspended(bool suspended)
     wheel_last_seen = 0;
     wheel_last_motion = 0;
     wheel_last_motion_usec = 0;
-    wheel_feedback_accumulator = 0;
     wheel_feedback_direction = 0;
     velocity_q16 = 0;
     input_velocity_q16 = 0;
     input_active = false;
     last_input = current_tick;
-    last_physics_usec = (uint32_t)USEC_TIMER;
+    last_physics_usec = crazypod_monotonic_usec();
     if(suspended) {
         album_index = crazypod_coverflow_center_album();
         selected_album = album_index;
@@ -950,6 +952,7 @@ void crazypod_coverflow_set_input_suspended(bool suspended)
         target_position_q16 = position_q16;
         flow_dirty = true;
     }
+    wheel_feedback_album = crazypod_coverflow_center_album();
 #ifdef HAVE_WHEEL_POSITION
     /*
      * CoverFlow normally consumes absolute wheel position directly. The lock
@@ -984,7 +987,7 @@ int crazypod_coverflow_step(int direction)
         direction_changed;
 
     if(new_gesture) {
-        last_physics_usec = (uint32_t)USEC_TIMER;
+        last_physics_usec = crazypod_monotonic_usec();
         gesture_min_album = center + direction_sign;
         if(gesture_min_album < 0)
             gesture_min_album = 0;
@@ -1073,20 +1076,6 @@ static void sample_wheel_position(long now, uint32_t now_usec)
 
                 if(elapsed_usec < 1000u)
                     elapsed_usec = 1000u;
-                if(wheel_feedback_accumulator != 0 &&
-                   (wheel_feedback_accumulator < 0) !=
-                       (delta < 0))
-                    wheel_feedback_accumulator = 0;
-                wheel_feedback_accumulator += delta;
-                if(wheel_feedback_accumulator >=
-                   FLOW_WHEEL_FEEDBACK_CLICKS ||
-                   wheel_feedback_accumulator <=
-                   -FLOW_WHEEL_FEEDBACK_CLICKS) {
-                    wheel_feedback_direction =
-                        wheel_feedback_accumulator < 0 ? -1 : 1;
-                    wheel_feedback_accumulator %=
-                        FLOW_WHEEL_FEEDBACK_CLICKS;
-                }
                 next_position =
                     (int64_t)target_position_q16 +
                     (int64_t)delta * FLOW_POSITION_ONE /
@@ -1239,6 +1228,15 @@ static void advance_position(long now, uint32_t now_usec)
         elapsed_usec -= step_usec;
     }
     selected_album = crazypod_coverflow_center_album();
+    if(wheel_feedback_album < 0)
+        wheel_feedback_album = selected_album;
+    else if(selected_album != wheel_feedback_album) {
+        /* Match Home: one click for each item that actually becomes
+         * centered, never for fractional motion or boundary overscroll. */
+        wheel_feedback_direction =
+            selected_album < wheel_feedback_album ? -1 : 1;
+        wheel_feedback_album = selected_album;
+    }
 
     if(released) {
         int32_t error_q16 =
@@ -1289,7 +1287,7 @@ void crazypod_coverflow_tick(void)
 
     if(!flow_active)
         return;
-    now_usec = (uint32_t)USEC_TIMER;
+    now_usec = crazypod_monotonic_usec();
     sample_wheel_position(current_tick, now_usec);
     animating = position_animating();
     if(crazypod_coverflow_motion_active() && boost_cpu != NULL)

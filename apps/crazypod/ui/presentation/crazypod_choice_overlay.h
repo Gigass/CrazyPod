@@ -15,6 +15,8 @@ struct crazypod_choice_overlay_callbacks {
     bool (*item_color)(
         int kind, int id, int index, uint32_t *color,
         void *context);
+    bool (*action_layout)(
+        int kind, int id, void *context);
     lv_obj_t *(*create_panel)(
         lv_obj_t *parent, int x, int y,
         int width, int height, void *context);
@@ -30,7 +32,10 @@ void crazypod_choice_overlay_show(
 void crazypod_choice_overlay_reset(void);
 void crazypod_choice_overlay_dismiss(void);
 void crazypod_choice_overlay_move(int direction);
+void crazypod_choice_overlay_show_receipt(
+    const char *label, bool success, bool animated);
 bool crazypod_choice_overlay_visible(void);
+bool crazypod_choice_overlay_receipt_visible(void);
 int crazypod_choice_overlay_kind(void);
 int crazypod_choice_overlay_id(void);
 int crazypod_choice_overlay_selected(void);

@@ -12,7 +12,9 @@
 
 #include "lvgl.h"
 
+#include "../presentation/crazypod_popup_layout.h"
 #include "../presentation/crazypod_ui_widgets.h"
+#include "crazypod_desktop_native.h"
 #include "crazypod_power_prompt.h"
 
 #define COLOR_WHITE 0xFFFFFF
@@ -26,6 +28,7 @@ struct power_prompt_state {
     lv_obj_t *markers[2];
     int selected;
     bool play_holding;
+    bool teardown_pending;
     long play_hold_start;
     struct crazypod_power_prompt_callbacks callbacks;
 };
@@ -59,7 +62,7 @@ void crazypod_power_prompt_configure(
 
 bool crazypod_power_prompt_visible(void)
 {
-    return prompt.root != NULL;
+    return prompt.root != NULL || prompt.teardown_pending;
 }
 
 static void refresh_prompt(void)
@@ -91,29 +94,63 @@ static void refresh_prompt(void)
     }
 }
 
+static void teardown_refresh_ready(lv_event_t *event)
+{
+    lv_display_t *display = lv_event_get_target(event);
+
+    lv_display_remove_event_cb_with_user_data(
+        display, teardown_refresh_ready, NULL);
+    if(!prompt.teardown_pending)
+        return;
+    prompt.teardown_pending = false;
+    if(prompt.callbacks.dismissed != NULL)
+        prompt.callbacks.dismissed();
+}
+
 void crazypod_power_prompt_dismiss(void)
 {
-    if(prompt.root != NULL) {
+    lv_obj_t *root = prompt.root;
+    bool had_prompt = root != NULL;
+    lv_display_t *display;
+
+    if(!had_prompt)
+        return;
+
+    if(prompt.panel != NULL)
         lv_anim_delete(prompt.panel, NULL);
-        lv_obj_delete(prompt.root);
-    }
+    prompt.teardown_pending = had_prompt;
     prompt.root = NULL;
     prompt.panel = NULL;
     memset(prompt.rows, 0, sizeof(prompt.rows));
     memset(prompt.markers, 0, sizeof(prompt.markers));
     prompt.selected = 0;
-    if(prompt.callbacks.dismissed != NULL)
-        prompt.callbacks.dismissed();
+    display = lv_obj_get_display(root);
+    lv_display_remove_event_cb_with_user_data(
+        display, teardown_refresh_ready, NULL);
+    lv_display_add_event_cb(
+        display, teardown_refresh_ready, LV_EVENT_REFR_READY, NULL);
+    lv_obj_delete(root);
 }
 
 void crazypod_power_prompt_show(void)
 {
-    static const char *const titles[] = { CP_TR("Shut Down"), CP_TR("Restart") };
+    static const char *const titles[] = { CP_TR("Restart"), CP_TR("Shutdown") };
     static const char *const symbols[] = {
-        LV_SYMBOL_POWER, LV_SYMBOL_REFRESH
+        LV_SYMBOL_REFRESH, LV_SYMBOL_POWER
     };
     lv_obj_t *title;
     lv_obj_t *detail;
+    lv_obj_t *dimmer;
+    struct crazypod_popup_geometry geometry;
+    int content_width;
+    int title_y = 7;
+    int detail_y;
+    int rows_y;
+    int row_height = 30;
+    int row_gap = 5;
+    int row_inset = 12;
+    int row_side_reserve = 28;
+    int text_gap = 8;
     int index;
 
     if(prompt.parent == NULL || crazypod_power_prompt_visible() ||
@@ -123,41 +160,98 @@ void crazypod_power_prompt_show(void)
         prompt.callbacks.before_show();
     prompt.selected = 0;
     prompt.root = make_box(
-        prompt.parent, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0, 0x000000, 86);
+        prompt.parent, 0, 0, LCD_WIDTH, LCD_HEIGHT,
+        0, 0x000000, LV_OPA_TRANSP);
     lv_obj_remove_flag(prompt.root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_move_foreground(prompt.root);
+    (void)crazypod_desktop_native_create_modal_underlay(
+        prompt.root);
+    dimmer = make_box(
+        prompt.root, 0, 0, LCD_WIDTH, LCD_HEIGHT,
+        0, 0x000000, 86);
+    lv_obj_remove_flag(dimmer, LV_OBJ_FLAG_CLICKABLE);
+    content_width = crazypod_popup_text_width(
+        CP_TR("Choose Action"), &lv_font_montserrat_12) + 32;
+    for(index = 0; index < 2; ++index) {
+        int required_width = crazypod_popup_text_width(
+            titles[index], &lv_font_montserrat_10) +
+            crazypod_popup_text_width(
+                symbols[index], &lv_font_montserrat_12) +
+            text_gap + 2 * row_side_reserve + 2 * row_inset;
+
+        if(required_width > content_width)
+            content_width = required_width;
+    }
+    detail_y = title_y +
+        crazypod_popup_wrapped_text_height(
+            CP_TR("POWER"), &lv_font_montserrat_10,
+            LCD_WIDTH, 0) + 10;
+    rows_y = detail_y +
+        crazypod_popup_wrapped_text_height(
+            CP_TR("Choose Action"), &lv_font_montserrat_12,
+            LCD_WIDTH, 0) + 13;
+    geometry = crazypod_popup_centered_geometry(
+        crazypod_popup_clamp_width(
+            content_width, 0, 176, LCD_WIDTH - 32),
+        rows_y + 2 * row_height + row_gap + 11);
     prompt.panel = prompt.callbacks.create_panel(
-        prompt.root, 35, 55, 250, 132);
+        prompt.root, geometry.x, geometry.y,
+        geometry.width, geometry.height);
     title = make_label(
         prompt.panel, CP_TR("POWER"), &lv_font_montserrat_10,
         COLOR_WHITE, 110);
-    lv_obj_set_width(title, 250);
+    lv_obj_set_width(title, geometry.width);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 0, 14);
+    lv_obj_set_pos(title, 0, title_y);
     detail = make_label(
         prompt.panel, CP_TR("Choose Action"), &lv_font_montserrat_12,
         COLOR_WHITE, 235);
-    lv_obj_set_width(detail, 250);
+    lv_obj_set_width(detail, geometry.width);
     lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(detail, 0, 29);
+    lv_obj_set_pos(detail, 0, detail_y);
 
     for(index = 0; index < 2; ++index) {
         lv_obj_t *symbol;
         lv_obj_t *label;
-        int y = 53 + index * 35;
+        int row_width = geometry.width - 2 * row_inset;
+        int center_width = row_width - 2 * row_side_reserve;
+        int symbol_width = crazypod_popup_text_width(
+            symbols[index], &lv_font_montserrat_12);
+        int label_width = crazypod_popup_text_width(
+            titles[index], &lv_font_montserrat_10);
+        int maximum_label_width;
+        int group_width;
+        int group_x;
+        int y = rows_y + index * (row_height + row_gap);
 
         prompt.rows[index] = make_box(
-            prompt.panel, 16, y, 218, 30, 9,
+            prompt.panel, row_inset, y, row_width, row_height, 9,
             COLOR_WHITE, LV_OPA_TRANSP);
+        maximum_label_width = center_width - symbol_width - text_gap;
+        if(maximum_label_width < 1)
+            maximum_label_width = 1;
+        if(label_width > maximum_label_width)
+            label_width = maximum_label_width;
+        group_width = symbol_width + text_gap + label_width;
+        group_x = row_side_reserve +
+            (center_width - group_width) / 2;
         symbol = make_label(
             prompt.rows[index], symbols[index],
             &lv_font_montserrat_12, COLOR_WHITE, 220);
-        lv_obj_set_pos(symbol, 13, 7);
+        lv_obj_set_width(symbol, symbol_width);
+        lv_obj_set_style_text_align(
+            symbol, LV_TEXT_ALIGN_CENTER, 0);
+        crazypod_ui_widget_align_row_label(
+            symbol, group_x, CRAZYPOD_UI_ROW_LABEL_MARKER);
         label = make_label(
             prompt.rows[index], titles[index],
             &lv_font_montserrat_10, COLOR_WHITE, 235);
-        lv_obj_set_size(label, 86, 14);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, 39, 0);
+        lv_obj_set_width(label, label_width);
+        lv_obj_set_style_text_align(
+            label, LV_TEXT_ALIGN_CENTER, 0);
+        crazypod_ui_widget_align_row_label(
+            label, group_x + symbol_width + text_gap,
+            CRAZYPOD_UI_ROW_LABEL_TEXT);
         lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
         prompt.markers[index] = make_label(
             prompt.rows[index], LV_SYMBOL_BULLET,
@@ -165,11 +259,14 @@ void crazypod_power_prompt_show(void)
         lv_obj_set_width(prompt.markers[index], 24);
         lv_obj_set_style_text_align(
             prompt.markers[index], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(prompt.markers[index], 184, 11);
+        crazypod_ui_widget_align_row_label(
+            prompt.markers[index], row_width - row_side_reserve,
+            CRAZYPOD_UI_ROW_LABEL_MARKER);
     }
     refresh_prompt();
     if(prompt.callbacks.animate_panel != NULL)
-        prompt.callbacks.animate_panel(prompt.panel, 55);
+        prompt.callbacks.animate_panel(
+            prompt.panel, geometry.y);
 }
 
 static void move_selection(int direction)

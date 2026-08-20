@@ -11,7 +11,7 @@
 #include "../../../crazypod_notes.h"
 #include "crazypod_notes_controller.h"
 #include "../../presentation/crazypod_ui_widgets.h"
-#include "../../presentation/crazypod_menu_preview_motion.h"
+#include "../../presentation/crazypod_preview_motion.h"
 #include "../../presentation/crazypod_preview_primitives.h"
 #include "crazypod_notes_feature.h"
 #include "crazypod_notes_preview.h"
@@ -25,14 +25,6 @@ static lv_obj_t *make_box(
 {
     return crazypod_ui_widget_box(
         parent, x, y, width, height, radius, color, opacity);
-}
-
-static lv_obj_t *make_label(
-    lv_obj_t *parent, const char *text, const lv_font_t *font,
-    uint32_t color, lv_opa_t opacity)
-{
-    return crazypod_ui_widget_label(
-        parent, text, font, color, opacity);
 }
 
 static int notes_home_note_start(void)
@@ -67,7 +59,6 @@ void crazypod_notes_preview_render(
     const struct crazypod_note *note = NULL;
     lv_obj_t *binder;
     lv_obj_t *paper;
-    lv_obj_t *label;
     lv_obj_t *text_panel;
     lv_obj_t *part;
     char search_detail[48];
@@ -156,10 +147,10 @@ void crazypod_notes_preview_render(
                  0xB9BEC0, 240);
         make_box(part, 1, 69, 5, 8, 2, 0x252525, 245);
         lv_obj_set_style_transform_rotation(part, 235, 0);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             binder, 0, 18, 228, -15, 0, 0, 260,
             -8, 12, 228, -25);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             part, 22, -18, 196, 410, 0, 60, 300,
             18, -14, 196, 430);
     }
@@ -188,10 +179,10 @@ void crazypod_notes_preview_render(
         crazypod_preview_add_bevel(
             part, 33, 12, 0xEDF0F1, 0x3A3D3E);
         make_box(part, 7, 3, 19, 4, 2, 0x4A4C4D, 165);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             binder, 15, 0, 218, 45, 0, 0, 270,
             14, 5, 218, 70);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             part, 0, -14, 200, 0, 0, 70, 230,
             0, -10, 200, 0);
     }
@@ -227,10 +218,10 @@ void crazypod_notes_preview_render(
             binder, 8, 37, 0xE3EAEC, 0x262E31);
         make_box(binder, 2, 25, 4, 8, 2,
                  0x23282A, 220);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             paper, -8, 7, 232, 0, 0, 0, 240,
             -10, 5, 232, 0);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             part, 42, 9, 185, 120, 0, 50, 300,
             38, 9, 185, 160);
     }
@@ -267,10 +258,10 @@ void crazypod_notes_preview_render(
         make_box(part, 13, 16, 16, 3, 1, 0x756B5F, 75);
         make_box(part, 4, 25, 18, 2, 1, 0x756B5F, 52);
         lv_obj_set_style_transform_rotation(part, 120, 0);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             binder, 0, 18, 225, 0, 0, 0, 240,
             0, 13, 225, 0);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             part, -18, -37, 150, -220, 0, 30, 300,
             13, 31, 160, 270);
     }
@@ -307,31 +298,21 @@ void crazypod_notes_preview_render(
         part = make_box(binder, 76, 37, 12, 22, 3,
                         note != NULL && note->pinned
                             ? 0xF0B43C : 0xBD7B42, 220);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             binder, 16, 0, 215, 55, 0, 0, 280,
             14, 5, 215, 75);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             paper, 17, 0, 226, 0, 0, 60, 240,
             15, 0, 226, 0);
-        crazypod_menu_preview_motion_register(
+        crazypod_preview_motion_register(
             part, 8, -8, 170, 120, 0, 90, 220,
             8, -7, 170, 160);
     }
 
-    text_panel = crazypod_preview_make_text_panel(parent, 168, 52);
-    label = make_label(text_panel, title != NULL ? title : CP_TR("Notes"),
-                       metadata_font,
-                       COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_width(label, 126);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 7, 5);
-    label = make_label(text_panel, detail, &lv_font_montserrat_8,
-                       COLOR_WHITE, 135);
-    lv_obj_set_width(label, 126);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 7, 30);
-    crazypod_menu_preview_motion_register(
+    text_panel = crazypod_preview_make_caption(
+        parent, title != NULL ? title : CP_TR("Notes"),
+        metadata_font, detail, &lv_font_montserrat_8);
+    crazypod_preview_motion_register(
         text_panel, 0, 9, 246, 0, 0, 70, 220,
         0, 6, 246, 0);
 }

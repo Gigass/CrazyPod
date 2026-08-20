@@ -58,6 +58,14 @@ bool crazypod_miniapps_feature_item_title(
         state->route == MINIAPP_ROUTE_VIEW;
 }
 
+enum crazypod_menu_icon crazypod_miniapps_feature_item_icon(
+    const struct route_state *state, int index)
+{
+    return state->route == UTILITIES_ROUTE_MENU && index >= 0
+        ? CRAZYPOD_MENU_ICON_APPS
+        : CRAZYPOD_MENU_ICON_NONE;
+}
+
 bool crazypod_miniapps_feature_render(
     const struct route_state *state, lv_obj_t *parent,
     uint32_t primary_color)
@@ -191,6 +199,21 @@ void crazypod_miniapps_feature_reset_input(void)
 void crazypod_miniapps_feature_rescan(void)
 {
     crazypod_miniapp_runtime_rescan();
+}
+
+void crazypod_miniapps_feature_request_rescan(void)
+{
+    crazypod_miniapp_runtime_request_rescan();
+}
+
+void crazypod_miniapps_feature_service_rescan(void)
+{
+    crazypod_miniapp_runtime_service_rescan();
+}
+
+bool crazypod_miniapps_feature_rescan_pending(void)
+{
+    return crazypod_miniapp_runtime_rescan_pending();
 }
 
 int crazypod_miniapps_feature_last_error(void)
