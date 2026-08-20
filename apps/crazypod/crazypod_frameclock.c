@@ -126,6 +126,13 @@ void crazypod_present_queue_full(void)
     crazypod_present_queue_rect(0, 0, LCD_WIDTH, LCD_HEIGHT);
 }
 
+static bool crazypod_present_is_full(void)
+{
+    return present_x1 == 0 && present_y1 == 0 &&
+        present_x2 == LCD_WIDTH - 1 &&
+        present_y2 == LCD_HEIGHT - 1;
+}
+
 void crazypod_present_now(void)
 {
     uint32_t duration_us;
@@ -135,9 +142,7 @@ void crazypod_present_now(void)
     if(!present_pending)
         return;
 
-    full = present_x1 == 0 && present_y1 == 0 &&
-        present_x2 == LCD_WIDTH - 1 &&
-        present_y2 == LCD_HEIGHT - 1;
+    full = crazypod_present_is_full();
     started_us = crazypod_monotonic_usec();
     lcd_update_rect(present_x1, present_y1,
                     present_x2 - present_x1 + 1,
@@ -168,8 +173,18 @@ void crazypod_present_tick(void)
     long now = current_tick;
     uint32_t late_ticks;
 
-    if(!present_pending ||
-       !crazypod_frameclock_due(&present_clock, now))
+    if(!present_pending)
+        return;
+
+    /* Full-screen updates bypass the software frame clock. The LCD driver
+       still waits for TE/FMARK when hardware synchronization is available. */
+    if(crazypod_present_is_full()) {
+        crazypod_present_now();
+        crazypod_frameclock_reset(&present_clock, now);
+        return;
+    }
+
+    if(!crazypod_frameclock_due(&present_clock, now))
         return;
 
     if(TIME_AFTER(now, present_clock.next_tick)) {

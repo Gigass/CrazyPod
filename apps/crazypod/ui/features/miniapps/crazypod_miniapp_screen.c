@@ -79,7 +79,7 @@ static void render_text_prompt(void)
         COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_pos(label, 14, heading_y);
     lv_obj_set_size(label, content_width, heading_height);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
     field = crazypod_ui_widget_box(
         panel, 14, field_y, content_width, field_height, 8,
         0x101016, LV_OPA_COVER);
@@ -90,7 +90,7 @@ static void render_text_prompt(void)
     lv_obj_set_pos(label, 8, 10);
     lv_obj_set_size(label, content_width - 16, 22);
     lv_obj_set_style_text_align(
-        label, LV_TEXT_ALIGN_CENTER, 0);
+        label, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL_CIRCULAR);
     choice_width = crazypod_popup_clamp_width(
         crazypod_popup_text_width(
@@ -113,7 +113,7 @@ static void render_text_prompt(void)
     lv_obj_set_pos(label, 14, instruction_y);
     lv_obj_set_size(
         label, content_width, instruction_height);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
 }
 
@@ -167,7 +167,7 @@ static void render_exit_prompt(void)
         COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_pos(label, 15, title_y);
     lv_obj_set_size(label, geometry.width - 30, title_height);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
     button = crazypod_ui_widget_box(
         panel, 15, button_y, button_width, button_height, 9,
         exit_selected ? 0x34343D : COLOR_WHITE,

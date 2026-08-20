@@ -155,11 +155,23 @@ static struct dmac_tsk lcd_dma_tskbuf[LCD_DMA_TSKBUF_SZ];
 static struct dmac_lli volatile \
             lcd_dma_llibuf[LCD_DMA_LLIBUF_SZ] CACHEALIGN_ATTR;
 
+#ifdef IPOD_6G
+static volatile uint32_t lcd_dma_started_us;
+static volatile uint32_t lcd_dma_transfers;
+static volatile uint32_t lcd_dma_last_us;
+static volatile uint32_t lcd_dma_max_us;
+static void displaylcd_dma_complete(void *cb_data);
+#endif
+
 static struct dmac_ch lcd_dma_ch =
 {
     .dmac = &s5l8702_dmac0,
     .prio = DMAC_CH_PRIO(4),
+#ifdef IPOD_6G
+    .cb_fn = displaylcd_dma_complete,
+#else
     .cb_fn = NULL,
+#endif
 
     .tskbuf = lcd_dma_tskbuf,
     .tskbuf_mask = LCD_DMA_TSKBUF_SZ - 1,
@@ -368,9 +380,26 @@ static void displaylcd_dma(int pixels)
 {
     s5l_lcd_set_frame_mode();
     commit_dcache();
+#ifdef IPOD_6G
+    lcd_dma_started_us = USEC_TIMER;
+#endif
     dmac_ch_queue(&lcd_dma_ch, lcd_dblbuf,
             (void*)S5L8702_DADDR_PERI_LCD_WR, pixels*2, NULL);
 }
+
+#ifdef IPOD_6G
+static void displaylcd_dma_complete(void *cb_data)
+{
+    uint32_t elapsed;
+
+    (void)cb_data;
+    elapsed = USEC_TIMER - lcd_dma_started_us;
+    lcd_dma_last_us = elapsed;
+    if (elapsed > lcd_dma_max_us)
+        lcd_dma_max_us = elapsed;
+    ++lcd_dma_transfers;
+}
+#endif
 
 // TODO: wait if there is a DMA transfer in progress
 static void displaylcd_wait_dma(void) ICODE_ATTR;
@@ -399,11 +428,30 @@ static void displaylcd_wait_dma(void)
 static enum lcd_frame_sync_method lcd_frame_sync_method;
 static bool lcd_frame_marker_idle_high;
 static struct lcd_frame_sync_diagnostics lcd_frame_sync_diagnostics;
+static uint32_t lcd_last_frame_edge_us;
 
 static void displaylcd_reset_frame_sync(void)
 {
     lcd_frame_sync_method = LCD_FRAME_SYNC_PROBING;
     lcd_frame_marker_idle_high = false;
+    lcd_last_frame_edge_us = 0;
+}
+
+static void displaylcd_note_frame_edge(void)
+{
+    uint32_t now = USEC_TIMER;
+
+    if (lcd_last_frame_edge_us != 0)
+    {
+        uint32_t interval = now - lcd_last_frame_edge_us;
+
+        ++lcd_frame_sync_diagnostics.edge_intervals;
+        lcd_frame_sync_diagnostics.last_edge_interval_us = interval;
+        if (lcd_frame_sync_diagnostics.min_edge_interval_us == 0 ||
+            interval < lcd_frame_sync_diagnostics.min_edge_interval_us)
+            lcd_frame_sync_diagnostics.min_edge_interval_us = interval;
+    }
+    lcd_last_frame_edge_us = now;
 }
 
 static bool displaylcd_probe_frame_marker(void) ICODE_ATTR;
@@ -454,12 +502,25 @@ static bool displaylcd_wait_frame_marker(void)
 {
     unsigned deadline = USEC_TIMER + LCD_FRAME_SYNC_TIMEOUT_US;
 
+    /* Never reuse a pulse that was already active when this wait began. */
+    while (TIME_BEFORE(USEC_TIMER, deadline))
+    {
+        bool high = (LCD_STATUS & LCD_STATUS_FRAME_MARKER) != 0;
+
+        if (high == lcd_frame_marker_idle_high)
+            break;
+        udelay(LCD_FRAME_SYNC_POLL_US);
+    }
+
     while (TIME_BEFORE(USEC_TIMER, deadline))
     {
         bool high = (LCD_STATUS & LCD_STATUS_FRAME_MARKER) != 0;
 
         if (high != lcd_frame_marker_idle_high)
+        {
+            displaylcd_note_frame_edge();
             return true;
+        }
         udelay(LCD_FRAME_SYNC_POLL_US);
     }
     return false;
@@ -498,7 +559,10 @@ static bool displaylcd_wait_scanline(bool probe)
             delta <= -LCD_SCAN_SYNC_WRAP_LINES)
         {
             if (!probe || stable_steps >= 3)
+            {
+                displaylcd_note_frame_edge();
                 return true;
+            }
 
             /* Probe started on a boundary; validate one full cycle. */
             direction = 0;
@@ -592,6 +656,9 @@ void lcd_get_frame_sync_diagnostics(
     *diagnostics = lcd_frame_sync_diagnostics;
     diagnostics->panel_type = lcd_type;
     diagnostics->method = lcd_frame_sync_method;
+    diagnostics->dma_transfers = lcd_dma_transfers;
+    diagnostics->last_dma_us = lcd_dma_last_us;
+    diagnostics->max_dma_us = lcd_dma_max_us;
 }
 #endif
 

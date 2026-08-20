@@ -34,8 +34,9 @@ static const uint8_t lcd_frame_sync_seq_01[] =
 
 static const uint16_t lcd_frame_sync_seq_23[] =
 {
-    /* FMKM=1, FMI=0 (every frame), FMP=0 (start of back porch). */
-    MREG16(1),  0x090, 0x8000,
+    /* FMKM=0 selects the panel frame signal. FMI=0 emits every frame and
+       FMP=0 places the pulse at the start of the back porch. */
+    MREG16(1),  0x090, 0x0000,
     END
 };
 
@@ -119,7 +120,7 @@ static const uint16_t lcd_init_seq_23[] =
     MREG16(1),  0x008, 0x0808,
     MREG16(7),  0x010, 0x0013, 0x0300, 0x0101, 0x0a03, 0x0a0e, 0x0a19, 0x2402,
     MREG16(1),  0x018, 0x0001,
-    MREG16(1),  0x090, 0x8000,
+    MREG16(1),  0x090, 0x0000,
 
     /* Gamma settings */
     MREG16(14), 0x300, 0x0307, 0x0003, 0x0402, 0x0303, 0x0300, 0x0407, 0x1c04,

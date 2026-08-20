@@ -55,7 +55,6 @@ static int32_t inertia_fraction_q16;
 static long motion_last_tick;
 static long wheel_last_sample_tick;
 static long wheel_last_seen;
-static struct crazypod_frameclock render_clock;
 static int wheel_position;
 static int wheel_detent_accumulator;
 static int wheel_move_detents;
@@ -390,7 +389,6 @@ lv_obj_t *crazypod_desktop_create(
     wheel_tracking = false;
     springing = false;
     inertia_active = false;
-    crazypod_frameclock_reset(&render_clock, now);
 #ifdef HAVE_WHEEL_POSITION
     wheel_send_events(false);
 #endif
@@ -536,7 +534,7 @@ void crazypod_desktop_refresh_appearance(void)
 void crazypod_desktop_render_icon(
     int tile_size, bool blocked)
 {
-    bool motion_active;
+    bool rendered;
     uint32_t render_started_us;
     int count = crazypod_apps_visible_count();
     int app_indices[CRAZYPOD_DESKTOP_NATIVE_MAX_VISIBLE];
@@ -549,15 +547,6 @@ void crazypod_desktop_render_icon(
 
     if(blocked)
         return;
-    motion_active = crazypod_desktop_motion_active();
-    if(motion_active) {
-        if(!crazypod_frameclock_due(&render_clock, current_tick))
-            return;
-        crazypod_frameclock_schedule_next(
-            &render_clock, current_tick);
-    }
-    else
-        crazypod_frameclock_reset(&render_clock, current_tick);
     for(index = first;
         index < first + CRAZYPOD_DESKTOP_NATIVE_MAX_VISIBLE;
         ++index) {
@@ -576,10 +565,14 @@ void crazypod_desktop_render_icon(
         ++visible;
     }
     render_started_us = crazypod_monotonic_usec();
-    crazypod_desktop_native_render(
+    rendered = crazypod_desktop_native_render(
         app_indices, centers_x, visible, tile_size, false);
-    if(motion_active)
-        crazypod_present_queue_full();
+    if(!rendered)
+        return;
+    /* Native icon drawing modifies the shared framebuffer directly. Route
+       every actual update, including the final settling frame, through the
+       full-screen synchronized present path. */
+    crazypod_present_queue_full();
     crazypod_present_note_render(
         CRAZYPOD_RENDER_HOME,
         crazypod_monotonic_usec() - render_started_us);

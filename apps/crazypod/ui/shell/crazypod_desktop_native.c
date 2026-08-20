@@ -423,7 +423,7 @@ static void draw_desktop_icon(int app_index, int center_x, int center_y,
     }
 }
 
-void crazypod_desktop_native_render(
+bool crazypod_desktop_native_render(
     const int *app_indices, const int *centers_x, int icon_count,
     int icon_size, bool blocked)
 {
@@ -441,7 +441,7 @@ void crazypod_desktop_native_render(
     int slot;
 
     if(blocked || !dirty)
-        return;
+        return false;
     if(icon_count < 0)
         icon_count = 0;
     if(icon_count > CRAZYPOD_DESKTOP_NATIVE_MAX_VISIBLE)
@@ -495,7 +495,7 @@ void crazypod_desktop_native_render(
     }
     if(!any_bounds) {
         dirty = false;
-        return;
+        return false;
     }
     restore_backdrop_rect(
         framebuffer, dirty_left, dirty_top,
@@ -519,6 +519,7 @@ void crazypod_desktop_native_render(
         dirty_right - dirty_left,
         dirty_bottom - dirty_top);
     dirty = false;
+    return true;
 }
 
 #endif

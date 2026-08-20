@@ -175,14 +175,19 @@ void crazypod_usb_prompt_show(unsigned request)
     lv_obj_t *dimmer;
     struct crazypod_popup_geometry geometry;
     int content_width;
+    int symbol_column_width = 0;
+    int label_column_width = 0;
     int title_y = 7;
     int detail_y;
-    int rows_y;
-    int row_height = 30;
-    int row_gap = 5;
-    int row_inset = 12;
-    int row_side_reserve = 28;
-    int text_gap = 8;
+    int options_y;
+    int option_height = 38;
+    int option_gap = 8;
+    int option_inset = 12;
+    int option_inner_padding = 8;
+    int marker_width = 16;
+    int text_gap = 6;
+    int option_width;
+    int maximum_label_width;
     int index;
 
     if(prompt.parent == NULL || prompt.callbacks.create_panel == NULL) {
@@ -211,74 +216,90 @@ void crazypod_usb_prompt_show(unsigned request)
         0, 0x000000, 86);
     lv_obj_remove_flag(dimmer, LV_OBJ_FLAG_CLICKABLE);
     content_width = crazypod_popup_text_width(
-        CP_TR("Choose Mode"), &lv_font_montserrat_12) + 32;
+        CP_TR("Choose Mode"), &lv_font_montserrat_12) +
+        2 * option_inset;
+    if(crazypod_popup_text_width(
+           CP_TR("USB CONNECTED"), &lv_font_montserrat_10) +
+       2 * option_inset > content_width)
+        content_width = crazypod_popup_text_width(
+            CP_TR("USB CONNECTED"), &lv_font_montserrat_10) +
+            2 * option_inset;
     for(index = 0; index < 2; ++index) {
-        int required_width = crazypod_popup_text_width(
-            titles[index], &lv_font_montserrat_10) +
-            crazypod_popup_text_width(
-                symbols[index], &lv_font_montserrat_12) +
-            text_gap + 2 * row_side_reserve + 2 * row_inset;
+        int symbol_width = crazypod_popup_text_width(
+            symbols[index], &lv_font_montserrat_12);
+        int label_width = crazypod_popup_text_width(
+            titles[index], &lv_font_montserrat_10);
 
-        if(required_width > content_width)
-            content_width = required_width;
+        if(symbol_width > symbol_column_width)
+            symbol_column_width = symbol_width;
+        if(label_width > label_column_width)
+            label_column_width = label_width;
     }
+    if(2 * (2 * option_inner_padding + symbol_column_width +
+            2 * text_gap + label_column_width + marker_width) +
+       option_gap + 2 * option_inset > content_width)
+        content_width =
+            2 * (2 * option_inner_padding + symbol_column_width +
+                 2 * text_gap + label_column_width + marker_width) +
+            option_gap + 2 * option_inset;
     detail_y = title_y +
         crazypod_popup_wrapped_text_height(
             CP_TR("USB CONNECTED"), &lv_font_montserrat_10,
             LCD_WIDTH, 0) + 10;
-    rows_y = detail_y +
+    options_y = detail_y +
         crazypod_popup_wrapped_text_height(
             CP_TR("Choose Mode"), &lv_font_montserrat_12,
             LCD_WIDTH, 0) + 13;
     geometry = crazypod_popup_centered_geometry(
         crazypod_popup_clamp_width(
-            content_width, 0, 176, LCD_WIDTH - 32),
-        rows_y + 2 * row_height + row_gap + 11);
+            content_width, 0, 236, LCD_WIDTH - 32),
+        options_y + option_height + 11);
     prompt.panel = prompt.callbacks.create_panel(
         prompt.root, geometry.x, geometry.y,
         geometry.width, geometry.height);
+    option_width =
+        (geometry.width - 2 * option_inset - option_gap) / 2;
+    maximum_label_width = option_width -
+        2 * option_inner_padding - symbol_column_width -
+        2 * text_gap - marker_width;
+    if(maximum_label_width < 1)
+        maximum_label_width = 1;
     title = make_label(
         prompt.panel, CP_TR("USB CONNECTED"), &lv_font_montserrat_10,
         COLOR_WHITE, 110);
-    lv_obj_set_width(title, geometry.width);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 0, title_y);
+    lv_obj_set_width(title, geometry.width - 2 * option_inset);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_pos(title, option_inset, title_y);
     detail = make_label(
         prompt.panel, CP_TR("Choose Mode"), &lv_font_montserrat_12,
         COLOR_WHITE, 235);
-    lv_obj_set_width(detail, geometry.width);
-    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(detail, 0, detail_y);
+    lv_obj_set_width(detail, geometry.width - 2 * option_inset);
+    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_pos(detail, option_inset, detail_y);
 
     for(index = 0; index < 2; ++index) {
         lv_obj_t *symbol;
         lv_obj_t *label;
-        int row_width = geometry.width - 2 * row_inset;
-        int center_width = row_width - 2 * row_side_reserve;
-        int symbol_width = crazypod_popup_text_width(
-            symbols[index], &lv_font_montserrat_12);
+        int x = option_inset + index * (option_width + option_gap);
         int label_width = crazypod_popup_text_width(
             titles[index], &lv_font_montserrat_10);
-        int maximum_label_width;
         int group_width;
         int group_x;
-        int y = rows_y + index * (row_height + row_gap);
 
-        prompt.rows[index] = make_box(
-            prompt.panel, row_inset, y, row_width, row_height, 9,
-            COLOR_WHITE, LV_OPA_TRANSP);
-        maximum_label_width = center_width - symbol_width - text_gap;
-        if(maximum_label_width < 1)
-            maximum_label_width = 1;
         if(label_width > maximum_label_width)
             label_width = maximum_label_width;
-        group_width = symbol_width + text_gap + label_width;
-        group_x = row_side_reserve +
-            (center_width - group_width) / 2;
+        group_width = symbol_column_width + 2 * text_gap +
+            label_width + marker_width;
+        group_x = (option_width - group_width) / 2;
+
+        prompt.rows[index] = make_box(
+            prompt.panel, x, options_y,
+            option_width, option_height, 9,
+            COLOR_WHITE, LV_OPA_TRANSP);
         symbol = make_label(
             prompt.rows[index], symbols[index],
             &lv_font_montserrat_12, COLOR_WHITE, 220);
-        lv_obj_set_width(symbol, symbol_width);
+        lv_obj_set_width(symbol, symbol_column_width);
         lv_obj_set_style_text_align(
             symbol, LV_TEXT_ALIGN_CENTER, 0);
         crazypod_ui_widget_align_row_label(
@@ -290,17 +311,19 @@ void crazypod_usb_prompt_show(unsigned request)
         lv_obj_set_style_text_align(
             label, LV_TEXT_ALIGN_CENTER, 0);
         crazypod_ui_widget_align_row_label(
-            label, group_x + symbol_width + text_gap,
+            label, group_x + symbol_column_width + text_gap,
             CRAZYPOD_UI_ROW_LABEL_TEXT);
         lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
         prompt.markers[index] = make_label(
             prompt.rows[index], LV_SYMBOL_BULLET,
             &lv_font_montserrat_8, COLOR_WHITE, 90);
-        lv_obj_set_width(prompt.markers[index], 24);
+        lv_obj_set_width(prompt.markers[index], marker_width);
         lv_obj_set_style_text_align(
             prompt.markers[index], LV_TEXT_ALIGN_CENTER, 0);
         crazypod_ui_widget_align_row_label(
-            prompt.markers[index], row_width - row_side_reserve,
+            prompt.markers[index],
+            group_x + symbol_column_width + text_gap +
+                label_width + text_gap,
             CRAZYPOD_UI_ROW_LABEL_MARKER);
     }
     refresh_prompt();

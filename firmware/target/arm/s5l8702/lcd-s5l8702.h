@@ -99,6 +99,12 @@ struct lcd_frame_sync_diagnostics {
     uint32_t timeouts;
     uint32_t last_wait_us;
     uint32_t max_wait_us;
+    uint32_t edge_intervals;
+    uint32_t last_edge_interval_us;
+    uint32_t min_edge_interval_us;
+    uint32_t dma_transfers;
+    uint32_t last_dma_us;
+    uint32_t max_dma_us;
 };
 
 void lcd_get_frame_sync_diagnostics(

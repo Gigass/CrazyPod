@@ -70,7 +70,7 @@ void crazypod_empty_state_render(
         COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(label, content_width);
     lv_obj_set_style_text_align(
-        label, LV_TEXT_ALIGN_CENTER, 0);
+        label, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_pos(label, 14, y);
     y += lv_font_get_line_height(
         &lv_font_montserrat_12) + 8;
@@ -80,7 +80,7 @@ void crazypod_empty_state_render(
     lv_obj_set_width(label, content_width);
     lv_obj_set_height(label, message_height);
     lv_obj_set_style_text_align(
-        label, LV_TEXT_ALIGN_CENTER, 0);
+        label, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_line_space(label, 2, 0);
     lv_obj_set_pos(label, 14, y);

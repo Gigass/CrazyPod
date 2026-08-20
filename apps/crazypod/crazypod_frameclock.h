@@ -8,12 +8,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/*
- * The kernel tick rate is 100 Hz on iPod 6G. 50 fps maps to an exact
- * two-tick cadence; 42 fps requires uneven 2/3 tick pacing and produces
- * visible motion jitter.
- */
-#define CRAZYPOD_TARGET_FPS 50
+/* Run at the iPod 6G kernel's maximum scheduling rate. The LCD driver still
+ * waits for TE/FMARK when the panel exposes a usable synchronization edge. */
+#define CRAZYPOD_TARGET_FPS HZ
 #define CRAZYPOD_FRAME_BUDGET_US \
     (1000000u / CRAZYPOD_TARGET_FPS)
 

@@ -42,9 +42,8 @@ static void test_frameclock_cadence(void)
     crazypod_frameclock_reset(&clock, 0);
     assert(crazypod_frameclock_due(&clock, 0));
     crazypod_frameclock_schedule_next(&clock, 0);
-    assert(clock.next_tick == 2);
-    assert(!crazypod_frameclock_due(&clock, 1));
-    assert(crazypod_frameclock_due(&clock, 2));
+    assert(clock.next_tick == 1);
+    assert(crazypod_frameclock_due(&clock, 1));
 }
 
 static void test_present_coalesces_to_full_frame(void)
@@ -80,12 +79,12 @@ static void test_present_deadline_and_timeout_diagnostics(void)
 
     reset_lcd();
     crazypod_present_init(0);
-    crazypod_present_queue_full();
+    crazypod_present_queue_rect(0, 0, LCD_WIDTH, LCD_HEIGHT - 1);
     crazypod_present_tick();
 
     lcd_duration_us = CRAZYPOD_FRAME_BUDGET_US + 1;
-    test_current_tick = 3;
-    crazypod_present_queue_full();
+    test_current_tick = 2;
+    crazypod_present_queue_rect(0, 0, LCD_WIDTH, LCD_HEIGHT - 1);
     crazypod_present_tick();
 
     crazypod_present_note_render(
@@ -101,10 +100,25 @@ static void test_present_deadline_and_timeout_diagnostics(void)
     assert(diagnostics.music_render_timeouts == 0);
 }
 
+static void test_full_frame_bypasses_software_gate(void)
+{
+    reset_lcd();
+    crazypod_present_init(0);
+
+    crazypod_present_queue_full();
+    crazypod_present_tick();
+    assert(lcd_calls == 1);
+
+    crazypod_present_queue_full();
+    crazypod_present_tick();
+    assert(lcd_calls == 2);
+}
+
 int main(void)
 {
     test_frameclock_cadence();
     test_present_coalesces_to_full_frame();
     test_present_deadline_and_timeout_diagnostics();
+    test_full_frame_bypasses_software_gate();
     return 0;
 }

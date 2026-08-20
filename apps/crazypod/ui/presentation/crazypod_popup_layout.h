@@ -18,6 +18,7 @@ int crazypod_popup_wrapped_text_height(
 int crazypod_popup_clamp_width(
     int content_width, int horizontal_padding,
     int minimum_width, int maximum_width);
+/* Centers the panel frame only; popup information text stays left-aligned. */
 struct crazypod_popup_geometry crazypod_popup_centered_geometry(
     int width, int height);
 

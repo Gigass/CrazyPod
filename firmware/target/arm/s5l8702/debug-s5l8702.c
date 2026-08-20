@@ -99,6 +99,12 @@ bool dbg_hw_info(void)
             _DEBUG_PRINTF("wait us: %u max: %u",
                 (unsigned)sync.last_wait_us,
                 (unsigned)sync.max_wait_us);
+            _DEBUG_PRINTF("edge us: %u min: %u",
+                (unsigned)sync.last_edge_interval_us,
+                (unsigned)sync.min_edge_interval_us);
+            _DEBUG_PRINTF("DMA: %u us max: %u",
+                (unsigned)sync.last_dma_us,
+                (unsigned)sync.max_dma_us);
 #endif
             line++;
             _DEBUG_PRINTF("capture HW type: %d", rec_hw_ver);

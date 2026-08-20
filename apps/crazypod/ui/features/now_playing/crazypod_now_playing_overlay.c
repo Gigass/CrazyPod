@@ -701,9 +701,9 @@ static void show_now_actions_popup(void)
     title = crazypod_ui_widget_label(now_overlay_panel, CP_TR("ACTIONS"),
                        &lv_font_montserrat_10,
                        COLOR_WHITE, 92);
-    lv_obj_set_width(title, geometry.width);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 0, title_y);
+    lv_obj_set_width(title, geometry.width - 28);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_pos(title, 14, title_y);
 
     now_actions_view.queue_row = crazypod_ui_widget_box(
         now_overlay_panel, 12, queue_y,
@@ -723,7 +723,7 @@ static void show_now_actions_popup(void)
         now_actions_view.queue_label, row_width - 68);
     lv_obj_set_style_text_align(
         now_actions_view.queue_label,
-        LV_TEXT_ALIGN_CENTER, 0);
+        LV_TEXT_ALIGN_LEFT, 0);
     chevron_box = crazypod_ui_widget_box(
         now_actions_view.queue_row,
         row_width - 25, 10, 16, 16, 0,
@@ -774,7 +774,7 @@ static void show_now_actions_popup(void)
     lv_obj_set_height(
         now_actions_view.detail, detail_height);
     lv_obj_set_style_text_align(
-        now_actions_view.detail, LV_TEXT_ALIGN_CENTER, 0);
+        now_actions_view.detail, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_long_mode(
         now_actions_view.detail, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_line_space(
@@ -956,7 +956,7 @@ static void show_now_queue_popup(void)
     lv_obj_set_width(
         now_queue_view.mode, geometry.width - 72);
     lv_obj_set_style_text_align(
-        now_queue_view.mode, LV_TEXT_ALIGN_CENTER, 0);
+        now_queue_view.mode, LV_TEXT_ALIGN_LEFT, 0);
     now_queue_view.count = crazypod_ui_widget_label(
         now_overlay_panel, "0/0",
         &lv_font_montserrat_8,
@@ -978,14 +978,14 @@ static void show_now_queue_popup(void)
     lv_obj_set_width(
         source_title, geometry.width - 68);
     lv_obj_set_style_text_align(
-        source_title, LV_TEXT_ALIGN_CENTER, 0);
+        source_title, LV_TEXT_ALIGN_LEFT, 0);
     now_queue_view.empty = crazypod_ui_widget_label(
         now_overlay_panel, CP_TR("No Queue"),
         CRAZYPOD_METADATA_FONT,
         COLOR_WHITE, 225);
     lv_obj_set_width(now_queue_view.empty, row_width);
     lv_obj_set_style_text_align(
-        now_queue_view.empty, LV_TEXT_ALIGN_CENTER, 0);
+        now_queue_view.empty, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_pos(
         now_queue_view.empty, 14,
         58 + (geometry.height - 58 - empty_height) / 2);
@@ -1014,7 +1014,7 @@ static void show_now_queue_popup(void)
             row_width - 41, 23);
         lv_obj_set_style_text_align(
             now_queue_view.titles[row],
-            LV_TEXT_ALIGN_CENTER, 0);
+            LV_TEXT_ALIGN_LEFT, 0);
         lv_label_set_long_mode(
             now_queue_view.titles[row], LV_LABEL_LONG_MODE_DOTS);
         now_queue_view.artists[row] = crazypod_ui_widget_label(
@@ -1027,7 +1027,7 @@ static void show_now_queue_popup(void)
             row_width - 41, 19);
         lv_obj_set_style_text_align(
             now_queue_view.artists[row],
-            LV_TEXT_ALIGN_CENTER, 0);
+            LV_TEXT_ALIGN_LEFT, 0);
         lv_label_set_long_mode(
             now_queue_view.artists[row], LV_LABEL_LONG_MODE_DOTS);
     }
@@ -1131,9 +1131,9 @@ static void show_now_progress_popup(void)
     title = crazypod_ui_widget_label(now_overlay_panel, CP_TR("PROGRESS"),
                        &lv_font_montserrat_10,
                        COLOR_WHITE, 100);
-    lv_obj_set_width(title, geometry.width);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(title, 0, title_y);
+    lv_obj_set_width(title, geometry.width - 28);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_pos(title, 14, title_y);
     now_progress_view.icon = crazypod_ui_widget_icon(
         now_overlay_panel, 22, track_y - 3,
         CRAZYPOD_UI_ICON_BARS, COLOR_CYAN, LV_OPA_COVER);
@@ -1170,14 +1170,14 @@ static void show_now_progress_popup(void)
         now_overlay_panel, CP_TR("Scroll seeks 5s  Menu exits"),
         &lv_font_montserrat_8,
         COLOR_WHITE, 145);
-    lv_obj_set_width(instruction, geometry.width);
+    lv_obj_set_width(instruction, geometry.width - 28);
     lv_obj_set_height(instruction, instruction_height);
     lv_obj_set_style_text_align(
-        instruction, LV_TEXT_ALIGN_CENTER, 0);
+        instruction, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_long_mode(
         instruction, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_line_space(instruction, 1, 0);
-    lv_obj_set_pos(instruction, 0, instruction_y);
+    lv_obj_set_pos(instruction, 14, instruction_y);
     refresh_now_progress_popup();
     animate_now_popup(now_overlay_panel, geometry.y);
 }
