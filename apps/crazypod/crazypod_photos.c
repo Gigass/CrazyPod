@@ -81,6 +81,7 @@ struct photo_decode_request {
 static struct photo_slot thumbnail_slots[CRAZYPOD_PHOTO_THUMB_SLOTS];
 static struct photo_view_slot view_slot;
 static unsigned photo_publish_generation;
+static unsigned photo_thumbnail_publish_generation;
 static unsigned photo_view_publish_generation;
 static bool photo_worker_decoding;
 static bool photo_suspended;
@@ -94,6 +95,27 @@ static struct mutex photo_mutex;
 static struct event_queue photo_queue;
 static long photo_stack[CRAZYPOD_PHOTO_THREAD_STACK_SIZE /
                         sizeof(long)];
+
+static int begin_background_work(void)
+{
+#ifdef HAVE_PRIORITY_SCHEDULING
+    return thread_set_priority(
+        thread_self(), PRIORITY_BACKGROUND);
+#else
+    return -1;
+#endif
+}
+
+static void finish_background_work(int old_priority)
+{
+#ifdef HAVE_PRIORITY_SCHEDULING
+    if(old_priority >= HIGHEST_PRIORITY &&
+       old_priority <= LOWEST_PRIORITY)
+        thread_set_priority(thread_self(), old_priority);
+#else
+    (void)old_priority;
+#endif
+}
 
  static bool decode_photo(const struct photo_decode_request *request,
                          lv_image_dsc_t *descriptor,
@@ -212,7 +234,6 @@ static void publish_request(const struct photo_decode_request *request,
             view_slot.decoded_serial = request->serial;
             view_slot.valid = valid;
             view_slot.progress = valid ? 100 : -1;
-            ++photo_publish_generation;
             ++photo_view_publish_generation;
         }
     }
@@ -228,7 +249,7 @@ static void publish_request(const struct photo_decode_request *request,
             slot->decoded_index = request->index;
             slot->decoded_serial = request->serial;
             slot->valid = valid;
-            ++photo_publish_generation;
+            ++photo_thumbnail_publish_generation;
         }
     }
     mutex_unlock(&photo_mutex);
@@ -254,6 +275,19 @@ static void finish_request(void)
     mutex_unlock(&photo_mutex);
 }
 
+static void ensure_photo_cache_initialized(void)
+{
+    bool initialize;
+
+    mutex_lock(&photo_mutex);
+    initialize = !photo_cache_initialized;
+    if(initialize)
+        photo_cache_initialized = true;
+    mutex_unlock(&photo_mutex);
+    if(initialize)
+        crazypod_photo_cache_init();
+}
+
 static void photo_thread(void)
 {
     struct queue_event event;
@@ -272,6 +306,7 @@ static void photo_thread(void)
 
             if(!find_request(&request))
                 break;
+            ensure_photo_cache_initialized();
             if(request.view) {
                 bank = 1 - view_slot.active_bank;
                 descriptor = &view_slot.descriptor[bank];
@@ -368,7 +403,7 @@ void crazypod_photos_init(void)
     queue_init(&photo_queue, false);
     create_thread(photo_thread, photo_stack, sizeof(photo_stack), 0,
                   "crazypod photos"
-                  IF_PRIO(, PRIORITY_USER_INTERFACE)
+                  IF_PRIO(, PRIORITY_BACKGROUND)
                   IF_COP(, CPU));
     catalog_loaded = crazypod_photo_catalog_init();
     photo_refresh_pending = !catalog_loaded;
@@ -377,6 +412,7 @@ void crazypod_photos_init(void)
 void crazypod_photos_refresh(void)
 {
     bool wake;
+    int old_priority;
 
     mutex_lock(&photo_mutex);
     if(photo_storage_suspended || photo_lock_suspended ||
@@ -389,7 +425,9 @@ void crazypod_photos_refresh(void)
     photo_suspended = true;
     mutex_unlock(&photo_mutex);
     wait_for_photo_idle();
+    old_priority = begin_background_work();
     crazypod_photo_catalog_refresh();
+    finish_background_work(old_priority);
     mutex_lock(&photo_mutex);
     photo_suspended =
         photo_storage_suspended || photo_lock_suspended ||
@@ -406,20 +444,12 @@ void crazypod_photos_refresh(void)
 
 void crazypod_photos_ensure_catalog(void)
 {
-    bool active;
-    bool initialize_cache;
     bool refresh;
 
     mutex_lock(&photo_mutex);
-    active = !photo_storage_suspended && !photo_lock_suspended &&
-        !photo_route_suspended;
-    initialize_cache = active && !photo_cache_initialized;
-    if(initialize_cache)
-        photo_cache_initialized = true;
-    refresh = active && photo_refresh_pending;
+    refresh = !photo_storage_suspended && !photo_lock_suspended &&
+        !photo_route_suspended && photo_refresh_pending;
     mutex_unlock(&photo_mutex);
-    if(initialize_cache)
-        crazypod_photo_cache_init();
     if(refresh)
         crazypod_photos_refresh();
 }
@@ -762,10 +792,10 @@ const lv_image_dsc_t *crazypod_photo_render_viewport(
 }
 
 const lv_image_dsc_t *crazypod_photo_render_crop_preview(
-    int index, int center_y)
+    int index, int center_x, int center_y)
 {
     return crazypod_photo_viewport_render_crop(
-        crazypod_photo_view(index), center_y);
+        crazypod_photo_view(index), center_x, center_y);
 }
 
 unsigned crazypod_photo_generation(void)
@@ -774,6 +804,16 @@ unsigned crazypod_photo_generation(void)
 
     mutex_lock(&photo_mutex);
     generation = photo_publish_generation;
+    mutex_unlock(&photo_mutex);
+    return generation;
+}
+
+unsigned crazypod_photo_thumbnail_generation(void)
+{
+    unsigned generation;
+
+    mutex_lock(&photo_mutex);
+    generation = photo_thumbnail_publish_generation;
     mutex_unlock(&photo_mutex);
     return generation;
 }

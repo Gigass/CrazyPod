@@ -33,29 +33,47 @@
 #define COLOR_WHITE 0xFFFFFF
 #define COLOR_CYAN 0x26CFF5
 #define UNLOCK_HOLD_TICKS ((HZ / 2) > 0 ? (HZ / 2) : 1)
+#define UNLOCK_FEEDBACK_DELAY_TICKS \
+    ((HZ / 5) > 0 ? (HZ / 5) : 1)
+#define UNLOCK_PROGRESS_TICKS \
+    ((UNLOCK_HOLD_TICKS - UNLOCK_FEEDBACK_DELAY_TICKS) > 0 \
+        ? (UNLOCK_HOLD_TICKS - UNLOCK_FEEDBACK_DELAY_TICKS) : 1)
 #define UNLOCK_OPEN_TICKS \
     ((HZ * 13 / 50) > 0 ? (HZ * 13 / 50) : 1)
-#define MEDIA_PANEL_X 12
-#define MEDIA_PANEL_Y 112
-#define MEDIA_PANEL_WIDTH 296
-#define MEDIA_PANEL_HEIGHT 116
+#define MEDIA_PANEL_SIDE_MARGIN 8
+#define MEDIA_PANEL_BOTTOM_MARGIN 8
+#define MEDIA_PANEL_X MEDIA_PANEL_SIDE_MARGIN
+#define MEDIA_PANEL_WIDTH (LCD_WIDTH - MEDIA_PANEL_SIDE_MARGIN * 2)
+#define MEDIA_PANEL_HEIGHT 104
+#define MEDIA_PANEL_Y \
+    (LCD_HEIGHT - MEDIA_PANEL_HEIGHT - MEDIA_PANEL_BOTTOM_MARGIN)
+#define MEDIA_PANEL_TINT_COLOR 0x11131A
+#define MEDIA_PANEL_TINT_OPA 48
 #define MEDIA_ARTWORK_SIZE 84
-#define MEDIA_TEXT_X 104
+#define MEDIA_ARTWORK_X 20
+#define MEDIA_TEXT_X 116
 #define MEDIA_TEXT_WIDTH 178
 #define MEDIA_PROGRESS_WIDTH 178
 #define MEDIA_TITLE_FONT_SIZE 15
 #define MEDIA_ARTIST_FONT_SIZE 12
 #define MEDIA_ALBUM_FONT_SIZE 10
-#define LOCK_SURFACE_SIZE 84
-#define LOCK_SURFACE_X ((LCD_WIDTH - LOCK_SURFACE_SIZE) / 2)
-#define LOCK_SURFACE_Y ((LCD_HEIGHT - LOCK_SURFACE_SIZE) / 2)
-#define LOCK_PROGRESS_RADIUS 38
-#define LOCK_ICON_X 16
-#define LOCK_ICON_Y 13
-#define LOCK_ICON_WIDTH 52
-#define LOCK_ICON_HEIGHT 58
-#define LOCK_SHACKLE_X 12
-#define LOCK_SHACKLE_Y 2
+#define LOCK_MEDIA_DATE_SCALE 307
+#define LOCK_MEDIA_TIME_SCALE 336
+#define LOCK_MEDIA_GROUP_OFFSET_Y 22
+#define LOCK_MEDIA_TIME_Y (4 + LOCK_MEDIA_GROUP_OFFSET_Y)
+#define LOCK_MEDIA_DATE_Y (68 + LOCK_MEDIA_GROUP_OFFSET_Y)
+#define LOCK_MEDIA_HINT_Y (95 + LOCK_MEDIA_GROUP_OFFSET_Y)
+#define LOCK_SURFACE_SIZE 28
+#define LOCK_DATE_GAP 6
+#define LOCK_DATE_MARGIN 8
+#define LOCK_ROW_OPTICAL_Y (-5)
+#define LOCK_PROGRESS_RADIUS 13
+#define LOCK_ICON_X 6
+#define LOCK_ICON_Y 6
+#define LOCK_ICON_WIDTH 16
+#define LOCK_ICON_HEIGHT 16
+#define LOCK_SHACKLE_X 4
+#define LOCK_SHACKLE_Y 1
 #define MEDIA_ARTWORK_BANKS 2
 
 static fb_data media_artwork_pixels[
@@ -69,6 +87,10 @@ struct lock_screen_state {
     lv_obj_t *time_label;
     lv_obj_t *date_label;
     lv_obj_t *media_panel;
+    lv_obj_t *media_material_clip[2];
+    lv_obj_t *media_material[2];
+    lv_obj_t *media_glass[2];
+    lv_obj_t *media_border[2];
     lv_obj_t *media_artwork;
     lv_obj_t *media_artwork_image;
     lv_obj_t *media_artwork_symbol;
@@ -81,10 +103,8 @@ struct lock_screen_state {
     lv_obj_t *media_remaining;
     lv_obj_t *hint_label;
     lv_obj_t *progress_surface;
-    lv_obj_t *halo;
     lv_obj_t *icon;
     lv_obj_t *icon_shackle;
-    lv_obj_t *icon_body;
     struct crazypod_lock_screen_callbacks callbacks;
     bool locked;
     bool backlight_was_on;
@@ -96,6 +116,7 @@ struct lock_screen_state {
     long opening_start;
     long unlock_press_start;
     int progress_percent;
+    int date_y;
     int media_artwork_bank;
     bool media_active;
     char media_track_path[MAX_PATH];
@@ -166,6 +187,71 @@ static void set_label_text(lv_obj_t *label, const char *text)
         lv_label_set_text(label, resolved_text);
 }
 
+static int media_corner_radius(bool top)
+{
+    const struct crazypod_appearance *appearance =
+        crazypod_appearance_get();
+    int radius = top
+        ? appearance->screen_top_radius
+        : appearance->screen_bottom_radius;
+    int maximum = MEDIA_PANEL_HEIGHT / 2;
+
+    if(radius < 0)
+        return 0;
+    if(radius > maximum)
+        return maximum;
+    return radius;
+}
+
+static void refresh_media_corners(void)
+{
+    int split = MEDIA_PANEL_HEIGHT / 2;
+    int index;
+
+    if(lock_state.media_panel == NULL ||
+       lock_state.media_material[0] == NULL ||
+       lock_state.media_material[1] == NULL ||
+       lock_state.media_border[0] == NULL ||
+       lock_state.media_border[1] == NULL)
+        return;
+    for(index = 0; index < 2; ++index) {
+        bool top = index == 0;
+        int radius = media_corner_radius(top);
+        int segment_y = top ? 0 : split;
+        int segment_height = top
+            ? split : MEDIA_PANEL_HEIGHT - split;
+        int layer_y = top ? 0 : -radius;
+        int layer_height = segment_height + radius;
+
+        lv_obj_set_pos(
+            lock_state.media_material_clip[index], 0, segment_y);
+        lv_obj_set_size(
+            lock_state.media_material_clip[index],
+            MEDIA_PANEL_WIDTH, segment_height);
+        lv_obj_set_pos(
+            lock_state.media_material[index], 0, layer_y);
+        lv_obj_set_size(
+            lock_state.media_material[index],
+            MEDIA_PANEL_WIDTH, layer_height);
+        lv_obj_set_style_radius(
+            lock_state.media_material[index], radius, 0);
+        lv_obj_set_style_clip_corner(
+            lock_state.media_material[index], radius > 0, 0);
+        if(lock_state.media_glass[index] != NULL)
+            lv_obj_set_pos(
+                lock_state.media_glass[index], 0,
+                top ? 0 : radius - split);
+
+        lv_obj_set_pos(lock_state.media_border[index], 0, layer_y);
+        lv_obj_set_size(
+            lock_state.media_border[index],
+            MEDIA_PANEL_WIDTH, layer_height);
+        lv_obj_set_style_radius(
+            lock_state.media_border[index], radius, 0);
+    }
+    lv_obj_invalidate(lock_state.media_panel);
+}
+
 static void set_media_label_text(
     lv_obj_t *label, const char *text, unsigned font_size)
 {
@@ -181,6 +267,32 @@ static void set_media_label_text(
     lv_obj_set_style_text_font(
         label, crazypod_runtime_font_at_size(font_size), 0);
     lv_label_set_text(label, resolved_text);
+}
+
+static void refresh_media_material(void)
+{
+    const lv_image_dsc_t *glass = NULL;
+
+    int index;
+
+    if(lock_state.media_glass[0] == NULL ||
+       lock_state.media_glass[1] == NULL)
+        return;
+    if(crazypod_wallpaper_prepare_frosted_lock_media(
+           MEDIA_PANEL_TINT_COLOR, MEDIA_PANEL_TINT_OPA))
+        glass = crazypod_frosted_lock_media();
+    if(glass == NULL) {
+        set_hidden(lock_state.media_glass[0], true);
+        set_hidden(lock_state.media_glass[1], true);
+        return;
+    }
+    for(index = 0; index < 2; ++index) {
+        lv_image_set_src(lock_state.media_glass[index], glass);
+        lv_obj_set_style_image_opa(
+            lock_state.media_glass[index], LV_OPA_COVER, 0);
+        set_hidden(lock_state.media_glass[index], false);
+    }
+    refresh_media_corners();
 }
 
 static void add_text_outline(lv_obj_t *label, lv_opa_t opacity)
@@ -201,6 +313,46 @@ static void format_media_time(
              (unsigned long)(seconds % 60));
 }
 
+static void layout_lock_row(void)
+{
+    const lv_font_t *font;
+    const char *date_text;
+    lv_point_t date_size = { 0, 0 };
+    int available_width;
+    int date_width;
+    int row_width;
+    int row_x;
+    int row_y;
+
+    if(lock_state.date_label == NULL ||
+       lock_state.progress_surface == NULL)
+        return;
+    font = lv_obj_get_style_text_font(
+        lock_state.date_label, LV_PART_MAIN);
+    date_text = lv_label_get_text(lock_state.date_label);
+    lv_text_get_size(
+        &date_size, date_text != NULL ? date_text : "", font,
+        0, 0, LV_COORD_MAX, LV_TEXT_FLAG_EXPAND);
+    available_width = LCD_WIDTH - LOCK_DATE_MARGIN * 2 -
+        LOCK_SURFACE_SIZE - LOCK_DATE_GAP;
+    date_width = date_size.x;
+    if(date_width > available_width)
+        date_width = available_width;
+    row_width = LOCK_SURFACE_SIZE + LOCK_DATE_GAP + date_width;
+    row_x = (LCD_WIDTH - row_width) / 2;
+    row_y = lock_state.date_y +
+        (lv_font_get_line_height(font) - LOCK_SURFACE_SIZE) / 2 +
+        LOCK_ROW_OPTICAL_Y;
+    lv_obj_set_pos(lock_state.progress_surface, row_x, row_y);
+    lv_obj_set_pos(
+        lock_state.date_label,
+        row_x + LOCK_SURFACE_SIZE + LOCK_DATE_GAP,
+        lock_state.date_y);
+    lv_obj_set_width(lock_state.date_label, date_width);
+    lv_obj_set_style_text_align(
+        lock_state.date_label, LV_TEXT_ALIGN_LEFT, 0);
+}
+
 static void apply_media_layout(bool media_active)
 {
     if(lock_state.time_label == NULL)
@@ -210,20 +362,22 @@ static void apply_media_layout(bool media_active)
         lv_obj_set_style_text_font(
             lock_state.time_label, &lv_font_montserrat_48, 0);
         lv_obj_set_width(lock_state.time_label, LCD_WIDTH);
-        lv_obj_set_pos(lock_state.time_label, 0, 10);
+        lv_obj_set_pos(
+            lock_state.time_label, 0, LOCK_MEDIA_TIME_Y);
         lv_obj_set_style_transform_scale(
-            lock_state.time_label, 256, 0);
+            lock_state.time_label, LOCK_MEDIA_TIME_SCALE, 0);
         lv_obj_set_style_text_letter_space(
             lock_state.time_label, 0, 0);
         lv_obj_set_style_text_outline_stroke_width(
             lock_state.time_label, 1, 0);
+        lv_obj_set_style_transform_scale(
+            lock_state.date_label, LOCK_MEDIA_DATE_SCALE, 0);
         lv_obj_set_width(lock_state.date_label, LCD_WIDTH);
-        lv_obj_set_pos(lock_state.date_label, 0, 68);
-        lv_obj_set_pos(
-            lock_state.progress_surface,
-            LOCK_SURFACE_X, LOCK_SURFACE_Y);
+        lock_state.date_y = LOCK_MEDIA_DATE_Y;
+        lv_obj_set_pos(lock_state.date_label, 0, lock_state.date_y);
         lv_obj_set_width(lock_state.hint_label, LCD_WIDTH);
-        lv_obj_set_pos(lock_state.hint_label, 0, 95);
+        lv_obj_set_pos(
+            lock_state.hint_label, 0, LOCK_MEDIA_HINT_Y);
     }
     else {
         lv_obj_set_style_text_font(
@@ -236,14 +390,15 @@ static void apply_media_layout(bool media_active)
             lock_state.time_label, 2, 0);
         lv_obj_set_style_text_outline_stroke_width(
             lock_state.time_label, 2, 0);
+        lv_obj_set_style_transform_scale(
+            lock_state.date_label, 256, 0);
         lv_obj_set_width(lock_state.date_label, LCD_WIDTH);
-        lv_obj_set_pos(lock_state.date_label, 0, 124);
-        lv_obj_set_pos(
-            lock_state.progress_surface,
-            LOCK_SURFACE_X, LOCK_SURFACE_Y);
+        lock_state.date_y = 124;
+        lv_obj_set_pos(lock_state.date_label, 0, lock_state.date_y);
         lv_obj_set_width(lock_state.hint_label, LCD_WIDTH);
         lv_obj_set_pos(lock_state.hint_label, 0, 153);
     }
+    layout_lock_row();
 }
 
 static const lv_image_dsc_t *prepare_media_artwork(
@@ -343,23 +498,27 @@ void crazypod_lock_screen_update_media(
         return;
     }
 
+    if(!lock_state.media_active)
+        refresh_media_material();
     lock_state.media_active = true;
     apply_media_layout(true);
-    set_media_label_text(
-        lock_state.media_title,
-        snapshot->title != NULL && snapshot->title[0] != '\0'
-            ? snapshot->title : CP_TR("Untitled"),
-        MEDIA_TITLE_FONT_SIZE);
-    set_media_label_text(
-        lock_state.media_artist,
-        snapshot->artist != NULL && snapshot->artist[0] != '\0'
-            ? snapshot->artist : CP_TR("Unknown Artist"),
-        MEDIA_ARTIST_FONT_SIZE);
-    set_media_label_text(
-        lock_state.media_album, snapshot->album,
-        MEDIA_ALBUM_FONT_SIZE);
-    set_hidden(lock_state.media_album,
-               snapshot->album == NULL || snapshot->album[0] == '\0');
+    if(snapshot->metadata_ready) {
+        set_media_label_text(
+            lock_state.media_title,
+            snapshot->title != NULL && snapshot->title[0] != '\0'
+                ? snapshot->title : CP_TR("Untitled"),
+            MEDIA_TITLE_FONT_SIZE);
+        set_media_label_text(
+            lock_state.media_artist,
+            snapshot->artist != NULL && snapshot->artist[0] != '\0'
+                ? snapshot->artist : CP_TR("Unknown Artist"),
+            MEDIA_ARTIST_FONT_SIZE);
+        set_media_label_text(
+            lock_state.media_album, snapshot->album,
+            MEDIA_ALBUM_FONT_SIZE);
+        set_hidden(lock_state.media_album,
+                   snapshot->album == NULL || snapshot->album[0] == '\0');
+    }
     crazypod_marquee_configure_centered(
         lock_state.media_title, true);
     crazypod_marquee_configure_centered(
@@ -430,6 +589,7 @@ void crazypod_lock_screen_refresh_clock(void)
         CP_LV_LABEL_SET_TEXT(lock_state.time_label, time_text);
     if(strcmp(lv_label_get_text(lock_state.date_label), date_text) != 0)
         CP_LV_LABEL_SET_TEXT(lock_state.date_label, date_text);
+    layout_lock_row();
 }
 
 void crazypod_lock_screen_refresh_appearance(void)
@@ -461,6 +621,9 @@ void crazypod_lock_screen_refresh_appearance(void)
     else {
         lv_obj_add_flag(lock_state.wallpaper, LV_OBJ_FLAG_HIDDEN);
     }
+    refresh_media_corners();
+    if(lock_state.media_active)
+        refresh_media_material();
     lv_obj_invalidate(lock_state.root);
 }
 
@@ -494,12 +657,14 @@ static void draw_progress_event(lv_event_t *event)
     center_x = area.x1 + lv_area_get_width(&area) / 2;
     center_y = area.y1 + lv_area_get_height(&area) / 2;
 
+    if(progress <= 0)
+        return;
     lv_draw_arc_dsc_init(&arc);
     arc.base.layer = layer;
     arc.center.x = center_x;
     arc.center.y = center_y;
     arc.radius = LOCK_PROGRESS_RADIUS;
-    arc.width = 3;
+    arc.width = 1;
     arc.rounded = 0;
     arc.color = lv_color_hex(COLOR_WHITE);
     arc.opa = 66;
@@ -509,7 +674,7 @@ static void draw_progress_event(lv_event_t *event)
     if(progress <= 0)
         return;
 
-    active_width = lock_state.opening ? 7 : 6;
+    active_width = 1;
     end_angle = 270 + progress * 360 / 100;
     arc.width = active_width;
     arc.opa = LV_OPA_COVER;
@@ -539,17 +704,18 @@ static void draw_progress_event(lv_event_t *event)
 
 static void refresh_progress(void)
 {
-    bool visible = lock_state.unlock_pressed || lock_state.opening;
+    bool active = lock_state.opening ||
+        lock_state.progress_percent > 0;
 
     if(lock_state.progress_surface != NULL) {
-        set_hidden(lock_state.progress_surface, !visible);
-        if(visible)
+        set_hidden(lock_state.progress_surface, false);
+        if(active)
             lv_obj_move_foreground(lock_state.progress_surface);
         lv_obj_invalidate(lock_state.progress_surface);
     }
     if(lock_state.hint_label == NULL)
         return;
-    set_hidden(lock_state.hint_label, visible);
+    set_hidden(lock_state.hint_label, active);
     if(lock_state.opening)
         CP_LV_LABEL_SET_TEXT(lock_state.hint_label, CP_TR("UNLOCKED"));
     else
@@ -565,14 +731,7 @@ static void refresh_progress(void)
     if(!lock_state.opening && lock_state.icon != NULL)
         lv_obj_set_style_transform_scale(
             lock_state.icon,
-            256 - lock_state.progress_percent * 44 / 100, 0);
-    if(!lock_state.opening && lock_state.icon_body != NULL) {
-        lv_obj_set_style_bg_color(
-            lock_state.icon_body,
-            lv_color_hex(lock_state.progress_percent >= 72
-                ? 0xD5FFED : 0xDDF9FF),
-            0);
-    }
+            256 - lock_state.progress_percent * 12 / 100, 0);
 }
 
 #ifdef SIMULATOR
@@ -584,16 +743,12 @@ void crazypod_lock_screen_simulator_set_progress(int progress)
         progress = 100;
     lock_state.progress_percent = progress;
     set_hidden(lock_state.hint_label, progress > 0);
-    set_hidden(lock_state.progress_surface, progress <= 0);
+    set_hidden(lock_state.progress_surface, false);
     if(progress > 0)
         lv_obj_move_foreground(lock_state.progress_surface);
     if(lock_state.icon != NULL)
         lv_obj_set_style_transform_scale(
-            lock_state.icon, 256 - progress * 44 / 100, 0);
-    if(lock_state.icon_body != NULL)
-        lv_obj_set_style_bg_color(
-            lock_state.icon_body,
-            lv_color_hex(progress >= 72 ? 0xD5FFED : 0xDDF9FF), 0);
+            lock_state.icon, 256 - progress * 12 / 100, 0);
     if(lock_state.progress_surface != NULL)
         lv_obj_invalidate(lock_state.progress_surface);
 }
@@ -617,13 +772,6 @@ static void reset_unlock(void)
     if(lock_state.progress_surface != NULL)
         lv_obj_set_style_opa(
             lock_state.progress_surface, LV_OPA_COVER, 0);
-    if(lock_state.halo != NULL) {
-        lv_obj_set_style_transform_scale(lock_state.halo, 256, 0);
-        lv_obj_set_style_opa(lock_state.halo, LV_OPA_COVER, 0);
-    }
-    if(lock_state.icon_body != NULL)
-        lv_obj_set_style_bg_color(
-            lock_state.icon_body, lv_color_hex(0xDDF9FF), 0);
     refresh_progress();
 }
 
@@ -640,6 +788,7 @@ void crazypod_lock_screen_show(bool turn_display_off)
     wheel_send_events(true);
 #endif
     crazypod_coverflow_set_input_suspended(true);
+    crazypod_coverflow_set_compositing_suspended(true);
     lock_state.release_guard = false;
     lock_state.wait_for_wake_release = turn_display_off;
     reset_unlock();
@@ -670,6 +819,7 @@ static void finish_unlock(void)
         (button_status() & BUTTON_SELECT) != 0;
     lock_state.wait_for_wake_release = false;
     crazypod_coverflow_set_input_suspended(false);
+    crazypod_coverflow_set_compositing_suspended(false);
     lv_obj_add_flag(lock_state.root, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_background(lock_state.root);
     if(lock_state.callbacks.unlocked != NULL)
@@ -719,6 +869,7 @@ void crazypod_lock_screen_process(void)
 
     if(lock_state.unlock_pressed && !lock_state.opening) {
         long elapsed = current_tick - lock_state.unlock_press_start;
+        long feedback_elapsed;
         int progress;
 
         if((button_status() & BUTTON_SELECT) == 0) {
@@ -727,8 +878,16 @@ void crazypod_lock_screen_process(void)
         }
         if(elapsed < 0)
             elapsed = 0;
-        progress = elapsed >= UNLOCK_HOLD_TICKS
-            ? 100 : (int)(elapsed * 100 / UNLOCK_HOLD_TICKS);
+        /* Ignore the first 0.2 s so an ordinary tap produces no animation.
+         * The remaining hold interval still completes at the original 0.5 s. */
+        feedback_elapsed = elapsed - UNLOCK_FEEDBACK_DELAY_TICKS;
+        if(feedback_elapsed <= 0)
+            progress = 0;
+        else if(elapsed >= UNLOCK_HOLD_TICKS)
+            progress = 100;
+        else
+            progress = (int)(feedback_elapsed * 100 /
+                UNLOCK_PROGRESS_TICKS);
         if(progress != lock_state.progress_percent) {
             lock_state.progress_percent = progress;
             refresh_progress();
@@ -738,9 +897,6 @@ void crazypod_lock_screen_process(void)
             lock_state.opening = true;
             lock_state.opening_start = current_tick;
             lock_state.progress_percent = 100;
-            if(lock_state.icon_body != NULL)
-                lv_obj_set_style_bg_color(
-                    lock_state.icon_body, lv_color_hex(0xB8FFE2), 0);
             refresh_progress();
         }
     }
@@ -768,12 +924,12 @@ void crazypod_lock_screen_process(void)
         if(lock_state.icon_shackle != NULL) {
             lv_obj_set_pos(
                 lock_state.icon_shackle,
-                LOCK_SHACKLE_X + 5 * turn / 1024,
-                LOCK_SHACKLE_Y - 10 * lift / 1024);
+                LOCK_SHACKLE_X + 2 * turn / 1024,
+                LOCK_SHACKLE_Y - 4 * lift / 1024);
             lv_obj_set_style_transform_rotation(
                 lock_state.icon_shackle, angle, 0);
         }
-        scale = 212 - raw * 212 / 1024;
+        scale = 244 - raw * 244 / 1024;
         if(lock_state.icon != NULL)
             lv_obj_set_style_transform_scale(
                 lock_state.icon, scale, 0);
@@ -781,14 +937,6 @@ void crazypod_lock_screen_process(void)
             lv_obj_set_style_opa(
                 lock_state.progress_surface,
                 (lv_opa_t)(255 - 255 * fade / 1024), 0);
-        if(lock_state.halo != NULL) {
-            lv_obj_set_style_transform_scale(
-                lock_state.halo,
-                256 + 30 * turn / 1024, 0);
-            lv_obj_set_style_opa(
-                lock_state.halo,
-                (lv_opa_t)(255 - 255 * smooth_step(raw) / 1024), 0);
-        }
         if(elapsed >= UNLOCK_OPEN_TICKS)
             finish_unlock();
     }
@@ -829,8 +977,6 @@ bool crazypod_lock_screen_handle_button(long button, intptr_t data)
         lock_state.wait_for_wake_release = true;
         reset_unlock();
         crazypod_lock_screen_refresh_clock();
-        if(lock_state.callbacks.refresh_media != NULL)
-            lock_state.callbacks.refresh_media();
         return true;
     }
     if(lock_state.wait_for_wake_release) {
@@ -842,22 +988,16 @@ bool crazypod_lock_screen_handle_button(long button, intptr_t data)
         if(base == BUTTON_LEFT &&
            lock_state.callbacks.previous_track != NULL) {
             lock_state.callbacks.previous_track();
-            if(lock_state.callbacks.refresh_media != NULL)
-                lock_state.callbacks.refresh_media();
             return true;
         }
         if(base == BUTTON_PLAY &&
            lock_state.callbacks.toggle_playback != NULL) {
             lock_state.callbacks.toggle_playback();
-            if(lock_state.callbacks.refresh_media != NULL)
-                lock_state.callbacks.refresh_media();
             return true;
         }
         if(base == BUTTON_RIGHT &&
            lock_state.callbacks.next_track != NULL) {
             lock_state.callbacks.next_track();
-            if(lock_state.callbacks.refresh_media != NULL)
-                lock_state.callbacks.refresh_media();
             return true;
         }
     }
@@ -876,10 +1016,10 @@ lv_obj_t *crazypod_lock_screen_create(
     lv_obj_t *parent,
     const struct crazypod_lock_screen_callbacks *callbacks)
 {
-    lv_obj_t *halo;
+    lv_obj_t *body;
     lv_obj_t *icon;
-    lv_obj_t *keyhole;
     lv_obj_t *progress_track;
+    int index;
 
     lock_state = (struct lock_screen_state){0};
     if(callbacks != NULL)
@@ -906,26 +1046,64 @@ lv_obj_t *crazypod_lock_screen_create(
     lv_obj_set_pos(lock_state.time_label, 0, 27);
     add_text_outline(lock_state.time_label, 178);
     lock_state.date_label = make_label(
-        lock_state.root, "", &lv_font_montserrat_10, COLOR_WHITE, 225);
+        lock_state.root, "",
+        crazypod_runtime_font_at_size_weight(10, 700),
+        COLOR_WHITE, 225);
     lv_obj_set_width(lock_state.date_label, LCD_WIDTH);
     lv_obj_set_style_text_align(
         lock_state.date_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_transform_pivot_x(
+        lock_state.date_label, 0, 0);
+    lv_obj_set_style_transform_pivot_y(
+        lock_state.date_label, 5, 0);
     lv_obj_set_pos(lock_state.date_label, 0, 87);
     add_text_outline(lock_state.date_label, 190);
 
     lock_state.media_panel = make_box(
         lock_state.root, MEDIA_PANEL_X, MEDIA_PANEL_Y,
-        MEDIA_PANEL_WIDTH, MEDIA_PANEL_HEIGHT, 14,
-        0x05080B, 148);
-    lv_obj_set_style_border_width(lock_state.media_panel, 1, 0);
-    lv_obj_set_style_border_color(
-        lock_state.media_panel, lv_color_hex(COLOR_WHITE), 0);
-    lv_obj_set_style_border_opa(lock_state.media_panel, 38, 0);
+        MEDIA_PANEL_WIDTH, MEDIA_PANEL_HEIGHT, 0,
+        MEDIA_PANEL_TINT_COLOR, LV_OPA_TRANSP);
     lv_obj_remove_flag(
         lock_state.media_panel, LV_OBJ_FLAG_CLICKABLE);
+    for(index = 0; index < 2; ++index) {
+        lock_state.media_material_clip[index] = make_box(
+            lock_state.media_panel, 0, 0,
+            MEDIA_PANEL_WIDTH, MEDIA_PANEL_HEIGHT / 2, 0,
+            MEDIA_PANEL_TINT_COLOR, LV_OPA_TRANSP);
+        lv_obj_remove_flag(
+            lock_state.media_material_clip[index],
+            LV_OBJ_FLAG_CLICKABLE);
+        lock_state.media_material[index] = make_box(
+            lock_state.media_material_clip[index], 0, 0,
+            MEDIA_PANEL_WIDTH, MEDIA_PANEL_HEIGHT, 0,
+            MEDIA_PANEL_TINT_COLOR, LV_OPA_TRANSP);
+        lv_obj_remove_flag(
+            lock_state.media_material[index], LV_OBJ_FLAG_CLICKABLE);
+        lock_state.media_glass[index] =
+            lv_image_create(lock_state.media_material[index]);
+        lv_obj_set_pos(lock_state.media_glass[index], 0, 0);
+        lv_obj_remove_flag(
+            lock_state.media_glass[index], LV_OBJ_FLAG_CLICKABLE);
+        set_hidden(lock_state.media_glass[index], true);
+        lock_state.media_border[index] = make_box(
+            lock_state.media_material_clip[index], 0, 0,
+            MEDIA_PANEL_WIDTH, MEDIA_PANEL_HEIGHT, 0,
+            COLOR_WHITE, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(
+            lock_state.media_border[index], 1, 0);
+        lv_obj_set_style_border_side(
+            lock_state.media_border[index], LV_BORDER_SIDE_FULL, 0);
+        lv_obj_set_style_border_color(
+            lock_state.media_border[index],
+            lv_color_hex(COLOR_WHITE), 0);
+        lv_obj_set_style_border_opa(
+            lock_state.media_border[index], 38, 0);
+        lv_obj_remove_flag(
+            lock_state.media_border[index], LV_OBJ_FLAG_CLICKABLE);
+    }
 
     lock_state.media_artwork = make_box(
-        lock_state.media_panel, 8, 16,
+        lock_state.media_panel, MEDIA_ARTWORK_X, 8,
         MEDIA_ARTWORK_SIZE, MEDIA_ARTWORK_SIZE, 10,
         0x25485A, LV_OPA_COVER);
     lv_obj_set_style_bg_grad_color(
@@ -962,7 +1140,7 @@ lv_obj_t *crazypod_lock_screen_create(
         lock_state.media_panel, "",
         crazypod_runtime_font_at_size(MEDIA_TITLE_FONT_SIZE),
         COLOR_WHITE, LV_OPA_COVER);
-    lv_obj_set_pos(lock_state.media_title, MEDIA_TEXT_X, 20);
+    lv_obj_set_pos(lock_state.media_title, MEDIA_TEXT_X, 12);
     lv_obj_set_size(lock_state.media_title, MEDIA_TEXT_WIDTH, 20);
     crazypod_marquee_configure_centered(
         lock_state.media_title, true);
@@ -970,7 +1148,7 @@ lv_obj_t *crazypod_lock_screen_create(
         lock_state.media_panel, "",
         crazypod_runtime_font_at_size(MEDIA_ARTIST_FONT_SIZE),
         0xE4EEF4, 235);
-    lv_obj_set_pos(lock_state.media_artist, MEDIA_TEXT_X, 41);
+    lv_obj_set_pos(lock_state.media_artist, MEDIA_TEXT_X, 33);
     lv_obj_set_size(lock_state.media_artist, MEDIA_TEXT_WIDTH, 17);
     crazypod_marquee_configure_centered(
         lock_state.media_artist, true);
@@ -978,13 +1156,13 @@ lv_obj_t *crazypod_lock_screen_create(
         lock_state.media_panel, "",
         crazypod_runtime_font_at_size(MEDIA_ALBUM_FONT_SIZE),
         0xD4E2EA, 205);
-    lv_obj_set_pos(lock_state.media_album, MEDIA_TEXT_X, 59);
+    lv_obj_set_pos(lock_state.media_album, MEDIA_TEXT_X, 51);
     lv_obj_set_size(lock_state.media_album, MEDIA_TEXT_WIDTH, 14);
     crazypod_marquee_configure_centered(
         lock_state.media_album, true);
 
     progress_track = make_box(
-        lock_state.media_panel, MEDIA_TEXT_X, 77,
+        lock_state.media_panel, MEDIA_TEXT_X, 69,
         MEDIA_PROGRESS_WIDTH, 3, LV_RADIUS_CIRCLE,
         COLOR_WHITE, 70);
     lock_state.media_progress_fill = make_box(
@@ -993,63 +1171,34 @@ lv_obj_t *crazypod_lock_screen_create(
     lock_state.media_elapsed = make_label(
         lock_state.media_panel, "0:00", &lv_font_montserrat_8,
         COLOR_WHITE, 210);
-    lv_obj_set_pos(lock_state.media_elapsed, MEDIA_TEXT_X, 83);
+    lv_obj_set_pos(lock_state.media_elapsed, MEDIA_TEXT_X, 75);
     lv_obj_set_width(lock_state.media_elapsed, 58);
     lock_state.media_remaining = make_label(
         lock_state.media_panel, "--:--", &lv_font_montserrat_8,
         COLOR_WHITE, 210);
     lv_obj_set_pos(
         lock_state.media_remaining,
-        MEDIA_TEXT_X + MEDIA_PROGRESS_WIDTH - 50, 83);
+        MEDIA_TEXT_X + MEDIA_PROGRESS_WIDTH - 50, 75);
     lv_obj_set_width(lock_state.media_remaining, 50);
     lv_obj_set_style_text_align(
         lock_state.media_remaining, LV_TEXT_ALIGN_RIGHT, 0);
 
     lock_state.progress_surface = make_box(
         lock_state.root,
-        LOCK_SURFACE_X, LOCK_SURFACE_Y,
+        0, 0,
         LOCK_SURFACE_SIZE, LOCK_SURFACE_SIZE, LV_RADIUS_CIRCLE,
-        0x101A22, 76);
+        0x101A22, LV_OPA_TRANSP);
     lv_obj_set_pos(
         lock_state.progress_surface,
-        LOCK_SURFACE_X, LOCK_SURFACE_Y);
+        0, 0);
     lv_obj_set_size(
         lock_state.progress_surface,
         LOCK_SURFACE_SIZE, LOCK_SURFACE_SIZE);
-    lv_obj_set_style_blur_backdrop(
-        lock_state.progress_surface, true, 0);
-    lv_obj_set_style_blur_radius(
-        lock_state.progress_surface, 10, 0);
-    lv_obj_set_style_blur_quality(
-        lock_state.progress_surface, LV_BLUR_QUALITY_SPEED, 0);
-    lv_obj_set_style_border_width(
-        lock_state.progress_surface, 1, 0);
-    lv_obj_set_style_border_color(
-        lock_state.progress_surface, lv_color_hex(COLOR_WHITE), 0);
-    lv_obj_set_style_border_opa(
-        lock_state.progress_surface, 82, 0);
-    lv_obj_set_style_shadow_width(
-        lock_state.progress_surface, 10, 0);
-    lv_obj_set_style_shadow_offset_y(
-        lock_state.progress_surface, 4, 0);
-    lv_obj_set_style_shadow_color(
-        lock_state.progress_surface, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_shadow_opa(
-        lock_state.progress_surface, 76, 0);
     lv_obj_remove_flag(
         lock_state.progress_surface, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(
         lock_state.progress_surface, draw_progress_event,
         LV_EVENT_DRAW_MAIN, NULL);
-    halo = make_box(
-        lock_state.progress_surface, 11, 11, 62, 62,
-        LV_RADIUS_CIRCLE, COLOR_WHITE, 12);
-    lock_state.halo = halo;
-    lv_obj_set_style_transform_pivot_x(halo, 31, 0);
-    lv_obj_set_style_transform_pivot_y(halo, 31, 0);
-    lv_obj_set_style_shadow_width(halo, 12, 0);
-    lv_obj_set_style_shadow_color(halo, lv_color_hex(COLOR_WHITE), 0);
-    lv_obj_set_style_shadow_opa(halo, 30, 0);
     icon = lv_obj_create(lock_state.progress_surface);
     lock_state.icon = icon;
     crazypod_ui_widget_make_plain(icon);
@@ -1061,28 +1210,29 @@ lv_obj_t *crazypod_lock_screen_create(
         icon, LOCK_ICON_HEIGHT / 2, 0);
     lock_state.icon_shackle = make_box(
         icon, LOCK_SHACKLE_X, LOCK_SHACKLE_Y,
-        28, 32, 14, COLOR_WHITE, LV_OPA_TRANSP);
+        8, 9, 4, COLOR_WHITE, LV_OPA_TRANSP);
     lv_obj_set_style_transform_pivot_x(
-        lock_state.icon_shackle, 23, 0);
+        lock_state.icon_shackle, 7, 0);
     lv_obj_set_style_transform_pivot_y(
-        lock_state.icon_shackle, 27, 0);
-    lv_obj_set_style_border_width(lock_state.icon_shackle, 4, 0);
+        lock_state.icon_shackle, 8, 0);
+    lv_obj_set_style_border_width(lock_state.icon_shackle, 2, 0);
     lv_obj_set_style_border_side(
         lock_state.icon_shackle,
         LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_RIGHT, 0);
     lv_obj_set_style_border_color(
-        lock_state.icon_shackle, lv_color_hex(0xDDF9FF), 0);
+        lock_state.icon_shackle, lv_color_hex(COLOR_WHITE), 0);
     lv_obj_set_style_border_opa(
         lock_state.icon_shackle, LV_OPA_COVER, 0);
-    lock_state.icon_body = make_box(
-        icon, 5, 27, 42, 27, 8, 0xDDF9FF, LV_OPA_COVER);
-    keyhole = make_box(
-        lock_state.icon_body, 18, 7, 7, 10,
-        LV_RADIUS_CIRCLE, 0x0A1620, 225);
-    make_box(keyhole, 2, 5, 3, 7, 1, 0x0A1620, LV_OPA_COVER);
+    body = make_box(
+        icon, 1, 8, 14, 8, 2,
+        COLOR_WHITE, LV_OPA_COVER);
+    make_box(
+        body, 6, 2, 2, 4,
+        LV_RADIUS_CIRCLE, 0x0A1620, LV_OPA_COVER);
     lock_state.hint_label = make_label(
         lock_state.root, CP_TR("Hold Center to Unlock"),
-        &lv_font_montserrat_8, COLOR_WHITE, 220);
+        crazypod_runtime_font_at_size_weight(8, 700),
+        COLOR_WHITE, 220);
     lv_obj_set_width(lock_state.hint_label, LCD_WIDTH);
     lv_obj_set_style_text_align(
         lock_state.hint_label, LV_TEXT_ALIGN_CENTER, 0);

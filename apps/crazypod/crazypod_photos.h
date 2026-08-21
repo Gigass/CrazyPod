@@ -38,9 +38,10 @@ const lv_image_dsc_t *crazypod_photo_view(int index);
 const lv_image_dsc_t *crazypod_photo_render_viewport(
     int index, int zoom_percent, int *pan_x, int *pan_y);
 const lv_image_dsc_t *crazypod_photo_render_crop_preview(
-    int index, int center_y);
+    int index, int center_x, int center_y);
 int crazypod_photo_view_progress(int index);
 unsigned crazypod_photo_generation(void);
+unsigned crazypod_photo_thumbnail_generation(void);
 unsigned crazypod_photo_view_generation(void);
 bool crazypod_photos_busy(void);
 

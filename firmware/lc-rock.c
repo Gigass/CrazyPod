@@ -27,6 +27,8 @@
 #include "debug.h"
 #include "load_code.h"
 
+#define LC_READ_CHUNK_SIZE (16u * 1024u)
+
 /* load binary blob from disk to memory, returning a handle */
 void * lc_open(const char *filename, unsigned char *buf, size_t buf_size)
 {
@@ -105,14 +107,17 @@ void * lc_open(const char *filename, unsigned char *buf, size_t buf_size)
     total_read = 0;
     while (total_read < disk_span)
     {
+        size_t remaining = disk_span - total_read;
+        size_t amount = MIN(remaining, LC_READ_CHUNK_SIZE);
         ssize_t count = read(fd, hdr.load_addr + total_read,
-                             disk_span - total_read);
+                             amount);
         if (count <= 0)
         {
             DEBUGF("Short read while loading binary");
             goto error_fd;
         }
         total_read += (size_t)count;
+        yield();
     }
     close(fd);
 

@@ -17,6 +17,7 @@
 #include "crazypod_photos_preview.h"
 
 static unsigned photo_generation_seen;
+static unsigned photo_thumbnail_generation_seen;
 static unsigned photo_view_generation_seen;
 static unsigned video_generation_seen;
 static long delete_feedback_until;
@@ -166,6 +167,8 @@ int crazypod_photos_feature_route_index(
 void crazypod_photos_feature_initialize_media(void)
 {
     photo_generation_seen = crazypod_photo_generation();
+    photo_thumbnail_generation_seen =
+        crazypod_photo_thumbnail_generation();
     photo_view_generation_seen =
         crazypod_photo_view_generation();
     video_generation_seen = crazypod_video_generation();
@@ -196,6 +199,22 @@ crazypod_photos_feature_poll_media(
         }
     }
     else {
+        generation = crazypod_photo_thumbnail_generation();
+        if(generation != photo_thumbnail_generation_seen) {
+            if(route == PHOTOS_ROUTE_MENU &&
+               preview_motion_active)
+                return update;
+            photo_thumbnail_generation_seen = generation;
+            if(route == PHOTOS_ROUTE_MENU)
+                update = CRAZYPOD_FEATURE_MEDIA_PREVIEW;
+            else if(route == PHOTOS_ROUTE_LIBRARY ||
+                    route == PHOTOS_ROUTE_FAVORITES ||
+                    route == PHOTOS_ROUTE_DELETE_PHOTOS)
+                crazypod_photo_screen_refresh_grid_media();
+            else if(route ==
+                    PHOTOS_ROUTE_DELETE_PHOTO_CONFIRM)
+                update = CRAZYPOD_FEATURE_MEDIA_ROUTE;
+        }
         generation = crazypod_photo_generation();
         if(generation != photo_generation_seen) {
             if(route == PHOTOS_ROUTE_MENU &&
@@ -424,6 +443,11 @@ void crazypod_photos_feature_render_wallpaper_grid(
         parent, CRAZYPOD_PHOTO_GRID_WALLPAPER,
         selected, title, title_font,
         primary_color, panel_color);
+}
+
+void crazypod_photos_feature_refresh_grid_media(void)
+{
+    crazypod_photo_screen_refresh_grid_media();
 }
 
 void crazypod_photos_feature_note_direction(long now)

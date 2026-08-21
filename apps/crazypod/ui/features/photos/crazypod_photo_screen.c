@@ -5,6 +5,7 @@
 #ifdef IPOD_6G
 
 #include <stdio.h>
+#include <string.h>
 
 #include "kernel.h"
 
@@ -18,8 +19,18 @@
 
 #define WHITE 0xFFFFFF
 #define FAVORITE_PROGRESS_WIDTH 126
+#define PHOTO_GRID_MEDIA_SLOTS 8
+
+struct photo_grid_media_slot {
+    lv_obj_t *cell;
+    lv_obj_t *image;
+    lv_obj_t *placeholder;
+    int photo_index;
+};
 
 static lv_obj_t *favorite_progress_fill;
+static struct photo_grid_media_slot
+    grid_media_slots[PHOTO_GRID_MEDIA_SLOTS];
 
 int crazypod_photo_screen_grid_count(enum crazypod_photo_grid_mode mode)
 {
@@ -247,6 +258,8 @@ void crazypod_photo_screen_render_grid(
     lv_obj_t *label;
     char position[96];
 
+    memset(grid_media_slots, 0, sizeof(grid_media_slots));
+
     if(start_row > total_rows - visible_rows)
         start_row = total_rows - visible_rows;
     if(start_row < 0)
@@ -282,15 +295,21 @@ void crazypod_photo_screen_render_grid(
         cell = crazypod_ui_widget_box(
             parent, x, y, cell_size, cell_size, 7,
             is_selected ? primary_color : 0x050507, LV_OPA_COVER);
+        grid_media_slots[visible].cell = cell;
+        grid_media_slots[visible].photo_index = photo_index;
         lv_obj_set_style_clip_corner(cell, true, 0);
         descriptor = crazypod_photo_thumbnail(visible, photo_index);
         if(descriptor != NULL)
-            crazypod_photo_screen_render_image(
-                cell, descriptor, 0, 0, cell_size, cell_size);
+            grid_media_slots[visible].image =
+                crazypod_photo_screen_render_image(
+                    cell, descriptor, 0, 0,
+                    cell_size, cell_size);
         else {
             lv_obj_t *refresh = crazypod_ui_widget_label(
                 cell, LV_SYMBOL_REFRESH, &lv_font_montserrat_16,
                 WHITE, 65);
+
+            grid_media_slots[visible].placeholder = refresh;
             lv_obj_center(refresh);
         }
         if(mode != CRAZYPOD_PHOTO_GRID_DELETE &&
@@ -322,6 +341,34 @@ void crazypod_photo_screen_render_grid(
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_pos(label, 14, 211);
+}
+
+void crazypod_photo_screen_refresh_grid_media(void)
+{
+    int visible;
+
+    for(visible = 0; visible < PHOTO_GRID_MEDIA_SLOTS; ++visible) {
+        struct photo_grid_media_slot *slot =
+            &grid_media_slots[visible];
+        const lv_image_dsc_t *descriptor;
+
+        if(slot->cell == NULL || slot->image != NULL ||
+           !lv_obj_is_valid(slot->cell))
+            continue;
+        descriptor = crazypod_photo_thumbnail(
+            visible, slot->photo_index);
+        if(descriptor == NULL)
+            continue;
+        if(slot->placeholder != NULL &&
+           lv_obj_is_valid(slot->placeholder))
+            lv_obj_delete(slot->placeholder);
+        slot->placeholder = NULL;
+        slot->image = crazypod_photo_screen_render_image(
+            slot->cell, descriptor, 0, 0, 64, 64);
+        if(slot->image != NULL)
+            lv_obj_move_to_index(slot->image, 0);
+        lv_obj_invalidate(slot->cell);
+    }
 }
 
 void crazypod_photo_screen_render_detail(

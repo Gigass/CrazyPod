@@ -7,13 +7,19 @@
 
 #include "crc32.h"
 #include "file.h"
+#if CONFIG_BINFMT == BINFMT_ROCK
+#include "kernel.h"
+#define VERIFY_YIELD() yield()
+#else
+#define VERIFY_YIELD() do { } while(0)
+#endif
 
 #include "../installer/crazypod_cpk_reader.h"
 #include "../installer/crazypod_miniapp_install_record.h"
 #include "../installer/crazypod_miniapp_resource_validator.h"
 #include "crazypod_miniapp_installed_verifier.h"
 
-#define IO_BUFFER_SIZE 1024u
+#define IO_BUFFER_SIZE (16u * 1024u)
 
 static bool read_exact(int fd, void *buffer, size_t size)
 {
@@ -59,6 +65,7 @@ static int verify_file(
         }
         crc = crc_32r(buffer, amount, crc);
         remaining -= amount;
+        VERIFY_YIELD();
     }
     close(fd);
     return ~crc == record->crc32

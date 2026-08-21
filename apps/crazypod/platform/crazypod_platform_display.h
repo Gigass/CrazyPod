@@ -11,6 +11,8 @@ struct crazypod_platform_display_host {
     void (*capture_flush)(const lv_area_t *area);
     bool (*coverflow_active)(void);
     void (*coverflow_invalidate)(void);
+    void (*coverflow_capture_flush)(
+        int x, int y, int width, int height);
     void (*queue_present)(
         int x, int y, int width, int height);
 };

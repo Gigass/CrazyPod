@@ -6,12 +6,6 @@
 
 #include "lvgl.h"
 
-enum crazypod_crop_panel_slot {
-    CRAZYPOD_CROP_PANEL_HINT = 0,
-    CRAZYPOD_CROP_PANEL_APPLY,
-    CRAZYPOD_CROP_PANEL_BOTTOM,
-};
-
 struct crazypod_wallpaper_crop_view {
     lv_obj_t *progress_fill;
     lv_obj_t *progress_label;

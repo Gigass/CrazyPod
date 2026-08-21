@@ -15,6 +15,9 @@ int crazypod_playback_initial_album_index(void);
 void crazypod_playback_toggle(void);
 void crazypod_playback_next(void);
 void crazypod_playback_previous_or_restart(void);
+void crazypod_playback_toggle_async(void);
+void crazypod_playback_next_async(void);
+void crazypod_playback_previous_or_restart_async(void);
 void crazypod_playback_refresh_lock_screen(void);
 void crazypod_playback_request_refresh_after_unlock(
     uint32_t present_sequence, bool animate_capsule);

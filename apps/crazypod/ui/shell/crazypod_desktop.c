@@ -32,12 +32,6 @@
 #define HOME_SPRING_DAMPING 37
 #define HOME_SPRING_POSITION_EPSILON (HOME_POSITION_ONE / 1024)
 #define HOME_SPRING_VELOCITY_EPSILON (HOME_POSITION_ONE / 64)
-#define HOME_WHEEL_VELOCITY_SMOOTHING_SHIFT 3
-#define HOME_WHEEL_MAX_SPEED_Q16 (184L * HOME_POSITION_ONE)
-#define HOME_INERTIA_START_SPEED_Q16 (76L * HOME_POSITION_ONE)
-#define HOME_INERTIA_STOP_SPEED_Q16 (61L * HOME_POSITION_ONE)
-#define HOME_INERTIA_DECAY_Q16 (168L * HOME_POSITION_ONE)
-#define HOME_INERTIA_MIN_DETENTS 2
 #define HOME_INDICATOR_WIDTH 5
 #define HOME_SELECTED_INDICATOR_WIDTH 14
 #define HOME_INDICATOR_GAP 4
@@ -50,19 +44,14 @@ static lv_obj_t *indicators[CRAZYPOD_APP_COUNT];
 static int selected_app;
 static int32_t position_q16;
 static int32_t spring_velocity_q16;
-static int32_t wheel_velocity_q16;
-static int32_t inertia_fraction_q16;
 static long motion_last_tick;
-static long wheel_last_sample_tick;
 static long wheel_last_seen;
 static int wheel_position;
 static int wheel_detent_accumulator;
-static int wheel_move_detents;
 static int wheel_feedback_direction;
 static bool desktop_active;
 static bool wheel_tracking;
 static bool springing;
-static bool inertia_active;
 
 static const struct crazypod_app_descriptor *visible_app(int index)
 {
@@ -135,6 +124,7 @@ static void start_spring(void)
         crazypod_desktop_native_invalidate(false);
 }
 
+#ifdef HAVE_WHEEL_POSITION
 static bool set_selected_target(int selected)
 {
     selected = clamp_selected(selected);
@@ -146,6 +136,7 @@ static bool set_selected_target(int selected)
     start_spring();
     return true;
 }
+#endif
 
 static void advance_spring_tick(void)
 {
@@ -201,57 +192,7 @@ static void apply_wheel_clicks(int delta)
         }
         wheel_detent_accumulator -=
             direction * HOME_WHEEL_CLICKS_PER_DETENT;
-        ++wheel_move_detents;
         wheel_feedback_direction = direction;
-    }
-}
-
-static void record_wheel_velocity(int delta, long now)
-{
-    long elapsed = now - wheel_last_sample_tick;
-    int64_t instantaneous;
-    int64_t blended;
-
-    if(elapsed <= 0)
-        return;
-    wheel_last_sample_tick = now;
-    instantaneous =
-        (int64_t)delta * HZ * HOME_POSITION_ONE / elapsed;
-    blended = wheel_velocity_q16 +
-        ((instantaneous - wheel_velocity_q16) >>
-            HOME_WHEEL_VELOCITY_SMOOTHING_SHIFT);
-    if(blended > HOME_WHEEL_MAX_SPEED_Q16)
-        blended = HOME_WHEEL_MAX_SPEED_Q16;
-    else if(blended < -HOME_WHEEL_MAX_SPEED_Q16)
-        blended = -HOME_WHEEL_MAX_SPEED_Q16;
-    wheel_velocity_q16 = (int32_t)blended;
-}
-
-static void advance_inertia_tick(void)
-{
-    int32_t decay = HOME_INERTIA_DECAY_Q16 / HZ;
-    int clicks;
-
-    if(!inertia_active)
-        return;
-    inertia_fraction_q16 += wheel_velocity_q16 / HZ;
-    clicks = inertia_fraction_q16 / HOME_POSITION_ONE;
-    if(clicks != 0) {
-        inertia_fraction_q16 -= clicks * HOME_POSITION_ONE;
-        apply_wheel_clicks(clicks);
-    }
-    if(wheel_velocity_q16 > 0)
-        wheel_velocity_q16 -=
-            wheel_velocity_q16 > decay ? decay : wheel_velocity_q16;
-    else if(wheel_velocity_q16 < 0)
-        wheel_velocity_q16 +=
-            wheel_velocity_q16 < -decay ? decay : -wheel_velocity_q16;
-    if(wheel_velocity_q16 > -HOME_INERTIA_STOP_SPEED_Q16 &&
-       wheel_velocity_q16 < HOME_INERTIA_STOP_SPEED_Q16) {
-        inertia_active = false;
-        wheel_velocity_q16 = 0;
-        inertia_fraction_q16 = 0;
-        wheel_detent_accumulator = 0;
     }
 }
 
@@ -265,11 +206,6 @@ static void sample_wheel(long now)
             wheel_tracking = true;
             wheel_position = current;
             wheel_detent_accumulator = 0;
-            wheel_move_detents = 0;
-            wheel_velocity_q16 = 0;
-            inertia_fraction_q16 = 0;
-            inertia_active = false;
-            wheel_last_sample_tick = now;
             motion_last_tick = now;
         }
         else {
@@ -280,10 +216,8 @@ static void sample_wheel(long now)
             else if(delta > HOME_WHEEL_POSITIONS / 2)
                 delta -= HOME_WHEEL_POSITIONS;
             wheel_position = current;
-            if(delta != 0) {
-                record_wheel_velocity(delta, now);
+            if(delta != 0)
                 apply_wheel_clicks(delta);
-            }
         }
         wheel_last_seen = now;
         return;
@@ -293,14 +227,7 @@ static void sample_wheel(long now)
                     wheel_last_seen + HOME_WHEEL_RELEASE_TICKS)) {
         wheel_tracking = false;
         wheel_position = -1;
-        inertia_active = wheel_move_detents >= HOME_INERTIA_MIN_DETENTS &&
-            (wheel_velocity_q16 >= HOME_INERTIA_START_SPEED_Q16 ||
-             wheel_velocity_q16 <= -HOME_INERTIA_START_SPEED_Q16);
-        if(!inertia_active) {
-            wheel_velocity_q16 = 0;
-            wheel_detent_accumulator = 0;
-        }
-        inertia_fraction_q16 = 0;
+        wheel_detent_accumulator = 0;
         motion_last_tick = now;
     }
 }
@@ -318,15 +245,10 @@ static void advance_motion(long now)
         position_q16 = selected_position_q16();
         spring_velocity_q16 = 0;
         springing = false;
-        inertia_active = false;
         return;
     }
-    for(steps = 0; steps < elapsed; ++steps) {
-#ifdef HAVE_WHEEL_POSITION
-        advance_inertia_tick();
-#endif
+    for(steps = 0; steps < elapsed; ++steps)
         advance_spring_tick();
-    }
     if(springing)
         crazypod_desktop_native_invalidate(false);
 }
@@ -376,19 +298,14 @@ lv_obj_t *crazypod_desktop_create(
     selected_app = 0;
     position_q16 = 0;
     spring_velocity_q16 = 0;
-    wheel_velocity_q16 = 0;
-    inertia_fraction_q16 = 0;
     motion_last_tick = now;
-    wheel_last_sample_tick = now;
     wheel_last_seen = now;
     wheel_position = -1;
     wheel_detent_accumulator = 0;
-    wheel_move_detents = 0;
     wheel_feedback_direction = 0;
     desktop_active = true;
     wheel_tracking = false;
     springing = false;
-    inertia_active = false;
 #ifdef HAVE_WHEEL_POSITION
     wheel_send_events(false);
 #endif
@@ -413,9 +330,7 @@ void crazypod_desktop_set_selected(int selected, bool animated)
 {
     selected = clamp_selected(selected);
     wheel_tracking = false;
-    inertia_active = false;
     wheel_detent_accumulator = 0;
-    wheel_velocity_q16 = 0;
     motion_last_tick = current_tick;
     if(animated) {
         if(selected != selected_app) {
@@ -456,14 +371,11 @@ void crazypod_desktop_set_active(bool active, long now)
     wheel_tracking = false;
     wheel_position = -1;
     wheel_detent_accumulator = 0;
-    wheel_move_detents = 0;
     wheel_feedback_direction = 0;
     advance_motion(now);
     position_q16 = selected_app * HOME_POSITION_ONE;
     spring_velocity_q16 = 0;
-    wheel_velocity_q16 = 0;
     springing = false;
-    inertia_active = false;
 }
 
 void crazypod_desktop_tick(long now)
@@ -481,7 +393,12 @@ void crazypod_desktop_tick(long now)
 bool crazypod_desktop_motion_active(void)
 {
     return desktop_active &&
-        (wheel_tracking || springing || inertia_active);
+        (wheel_tracking || springing);
+}
+
+bool crazypod_desktop_wheel_touch_active(void)
+{
+    return desktop_active && wheel_tracking;
 }
 
 int crazypod_desktop_take_wheel_feedback(void)
@@ -569,10 +486,6 @@ void crazypod_desktop_render_icon(
         app_indices, centers_x, visible, tile_size, false);
     if(!rendered)
         return;
-    /* Native icon drawing modifies the shared framebuffer directly. Route
-       every actual update, including the final settling frame, through the
-       full-screen synchronized present path. */
-    crazypod_present_queue_full();
     crazypod_present_note_render(
         CRAZYPOD_RENDER_HOME,
         crazypod_monotonic_usec() - render_started_us);

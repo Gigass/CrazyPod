@@ -63,7 +63,8 @@ CRAZYPOD_SIM_SCREEN=clock \
   "build-sim/CrazyPod Simulator.app/Contents/MacOS/CrazyPod Simulator"
 ```
 
-Supported routes are `home`, `power`, `more`, `more-second`,
+Supported routes are `home`, `power`, `coverflow`, `coverflow-power`, `more`,
+`more-second`,
 `settings-main-menu`, `settings-language`, `settings-reduce-motion`, `notes`,
 `note-compose`,
 `notes-new`, `notes-draft`, `notes-item`, `notes-search`,

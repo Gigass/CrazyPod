@@ -18,11 +18,12 @@ enum crazypod_now_playing_overlay {
 struct crazypod_now_playing_overlay_host {
     lv_obj_t *parent;
     void (*prepare_glass)(bool refresh, void *context);
+    void (*preserve_modal_underlay)(void *context);
+    lv_obj_t *(*create_modal_underlay)(
+        lv_obj_t *parent, void *context);
     lv_obj_t *(*create_panel)(
         lv_obj_t *parent, int x, int y,
         int width, int height, void *context);
-    void (*prefetch_queue_artwork)(
-        int queue_index, void *context);
     void (*render)(void *context);
     void *context;
 };
@@ -78,8 +79,6 @@ void crazypod_now_playing_navigation_configure(
     const struct crazypod_now_playing_navigation_host *host);
 void crazypod_now_playing_navigation_initialize(void);
 void crazypod_now_playing_request_open(void);
-void crazypod_now_playing_prefetch_queue_artwork(
-    int queue_index);
 int crazypod_now_playing_artwork_slot(
     const struct crazypod_track *track);
 void crazypod_now_playing_artwork_sync(void);

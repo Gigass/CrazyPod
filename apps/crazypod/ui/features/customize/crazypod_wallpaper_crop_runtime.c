@@ -104,6 +104,9 @@ static void apply_crop(void)
     int crop_y;
     int crop_width;
     int crop_height;
+#ifdef HAVE_PRIORITY_SCHEDULING
+    int old_priority;
+#endif
     enum crazypod_wallpaper_apply_result result;
 
     if(source == NULL ||
@@ -119,9 +122,18 @@ static void apply_crop(void)
     runtime.host.render(false);
     lv_refr_now(NULL);
     crazypod_present_now();
+#ifdef HAVE_PRIORITY_SCHEDULING
+    old_priority = thread_set_priority(
+        thread_self(), PRIORITY_BACKGROUND);
+#endif
     result = crazypod_wallpaper_apply_crop(
         target, path, source, crop_x, crop_y,
         crop_width, crop_height, apply_progress, NULL);
+#ifdef HAVE_PRIORITY_SCHEDULING
+    if(old_priority >= HIGHEST_PRIORITY &&
+       old_priority <= LOWEST_PRIORITY)
+        thread_set_priority(thread_self(), old_priority);
+#endif
     if(result != CRAZYPOD_WALLPAPER_APPLY_OK) {
         crazypod_wallpaper_crop_controller_fail(result, false);
         runtime.host.render(false);

@@ -21,6 +21,7 @@ void crazypod_desktop_move_selection(int direction);
 void crazypod_desktop_set_active(bool active, long now);
 void crazypod_desktop_tick(long now);
 bool crazypod_desktop_motion_active(void);
+bool crazypod_desktop_wheel_touch_active(void);
 int crazypod_desktop_take_wheel_feedback(void);
 void crazypod_desktop_refresh_appearance(void);
 void crazypod_desktop_render_icon(

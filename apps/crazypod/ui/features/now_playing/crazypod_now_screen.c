@@ -14,6 +14,7 @@
 
 #include "../../../crazypod_lyrics.h"
 #include "../../../crazypod_playlist.h"
+#include "../../presentation/crazypod_glass_sampler.h"
 #include "../../presentation/crazypod_marquee.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_now_presentation.h"
@@ -22,7 +23,14 @@
 #define COLOR_CYAN 0x55D6E7
 #define COLOR_FAVORITE 0xFF375F
 #define COLOR_WHITE 0xFFFFFF
+#define CRAZYPOD_NOW_COVER_X 24
+#define CRAZYPOD_NOW_COVER_Y 55
 #define CRAZYPOD_NOW_LYRICS_COVER_SIZE 108
+#define CRAZYPOD_NOW_COVER_CAPTION_HEIGHT \
+    (CRAZYPOD_NOW_LYRICS_COVER_SIZE / 3)
+#define CRAZYPOD_NOW_COVER_CAPTION_Y \
+    (CRAZYPOD_NOW_COVER_Y + CRAZYPOD_NOW_LYRICS_COVER_SIZE - \
+     CRAZYPOD_NOW_COVER_CAPTION_HEIGHT)
 #define CRAZYPOD_NOW_SHADE_COLOR 0x05070A
 #define CRAZYPOD_NOW_SHADE_OPA 96
 #define CRAZYPOD_NOW_LYRICS_X 144
@@ -262,6 +270,7 @@ void crazypod_now_screen_render(
     struct crazypod_now_screen_view *view = &now_view;
     const struct crazypod_track *track = context->track;
     const lv_image_dsc_t *lyrics_artwork = NULL;
+    const lv_image_dsc_t *cover_caption = NULL;
     const lv_image_dsc_t *presentation_backdrop = NULL;
     uint32_t content_color = COLOR_WHITE;
     lv_obj_t *backdrop;
@@ -292,7 +301,8 @@ void crazypod_now_screen_render(
         (void)crazypod_now_presentation_get(
             context->visual_track_path,
             context->visual_generation,
-            &lyrics_artwork, &presentation_backdrop,
+            &lyrics_artwork, &cover_caption,
+            &presentation_backdrop,
             &content_color);
     if(presentation_backdrop != NULL) {
         backdrop = lv_image_create(context->parent);
@@ -323,43 +333,70 @@ void crazypod_now_screen_render(
         const char *current = "";
         const char *next = "";
         bool lyrics_available = false;
-        lv_obj_t *metadata_shade;
+        lv_obj_t *caption_material;
 
         if(context->lyrics_mode && track != NULL)
             lyrics_available = crazypod_lyrics_load(track->path);
         if(lyrics_available)
             crazypod_lyrics_window(0, &previous, &current, &next);
         context->render_artwork(
-            context->parent, track, 18, 55,
+            context->parent, track,
+            CRAZYPOD_NOW_COVER_X, CRAZYPOD_NOW_COVER_Y,
             CRAZYPOD_NOW_LYRICS_COVER_SIZE,
             lyrics_artwork, false);
         make_box(context->parent, 134, 55, 1, 106, 0,
                  content_color, 38);
         if(lyrics_available) {
-            metadata_shade = make_box(
-                context->parent, 18, 116, 108, 47, 0,
-                0x000000, 112);
-            (void)metadata_shade;
+            if(cover_caption != NULL) {
+                caption_material = lv_image_create(context->parent);
+                lv_image_set_src(caption_material, cover_caption);
+                lv_obj_set_pos(
+                    caption_material, CRAZYPOD_NOW_COVER_X,
+                    CRAZYPOD_NOW_COVER_CAPTION_Y);
+                lv_obj_remove_flag(
+                    caption_material, LV_OBJ_FLAG_CLICKABLE);
+            }
+            else {
+                caption_material = make_box(
+                    context->parent,
+                    CRAZYPOD_NOW_COVER_X,
+                    CRAZYPOD_NOW_COVER_CAPTION_Y,
+                    CRAZYPOD_NOW_LYRICS_COVER_SIZE,
+                    CRAZYPOD_NOW_COVER_CAPTION_HEIGHT,
+                    0, COLOR_WHITE, 34);
+            }
+            make_box(
+                context->parent,
+                CRAZYPOD_NOW_COVER_X,
+                CRAZYPOD_NOW_COVER_CAPTION_Y,
+                CRAZYPOD_NOW_LYRICS_COVER_SIZE, 1, 0,
+                COLOR_WHITE,
+                crazypod_glass_material_border_opa(
+                    CRAZYPOD_GLASS_ARTWORK_CAPTION));
             title = make_label(
                 context->parent,
                 track != NULL ? track->title : CP_TR("No Track"),
-                context->metadata_font,
+                context->lyrics_current_font,
                 COLOR_WHITE, LV_OPA_COVER);
-            lv_obj_set_size(title, 96, 23);
+            lv_obj_set_size(title, 96, 20);
             lv_obj_set_style_text_align(
                 title, LV_TEXT_ALIGN_CENTER, 0);
             crazypod_marquee_configure(title, true);
-            lv_obj_set_pos(title, 24, 117);
+            lv_obj_set_pos(
+                title, CRAZYPOD_NOW_COVER_X + 6,
+                CRAZYPOD_NOW_COVER_CAPTION_Y);
             artist = make_label(
                 context->parent,
                 track != NULL ? track->artist : CP_TR("Local Music"),
-                context->metadata_font,
+                context->lyrics_context_font,
                 COLOR_WHITE, 180);
-            lv_obj_set_size(artist, 96, 23);
+            lv_obj_set_size(artist, 96, 16);
             lv_obj_set_style_text_align(
                 artist, LV_TEXT_ALIGN_CENTER, 0);
             crazypod_marquee_configure(artist, true);
-            lv_obj_set_pos(artist, 24, 140);
+            lv_obj_set_pos(
+                artist, CRAZYPOD_NOW_COVER_X + 6,
+                CRAZYPOD_NOW_COVER_CAPTION_Y + 20);
 
             view->lyrics_viewport = make_box(
                 context->parent,

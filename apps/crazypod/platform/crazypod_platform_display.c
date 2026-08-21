@@ -12,6 +12,7 @@
 #include "crazypod_platform_display.h"
 
 #define DRAW_ROWS 40
+#define DISPLAY_REFRESH_PERIOD_MS 20
 
 static struct crazypod_platform_display_host display_host;
 static fb_data draw_buffer[LCD_WIDTH * DRAW_ROWS]
@@ -77,7 +78,12 @@ static void display_flush(
     if(lv_display_flush_is_last(display)) {
         if(display_host.coverflow_active != NULL &&
            display_host.coverflow_active()) {
-            if(display_host.coverflow_invalidate != NULL)
+            if(display_host.coverflow_capture_flush != NULL)
+                display_host.coverflow_capture_flush(
+                    dirty_x1, dirty_y1,
+                    dirty_x2 - dirty_x1 + 1,
+                    dirty_y2 - dirty_y1 + 1);
+            else if(display_host.coverflow_invalidate != NULL)
                 display_host.coverflow_invalidate();
         }
         else if(display_host.queue_present != NULL) {
@@ -108,6 +114,9 @@ lv_display_t *crazypod_platform_display_init(
         display, draw_buffer, NULL, sizeof(draw_buffer),
         LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(display, display_flush);
+    lv_timer_set_period(
+        lv_display_get_refr_timer(display),
+        DISPLAY_REFRESH_PERIOD_MS);
     lv_display_set_antialiasing(display, true);
     return display;
 }

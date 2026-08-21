@@ -4,6 +4,7 @@
 
 #include <string.h>
 
+#include "crc32.h"
 #include "dir.h"
 #include "file.h"
 
@@ -17,7 +18,7 @@
 #define VIEW_PATH CACHE_DIRECTORY "/photos.view"
 #define THUMB_MAGIC 0x43505431u
 #define VIEW_MAGIC 0x43505631u
-#define CACHE_VERSION 1
+#define CACHE_VERSION 2
 #define THUMB_ENTRIES 768
 #define VIEW_ENTRIES 512
 #define THUMB_MAX_BYTES (8u * 1024u * 1024u)
@@ -33,6 +34,7 @@ struct disk_header {
     uint16_t width;
     uint16_t height;
     uint32_t data_size;
+    uint32_t data_crc32;
 };
 
 struct cache_entry {
@@ -43,6 +45,7 @@ struct cache_entry {
     uint16_t width;
     uint16_t height;
     uint32_t data_size;
+    uint32_t data_crc32;
 };
 
 struct cache_store {
@@ -115,6 +118,20 @@ static struct cache_store *store_for(bool view)
     return view ? &view_store : &thumb_store;
 }
 
+static uint32_t data_crc32(const void *data, size_t size)
+{
+    if(size > UINT32_MAX)
+        return 0;
+    return ~crc_32r(data, (uint32_t)size, 0xffffffffu);
+}
+
+static void reset_store(struct cache_store *store)
+{
+    remove(store->path);
+    store->count = 0;
+    store->size = 0;
+}
+
 static void rebuild(struct cache_store *store)
 {
     struct disk_header header;
@@ -158,6 +175,7 @@ static void rebuild(struct cache_store *store)
         entry->width = header.width;
         entry->height = header.height;
         entry->data_size = header.data_size;
+        entry->data_crc32 = header.data_crc32;
     }
     if(filesize(fd) != valid_size)
         ftruncate(fd, valid_size);
@@ -212,6 +230,11 @@ bool crazypod_photo_cache_load(
             return false;
         }
         close(fd);
+        if(data_crc32(pixels, entry->data_size) !=
+           entry->data_crc32) {
+            reset_store(store);
+            return false;
+        }
         return crazypod_image_configure_rgb565(
             descriptor, pixels, entry->width, entry->height);
     }
@@ -251,14 +274,15 @@ void crazypod_photo_cache_store(
     header.width = descriptor->header.w;
     header.height = descriptor->header.h;
     header.data_size = descriptor->data_size;
+    header.data_crc32 = data_crc32(
+        descriptor->data, descriptor->data_size);
     fd = open(store->path, O_RDWR | O_CREAT, 0666);
     if(fd < 0)
         return;
     header_offset = lseek(fd, 0, SEEK_END);
     complete = header_offset >= 0 &&
         write_exact(fd, &header, sizeof(header)) &&
-        write_exact(fd, descriptor->data, descriptor->data_size) &&
-        fsync(fd) >= 0;
+        write_exact(fd, descriptor->data, descriptor->data_size);
     if(!complete) {
         if(header_offset >= 0)
             ftruncate(fd, header_offset);
@@ -274,6 +298,7 @@ void crazypod_photo_cache_store(
     entry->width = header.width;
     entry->height = header.height;
     entry->data_size = header.data_size;
+    entry->data_crc32 = header.data_crc32;
     store->size = entry->data_offset + entry->data_size;
 }
 

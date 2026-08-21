@@ -88,6 +88,7 @@ void crazypod_photos_feature_render_wallpaper_grid(
     lv_obj_t *parent, int selected, const char *title,
     const lv_font_t *title_font,
     uint32_t primary_color, uint32_t panel_color);
+void crazypod_photos_feature_refresh_grid_media(void);
 void crazypod_photos_feature_note_direction(long now);
 void crazypod_photos_feature_render_preview(
     const struct route_state *state, lv_obj_t *parent,

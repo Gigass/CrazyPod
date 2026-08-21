@@ -8,7 +8,6 @@
 
 #include "../../../crazypod_photos.h"
 #include "../../../crazypod_wallpaper.h"
-#include "../../presentation/crazypod_glass_panel.h"
 #include "../../presentation/crazypod_glass_slots.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_wallpaper_crop_controller.h"
@@ -16,30 +15,21 @@
 
 static struct crazypod_wallpaper_crop_view crop_view;
 
-static lv_obj_t *make_panel(
-    enum crazypod_crop_panel_slot slot, lv_obj_t *parent,
-    int x, int y, int width, int height, int radius)
-{
-    enum crazypod_glass_material material;
-    enum crazypod_glass_slot glass_slot;
+#define CROP_FOOTER_HEIGHT 34
+#define CROP_FOOTER_Y (LCD_HEIGHT - CROP_FOOTER_HEIGHT)
+#define CROP_PROGRESS_WIDTH 200
 
-    if(slot == CRAZYPOD_CROP_PANEL_HINT) {
-        material = CRAZYPOD_GLASS_INFO_TOAST;
-        glass_slot = CRAZYPOD_GLASS_SLOT_INFO_BAR_ALT;
-    }
-    else if(slot == CRAZYPOD_CROP_PANEL_APPLY) {
-        material = CRAZYPOD_GLASS_INFO_TOAST;
-        glass_slot = CRAZYPOD_GLASS_SLOT_INFO_TOAST;
-    }
-    else {
-        material = CRAZYPOD_GLASS_TEXT_PANEL;
-        glass_slot = CRAZYPOD_GLASS_SLOT_INFO_BAR;
-    }
+static lv_obj_t *make_footer(lv_obj_t *parent)
+{
     return crazypod_glass_slot_panel(
-        glass_slot,
+        CRAZYPOD_GLASS_SLOT_INFO_BAR,
         crazypod_glass_slot_prepare_frame(
-            glass_slot, x, y + 40, width, height, material),
-        parent, x, y, width, height, radius, material);
+            CRAZYPOD_GLASS_SLOT_INFO_BAR,
+            0, CROP_FOOTER_Y, LCD_WIDTH, CROP_FOOTER_HEIGHT,
+            CRAZYPOD_GLASS_HOME_CAPSULE),
+        parent, 0, CROP_FOOTER_Y,
+        LCD_WIDTH, CROP_FOOTER_HEIGHT, 0,
+        CRAZYPOD_GLASS_HOME_CAPSULE);
 }
 
 static bool crop_rect(
@@ -105,205 +95,160 @@ void crazypod_wallpaper_crop_screen_render(
     const struct crazypod_wallpaper_crop_model *model =
         crazypod_wallpaper_crop_controller_model();
     const lv_image_dsc_t *source = crazypod_photo_view(model->photo_index);
+    const lv_image_dsc_t *preview;
     int crop_x;
     int crop_y;
     int crop_width;
     int crop_height;
     bool crop_valid = crop_rect(
         source, &crop_x, &crop_y, &crop_width, &crop_height);
-    const lv_image_dsc_t *preview = crop_valid
-        ? crazypod_photo_render_crop_preview(
-              model->photo_index, model->center_y)
-        : NULL;
-    lv_obj_t *viewport = crazypod_ui_widget_box(
-        parent, 0, 40, LCD_WIDTH, LCD_HEIGHT - 40,
-        0, 0x000000, LV_OPA_COVER);
+    lv_obj_t *viewport;
+    lv_obj_t *footer;
     lv_obj_t *label;
-    const char *instruction;
+    const char *instruction = instruction_text(model);
+    char status_text[48];
+    int progress = -1;
+    int fill_width = 0;
+    bool show_progress = false;
+    bool progress_error = false;
 
+    preview = crop_valid
+        ? crazypod_photo_render_crop_preview(
+              model->photo_index, model->center_x, model->center_y)
+        : NULL;
+    viewport = crazypod_ui_widget_box(
+        parent, 0, 0, LCD_WIDTH, LCD_HEIGHT,
+        0, 0x000000, LV_OPA_COVER);
     view->progress_fill = NULL;
     view->progress_label = NULL;
     if(source != NULL && preview != NULL) {
-        const int canvas_height = 168;
-        int display_height = source->header.h * LCD_WIDTH / source->header.w;
+        int display_width;
+        int display_height;
+        int display_x;
         int display_y;
         int frame_x;
         int frame_y;
         int frame_width;
         int frame_height;
-        int visible_frame_y;
-        int visible_frame_bottom;
-        int visible_frame_height;
         lv_obj_t *image;
         lv_obj_t *ring;
 
-        if(display_height < 1)
-            display_height = 1;
-        if(display_height <= canvas_height)
-            display_y = (canvas_height - display_height) / 2;
-        else {
-            display_y = canvas_height / 2 -
-                model->center_y * display_height / source->header.h;
-            if(display_y > 0)
-                display_y = 0;
-            if(display_y < canvas_height - display_height)
-                display_y = canvas_height - display_height;
+        if(source->header.w * LCD_HEIGHT >
+           source->header.h * LCD_WIDTH) {
+            display_height = LCD_HEIGHT;
+            display_width =
+                source->header.w * LCD_HEIGHT / source->header.h;
         }
+        else {
+            display_width = LCD_WIDTH;
+            display_height =
+                source->header.h * LCD_WIDTH / source->header.w;
+        }
+        display_x = LCD_WIDTH / 2 -
+            model->center_x * display_width / source->header.w;
+        display_y = LCD_HEIGHT / 2 -
+            model->center_y * display_height / source->header.h;
+        if(display_x > 0)
+            display_x = 0;
+        if(display_x < LCD_WIDTH - display_width)
+            display_x = LCD_WIDTH - display_width;
+        if(display_y > 0)
+            display_y = 0;
+        if(display_y < LCD_HEIGHT - display_height)
+            display_y = LCD_HEIGHT - display_height;
         image = lv_image_create(viewport);
         lv_image_set_src(image, preview);
         lv_obj_set_pos(image, 0, 0);
         lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
-        frame_x = crop_x * LCD_WIDTH / source->header.w;
+        frame_x = display_x +
+            crop_x * display_width / source->header.w;
         frame_y = display_y + crop_y * display_height / source->header.h;
-        frame_width = crop_width * LCD_WIDTH / source->header.w;
+        frame_width = crop_width * display_width / source->header.w;
         frame_height = crop_height * display_height / source->header.h;
-        visible_frame_y = frame_y > 0 ? frame_y : 0;
-        visible_frame_bottom =
-            frame_y + frame_height < canvas_height
-                ? frame_y + frame_height : canvas_height;
-        visible_frame_height = visible_frame_bottom - visible_frame_y;
         if(frame_y > 0)
             crazypod_ui_widget_box(
                 viewport, 0, 0, LCD_WIDTH, frame_y,
                 0, 0x000000, 150);
-        if(frame_y + frame_height < canvas_height)
+        if(frame_y + frame_height < LCD_HEIGHT)
             crazypod_ui_widget_box(
                 viewport, 0, frame_y + frame_height, LCD_WIDTH,
-                canvas_height - frame_y - frame_height,
+                LCD_HEIGHT - frame_y - frame_height,
                 0, 0x000000, 150);
-        if(frame_x > 0 && visible_frame_height > 0)
+        if(frame_x > 0 && frame_height > 0)
             crazypod_ui_widget_box(
-                viewport, 0, visible_frame_y, frame_x,
-                visible_frame_height, 0, 0x000000, 150);
+                viewport, 0, frame_y, frame_x,
+                frame_height, 0, 0x000000, 150);
         if(frame_x + frame_width < LCD_WIDTH &&
-           visible_frame_height > 0)
+           frame_height > 0)
             crazypod_ui_widget_box(
-                viewport, frame_x + frame_width, visible_frame_y,
+                viewport, frame_x + frame_width, frame_y,
                 LCD_WIDTH - frame_x - frame_width,
-                visible_frame_height, 0, 0x000000, 150);
+                frame_height, 0, 0x000000, 150);
         ring = crazypod_ui_widget_box(
             viewport, frame_x, frame_y, frame_width, frame_height,
-            6, white_color, LV_OPA_TRANSP);
+            2, white_color, LV_OPA_TRANSP);
         lv_obj_set_style_border_width(ring, 2, 0);
         lv_obj_set_style_border_color(
             ring, lv_color_hex(white_color), 0);
-        lv_obj_set_style_border_opa(ring, 235, 0);
+        lv_obj_set_style_border_opa(ring, 220, 0);
+        if(model->phase == CRAZYPOD_WALLPAPER_CROP_APPLYING) {
+            progress = model->apply_progress;
+            show_progress = true;
+        }
     }
     else {
-        int progress = crazypod_photo_view_progress(model->photo_index);
-        char loading_text[40];
-        lv_obj_t *track;
-        int fill_width;
-
+        progress = crazypod_photo_view_progress(model->photo_index);
         (void)crazypod_wallpaper_crop_controller_note_load_progress(progress);
         label = crazypod_ui_widget_label(
             viewport, LV_SYMBOL_REFRESH, &lv_font_montserrat_24,
-            white_color, 130);
-        lv_obj_set_pos(label, 148, 55);
-        if(progress < 0)
-            snprintf(loading_text, sizeof(loading_text),
-                     CP_FMT("Could not load picture"));
-        else
-            snprintf(loading_text, sizeof(loading_text),
-                     CP_FMT("Loading picture  %d%%"),
-                     progress > 100 ? 100 : progress);
-        view->progress_label = crazypod_ui_widget_label(
-            viewport, loading_text, &lv_font_montserrat_10,
-            white_color, 185);
-        lv_obj_set_width(view->progress_label, 220);
-        lv_obj_set_style_text_align(
-            view->progress_label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(view->progress_label, 50, 91);
-        track = crazypod_ui_widget_box(
-            viewport, 60, 112, 200, 6,
-            LV_RADIUS_CIRCLE, white_color, 35);
-        fill_width = progress < 0 ? 200 : progress * 2;
-        if(fill_width < 2)
-            fill_width = 2;
-        if(fill_width > 200)
-            fill_width = 200;
-        view->progress_fill = crazypod_ui_widget_box(
-            track, 0, 0, fill_width, 6, LV_RADIUS_CIRCLE,
-            progress < 0 ? 0xFF453A : cyan_color, LV_OPA_COVER);
-    }
-    {
-        lv_obj_t *hint = make_panel(
-            CRAZYPOD_CROP_PANEL_HINT, viewport,
-            6, 5, LCD_WIDTH - 12, 34, 10);
-        label = crazypod_ui_widget_label(
-            hint,
-            CP_TR("Click Arrows: Move  \xe2\x80\xa2  Rotate: Zoom  "
-                  "\xe2\x80\xa2  SELECT: Apply"),
-            &lv_font_montserrat_8, white_color, 230);
-        lv_obj_set_width(label, LCD_WIDTH - 24);
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(label, 6, 4);
-        label = crazypod_ui_widget_label(
-            hint,
-            CP_TR("Hold MENU 0.5s: Cancel  \xe2\x80\xa2  "
-                  "Hold PLAY 0.5s: Reset"),
-            &lv_font_montserrat_8, 0xFFD60A, 235);
-        lv_obj_set_width(label, LCD_WIDTH - 24);
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(label, 6, 18);
+            white_color, 115);
+        lv_obj_center(label);
+        show_progress = true;
+        progress_error = progress < 0 ||
+            model->phase == CRAZYPOD_WALLPAPER_CROP_ERROR;
+        if(model->phase == CRAZYPOD_WALLPAPER_CROP_ERROR)
+            instruction = instruction_text(model);
+        else if(progress_error)
+            instruction = CP_TR("Could not load picture");
+        else {
+            if(progress > 100)
+                progress = 100;
+            snprintf(status_text, sizeof(status_text),
+                     CP_FMT("Loading picture  %d%%"), progress);
+            instruction = status_text;
+        }
     }
     if(model->phase == CRAZYPOD_WALLPAPER_CROP_APPLYING) {
-        lv_obj_t *panel = make_panel(
-            CRAZYPOD_CROP_PANEL_APPLY, viewport,
-            45, 67, 230, 50, 12);
-        lv_obj_t *track;
-        char progress_text[40];
-        int fill_width = model->apply_progress * 2;
+        snprintf(status_text, sizeof(status_text),
+                 CP_FMT("Applying wallpaper  %d%%"),
+                 model->apply_progress);
+        instruction = status_text;
+    }
+    footer = make_footer(viewport);
+    label = crazypod_ui_widget_label(
+        footer, instruction, &lv_font_montserrat_8,
+        white_color, 230);
+    lv_obj_set_width(label, LCD_WIDTH - 16);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label, 8, show_progress ? 5 : 10);
+    if(show_progress) {
+        lv_obj_t *track = crazypod_ui_widget_box(
+            footer, 60, 27, CROP_PROGRESS_WIDTH, 3,
+            LV_RADIUS_CIRCLE, white_color, 38);
 
+        if(progress < 0)
+            progress = 100;
+        if(progress > 100)
+            progress = 100;
+        fill_width = progress * CROP_PROGRESS_WIDTH / 100;
         if(fill_width < 2)
             fill_width = 2;
-        if(fill_width > 200)
-            fill_width = 200;
-        snprintf(progress_text, sizeof(progress_text),
-                 CP_FMT("Applying wallpaper  %d%%"), model->apply_progress);
-        view->progress_label = crazypod_ui_widget_label(
-            panel, progress_text, &lv_font_montserrat_10,
-            white_color, 230);
-        lv_obj_set_width(view->progress_label, 210);
-        lv_obj_set_style_text_align(
-            view->progress_label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_pos(view->progress_label, 10, 9);
-        track = crazypod_ui_widget_box(
-            panel, 15, 31, 200, 7, LV_RADIUS_CIRCLE,
-            white_color, 38);
+        view->progress_label = label;
         view->progress_fill = crazypod_ui_widget_box(
-            track, 0, 0, fill_width, 7, LV_RADIUS_CIRCLE,
-            cyan_color, LV_OPA_COVER);
+            track, 0, 0, fill_width, 3, LV_RADIUS_CIRCLE,
+            progress_error ? 0xFF453A : cyan_color,
+            LV_OPA_COVER);
     }
-    (void)make_panel(
-        CRAZYPOD_CROP_PANEL_BOTTOM, viewport,
-        0, 168, LCD_WIDTH, 32, 0);
-    label = crazypod_ui_widget_label(
-        viewport, crazypod_photo_name(model->photo_index),
-        &lv_font_montserrat_8, white_color, 225);
-    lv_obj_set_pos(label, 9, 173);
-    lv_obj_set_width(label, 156);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-    {
-        char zoom[20];
-        snprintf(zoom, sizeof(zoom), CP_FMT("%d.%dx"),
-                 model->zoom_percent / 100,
-                 model->zoom_percent % 100 / 10);
-        label = crazypod_ui_widget_label(
-            viewport, zoom, &lv_font_montserrat_8,
-            white_color, 220);
-        lv_obj_set_width(label, 42);
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
-        lv_obj_set_pos(label, 269, 173);
-    }
-    instruction = instruction_text(model);
-    label = crazypod_ui_widget_label(
-        viewport, instruction, &lv_font_montserrat_8,
-        white_color,
-        model->phase == CRAZYPOD_WALLPAPER_CROP_EDITING ? 145 : 220);
-    lv_obj_set_width(label, 302);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(label, 9, 187);
 }
 
 void crazypod_wallpaper_crop_screen_reset(void)

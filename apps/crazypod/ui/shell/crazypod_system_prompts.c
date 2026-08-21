@@ -13,6 +13,7 @@
 
 #include "../../crazypod_artwork.h"
 #include "../../crazypod_books.h"
+#include "../../crazypod_coverflow.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_organizer.h"
 #include "../../crazypod_photos.h"
@@ -30,6 +31,7 @@
 #include "crazypod_desktop.h"
 #include "crazypod_desktop_native.h"
 #include "crazypod_headphone_popup.h"
+#include "crazypod_lock_screen.h"
 #include "crazypod_power_prompt.h"
 #include "crazypod_system_prompts.h"
 #include "crazypod_usb_prompt.h"
@@ -46,7 +48,10 @@ static void dismissed(void);
 
 static void before_show(void)
 {
-    if(crazypod_headphone_popup_visible())
+    crazypod_coverflow_set_compositing_suspended(true);
+    if(crazypod_headphone_popup_visible() ||
+       crazypod_choice_coordinator_visible() ||
+       crazypod_now_playing_overlay_visible())
         crazypod_desktop_native_preserve_modal_underlay();
     crazypod_headphone_popup_dismiss(false);
     if(crazypod_choice_coordinator_visible())
@@ -71,6 +76,7 @@ static bool headphone_can_show(void)
 
 static void headphone_before_show(void)
 {
+    crazypod_coverflow_set_compositing_suspended(true);
     backlight_on();
     crazypod_overlay_glass_prepare(false);
 }
@@ -80,7 +86,7 @@ static void configure_headphone(void)
     const struct crazypod_headphone_popup_callbacks callbacks = {
         .can_show = headphone_can_show,
         .before_show = headphone_before_show,
-        .create_panel = crazypod_overlay_glass_panel,
+        .create_panel = crazypod_overlay_glass_headphone_panel,
         .dismissed = dismissed,
     };
 
@@ -299,6 +305,11 @@ void crazypod_system_prompts_usb_connected(intptr_t data)
         crazypod_miniapps_feature_reset_input();
         crazypod_miniapps_feature_close();
     }
+    /* Playback is stopped for mass storage, so the retained lock-screen
+     * snapshot is invalid immediately. Clear it before USB owns the UI;
+     * otherwise disconnect presents one stale Now Playing frame before the
+     * playback timer gets a chance to observe the stopped audio state. */
+    crazypod_lock_screen_update_media(NULL);
     prompts.storage_active = true;
     crazypod_music_library_schedule_rescan(
         prompts.host.now() + HZ / 2);

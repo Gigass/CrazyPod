@@ -10,6 +10,10 @@
 
 #include "crazypod_frameclock.h"
 
+#ifndef SIMULATOR
+#include "lcd-s5l8702.h"
+#endif
+
 #ifdef SIMULATOR
 #include "crc32.h"
 
@@ -23,6 +27,17 @@ static int present_x1;
 static int present_y1;
 static int present_x2;
 static int present_y2;
+enum present_sync_mode {
+    PRESENT_SYNC_NONE = 0,
+    PRESENT_SYNC_HOME,
+    PRESENT_SYNC_MUSIC,
+};
+static enum present_sync_mode present_sync;
+static bool deferred_present_pending;
+static int deferred_present_x1;
+static int deferred_present_y1;
+static int deferred_present_x2;
+static int deferred_present_y2;
 static uint32_t present_sequence;
 static long present_tick;
 static struct crazypod_present_diagnostics present_diagnostics;
@@ -72,10 +87,58 @@ void crazypod_present_init(long now)
     crazypod_frameclock_reset(&present_clock, now);
     present_initialized = true;
     present_pending = false;
+    present_sync = PRESENT_SYNC_NONE;
+    deferred_present_pending = false;
     memset(&present_diagnostics, 0, sizeof(present_diagnostics));
 }
 
-void crazypod_present_queue_rect(int x, int y, int width, int height)
+static void set_present_rect(
+    int x1, int y1, int x2, int y2,
+    enum present_sync_mode sync)
+{
+    present_x1 = x1;
+    present_y1 = y1;
+    present_x2 = x2;
+    present_y2 = y2;
+    present_sync = sync;
+    present_pending = true;
+}
+
+static void merge_deferred_present_rect(
+    int x1, int y1, int x2, int y2)
+{
+    if(!deferred_present_pending) {
+        deferred_present_x1 = x1;
+        deferred_present_y1 = y1;
+        deferred_present_x2 = x2;
+        deferred_present_y2 = y2;
+        deferred_present_pending = true;
+        return;
+    }
+    if(x1 < deferred_present_x1)
+        deferred_present_x1 = x1;
+    if(y1 < deferred_present_y1)
+        deferred_present_y1 = y1;
+    if(x2 > deferred_present_x2)
+        deferred_present_x2 = x2;
+    if(y2 > deferred_present_y2)
+        deferred_present_y2 = y2;
+}
+
+static void promote_deferred_present(void)
+{
+    if(!deferred_present_pending)
+        return;
+    set_present_rect(
+        deferred_present_x1, deferred_present_y1,
+        deferred_present_x2, deferred_present_y2,
+        PRESENT_SYNC_NONE);
+    deferred_present_pending = false;
+}
+
+static void queue_present_rect(
+    int x, int y, int width, int height,
+    enum present_sync_mode sync)
 {
     int x2;
     int y2;
@@ -102,15 +165,46 @@ void crazypod_present_queue_rect(int x, int y, int width, int height)
     ++present_diagnostics.queue_requests;
     x2 = x + width - 1;
     y2 = y + height - 1;
-    if(!present_pending) {
-        present_x1 = x;
-        present_y1 = y;
-        present_x2 = x2;
-        present_y2 = y2;
-        present_pending = true;
+
+    /* A complete framebuffer supersedes every older partial request. */
+    if(x == 0 && y == 0 && x2 == LCD_WIDTH - 1 &&
+       y2 == LCD_HEIGHT - 1) {
+        if(present_pending || deferred_present_pending)
+            ++present_diagnostics.coalesced_requests;
+        set_present_rect(x, y, x2, y2, PRESENT_SYNC_NONE);
+        deferred_present_pending = false;
         return;
     }
+    if(!present_pending) {
+        set_present_rect(x, y, x2, y2, sync);
+        return;
+    }
+    if(present_x1 == 0 && present_y1 == 0 &&
+       present_x2 == LCD_WIDTH - 1 &&
+       present_y2 == LCD_HEIGHT - 1) {
+        ++present_diagnostics.coalesced_requests;
+        return;
+    }
+
+    /* Never turn a TE-synchronized moving band plus an unrelated LVGL
+       region into one large bounding rectangle. The moving band owns the
+       next panel frame; ordinary dirt waits in a separate slot. */
+    if(sync == PRESENT_SYNC_NONE &&
+       present_sync != PRESENT_SYNC_NONE) {
+        merge_deferred_present_rect(x, y, x2, y2);
+        return;
+    }
+    if(sync != PRESENT_SYNC_NONE &&
+       present_sync == PRESENT_SYNC_NONE) {
+        merge_deferred_present_rect(
+            present_x1, present_y1, present_x2, present_y2);
+        set_present_rect(x, y, x2, y2, sync);
+        return;
+    }
+
     ++present_diagnostics.coalesced_requests;
+    if(sync != PRESENT_SYNC_NONE)
+        present_sync = sync;
     if(x < present_x1)
         present_x1 = x;
     if(y < present_y1)
@@ -119,6 +213,26 @@ void crazypod_present_queue_rect(int x, int y, int width, int height)
         present_x2 = x2;
     if(y2 > present_y2)
         present_y2 = y2;
+}
+
+void crazypod_present_queue_rect(int x, int y, int width, int height)
+{
+    queue_present_rect(
+        x, y, width, height, PRESENT_SYNC_NONE);
+}
+
+void crazypod_present_queue_home_rect(
+    int x, int y, int width, int height)
+{
+    queue_present_rect(
+        x, y, width, height, PRESENT_SYNC_HOME);
+}
+
+void crazypod_present_queue_music_rect(
+    int x, int y, int width, int height)
+{
+    queue_present_rect(
+        x, y, width, height, PRESENT_SYNC_MUSIC);
 }
 
 void crazypod_present_queue_full(void)
@@ -144,11 +258,25 @@ void crazypod_present_now(void)
 
     full = crazypod_present_is_full();
     started_us = crazypod_monotonic_usec();
-    lcd_update_rect(present_x1, present_y1,
-                    present_x2 - present_x1 + 1,
-                    present_y2 - present_y1 + 1);
+#ifndef SIMULATOR
+    if(present_sync == PRESENT_SYNC_HOME && !full)
+        lcd_update_rect_frame_sync(
+            present_x1, present_y1,
+            present_x2 - present_x1 + 1,
+            present_y2 - present_y1 + 1);
+    else if(present_sync == PRESENT_SYNC_MUSIC && !full)
+        lcd_update_rect_music_sync(
+            present_x1, present_y1,
+            present_x2 - present_x1 + 1,
+            present_y2 - present_y1 + 1);
+    else
+#endif
+        lcd_update_rect(present_x1, present_y1,
+                        present_x2 - present_x1 + 1,
+                        present_y2 - present_y1 + 1);
     duration_us = crazypod_monotonic_usec() - started_us;
     present_pending = false;
+    present_sync = PRESENT_SYNC_NONE;
     ++present_sequence;
     present_tick = current_tick;
     ++present_diagnostics.presents;
@@ -166,6 +294,7 @@ void crazypod_present_now(void)
             lcd_framebuffer_default.elems * sizeof(fb_data)),
         0xffffffffu);
 #endif
+    promote_deferred_present();
 }
 
 void crazypod_present_tick(void)

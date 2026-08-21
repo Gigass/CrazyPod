@@ -1140,11 +1140,6 @@
         "apps/crazypod/crazypod_epub.c:678"
       ]
     },
-    "Click Arrows: Move  •  Rotate: Zoom  •  SELECT: Apply": {
-      "locations": [
-        "apps/crazypod/ui/features/customize/crazypod_wallpaper_crop_screen.c:235"
-      ]
-    },
     "Clock": {
       "locations": [
         "apps/crazypod/ui/shell/crazypod_app_catalog.c"
@@ -1969,11 +1964,6 @@
       "locations": [
         "apps/crazypod/ui/shell/crazypod_lock_screen.c:235",
         "apps/crazypod/ui/shell/crazypod_lock_screen.c:555"
-      ]
-    },
-    "Hold MENU 0.5s: Cancel  •  Hold PLAY 0.5s: Reset": {
-      "locations": [
-        "apps/crazypod/ui/features/customize/crazypod_wallpaper_crop_screen.c:243"
       ]
     },
     "Hold Select on a photo to save it here.": {

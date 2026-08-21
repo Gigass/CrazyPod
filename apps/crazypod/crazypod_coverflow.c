@@ -24,7 +24,7 @@
 #define FLOW_PREFETCH_VISIBLE 4
 #define FLOW_COVER_SIZE CRAZYPOD_COVERFLOW_ARTWORK_SIZE
 #define FLOW_TOP 40
-#define FLOW_BOTTOM 194
+#define FLOW_BOTTOM 180
 #define FLOW_CENTER_Y 106
 #define FLOW_POSITION_ONE (1L << 16)
 #define FLOW_RELEASE_STIFFNESS 400
@@ -33,8 +33,6 @@
 #define FLOW_PHYSICS_STEP_USEC 8333u
 #define FLOW_RELEASE_PROJECTION_TICKS \
     (((HZ * 32) / 100) > 0 ? ((HZ * 32) / 100) : 1)
-#define FLOW_RELEASE_MAX_SPEED_Q16 \
-    (14 * FLOW_POSITION_ONE)
 #define FLOW_RELEASE_GRACE_TICKS \
     (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
 #define FLOW_INPUT_BASE_SPEED 2
@@ -58,12 +56,21 @@ struct flow_cache_entry {
     const lv_image_dsc_t *image;
 };
 
+struct flow_dirty_rect {
+    bool valid;
+    int x1;
+    int y1;
+    int x2;
+    int y2;
+};
+
 static struct flow_cache_entry cache[FLOW_CACHE_SLOTS];
 static bool flow_active;
 static bool flow_dirty;
 static bool prefetch_pending;
 static bool prefetch_deep_pending;
 static int selected_album;
+static int metadata_album;
 static int32_t position_q16;
 static int32_t target_position_q16;
 static int32_t velocity_q16;
@@ -79,16 +86,67 @@ static unsigned artwork_generation_seen;
 static bool cache_initialized;
 static bool input_active;
 static bool wheel_input_suspended;
+static bool compositing_suspended;
 static bool wheel_tracking;
 static int wheel_position;
+static int wheel_step_accumulator;
 static long wheel_last_seen;
-static long wheel_last_motion;
-static uint32_t wheel_last_motion_usec;
-static int wheel_feedback_album;
 static int wheel_feedback_direction;
+static bool first_present;
+static struct flow_dirty_rect deferred_top;
+static struct flow_dirty_rect deferred_bottom;
 static void (*boost_cpu)(int ticks);
 
 extern struct frame_buffer_t lcd_framebuffer_default;
+
+static void reset_deferred_presents(void)
+{
+    memset(&deferred_top, 0, sizeof(deferred_top));
+    memset(&deferred_bottom, 0, sizeof(deferred_bottom));
+}
+
+static void accumulate_dirty_rect(
+    struct flow_dirty_rect *dirty,
+    int x1, int y1, int x2, int y2)
+{
+    if(x1 > x2 || y1 > y2)
+        return;
+    if(!dirty->valid) {
+        dirty->valid = true;
+        dirty->x1 = x1;
+        dirty->y1 = y1;
+        dirty->x2 = x2;
+        dirty->y2 = y2;
+        return;
+    }
+    if(x1 < dirty->x1)
+        dirty->x1 = x1;
+    if(y1 < dirty->y1)
+        dirty->y1 = y1;
+    if(x2 > dirty->x2)
+        dirty->x2 = x2;
+    if(y2 > dirty->y2)
+        dirty->y2 = y2;
+}
+
+static bool queue_dirty_present(struct flow_dirty_rect *dirty)
+{
+    if(!dirty->valid)
+        return false;
+    crazypod_present_queue_music_rect(
+        dirty->x1, dirty->y1,
+        dirty->x2 - dirty->x1 + 1,
+        dirty->y2 - dirty->y1 + 1);
+    dirty->valid = false;
+    return true;
+}
+
+static bool queue_deferred_present(void)
+{
+    if(queue_dirty_present(&deferred_top))
+        return true;
+    return queue_dirty_present(&deferred_bottom);
+}
 
 void crazypod_coverflow_configure(void (*boost)(int ticks))
 {
@@ -816,11 +874,16 @@ static void render_flow(void)
     for(item = 0; item < item_count; ++item)
         draw_album(indices[item]);
 
-    /*
-     * LVGL flushes are held while CoverFlow is active. Present the complete
-     * screen once here so metadata and covers belong to the same LCD frame.
-     */
-    crazypod_present_queue_full();
+    /* Initialize the route once, then keep motion DMA inside the native
+       CoverFlow band. LVGL dirt outside this band is drained separately. */
+    if(first_present) {
+        crazypod_present_queue_full();
+        first_present = false;
+        reset_deferred_presents();
+    }
+    else
+        crazypod_present_queue_music_rect(
+            0, FLOW_TOP, LCD_WIDTH, FLOW_BOTTOM - FLOW_TOP);
     crazypod_present_note_render(
         CRAZYPOD_RENDER_MUSIC,
         crazypod_monotonic_usec() - render_started_us);
@@ -839,6 +902,7 @@ void crazypod_coverflow_enter(int selected)
     if(!cache_initialized)
         reset_cache();
     selected_album = selected;
+    metadata_album = selected;
     position_q16 = selected * FLOW_POSITION_ONE;
     target_position_q16 = position_q16;
     velocity_q16 = 0;
@@ -853,13 +917,14 @@ void crazypod_coverflow_enter(int selected)
     artwork_generation_seen = crazypod_artwork_generation();
     input_active = false;
     wheel_input_suspended = false;
+    compositing_suspended = false;
     wheel_tracking = false;
     wheel_position = -1;
+    wheel_step_accumulator = 0;
     wheel_last_seen = 0;
-    wheel_last_motion = 0;
-    wheel_last_motion_usec = 0;
-    wheel_feedback_album = selected;
     wheel_feedback_direction = 0;
+    first_present = true;
+    reset_deferred_presents();
     flow_active = true;
     flow_dirty = true;
     prefetch_pending = !prefetch_covers(false);
@@ -883,6 +948,7 @@ bool crazypod_coverflow_warm(int selected)
     if(!cache_initialized)
         reset_cache();
     selected_album = selected;
+    metadata_album = selected;
     position_q16 = selected * FLOW_POSITION_ONE;
     target_position_q16 = position_q16;
     velocity_q16 = 0;
@@ -900,13 +966,17 @@ bool crazypod_coverflow_warm(int selected)
 void crazypod_coverflow_leave(void)
 {
     flow_active = false;
+    metadata_album = -1;
     velocity_q16 = 0;
     input_velocity_q16 = 0;
     input_active = false;
     wheel_input_suspended = false;
+    compositing_suspended = false;
     wheel_tracking = false;
-    wheel_feedback_album = -1;
+    wheel_step_accumulator = 0;
     wheel_feedback_direction = 0;
+    first_present = false;
+    reset_deferred_presents();
     prefetch_pending = false;
     prefetch_deep_pending = false;
 #ifdef HAVE_WHEEL_POSITION
@@ -919,12 +989,34 @@ bool crazypod_coverflow_active(void)
     return flow_active;
 }
 
+bool crazypod_coverflow_compositing_active(void)
+{
+    return flow_active && !compositing_suspended;
+}
+
 bool crazypod_coverflow_motion_active(void)
 {
-    return flow_active && !wheel_input_suspended &&
+    return crazypod_coverflow_compositing_active() &&
+        !wheel_input_suspended &&
         (flow_dirty || wheel_tracking || input_active ||
          position_q16 != target_position_q16 ||
          velocity_q16 != 0);
+}
+
+void crazypod_coverflow_set_compositing_suspended(bool suspended)
+{
+    if(!flow_active || compositing_suspended == suspended)
+        return;
+    compositing_suspended = suspended;
+    reset_deferred_presents();
+    if(suspended)
+        return;
+
+    /* LVGL owned the framebuffer while a modal surface was visible. Rebuild
+       the complete route before returning to native band-only presents. */
+    first_present = true;
+    flow_dirty = true;
+    crazypod_frameclock_reset(&render_clock, current_tick);
 }
 
 void crazypod_coverflow_set_input_suspended(bool suspended)
@@ -936,9 +1028,8 @@ void crazypod_coverflow_set_input_suspended(bool suspended)
     wheel_input_suspended = suspended;
     wheel_tracking = false;
     wheel_position = -1;
+    wheel_step_accumulator = 0;
     wheel_last_seen = 0;
-    wheel_last_motion = 0;
-    wheel_last_motion_usec = 0;
     wheel_feedback_direction = 0;
     velocity_q16 = 0;
     input_velocity_q16 = 0;
@@ -948,11 +1039,18 @@ void crazypod_coverflow_set_input_suspended(bool suspended)
     if(suspended) {
         album_index = crazypod_coverflow_center_album();
         selected_album = album_index;
+        metadata_album = album_index;
         position_q16 = album_index * FLOW_POSITION_ONE;
         target_position_q16 = position_q16;
         flow_dirty = true;
     }
-    wheel_feedback_album = crazypod_coverflow_center_album();
+    else {
+        /* The lock screen replaces every panel row. Rebuild the complete
+           album-flow route once before returning to partial TE updates. */
+        first_present = true;
+        reset_deferred_presents();
+        flow_dirty = true;
+    }
 #ifdef HAVE_WHEEL_POSITION
     /*
      * CoverFlow normally consumes absolute wheel position directly. The lock
@@ -994,6 +1092,7 @@ int crazypod_coverflow_step(int direction)
         if(gesture_min_album >= count)
             gesture_min_album = count - 1;
         selected_album = gesture_min_album;
+        metadata_album = gesture_min_album;
     }
 
     if(direction_changed)
@@ -1034,6 +1133,11 @@ int crazypod_coverflow_center_album(void)
     return album_index;
 }
 
+int crazypod_coverflow_selected_album(void)
+{
+    return metadata_album;
+}
+
 int crazypod_coverflow_take_wheel_feedback(void)
 {
     int direction = wheel_feedback_direction;
@@ -1042,24 +1146,63 @@ int crazypod_coverflow_take_wheel_feedback(void)
     return direction;
 }
 
+static bool step_wheel_album_target(int direction)
+{
+    int count = crazypod_music_album_count();
+    int target_album;
+
+    if(count <= 0 || direction == 0)
+        return false;
+    target_album =
+        (target_position_q16 + FLOW_POSITION_ONE / 2) >> 16;
+    target_album += direction;
+    if(target_album < 0)
+        target_album = 0;
+    if(target_album >= count)
+        target_album = count - 1;
+    if(target_position_q16 == target_album * FLOW_POSITION_ONE)
+        return false;
+
+    if(direction != flow_direction)
+        velocity_q16 = 0;
+    flow_direction = direction;
+    gesture_min_album = target_album;
+    selected_album = target_album;
+    metadata_album = target_album;
+    target_position_q16 = target_album * FLOW_POSITION_ONE;
+    input_velocity_q16 = 0;
+    wheel_feedback_direction = direction;
+    flow_dirty = true;
+    prefetch_pending = true;
+    prefetch_deep_pending = true;
+    last_prefetch = 0;
+    return true;
+}
+
 static void sample_wheel_position(long now, uint32_t now_usec)
 {
 #ifdef HAVE_WHEEL_POSITION
     int current = wheel_status();
-    int count = crazypod_music_album_count();
-    int32_t maximum_position_q16 =
-        (count > 0 ? count - 1 : 0) * FLOW_POSITION_ONE;
 
     if(current >= 0) {
         current %= FLOW_WHEEL_POSITIONS;
         if(!wheel_tracking) {
+            int target_album = metadata_album;
+
+            if(target_album < 0 ||
+               target_album >= crazypod_music_album_count())
+                target_album = crazypod_coverflow_center_album();
+
             wheel_tracking = true;
             wheel_position = current;
-            wheel_last_motion = now;
-            wheel_last_motion_usec = now_usec;
             last_physics_usec = now_usec;
-            target_position_q16 = position_q16;
+            selected_album = target_album;
+            metadata_album = target_album;
+            target_position_q16 = target_album * FLOW_POSITION_ONE;
+            gesture_min_album = target_album;
+            velocity_q16 = 0;
             input_velocity_q16 = 0;
+            wheel_step_accumulator = 0;
         }
         else {
             int delta = current - wheel_position;
@@ -1069,61 +1212,23 @@ static void sample_wheel_position(long now, uint32_t now_usec)
             else if(delta > FLOW_WHEEL_POSITIONS / 2)
                 delta -= FLOW_WHEEL_POSITIONS;
             if(delta != 0) {
-                uint32_t elapsed_usec =
-                    now_usec - wheel_last_motion_usec;
-                int64_t next_position;
-                int64_t instant_velocity_q16;
+                int step_direction;
 
-                if(elapsed_usec < 1000u)
-                    elapsed_usec = 1000u;
-                next_position =
-                    (int64_t)target_position_q16 +
-                    (int64_t)delta * FLOW_POSITION_ONE /
-                        FLOW_WHEEL_CLICKS_PER_ALBUM;
-                if(next_position < 0)
-                    target_position_q16 = 0;
-                else if(next_position > maximum_position_q16)
-                    target_position_q16 = maximum_position_q16;
-                else
-                    target_position_q16 = (int32_t)next_position;
-                instant_velocity_q16 =
-                    (int64_t)delta * FLOW_POSITION_ONE * 1000000 /
-                    ((int64_t)FLOW_WHEEL_CLICKS_PER_ALBUM *
-                     elapsed_usec);
-                if(instant_velocity_q16 >
-                   FLOW_RELEASE_MAX_SPEED_Q16)
-                    instant_velocity_q16 =
-                        FLOW_RELEASE_MAX_SPEED_Q16;
-                else if(instant_velocity_q16 <
-                        -FLOW_RELEASE_MAX_SPEED_Q16)
-                    instant_velocity_q16 =
-                        -FLOW_RELEASE_MAX_SPEED_Q16;
-                if(input_velocity_q16 != 0 &&
-                   (input_velocity_q16 < 0) ==
-                       (instant_velocity_q16 < 0))
-                    input_velocity_q16 = (int32_t)(
-                        ((int64_t)input_velocity_q16 * 3 +
-                         instant_velocity_q16 * 5) >> 3);
-                else
-                    input_velocity_q16 =
-                        (int32_t)instant_velocity_q16;
-                flow_direction = delta < 0 ? -1 : 1;
-                gesture_min_album =
-                    (target_position_q16 +
-                     FLOW_POSITION_ONE / 2) >> 16;
                 wheel_position = current;
-                wheel_last_motion = now;
-                wheel_last_motion_usec = now_usec;
-                flow_dirty = true;
-                prefetch_pending = true;
-                prefetch_deep_pending = true;
-                last_prefetch = 0;
-            }
-            else if(!TIME_BEFORE(
-                        now,
-                        wheel_last_motion +
-                            FLOW_RELEASE_GRACE_TICKS)) {
-                input_velocity_q16 = 0;
+                wheel_step_accumulator += delta;
+                while(wheel_step_accumulator >=
+                          FLOW_WHEEL_CLICKS_PER_ALBUM ||
+                      wheel_step_accumulator <=
+                          -FLOW_WHEEL_CLICKS_PER_ALBUM) {
+                    step_direction =
+                        wheel_step_accumulator < 0 ? -1 : 1;
+                    if(!step_wheel_album_target(step_direction)) {
+                        wheel_step_accumulator = 0;
+                        break;
+                    }
+                    wheel_step_accumulator -=
+                        step_direction * FLOW_WHEEL_CLICKS_PER_ALBUM;
+                }
             }
         }
         wheel_last_seen = now;
@@ -1132,8 +1237,10 @@ static void sample_wheel_position(long now, uint32_t now_usec)
         return;
     }
     if(wheel_tracking &&
-       !TIME_BEFORE(now, wheel_last_seen + FLOW_WHEEL_RELEASE_TICKS))
+       !TIME_BEFORE(now, wheel_last_seen + FLOW_WHEEL_RELEASE_TICKS)) {
         wheel_tracking = false;
+        wheel_step_accumulator = 0;
+    }
 #else
     (void)now;
     (void)now_usec;
@@ -1155,10 +1262,10 @@ static void advance_position(long now, uint32_t now_usec)
 
         input_active = false;
 #ifdef HAVE_WHEEL_POSITION
-        projected_position_q16 =
-            target_position_q16 +
-            (int32_t)(((int64_t)input_velocity_q16 *
-                       FLOW_RELEASE_PROJECTION_TICKS) / HZ);
+        /* Wheel input has already selected an exact album step. Do not let
+           release velocity create extra selections after the user's hand
+           leaves the wheel. */
+        projected_position_q16 = target_position_q16;
 #else
         projected_position_q16 =
             position_q16 +
@@ -1181,6 +1288,7 @@ static void advance_position(long now, uint32_t now_usec)
             target_album = count - 1;
         target_position_q16 = target_album * FLOW_POSITION_ONE;
         selected_album = target_album;
+        metadata_album = target_album;
         input_velocity_q16 = 0;
     }
 
@@ -1228,15 +1336,6 @@ static void advance_position(long now, uint32_t now_usec)
         elapsed_usec -= step_usec;
     }
     selected_album = crazypod_coverflow_center_album();
-    if(wheel_feedback_album < 0)
-        wheel_feedback_album = selected_album;
-    else if(selected_album != wheel_feedback_album) {
-        /* Match Home: one click for each item that actually becomes
-         * centered, never for fractional motion or boundary overscroll. */
-        wheel_feedback_direction =
-            selected_album < wheel_feedback_album ? -1 : 1;
-        wheel_feedback_album = selected_album;
-    }
 
     if(released) {
         int32_t error_q16 =
@@ -1257,6 +1356,40 @@ static void advance_position(long now, uint32_t now_usec)
 void crazypod_coverflow_invalidate(void)
 {
     if(flow_active)
+        flow_dirty = true;
+}
+
+void crazypod_coverflow_capture_flush(
+    int x, int y, int width, int height)
+{
+    int x2;
+    int y2;
+
+    if(!flow_active || width <= 0 || height <= 0)
+        return;
+    x2 = x + width - 1;
+    y2 = y + height - 1;
+    if(x < 0)
+        x = 0;
+    if(y < 0)
+        y = 0;
+    if(x2 >= LCD_WIDTH)
+        x2 = LCD_WIDTH - 1;
+    if(y2 >= LCD_HEIGHT)
+        y2 = LCD_HEIGHT - 1;
+    if(x > x2 || y > y2)
+        return;
+
+    if(y < FLOW_TOP)
+        accumulate_dirty_rect(
+            &deferred_top, x, y, x2,
+            y2 < FLOW_TOP ? y2 : FLOW_TOP - 1);
+    if(y2 >= FLOW_BOTTOM)
+        accumulate_dirty_rect(
+            &deferred_bottom, x,
+            y > FLOW_BOTTOM ? y : FLOW_BOTTOM,
+            x2, y2);
+    if(y < FLOW_BOTTOM && y2 >= FLOW_TOP)
         flow_dirty = true;
 }
 
@@ -1285,7 +1418,7 @@ void crazypod_coverflow_tick(void)
     unsigned artwork_generation;
     uint32_t now_usec;
 
-    if(!flow_active)
+    if(!crazypod_coverflow_compositing_active())
         return;
     now_usec = crazypod_monotonic_usec();
     sample_wheel_position(current_tick, now_usec);
@@ -1332,6 +1465,8 @@ void crazypod_coverflow_tick(void)
         schedule_next_frame(current_tick);
         flow_dirty = false;
     }
+    else if(frame_due && !animating && queue_deferred_present())
+        schedule_next_frame(current_tick);
 }
 
 #endif

@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "kernel.h"
 #include "lcd.h"
 #include "system.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
@@ -19,11 +20,33 @@ static fb_data pixels[
 static lv_image_dsc_t descriptor;
 static const uint8_t *viewport_source;
 static const uint8_t *crop_source;
+static int crop_image_x;
 static int crop_image_y;
 static int viewport_index = -1;
 static int viewport_zoom;
 static int viewport_pan_x;
 static int viewport_pan_y;
+
+static int begin_background_render(void)
+{
+#ifdef HAVE_PRIORITY_SCHEDULING
+    return thread_set_priority(
+        thread_self(), PRIORITY_BACKGROUND);
+#else
+    return -1;
+#endif
+}
+
+static void finish_background_render(int old_priority)
+{
+#ifdef HAVE_PRIORITY_SCHEDULING
+    if(old_priority >= HIGHEST_PRIORITY &&
+       old_priority <= LOWEST_PRIORITY)
+        thread_set_priority(thread_self(), old_priority);
+#else
+    (void)old_priority;
+#endif
+}
 
 static fb_data sample_bilinear(
     const fb_data *source, int width, int height,
@@ -109,6 +132,7 @@ const lv_image_dsc_t *crazypod_photo_viewport_render(
     int retained_y;
     int retained_width;
     int retained_height;
+    int old_priority;
     bool incremental_pan;
     int y;
 
@@ -154,6 +178,7 @@ const lv_image_dsc_t *crazypod_photo_viewport_render(
        viewport_index == index && viewport_zoom == zoom_percent &&
        viewport_pan_x == *pan_x && viewport_pan_y == *pan_y)
         return &descriptor;
+    old_priority = begin_background_render();
     image_x = (CRAZYPOD_PHOTO_VIEWPORT_WIDTH - display_width) / 2 +
         *pan_x;
     image_y = (CRAZYPOD_PHOTO_VIEWPORT_HEIGHT - display_height) / 2 +
@@ -243,18 +268,24 @@ const lv_image_dsc_t *crazypod_photo_viewport_render(
     viewport_zoom = zoom_percent;
     viewport_pan_x = *pan_x;
     viewport_pan_y = *pan_y;
+    finish_background_render(old_priority);
     return &descriptor;
 }
 
 const lv_image_dsc_t *crazypod_photo_viewport_render_crop(
-    const lv_image_dsc_t *source_descriptor, int center_y)
+    const lv_image_dsc_t *source_descriptor,
+    int center_x, int center_y)
 {
-    const int preview_height = 168;
+    const int preview_width = CRAZYPOD_PHOTO_VIEWPORT_WIDTH;
+    const int preview_height = CRAZYPOD_PHOTO_VIEWPORT_HEIGHT;
     const fb_data *source;
     int source_width;
     int source_height;
+    int display_width;
     int display_height;
+    int image_x;
     int image_y;
+    int old_priority;
     int y;
 
     if(source_descriptor == NULL)
@@ -264,32 +295,41 @@ const lv_image_dsc_t *crazypod_photo_viewport_render_crop(
     source_height = source_descriptor->header.h;
     if(source == NULL || source_width <= 0 || source_height <= 0)
         return NULL;
-    display_height =
-        source_height * CRAZYPOD_PHOTO_VIEWPORT_WIDTH / source_width;
-    if(display_height < 1)
-        display_height = 1;
-    if(display_height <= preview_height)
-        image_y = (preview_height - display_height) / 2;
-    else {
-        if(center_y < 0)
-            center_y = source_height / 2;
-        image_y = preview_height / 2 -
-            center_y * display_height / source_height;
-        if(image_y > 0)
-            image_y = 0;
-        if(image_y < preview_height - display_height)
-            image_y = preview_height - display_height;
+    if(source_width * preview_height >
+       source_height * preview_width) {
+        display_height = preview_height;
+        display_width = source_width * preview_height / source_height;
     }
+    else {
+        display_width = preview_width;
+        display_height = source_height * preview_width / source_width;
+    }
+    if(center_x < 0)
+        center_x = source_width / 2;
+    if(center_y < 0)
+        center_y = source_height / 2;
+    image_x = preview_width / 2 -
+        center_x * display_width / source_width;
+    image_y = preview_height / 2 -
+        center_y * display_height / source_height;
+    if(image_x > 0)
+        image_x = 0;
+    if(image_x < preview_width - display_width)
+        image_x = preview_width - display_width;
+    if(image_y > 0)
+        image_y = 0;
+    if(image_y < preview_height - display_height)
+        image_y = preview_height - display_height;
     if(descriptor.header.magic == LV_IMAGE_HEADER_MAGIC &&
-       descriptor.header.w == CRAZYPOD_PHOTO_VIEWPORT_WIDTH &&
+       descriptor.header.w == preview_width &&
        descriptor.header.h == preview_height &&
        crop_source == source_descriptor->data &&
-       crop_image_y == image_y)
+       crop_image_x == image_x && crop_image_y == image_y)
         return &descriptor;
+    old_priority = begin_background_render();
     if(descriptor.header.magic == LV_IMAGE_HEADER_MAGIC)
         lv_image_cache_drop(&descriptor);
-    memset(pixels, 0, CRAZYPOD_PHOTO_VIEWPORT_WIDTH *
-           preview_height * sizeof(fb_data));
+    memset(pixels, 0, preview_width * preview_height * sizeof(fb_data));
     for(y = 0; y < preview_height; ++y) {
         int display_y = y - image_y;
         int source_y_q8 = 0;
@@ -298,26 +338,28 @@ const lv_image_dsc_t *crazypod_photo_viewport_render_crop(
         if(display_y >= 0 && display_y < display_height)
             source_y_q8 =
                 display_y * source_height * 256 / display_height;
-        for(x = 0; x < CRAZYPOD_PHOTO_VIEWPORT_WIDTH; ++x) {
+        for(x = 0; x < preview_width; ++x) {
+            int display_x = x - image_x;
             int source_x_q8;
 
-            if(display_y < 0 || display_y >= display_height)
+            if(display_y < 0 || display_y >= display_height ||
+               display_x < 0 || display_x >= display_width)
                 continue;
             source_x_q8 =
-                x * source_width * 256 /
-                CRAZYPOD_PHOTO_VIEWPORT_WIDTH;
-            pixels[y * CRAZYPOD_PHOTO_VIEWPORT_WIDTH + x] =
+                display_x * source_width * 256 / display_width;
+            pixels[y * preview_width + x] =
                 sample_bilinear(source, source_width, source_height,
                                 source_x_q8, source_y_q8);
         }
     }
     crazypod_image_configure_rgb565(
-        &descriptor, pixels, CRAZYPOD_PHOTO_VIEWPORT_WIDTH,
-        preview_height);
+        &descriptor, pixels, preview_width, preview_height);
     crop_source = source_descriptor->data;
+    crop_image_x = image_x;
     crop_image_y = image_y;
     viewport_source = NULL;
     viewport_index = -1;
+    finish_background_render(old_priority);
     return &descriptor;
 }
 

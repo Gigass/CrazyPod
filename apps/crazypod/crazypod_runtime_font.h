@@ -27,6 +27,11 @@ const lv_font_t *crazypod_runtime_font_resolve(
 
 const lv_font_t *crazypod_runtime_font(void);
 const lv_font_t *crazypod_runtime_font_at_size(unsigned size);
+const lv_font_t *crazypod_runtime_font_at_size_weight(
+    unsigned size, unsigned weight);
+/* Populate the Rockbox glyph cache outside the LVGL render thread. */
+void crazypod_runtime_font_prewarm_text(
+    unsigned size, const char *text);
 bool crazypod_runtime_fonts_ready(void);
 void crazypod_runtime_font_error_clear(void);
 const char *crazypod_runtime_font_last_error(void);

@@ -26,10 +26,13 @@
 #define CAPSULE_TINT_COLOR 0x11131A
 #define CAPSULE_TINT_OPA 48
 #define CAPSULE_FALLBACK_OPA 34
-#define CAPSULE_X 0
+#define CAPSULE_SIDE_MARGIN 8
+#define CAPSULE_BOTTOM_MARGIN 8
+#define CAPSULE_X CAPSULE_SIDE_MARGIN
 #define CAPSULE_Y 174
-#define CAPSULE_WIDTH LCD_WIDTH
-#define CAPSULE_HEIGHT (LCD_HEIGHT - CAPSULE_Y)
+#define CAPSULE_WIDTH (LCD_WIDTH - CAPSULE_SIDE_MARGIN * 2)
+#define CAPSULE_HEIGHT \
+    (LCD_HEIGHT - CAPSULE_Y - CAPSULE_BOTTOM_MARGIN)
 #define CAPSULE_CONTENT_X_OFFSET 8
 #define CAPSULE_CONTENT_Y_OFFSET 4
 #define CAPSULE_ENTRY_DURATION_MS 240
@@ -40,9 +43,10 @@
 
 struct capsule_view {
     lv_obj_t *root;
-    lv_obj_t *material;
-    lv_obj_t *glass;
-    lv_obj_t *glass_border;
+    lv_obj_t *material_clip[2];
+    lv_obj_t *material[2];
+    lv_obj_t *glass[2];
+    lv_obj_t *glass_border[2];
     lv_obj_t *track;
     lv_obj_t *artist;
     lv_obj_t *progress;
@@ -152,42 +156,64 @@ static void set_hidden_if_changed(lv_obj_t *object, bool hidden)
         lv_obj_remove_flag(object, LV_OBJ_FLAG_HIDDEN);
 }
 
-static int bottom_corner_radius(void)
+static int corner_radius(bool top)
 {
-    int radius = crazypod_appearance_get()->screen_bottom_radius;
+    const struct crazypod_appearance *appearance =
+        crazypod_appearance_get();
+    int radius = top
+        ? appearance->screen_top_radius
+        : appearance->screen_bottom_radius;
+    int maximum = CAPSULE_HEIGHT / 2;
 
     if(radius < 0)
         return 0;
-    if(radius > CAPSULE_HEIGHT)
-        return CAPSULE_HEIGHT;
+    if(radius > maximum)
+        return maximum;
     return radius;
 }
 
-static void refresh_bottom_corners(void)
+static void refresh_corners(void)
 {
-    int radius;
+    int split = CAPSULE_HEIGHT / 2;
+    int index;
 
-    if(capsule.root == NULL || capsule.material == NULL)
+    if(capsule.root == NULL || capsule.material[0] == NULL ||
+       capsule.material[1] == NULL)
         return;
-    radius = bottom_corner_radius();
+    for(index = 0; index < 2; ++index) {
+        bool top = index == 0;
+        int radius = corner_radius(top);
+        int segment_y = top ? 0 : split;
+        int segment_height = top
+            ? split : CAPSULE_HEIGHT - split;
+        int layer_y = top ? 0 : -radius;
+        int layer_height = segment_height + radius;
 
-    /* The material extends above the root by one radius.  Its top corners are
-     * clipped away by the root, leaving a square top edge and only the two
-     * configured bottom corners visible. */
-    lv_obj_set_pos(capsule.material, 0, -radius);
-    lv_obj_set_size(
-        capsule.material, CAPSULE_WIDTH, CAPSULE_HEIGHT + radius);
-    lv_obj_set_style_radius(capsule.material, radius, 0);
-    lv_obj_set_style_clip_corner(capsule.material, radius > 0, 0);
-
-    if(capsule.glass != NULL)
-        lv_obj_set_pos(capsule.glass, 0, radius);
-    if(capsule.glass_border != NULL) {
-        lv_obj_set_pos(capsule.glass_border, 0, -radius);
+        lv_obj_set_pos(
+            capsule.material_clip[index], 0, segment_y);
         lv_obj_set_size(
-            capsule.glass_border,
-            CAPSULE_WIDTH, CAPSULE_HEIGHT + radius);
-        lv_obj_set_style_radius(capsule.glass_border, radius, 0);
+            capsule.material_clip[index],
+            CAPSULE_WIDTH, segment_height);
+        lv_obj_set_pos(capsule.material[index], 0, layer_y);
+        lv_obj_set_size(
+            capsule.material[index], CAPSULE_WIDTH, layer_height);
+        lv_obj_set_style_radius(capsule.material[index], radius, 0);
+        lv_obj_set_style_clip_corner(
+            capsule.material[index], radius > 0, 0);
+
+        if(capsule.glass[index] != NULL)
+            lv_obj_set_pos(
+                capsule.glass[index], 0,
+                top ? 0 : radius - split);
+        if(capsule.glass_border[index] != NULL) {
+            lv_obj_set_pos(
+                capsule.glass_border[index], 0, layer_y);
+            lv_obj_set_size(
+                capsule.glass_border[index],
+                CAPSULE_WIDTH, layer_height);
+            lv_obj_set_style_radius(
+                capsule.glass_border[index], radius, 0);
+        }
     }
 
     lv_obj_invalidate(capsule.root);
@@ -197,30 +223,42 @@ void crazypod_now_capsule_refresh_material(void)
 {
     const lv_image_dsc_t *glass = NULL;
 
-    if(capsule.root == NULL || capsule.material == NULL)
+    int index;
+
+    if(capsule.root == NULL || capsule.material[0] == NULL ||
+       capsule.material[1] == NULL)
         return;
     if(crazypod_wallpaper_prepare_frosted_capsule(
            CAPSULE_TINT_COLOR, CAPSULE_TINT_OPA))
         glass = crazypod_frosted_wallpaper_capsule();
     if(glass != NULL) {
-        if(capsule.glass == NULL) {
-            capsule.glass = lv_image_create(capsule.material);
-            lv_obj_set_pos(
-                capsule.glass, 0, bottom_corner_radius());
-            lv_obj_remove_flag(capsule.glass, LV_OBJ_FLAG_CLICKABLE);
+        for(index = 0; index < 2; ++index) {
+            if(capsule.glass[index] == NULL) {
+                capsule.glass[index] =
+                    lv_image_create(capsule.material[index]);
+                lv_obj_remove_flag(
+                    capsule.glass[index], LV_OBJ_FLAG_CLICKABLE);
+            }
+            lv_image_set_src(capsule.glass[index], glass);
+            lv_obj_set_style_image_opa(
+                capsule.glass[index], LV_OPA_COVER, 0);
+            lv_obj_remove_flag(
+                capsule.glass[index], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_bg_opa(
+                capsule.material[index], LV_OPA_TRANSP, 0);
         }
-        lv_image_set_src(capsule.glass, glass);
-        lv_obj_set_style_image_opa(capsule.glass, LV_OPA_COVER, 0);
-        lv_obj_remove_flag(capsule.glass, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_style_bg_opa(capsule.material, LV_OPA_TRANSP, 0);
+        refresh_corners();
     }
     else {
-        if(capsule.glass != NULL)
-            lv_obj_add_flag(capsule.glass, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_style_bg_color(
-            capsule.material, lv_color_hex(COLOR_WHITE), 0);
-        lv_obj_set_style_bg_opa(
-            capsule.material, CAPSULE_FALLBACK_OPA, 0);
+        for(index = 0; index < 2; ++index) {
+            if(capsule.glass[index] != NULL)
+                lv_obj_add_flag(
+                    capsule.glass[index], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_bg_color(
+                capsule.material[index], lv_color_hex(COLOR_WHITE), 0);
+            lv_obj_set_style_bg_opa(
+                capsule.material[index], CAPSULE_FALLBACK_OPA, 0);
+        }
     }
 }
 
@@ -230,7 +268,7 @@ void crazypod_now_capsule_refresh_appearance(void)
         (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
         (audio_status() & AUDIO_STATUS_PAUSE) == 0;
 
-    refresh_bottom_corners();
+    refresh_corners();
     if(!capsule.palette_from_artwork)
         use_fallback_wave_palette();
     if(capsule.wave_ball != NULL) {
@@ -284,9 +322,9 @@ static void draw_spectrum(lv_event_t *event)
 void crazypod_now_capsule_create(
     lv_obj_t *parent, const lv_font_t *metadata_font)
 {
-    lv_obj_t *glass_top_border;
     lv_obj_t *progress_track;
     lv_opa_t border_opacity;
+    int index;
 
     memset(&capsule, 0, sizeof(capsule));
     use_fallback_wave_palette();
@@ -294,12 +332,22 @@ void crazypod_now_capsule_create(
         parent, CAPSULE_X, CAPSULE_Y,
         CAPSULE_WIDTH, CAPSULE_HEIGHT, 0,
         COLOR_WHITE, LV_OPA_TRANSP);
-    capsule.material = crazypod_ui_widget_box(
-        capsule.root, 0, 0,
-        CAPSULE_WIDTH, CAPSULE_HEIGHT, 0,
-        COLOR_WHITE, CAPSULE_FALLBACK_OPA);
-    lv_obj_set_style_clip_corner(capsule.material, true, 0);
-    lv_obj_remove_flag(capsule.material, LV_OBJ_FLAG_CLICKABLE);
+    for(index = 0; index < 2; ++index) {
+        capsule.material_clip[index] = crazypod_ui_widget_box(
+            capsule.root, 0, 0,
+            CAPSULE_WIDTH, CAPSULE_HEIGHT / 2, 0,
+            COLOR_WHITE, LV_OPA_TRANSP);
+        lv_obj_remove_flag(
+            capsule.material_clip[index], LV_OBJ_FLAG_CLICKABLE);
+        capsule.material[index] = crazypod_ui_widget_box(
+            capsule.material_clip[index], 0, 0,
+            CAPSULE_WIDTH, CAPSULE_HEIGHT, 0,
+            COLOR_WHITE, CAPSULE_FALLBACK_OPA);
+        lv_obj_set_style_clip_corner(
+            capsule.material[index], true, 0);
+        lv_obj_remove_flag(
+            capsule.material[index], LV_OBJ_FLAG_CLICKABLE);
+    }
     capsule.artwork = crazypod_ui_widget_box(
         capsule.root,
         17 + CAPSULE_CONTENT_X_OFFSET,
@@ -385,26 +433,23 @@ void crazypod_now_capsule_create(
 
     border_opacity = crazypod_glass_material_border_opa(
         CRAZYPOD_GLASS_HOME_CAPSULE);
-    capsule.glass_border = crazypod_ui_widget_box(
-        capsule.root, 0, 0,
-        CAPSULE_WIDTH, CAPSULE_HEIGHT, 0,
-        COLOR_WHITE, LV_OPA_TRANSP);
-    lv_obj_set_style_border_width(capsule.glass_border, 1, 0);
-    lv_obj_set_style_border_side(
-        capsule.glass_border,
-        LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_RIGHT |
-            LV_BORDER_SIDE_BOTTOM,
-        0);
-    lv_obj_set_style_border_color(
-        capsule.glass_border, lv_color_hex(COLOR_WHITE), 0);
-    lv_obj_set_style_border_opa(
-        capsule.glass_border, border_opacity, 0);
-    lv_obj_remove_flag(
-        capsule.glass_border, LV_OBJ_FLAG_CLICKABLE);
-    glass_top_border = crazypod_ui_widget_box(
-        capsule.root, 0, 0, CAPSULE_WIDTH, 1, 0,
-        COLOR_WHITE, border_opacity);
-    lv_obj_remove_flag(glass_top_border, LV_OBJ_FLAG_CLICKABLE);
+    for(index = 0; index < 2; ++index) {
+        capsule.glass_border[index] = crazypod_ui_widget_box(
+            capsule.material_clip[index], 0, 0,
+            CAPSULE_WIDTH, CAPSULE_HEIGHT, 0,
+            COLOR_WHITE, LV_OPA_TRANSP);
+        lv_obj_set_style_border_width(
+            capsule.glass_border[index], 1, 0);
+        lv_obj_set_style_border_side(
+            capsule.glass_border[index], LV_BORDER_SIDE_FULL, 0);
+        lv_obj_set_style_border_color(
+            capsule.glass_border[index],
+            lv_color_hex(COLOR_WHITE), 0);
+        lv_obj_set_style_border_opa(
+            capsule.glass_border[index], border_opacity, 0);
+        lv_obj_remove_flag(
+            capsule.glass_border[index], LV_OBJ_FLAG_CLICKABLE);
+    }
     crazypod_now_capsule_refresh_appearance();
 }
 
@@ -587,7 +632,8 @@ void crazypod_now_capsule_reset_motion(long now)
     capsule.spectrum_playing = false;
 }
 
-void crazypod_now_capsule_tick(long now, bool home_active)
+void crazypod_now_capsule_tick(
+    long now, bool home_active, bool wheel_touch_active)
 {
     bool playing;
 
@@ -598,8 +644,16 @@ void crazypod_now_capsule_tick(long now, bool home_active)
         crazypod_marquee_configure(
             capsule.artist, home_active);
     }
+    crazypod_marquee_set_paused(
+        capsule.track, home_active && wheel_touch_active);
+    crazypod_marquee_set_paused(
+        capsule.artist, home_active && wheel_touch_active);
     if(!home_active || capsule.spectrum == NULL)
         return;
+    if(wheel_touch_active) {
+        capsule.spectrum_tick = now;
+        return;
+    }
     playing = (audio_status() & AUDIO_STATUS_PLAY) != 0 &&
               (audio_status() & AUDIO_STATUS_PAUSE) == 0;
     if(!playing) {

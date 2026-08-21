@@ -137,6 +137,74 @@ static int clamp_sample_coordinate(int value, int maximum)
     return value;
 }
 
+static fb_data mix_rgb565(fb_data first, fb_data second, unsigned fraction)
+{
+    unsigned inverse = 256 - fraction;
+
+    if(fraction == 0)
+        return first;
+    return LCD_RGBPACK(
+        (RGB_UNPACK_RED(first) * inverse +
+         RGB_UNPACK_RED(second) * fraction) >> 8,
+        (RGB_UNPACK_GREEN(first) * inverse +
+         RGB_UNPACK_GREEN(second) * fraction) >> 8,
+        (RGB_UNPACK_BLUE(first) * inverse +
+         RGB_UNPACK_BLUE(second) * fraction) >> 8);
+}
+
+static bool scale_glass_rgb565(
+    const fb_data *source, int source_width, int source_height,
+    fb_data *destination, int destination_width, int destination_height)
+{
+    int source_x_step;
+    int source_y_step;
+    int y;
+
+    if(source == NULL || destination == NULL ||
+       source_width <= 0 || source_height <= 0 ||
+       destination_width < source_width ||
+       destination_height < source_height)
+        return false;
+
+    source_x_step = destination_width > 1
+        ? (source_width - 1) * 256 / (destination_width - 1)
+        : 0;
+    for(y = 0; y < source_height; ++y) {
+        int source_x_q8 = 0;
+        int x;
+
+        for(x = 0; x < destination_width; ++x) {
+            int x0 = source_x_q8 >> 8;
+            int x1 = x0 + 1 < source_width ? x0 + 1 : x0;
+
+            destination[y * destination_width + x] = mix_rgb565(
+                source[y * source_width + x0],
+                source[y * source_width + x1],
+                (unsigned)source_x_q8 & 255);
+            source_x_q8 += source_x_step;
+        }
+    }
+
+    source_y_step = destination_height > 1
+        ? (source_height - 1) * 256 / (destination_height - 1)
+        : 0;
+    for(y = destination_height - 1; y >= 0; --y) {
+        int source_y_q8 = y * source_y_step;
+        int y0 = source_y_q8 >> 8;
+        int y1 = y0 + 1 < source_height ? y0 + 1 : y0;
+        unsigned fraction = (unsigned)source_y_q8 & 255;
+        int x;
+
+        for(x = 0; x < destination_width; ++x) {
+            destination[y * destination_width + x] = mix_rgb565(
+                destination[y0 * destination_width + x],
+                destination[y1 * destination_width + x],
+                fraction);
+        }
+    }
+    return true;
+}
+
 bool crazypod_image_render_glass_rgb565(
     const fb_data *source, int source_width, int source_height,
     int source_stride, int source_x, int source_y,
@@ -172,91 +240,153 @@ bool crazypod_image_render_glass_rgb565(
     if((size_t)sample_width * sample_height > sample_capacity)
         return false;
 
-    for(y = 0; y < sample_height; ++y) {
-        int destination_y0 = y * CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
-        int destination_y1 =
-            destination_y0 + CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
-        int sy0;
-        int sy1;
-        int x;
+    if(source_region_width == destination_width &&
+       source_region_height == destination_height &&
+       source_x >= 0 && source_y >= 0 &&
+       source_x + source_region_width <= source_width &&
+       source_y + source_region_height <= source_height) {
+        for(y = 0; y < sample_height; ++y) {
+            int sy0 = source_y +
+                y * CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
+            int sy1 = sy0 + CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
+            int x;
 
-        if(destination_y1 > destination_height)
-            destination_y1 = destination_height;
-        sy0 = source_y +
-            destination_y0 * source_region_height / destination_height;
-        sy1 = source_y +
-            destination_y1 * source_region_height / destination_height;
-        if(sy1 <= sy0)
-            sy1 = sy0 + 1;
-        for(x = 0; x < sample_width; ++x) {
-            int destination_x0 = x * CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
-            int destination_x1 =
-                destination_x0 + CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
-            int sx0;
-            int sx1;
-            unsigned red = 0;
-            unsigned green = 0;
-            unsigned blue = 0;
-            unsigned samples = 0;
-            int sy;
+            if(sy1 > source_y + source_region_height)
+                sy1 = source_y + source_region_height;
+            for(x = 0; x < sample_width; ++x) {
+                int sx0 = source_x +
+                    x * CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
+                int sx1 = sx0 + CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
+                unsigned red = 0;
+                unsigned green = 0;
+                unsigned blue = 0;
+                unsigned samples = 0;
+                int sy;
 
-            if(destination_x1 > destination_width)
-                destination_x1 = destination_width;
-            sx0 = source_x +
-                destination_x0 * source_region_width / destination_width;
-            sx1 = source_x +
-                destination_x1 * source_region_width / destination_width;
-            if(sx1 <= sx0)
-                sx1 = sx0 + 1;
-            for(sy = sy0; sy < sy1; ++sy) {
-                int source_sample_y =
-                    clamp_sample_coordinate(sy, source_height);
-                int sx;
+                if(sx1 > source_x + source_region_width)
+                    sx1 = source_x + source_region_width;
+                for(sy = sy0; sy < sy1; ++sy) {
+                    const fb_data *row = source + sy * source_stride;
+                    int sx;
 
-                for(sx = sx0; sx < sx1; ++sx) {
-                    int source_sample_x =
-                        clamp_sample_coordinate(sx, source_width);
-                    fb_data pixel = source[
-                        source_sample_y * source_stride + source_sample_x];
+                    for(sx = sx0; sx < sx1; ++sx) {
+                        fb_data pixel = row[sx];
 
-                    red += RGB_UNPACK_RED(pixel);
-                    green += RGB_UNPACK_GREEN(pixel);
-                    blue += RGB_UNPACK_BLUE(pixel);
-                    ++samples;
+                        red += RGB_UNPACK_RED(pixel);
+                        green += RGB_UNPACK_GREEN(pixel);
+                        blue += RGB_UNPACK_BLUE(pixel);
+                        ++samples;
+                    }
                 }
+                sample_pixels[y * sample_width + x] = LCD_RGBPACK(
+                    red / samples, green / samples, blue / samples);
             }
-            if(samples == 0)
-                samples = 1;
-            sample_pixels[y * sample_width + x] =
-                LCD_RGBPACK(red / samples, green / samples, blue / samples);
+        }
+    }
+    else {
+        for(y = 0; y < sample_height; ++y) {
+            int destination_y0 =
+                y * CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
+            int destination_y1 = destination_y0 +
+                CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
+            int sy0;
+            int sy1;
+            int x;
+
+            if(destination_y1 > destination_height)
+                destination_y1 = destination_height;
+            sy0 = source_y + destination_y0 * source_region_height /
+                destination_height;
+            sy1 = source_y + destination_y1 * source_region_height /
+                destination_height;
+            if(sy1 <= sy0)
+                sy1 = sy0 + 1;
+            for(x = 0; x < sample_width; ++x) {
+                int destination_x0 =
+                    x * CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
+                int destination_x1 = destination_x0 +
+                    CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE;
+                int sx0;
+                int sx1;
+                unsigned red = 0;
+                unsigned green = 0;
+                unsigned blue = 0;
+                unsigned samples = 0;
+                int sy;
+
+                if(destination_x1 > destination_width)
+                    destination_x1 = destination_width;
+                sx0 = source_x + destination_x0 * source_region_width /
+                    destination_width;
+                sx1 = source_x + destination_x1 * source_region_width /
+                    destination_width;
+                if(sx1 <= sx0)
+                    sx1 = sx0 + 1;
+                for(sy = sy0; sy < sy1; ++sy) {
+                    int source_sample_y =
+                        clamp_sample_coordinate(sy, source_height);
+                    int sx;
+
+                    for(sx = sx0; sx < sx1; ++sx) {
+                        int source_sample_x =
+                            clamp_sample_coordinate(sx, source_width);
+                        fb_data pixel = source[
+                            source_sample_y * source_stride +
+                            source_sample_x];
+
+                        red += RGB_UNPACK_RED(pixel);
+                        green += RGB_UNPACK_GREEN(pixel);
+                        blue += RGB_UNPACK_BLUE(pixel);
+                        ++samples;
+                    }
+                }
+                if(samples == 0)
+                    samples = 1;
+                sample_pixels[y * sample_width + x] = LCD_RGBPACK(
+                    red / samples, green / samples, blue / samples);
+            }
         }
     }
 
     for(y = 0; y < sample_height; ++y) {
+        unsigned red = 0;
+        unsigned green = 0;
+        unsigned blue = 0;
+        int offset;
         int x;
 
+        for(offset = -2; offset <= 2; ++offset) {
+            int sample_x = clamp_sample_coordinate(
+                offset, sample_width);
+            fb_data pixel =
+                sample_pixels[y * sample_width + sample_x];
+
+            red += RGB_UNPACK_RED(pixel);
+            green += RGB_UNPACK_GREEN(pixel);
+            blue += RGB_UNPACK_BLUE(pixel);
+        }
         for(x = 0; x < sample_width; ++x) {
-            unsigned red = 0;
-            unsigned green = 0;
-            unsigned blue = 0;
-            int offset;
-
-            for(offset = -2; offset <= 2; ++offset) {
-                int sample_x =
-                    clamp_sample_coordinate(x + offset, sample_width);
-                fb_data pixel =
-                    sample_pixels[y * sample_width + sample_x];
-
-                red += RGB_UNPACK_RED(pixel);
-                green += RGB_UNPACK_GREEN(pixel);
-                blue += RGB_UNPACK_BLUE(pixel);
-            }
             scratch_pixels[y * sample_width + x] =
                 LCD_RGBPACK(red / 5, green / 5, blue / 5);
+            if(x + 1 < sample_width) {
+                fb_data removed = sample_pixels[
+                    y * sample_width + clamp_sample_coordinate(
+                        x - 2, sample_width)];
+                fb_data added = sample_pixels[
+                    y * sample_width + clamp_sample_coordinate(
+                        x + 3, sample_width)];
+
+                red -= RGB_UNPACK_RED(removed);
+                green -= RGB_UNPACK_GREEN(removed);
+                blue -= RGB_UNPACK_BLUE(removed);
+                red += RGB_UNPACK_RED(added);
+                green += RGB_UNPACK_GREEN(added);
+                blue += RGB_UNPACK_BLUE(added);
+            }
         }
     }
 
-    for(y = 0; y < sample_height; ++y) {
+    {
         int x;
 
         for(x = 0; x < sample_width; ++x) {
@@ -266,8 +396,8 @@ bool crazypod_image_render_glass_rgb565(
             int offset;
 
             for(offset = -2; offset <= 2; ++offset) {
-                int sample_y =
-                    clamp_sample_coordinate(y + offset, sample_height);
+                int sample_y = clamp_sample_coordinate(
+                    offset, sample_height);
                 fb_data pixel =
                     scratch_pixels[sample_y * sample_width + x];
 
@@ -275,22 +405,40 @@ bool crazypod_image_render_glass_rgb565(
                 green += RGB_UNPACK_GREEN(pixel);
                 blue += RGB_UNPACK_BLUE(pixel);
             }
-            red /= 5;
-            green /= 5;
-            blue /= 5;
-            red = (red * (255 - tint_opa) +
-                   tint_red * tint_opa + 127) / 255;
-            green = (green * (255 - tint_opa) +
-                     tint_green * tint_opa + 127) / 255;
-            blue = (blue * (255 - tint_opa) +
+            for(y = 0; y < sample_height; ++y) {
+                unsigned tinted_red = red / 5;
+                unsigned tinted_green = green / 5;
+                unsigned tinted_blue = blue / 5;
+
+                tinted_red = (tinted_red * (255 - tint_opa) +
+                    tint_red * tint_opa + 127) / 255;
+                tinted_green = (tinted_green * (255 - tint_opa) +
+                    tint_green * tint_opa + 127) / 255;
+                tinted_blue = (tinted_blue * (255 - tint_opa) +
                     tint_blue * tint_opa + 127) / 255;
-            sample_pixels[y * sample_width + x] =
-                LCD_RGBPACK(red, green, blue);
+                sample_pixels[y * sample_width + x] = LCD_RGBPACK(
+                    tinted_red, tinted_green, tinted_blue);
+                if(y + 1 < sample_height) {
+                    fb_data removed = scratch_pixels[
+                        clamp_sample_coordinate(y - 2, sample_height) *
+                            sample_width + x];
+                    fb_data added = scratch_pixels[
+                        clamp_sample_coordinate(y + 3, sample_height) *
+                            sample_width + x];
+
+                    red -= RGB_UNPACK_RED(removed);
+                    green -= RGB_UNPACK_GREEN(removed);
+                    blue -= RGB_UNPACK_BLUE(removed);
+                    red += RGB_UNPACK_RED(added);
+                    green += RGB_UNPACK_GREEN(added);
+                    blue += RGB_UNPACK_BLUE(added);
+                }
+            }
         }
     }
 
-    return crazypod_image_scale_rgb565(
-        sample_pixels, sample_width, sample_height, sample_width,
+    return scale_glass_rgb565(
+        sample_pixels, sample_width, sample_height,
         destination, destination_width, destination_height);
 }
 

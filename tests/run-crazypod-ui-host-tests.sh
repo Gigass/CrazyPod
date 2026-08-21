@@ -60,6 +60,15 @@ cc -std=c99 -Wall -Wextra -Werror \
 "$test_root/crazypod_screen_off_policy_host_test"
 
 cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-image-stubs" \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/apps/crazypod/crazypod_image.c" \
+    "$repo_root/tests/crazypod_image_host_test.c" \
+    -o "$test_root/crazypod_image_host_test"
+
+"$test_root/crazypod_image_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-playlist-stubs" \
     -I"$repo_root/apps/crazypod" \
     "$repo_root/tests/crazypod_core_alloc_host_stub.c" \

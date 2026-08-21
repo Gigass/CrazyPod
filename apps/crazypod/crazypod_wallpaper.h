@@ -42,10 +42,13 @@ int crazypod_wallpaper_crop_max_zoom(
 void crazypod_wallpaper_clear(enum crazypod_wallpaper_target target);
 bool crazypod_wallpaper_prepare_frosted_capsule(
     uint32_t tint, unsigned tint_opa);
+bool crazypod_wallpaper_prepare_frosted_lock_media(
+    uint32_t tint, unsigned tint_opa);
 const lv_image_dsc_t *crazypod_default_wallpaper(void);
 const lv_image_dsc_t *crazypod_custom_home_wallpaper(void);
 const lv_image_dsc_t *crazypod_custom_menu_wallpaper(void);
 const lv_image_dsc_t *crazypod_custom_lock_wallpaper(void);
 const lv_image_dsc_t *crazypod_frosted_wallpaper_capsule(void);
+const lv_image_dsc_t *crazypod_frosted_lock_media(void);
 
 #endif

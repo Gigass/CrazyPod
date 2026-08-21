@@ -52,6 +52,10 @@ uint32_t crazypod_monotonic_usec(void);
 
 void crazypod_present_init(long now);
 void crazypod_present_queue_rect(int x, int y, int width, int height);
+void crazypod_present_queue_home_rect(
+    int x, int y, int width, int height);
+void crazypod_present_queue_music_rect(
+    int x, int y, int width, int height);
 void crazypod_present_queue_full(void);
 /* Commit an already-rendered queued frame before a synchronous operation. */
 void crazypod_present_now(void);

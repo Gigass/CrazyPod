@@ -2,10 +2,13 @@
 
 #ifdef IPOD_6G
 
+#include <stdio.h>
 #include <string.h>
 
+#include "appevents.h"
 #include "audio.h"
 #include "backlight.h"
+#include "events.h"
 #include "kernel.h"
 #include "playlist.h"
 #include "settings.h"
@@ -14,6 +17,7 @@
 #include "../../crazypod_coverflow.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_playlist.h"
+#include "../../crazypod_runtime_font.h"
 #include "../../crazypod_state.h"
 #include "../features/customize/crazypod_customize_feature.h"
 #include "../features/music/crazypod_music_feature.h"
@@ -32,6 +36,45 @@
 #include "crazypod_playback.h"
 
 #define PREVIOUS_RESTART_THRESHOLD_MS 3000
+#define PLAYBACK_COMMAND_STACK_SIZE (DEFAULT_STACK_SIZE + 0x1000)
+#define LOCK_METADATA_WARM_STACK_SIZE (DEFAULT_STACK_SIZE + 0x800)
+#define LOCK_METADATA_WARM_EVENT 1
+#define LOCK_TITLE_FONT_SIZE 15
+#define LOCK_ARTIST_FONT_SIZE 12
+#define LOCK_ALBUM_FONT_SIZE 10
+
+enum crazypod_playback_command {
+    CRAZYPOD_PLAYBACK_COMMAND_PAUSE = 1,
+    CRAZYPOD_PLAYBACK_COMMAND_RESUME,
+    CRAZYPOD_PLAYBACK_COMMAND_NEXT,
+    CRAZYPOD_PLAYBACK_COMMAND_PREVIOUS,
+};
+
+struct crazypod_lock_playback_cache {
+    char path[MAX_PATH];
+    char warmed_path[MAX_PATH];
+    char warming_path[MAX_PATH];
+    char title[96];
+    char artist[72];
+    char album[72];
+    uint32_t elapsed_ms;
+    uint32_t length_ms;
+    long captured_tick;
+    int requested_queue_index;
+    int requested_playing;
+    bool valid;
+};
+
+static struct mutex lock_playback_mutex;
+static struct event_queue playback_command_queue;
+static long playback_command_stack[
+    PLAYBACK_COMMAND_STACK_SIZE / sizeof(long)];
+static bool playback_command_thread_started;
+static struct event_queue lock_metadata_warm_queue;
+static long lock_metadata_warm_stack[
+    LOCK_METADATA_WARM_STACK_SIZE / sizeof(long)];
+static bool lock_metadata_warm_thread_started;
+static struct crazypod_lock_playback_cache lock_playback;
 
 static struct {
     struct crazypod_playback_host host;
@@ -105,6 +148,163 @@ static const struct crazypod_track *current_track(void)
     return crazypod_music_track(current_track_index());
 }
 
+static const struct crazypod_track *track_at_queue_index(int queue_index)
+{
+    const char *path = crazypod_queue_path(queue_index);
+
+    return crazypod_music_track(crazypod_music_find_track(path));
+}
+
+static const struct crazypod_track *track_at_path(const char *path)
+{
+    return crazypod_music_track(crazypod_music_find_track(path));
+}
+
+static void copy_lock_playback_text(
+    char *destination, size_t size, const char *source)
+{
+    snprintf(destination, size, "%s", source != NULL ? source : "");
+}
+
+static void request_lock_metadata_warm(const char *path)
+{
+    bool post = false;
+
+    if(!lock_metadata_warm_thread_started ||
+       path == NULL || path[0] == '\0')
+        return;
+    mutex_lock(&lock_playback_mutex);
+    if(strcmp(lock_playback.warmed_path, path) != 0 &&
+       strcmp(lock_playback.warming_path, path) != 0) {
+        copy_lock_playback_text(
+            lock_playback.warming_path,
+            sizeof(lock_playback.warming_path), path);
+        post = true;
+    }
+    mutex_unlock(&lock_playback_mutex);
+    if(post)
+        queue_post(
+            &lock_metadata_warm_queue,
+            LOCK_METADATA_WARM_EVENT, 0);
+}
+
+static void lock_playback_track_event(
+    unsigned short id, void *event_data)
+{
+    const struct track_event *event = event_data;
+    const struct mp3entry *id3;
+    char path[MAX_PATH];
+
+    (void)id;
+    if(event == NULL || event->id3 == NULL)
+        return;
+    id3 = event->id3;
+    mutex_lock(&lock_playback_mutex);
+    copy_lock_playback_text(
+        lock_playback.path, sizeof(lock_playback.path), id3->path);
+    copy_lock_playback_text(
+        lock_playback.title, sizeof(lock_playback.title), id3->title);
+    copy_lock_playback_text(
+        lock_playback.artist, sizeof(lock_playback.artist), id3->artist);
+    copy_lock_playback_text(
+        lock_playback.album, sizeof(lock_playback.album), id3->album);
+    lock_playback.elapsed_ms = id3->elapsed > 0
+        ? (uint32_t)id3->elapsed : 0;
+    lock_playback.length_ms = id3->length > 0
+        ? (uint32_t)id3->length : 0;
+    lock_playback.captured_tick = current_tick;
+    lock_playback.valid = true;
+    lock_playback.warmed_path[0] = '\0';
+    copy_lock_playback_text(path, sizeof(path), lock_playback.path);
+    if(lock_playback.requested_queue_index >= 0) {
+        const char *requested_path = crazypod_queue_path(
+            lock_playback.requested_queue_index);
+
+        if(requested_path != NULL &&
+           strcmp(requested_path, lock_playback.path) == 0)
+            lock_playback.requested_queue_index = -1;
+    }
+    mutex_unlock(&lock_playback_mutex);
+    request_lock_metadata_warm(path);
+}
+
+static void lock_metadata_warm_thread(void)
+{
+    struct queue_event event;
+
+    while(true) {
+        struct crazypod_lock_playback_cache cached;
+        const struct crazypod_track *track;
+        const char *path;
+        const char *title;
+        const char *artist;
+        const char *album;
+
+        queue_wait(&lock_metadata_warm_queue, &event);
+        if(event.id != LOCK_METADATA_WARM_EVENT)
+            continue;
+        mutex_lock(&lock_playback_mutex);
+        cached = lock_playback;
+        mutex_unlock(&lock_playback_mutex);
+        if(cached.warming_path[0] == '\0')
+            continue;
+        path = cached.warming_path;
+        track = track_at_path(path);
+        title = track != NULL ? track->title :
+            strcmp(path, cached.path) == 0 ? cached.title : "";
+        artist = track != NULL ? track->artist :
+            strcmp(path, cached.path) == 0 ? cached.artist : "";
+        album = track != NULL ? track->album :
+            strcmp(path, cached.path) == 0 ? cached.album : "";
+        crazypod_runtime_font_prewarm_text(
+            LOCK_TITLE_FONT_SIZE, title);
+        crazypod_runtime_font_prewarm_text(
+            LOCK_ARTIST_FONT_SIZE, artist);
+        crazypod_runtime_font_prewarm_text(
+            LOCK_ALBUM_FONT_SIZE, album);
+        mutex_lock(&lock_playback_mutex);
+        copy_lock_playback_text(
+            lock_playback.warmed_path,
+            sizeof(lock_playback.warmed_path), path);
+        if(strcmp(lock_playback.warming_path, path) == 0)
+            lock_playback.warming_path[0] = '\0';
+        mutex_unlock(&lock_playback_mutex);
+    }
+}
+
+static void playback_command_thread(void)
+{
+    struct queue_event event;
+
+    while(true) {
+        int requested_playing;
+
+        queue_wait(&playback_command_queue, &event);
+        switch(event.id) {
+        case CRAZYPOD_PLAYBACK_COMMAND_PAUSE:
+            audio_pause();
+            break;
+        case CRAZYPOD_PLAYBACK_COMMAND_RESUME:
+            audio_resume();
+            break;
+        case CRAZYPOD_PLAYBACK_COMMAND_NEXT:
+            crazypod_playback_next();
+            break;
+        case CRAZYPOD_PLAYBACK_COMMAND_PREVIOUS:
+            crazypod_playback_previous_or_restart();
+            break;
+        default:
+            continue;
+        }
+        requested_playing =
+            (audio_status() & AUDIO_STATUS_PAUSE) == 0;
+        mutex_lock(&lock_playback_mutex);
+        if(lock_playback.requested_playing == requested_playing)
+            lock_playback.requested_playing = -1;
+        mutex_unlock(&lock_playback_mutex);
+    }
+}
+
 static unsigned menu_artwork_signature(void)
 {
     unsigned signature = 2166136261u;
@@ -150,6 +350,38 @@ void crazypod_playback_initialize(void)
     playback.unlock_present_sequence = 0;
     playback.unlock_refresh_pending = false;
     playback.unlock_capsule_entry = false;
+    mutex_init(&lock_playback_mutex);
+    lock_playback = (struct crazypod_lock_playback_cache){0};
+    lock_playback.requested_queue_index = -1;
+    lock_playback.requested_playing = -1;
+    if(!lock_metadata_warm_thread_started) {
+        unsigned int thread_id;
+
+        queue_init(&lock_metadata_warm_queue, false);
+        thread_id = create_thread(
+            lock_metadata_warm_thread, lock_metadata_warm_stack,
+            sizeof(lock_metadata_warm_stack), 0,
+            "crazypod lock font"
+            IF_PRIO(, PRIORITY_USER_INTERFACE)
+            IF_COP(, CPU));
+        lock_metadata_warm_thread_started = thread_id != 0;
+    }
+    add_event(
+        PLAYBACK_EVENT_TRACK_CHANGE, lock_playback_track_event);
+    add_event(
+        PLAYBACK_EVENT_CUR_TRACK_READY, lock_playback_track_event);
+    if(!playback_command_thread_started) {
+        unsigned int thread_id;
+
+        queue_init(&playback_command_queue, false);
+        thread_id = create_thread(
+            playback_command_thread, playback_command_stack,
+            sizeof(playback_command_stack), 0,
+            "crazypod playback"
+            IF_PRIO(, PRIORITY_USER_INTERFACE)
+            IF_COP(, CPU));
+        playback_command_thread_started = thread_id != 0;
+    }
 }
 
 void crazypod_playback_headphone_changed(bool inserted)
@@ -252,21 +484,141 @@ void crazypod_playback_previous_or_restart(void)
         audio_prev();
 }
 
+static int adjacent_queue_index(int index, int direction)
+{
+    int count = crazypod_queue_count();
+
+    if(count <= 0)
+        return -1;
+    if(global_settings.repeat_mode == REPEAT_ONE)
+        return index;
+    index += direction;
+    if(index >= 0 && index < count)
+        return index;
+    if(global_settings.repeat_mode != REPEAT_ALL)
+        return -1;
+    return index < 0 ? count - 1 : 0;
+}
+
+static uint32_t cached_lock_elapsed(const char *path, bool playing)
+{
+    uint32_t elapsed = 0;
+
+    mutex_lock(&lock_playback_mutex);
+    if(lock_playback.valid && path != NULL &&
+       strcmp(lock_playback.path, path) == 0) {
+        elapsed = lock_playback.elapsed_ms;
+        if(playing &&
+           TIME_AFTER(current_tick, lock_playback.captured_tick)) {
+            uint64_t delta = (uint64_t)
+                (current_tick - lock_playback.captured_tick) * 1000;
+
+            elapsed += (uint32_t)(delta / HZ);
+        }
+    }
+    mutex_unlock(&lock_playback_mutex);
+    return elapsed;
+}
+
+void crazypod_playback_toggle_async(void)
+{
+    bool playing;
+
+    mutex_lock(&lock_playback_mutex);
+    playing = lock_playback.requested_playing >= 0
+        ? lock_playback.requested_playing != 0
+        : (audio_status() & (AUDIO_STATUS_PLAY | AUDIO_STATUS_PAUSE)) ==
+            AUDIO_STATUS_PLAY;
+    lock_playback.requested_playing = !playing;
+    mutex_unlock(&lock_playback_mutex);
+    queue_post(
+        &playback_command_queue,
+        playing ? CRAZYPOD_PLAYBACK_COMMAND_PAUSE
+                : CRAZYPOD_PLAYBACK_COMMAND_RESUME,
+        0);
+}
+
+void crazypod_playback_next_async(void)
+{
+    int index;
+
+    mutex_lock(&lock_playback_mutex);
+    index = lock_playback.requested_queue_index >= 0
+        ? lock_playback.requested_queue_index
+        : crazypod_queue_index();
+    index = adjacent_queue_index(index, 1);
+    if(index >= 0)
+        lock_playback.requested_queue_index = index;
+    mutex_unlock(&lock_playback_mutex);
+    if(index >= 0)
+        queue_post(
+            &playback_command_queue,
+            CRAZYPOD_PLAYBACK_COMMAND_NEXT, 0);
+    if(index >= 0)
+        request_lock_metadata_warm(crazypod_queue_path(index));
+}
+
+void crazypod_playback_previous_or_restart_async(void)
+{
+    const char *path;
+    bool playing;
+    int current_index;
+    int requested_index;
+
+    mutex_lock(&lock_playback_mutex);
+    current_index = lock_playback.requested_queue_index >= 0
+        ? lock_playback.requested_queue_index
+        : crazypod_queue_index();
+    playing = lock_playback.requested_playing >= 0
+        ? lock_playback.requested_playing != 0
+        : (audio_status() & (AUDIO_STATUS_PLAY | AUDIO_STATUS_PAUSE)) ==
+            AUDIO_STATUS_PLAY;
+    mutex_unlock(&lock_playback_mutex);
+    path = crazypod_queue_path(current_index);
+    requested_index = cached_lock_elapsed(path, playing) >=
+            PREVIOUS_RESTART_THRESHOLD_MS
+        ? current_index : adjacent_queue_index(current_index, -1);
+    if(requested_index < 0)
+        return;
+    mutex_lock(&lock_playback_mutex);
+    lock_playback.requested_queue_index = requested_index;
+    mutex_unlock(&lock_playback_mutex);
+    queue_post(
+        &playback_command_queue,
+        CRAZYPOD_PLAYBACK_COMMAND_PREVIOUS, 0);
+    request_lock_metadata_warm(
+        crazypod_queue_path(requested_index));
+}
+
 void crazypod_playback_refresh_lock_screen(void)
 {
-    const struct crazypod_track *track = current_track();
-    struct mp3entry *id3 = audio_current_track();
+    struct crazypod_lock_playback_cache cached;
+    const struct crazypod_track *track;
     const lv_image_dsc_t *artwork = NULL;
     const char *artwork_path = NULL;
     const char *track_path = NULL;
     unsigned artwork_generation = 0;
     int status = audio_status();
-    bool active = id3 != NULL &&
-        (status & AUDIO_STATUS_PLAY) != 0;
+    bool active;
+    bool playing;
     struct crazypod_lock_media_snapshot snapshot = {0};
 
+    mutex_lock(&lock_playback_mutex);
+    cached = lock_playback;
+    mutex_unlock(&lock_playback_mutex);
+    track = track_at_queue_index(
+        cached.requested_queue_index >= 0
+            ? cached.requested_queue_index
+            : crazypod_queue_index());
+    track_path = track != NULL ? track->path :
+        cached.valid ? cached.path : NULL;
+    request_lock_metadata_warm(track_path);
+    active = track_path != NULL && track_path[0] != '\0' &&
+        (status & AUDIO_STATUS_PLAY) != 0;
+    playing = cached.requested_playing >= 0
+        ? cached.requested_playing != 0
+        : (status & AUDIO_STATUS_PAUSE) == 0;
     if(active) {
-        track_path = track != NULL ? track->path : id3->path;
         crazypod_now_playing_artwork_sync();
         artwork = crazypod_now_playing_artwork_committed(
             &artwork_path, &artwork_generation);
@@ -274,17 +626,23 @@ void crazypod_playback_refresh_lock_screen(void)
            strcmp(track_path, artwork_path) != 0)
             artwork = NULL;
         snapshot.active = true;
-        snapshot.playing =
-            (status & AUDIO_STATUS_PAUSE) == 0;
+        snapshot.playing = playing;
+        snapshot.metadata_ready =
+            strcmp(cached.warmed_path, track_path) == 0;
         snapshot.track_path = track_path;
         snapshot.title = track != NULL && track->title[0] != '\0'
-            ? track->title : id3->title;
+            ? track->title : cached.title;
         snapshot.artist = track != NULL && track->artist[0] != '\0'
-            ? track->artist : id3->artist;
+            ? track->artist : cached.artist;
         snapshot.album = track != NULL && track->album[0] != '\0'
-            ? track->album : id3->album;
-        snapshot.elapsed_ms = (uint32_t)id3->elapsed;
-        snapshot.length_ms = (uint32_t)id3->length;
+            ? track->album : cached.album;
+        snapshot.elapsed_ms = cached_lock_elapsed(
+            track_path, playing);
+        snapshot.length_ms = track != NULL
+            ? track->duration_ms : cached.length_ms;
+        if(snapshot.length_ms > 0 &&
+           snapshot.elapsed_ms > snapshot.length_ms)
+            snapshot.elapsed_ms = snapshot.length_ms;
         snapshot.artwork = artwork;
         snapshot.artwork_generation = artwork_generation;
     }

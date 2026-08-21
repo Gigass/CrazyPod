@@ -10,6 +10,7 @@
 
 #include "../../crazypod_appearance.h"
 #include "../../crazypod_books.h"
+#include "../../crazypod_coverflow.h"
 #include "../../crazypod_icons.h"
 #include "../../crazypod_photos.h"
 #include "../../crazypod_state.h"
@@ -23,6 +24,7 @@
 #include "../presentation/crazypod_overlay_glass.h"
 #include "../presentation/crazypod_popup_motion.h"
 #include "../shell/crazypod_app_catalog.h"
+#include "../shell/crazypod_desktop_native.h"
 #include "crazypod_choice_coordinator.h"
 
 #define ROUTE_ACTION_DEPTH 4
@@ -352,6 +354,13 @@ static lv_obj_t *create_panel(
         parent, x, y, width, height);
 }
 
+static lv_obj_t *create_underlay(
+    lv_obj_t *parent, void *context)
+{
+    (void)context;
+    return crazypod_desktop_native_create_modal_underlay(parent);
+}
+
 static void animate_panel(
     lv_obj_t *panel, int target_y, void *context)
 {
@@ -389,13 +398,22 @@ static void show_overlay(
         .item_title = item_title,
         .item_color = item_color,
         .action_layout = action_layout,
+        .create_underlay = create_underlay,
         .create_panel = create_panel,
         .animate_panel = animate_panel,
     };
 
+    if(crazypod_choice_coordinator_visible() ||
+       crazypod_now_playing_overlay_visible())
+        crazypod_desktop_native_preserve_modal_underlay();
     if(crazypod_now_playing_overlay_visible())
         crazypod_now_playing_overlay_dismiss(false);
-    crazypod_overlay_glass_prepare(true);
+    if(crazypod_coverflow_active()) {
+        crazypod_coverflow_set_compositing_suspended(true);
+        crazypod_overlay_glass_prepare(false);
+    }
+    else
+        crazypod_overlay_glass_prepare(true);
     crazypod_choice_overlay_show(
         host.parent, kind, id, selected,
         host.metadata_font, &callbacks);

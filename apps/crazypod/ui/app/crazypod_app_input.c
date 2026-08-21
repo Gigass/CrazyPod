@@ -114,6 +114,25 @@ static void wheel_feedback(long button)
         system_sound_play(SOUND_KEYCLICK);
 }
 
+static bool album_flow_owns_wheel_feedback(long base)
+{
+#ifdef HAVE_WHEEL_POSITION
+    const struct route_state *state;
+
+    if(base != BUTTON_SCROLL_FWD && base != BUTTON_SCROLL_BACK)
+        return false;
+    if(!crazypod_shell_product_active() ||
+       crazypod_ui_routes_depth() <= 0 ||
+       crazypod_choice_coordinator_visible())
+        return false;
+    state = crazypod_ui_routes_current();
+    return state != NULL && state->route == MUSIC_ROUTE_ALBUM_FLOW;
+#else
+    (void)base;
+    return false;
+#endif
+}
+
 static void home_next_track(void)
 {
     crazypod_playback_next();
@@ -124,6 +143,27 @@ static void home_open_selected_app(void)
     crazypod_app_launcher_open(
         crazypod_apps_visible_id(
             crazypod_desktop_selected()));
+}
+
+static void handle_home_queue_overlay(
+    long base, bool repeated, intptr_t data)
+{
+    if(base == BUTTON_SCROLL_FWD)
+        crazypod_now_playing_overlay_move(
+            wheel_step(data, 12));
+    else if(base == BUTTON_SCROLL_BACK)
+        crazypod_now_playing_overlay_move(
+            -wheel_step(data, 12));
+    else if(base == BUTTON_RIGHT && !repeated)
+        crazypod_playback_next();
+    else if(base == BUTTON_LEFT && !repeated)
+        host.previous_track();
+    else if(base == BUTTON_SELECT && !repeated)
+        crazypod_now_playing_overlay_activate();
+    else if(base == BUTTON_MENU && !repeated)
+        crazypod_now_playing_overlay_dismiss(false);
+    else if(base == BUTTON_PLAY && !repeated)
+        host.toggle_playback();
 }
 
 static bool handle_screenshot_chord(long button)
@@ -170,6 +210,7 @@ void crazypod_app_input_tick(long now, bool locked)
 {
     bool home_active =
         !locked && !crazypod_shell_product_active() &&
+        !crazypod_now_playing_overlay_visible() &&
         !host.power_prompt_visible() &&
         !host.headphone_prompt_visible();
     int feedback;
@@ -214,6 +255,7 @@ void crazypod_app_input_handle(
     long base;
     bool play_initial_press = false;
     bool play_short_release = false;
+    bool home_menu_short_release = false;
     bool repeated;
     struct route_state *state;
 
@@ -226,8 +268,10 @@ void crazypod_app_input_handle(
         return;
     base = button_base(button);
     if(base == BUTTON_MENU &&
-       (button & BUTTON_REL) != 0)
+       (button & BUTTON_REL) != 0) {
+        home_menu_short_release = home_hold_pending;
         home_hold_pending = false;
+    }
     if(host.power_prompt_visible()) {
         if(button_base(button) == BUTTON_PLAY)
             play_short_press_pending = false;
@@ -293,7 +337,11 @@ void crazypod_app_input_handle(
             play_initial_press = true;
         }
     }
-    wheel_feedback(button);
+    /* Album Flow samples absolute wheel position and emits feedback only
+       after a complete album detent. Do not also click for queued Rockbox
+       scroll events that this route discards below. */
+    if(!album_flow_owns_wheel_feedback(base))
+        wheel_feedback(button);
     if(crazypod_shell_product_active() &&
        crazypod_ui_routes_depth() > 0) {
         const struct crazypod_input_event event =
@@ -308,6 +356,11 @@ void crazypod_app_input_handle(
     if(play_initial_press)
         return;
     if(button & BUTTON_REL) {
+        if(home_menu_short_release) {
+            backlight_on();
+            host.show_home_queue();
+            return;
+        }
         if(!play_short_release)
             return;
         /*
@@ -323,6 +376,11 @@ void crazypod_app_input_handle(
     repeated = (button & BUTTON_REPEAT) != 0;
     base = button_base(button);
     backlight_on();
+    if(!crazypod_shell_product_active() &&
+       crazypod_now_playing_overlay_visible()) {
+        handle_home_queue_overlay(base, repeated, data);
+        return;
+    }
     if(crazypod_shell_product_active() &&
        crazypod_ui_routes_depth() > 0 &&
        crazypod_music_library_loading()) {

@@ -83,11 +83,27 @@ struct lcd_info_rec {
 };
 
 #ifdef IPOD_6G
+#define LCD_TE_PROBE_GPIO_GROUPS 16
+#define LCD_TE_PROBE_CANDIDATES 8
+
 enum lcd_frame_sync_method {
     LCD_FRAME_SYNC_PROBING = 0,
     LCD_FRAME_SYNC_MARKER,
     LCD_FRAME_SYNC_SCANLINE,
+    LCD_FRAME_SYNC_GPIO_TE,
     LCD_FRAME_SYNC_UNAVAILABLE,
+};
+
+struct lcd_te_probe_candidate {
+    uint32_t source;
+    uint32_t bit;
+    uint32_t transitions;
+    uint32_t high_samples;
+    uint32_t period_count;
+    uint32_t average_period_us;
+    uint32_t min_period_us;
+    uint32_t max_period_us;
+    uint32_t min_edge_interval_us;
 };
 
 struct lcd_frame_sync_diagnostics {
@@ -96,12 +112,69 @@ struct lcd_frame_sync_diagnostics {
     uint32_t waits;
     uint32_t marker_waits;
     uint32_t scanline_waits;
+    uint32_t gpio_te_waits;
+    uint32_t te_phase_waits;
+    uint32_t te_phase_relocks;
+    uint32_t last_te_phase_us;
+    uint32_t last_te_target_us;
+    uint32_t last_dma_start_phase_us;
+    uint32_t last_dma_end_phase_us;
+    uint32_t last_dma_start_delay_us;
     uint32_t timeouts;
     uint32_t last_wait_us;
     uint32_t max_wait_us;
     uint32_t edge_intervals;
     uint32_t last_edge_interval_us;
     uint32_t min_edge_interval_us;
+    uint32_t marker_probe_samples;
+    uint32_t marker_probe_high_samples;
+    uint32_t marker_probe_low_samples;
+    uint32_t marker_probe_transitions;
+    uint32_t marker_probe_status_first;
+    uint32_t marker_probe_status_last;
+    uint32_t marker_probe_status_or;
+    uint32_t marker_probe_status_and;
+    uint32_t scanline_probe_samples;
+    uint32_t scanline_probe_changes;
+    uint32_t scanline_probe_wraps;
+    uint32_t scanline_probe_first;
+    uint32_t scanline_probe_last;
+    uint32_t scanline_probe_min;
+    uint32_t scanline_probe_max;
+    uint32_t scanline_probe_raw_first;
+    uint32_t scanline_probe_raw_last;
+    uint32_t scanline_probe_raw_or;
+    uint32_t scanline_probe_raw_and;
+    uint32_t rcmd_probe_samples;
+    uint32_t rcmd_probe_timeouts;
+    uint32_t rcmd_probe_changes;
+    uint32_t rcmd_probe_wraps;
+    uint32_t rcmd_probe_first;
+    uint32_t rcmd_probe_last;
+    uint32_t rcmd_probe_min;
+    uint32_t rcmd_probe_max;
+    uint32_t rcmd_probe_raw_first;
+    uint32_t rcmd_probe_raw_last;
+    uint32_t rcmd_probe_raw_or;
+    uint32_t rcmd_probe_raw_and;
+    uint32_t te_probe_samples;
+    uint32_t te_probe_elapsed_us;
+    uint32_t te_probe_intcon_first;
+    uint32_t te_probe_intcon_last;
+    uint32_t te_probe_intcon_or;
+    uint32_t te_probe_intcon_and;
+    uint32_t te_probe_intcon_changed;
+    uint32_t te_probe_gpio_pcon[LCD_TE_PROBE_GPIO_GROUPS];
+    uint32_t te_probe_gpio_first[LCD_TE_PROBE_GPIO_GROUPS];
+    uint32_t te_probe_gpio_last[LCD_TE_PROBE_GPIO_GROUPS];
+    uint32_t te_probe_gpio_or[LCD_TE_PROBE_GPIO_GROUPS];
+    uint32_t te_probe_gpio_and[LCD_TE_PROBE_GPIO_GROUPS];
+    uint32_t te_probe_gpio_changed[LCD_TE_PROBE_GPIO_GROUPS];
+    uint32_t te_probe_candidate_count;
+    uint32_t te_sync_input_valid;
+    uint32_t te_sync_active_high;
+    struct lcd_te_probe_candidate
+        te_probe_candidates[LCD_TE_PROBE_CANDIDATES];
     uint32_t dma_transfers;
     uint32_t last_dma_us;
     uint32_t max_dma_us;
@@ -109,6 +182,8 @@ struct lcd_frame_sync_diagnostics {
 
 void lcd_get_frame_sync_diagnostics(
     struct lcd_frame_sync_diagnostics *diagnostics);
+void lcd_update_rect_frame_sync(int x, int y, int width, int height);
+void lcd_update_rect_music_sync(int x, int y, int width, int height);
 #endif
 
 void lcd_awake(void);

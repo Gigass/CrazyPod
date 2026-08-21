@@ -44,7 +44,6 @@ static struct {
     unsigned committed_generation_seen;
     int target_slot;
     int committed_slot;
-    int preview_queue_index;
     int source_size;
 } navigation;
 
@@ -279,7 +278,6 @@ void crazypod_now_playing_navigation_initialize(void)
     navigation.committed_path[0] = '\0';
     navigation.target_slot = 0;
     navigation.committed_slot = -1;
-    navigation.preview_queue_index = -1;
     navigation.source_size = configured_source_size;
     navigation.committed_generation = 1;
     navigation.committed_generation_seen = 1;
@@ -323,7 +321,6 @@ void crazypod_now_playing_artwork_sync(void)
 
     if(track == NULL) {
         navigation.target_path[0] = '\0';
-        navigation.preview_queue_index = -1;
         commit_placeholder("");
         return;
     }
@@ -358,23 +355,10 @@ void crazypod_now_playing_artwork_sync(void)
         reserved[navigation.committed_slot] = true;
     first = next_track(1);
     schedule_prefetch(first, 10, reserved);
-    if(crazypod_now_playing_overlay_kind() ==
-           CRAZYPOD_NOW_OVERLAY_QUEUE &&
-       navigation.preview_queue_index >= 0) {
-        const struct crazypod_track *preview =
-            queue_track(navigation.preview_queue_index);
-
-        if(preview != NULL &&
-           (first == NULL || strcmp(preview->path, first->path) != 0))
-            schedule_prefetch(preview, 5, reserved);
-    }
-    else {
-        navigation.preview_queue_index = -1;
-        second = next_track(2);
-        if(second != NULL &&
-           (first == NULL || strcmp(second->path, first->path) != 0))
-            schedule_prefetch(second, 20, reserved);
-    }
+    second = next_track(2);
+    if(second != NULL &&
+       (first == NULL || strcmp(second->path, first->path) != 0))
+        schedule_prefetch(second, 20, reserved);
 }
 
 const lv_image_dsc_t *crazypod_now_playing_artwork_committed(
@@ -390,15 +374,6 @@ const lv_image_dsc_t *crazypod_now_playing_artwork_committed(
 unsigned crazypod_now_playing_artwork_committed_generation(void)
 {
     return navigation.committed_generation;
-}
-
-void crazypod_now_playing_prefetch_queue_artwork(
-    int queue_index)
-{
-    navigation.preview_queue_index = queue_index;
-    crazypod_now_playing_artwork_sync();
-    if(navigation.host.boost != NULL)
-        navigation.host.boost(HZ / 5);
 }
 
 void crazypod_now_playing_request_open(void)

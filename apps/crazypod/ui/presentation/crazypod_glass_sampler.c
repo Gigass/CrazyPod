@@ -15,7 +15,9 @@
 #define GLASS_SAMPLE_HEIGHT 60
 #define GLASS_TINT_COLOR 0x11131A
 #define GLASS_BAKE_TINT_OPA 104
+#define GLASS_ARTWORK_CAPTION_TINT_OPA 48
 #define GLASS_PANEL_TINT_OPA 92
+#define GLASS_HEADPHONE_TINT_OPA 48
 #define GLASS_BORDER_OPA 38
 #define GLASS_SHADOW_OPA 92
 
@@ -36,7 +38,8 @@ uint32_t crazypod_glass_material_tint(
 lv_opa_t crazypod_glass_material_tint_opa(
     enum crazypod_glass_material material)
 {
-    (void)material;
+    if(material == CRAZYPOD_GLASS_HEADPHONE_POPUP)
+        return GLASS_HEADPHONE_TINT_OPA;
     return GLASS_PANEL_TINT_OPA;
 }
 
@@ -65,6 +68,11 @@ bool crazypod_glass_render_descriptor(
     fb_data *render_pixels, lv_image_dsc_t *descriptor,
     crazypod_glass_boost_callback boost)
 {
+    lv_opa_t tint_opacity =
+        material == CRAZYPOD_GLASS_ARTWORK_CAPTION
+            ? GLASS_ARTWORK_CAPTION_TINT_OPA
+            : GLASS_BAKE_TINT_OPA;
+
     if(width <= 0 || height <= 0 ||
        render_pixels == NULL || descriptor == NULL)
         return false;
@@ -74,7 +82,7 @@ bool crazypod_glass_render_descriptor(
            source, source_width, source_height, source_stride,
            source_x, source_y, width, height,
            crazypod_glass_material_tint(material),
-           GLASS_BAKE_TINT_OPA,
+           tint_opacity,
            sample_pixels, sample_scratch,
            sizeof(sample_pixels) / sizeof(sample_pixels[0]),
            render_pixels, width, height))

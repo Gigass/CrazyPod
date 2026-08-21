@@ -27,6 +27,7 @@ struct crazypod_app_input_host {
     void (*previous_track)(void);
     void (*toggle_playback)(void);
     void (*open_now_playing)(void);
+    void (*show_home_queue)(void);
     void (*begin_music_scan)(void);
 };
 

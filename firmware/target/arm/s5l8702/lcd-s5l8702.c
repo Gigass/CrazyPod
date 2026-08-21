@@ -160,6 +160,14 @@ static volatile uint32_t lcd_dma_started_us;
 static volatile uint32_t lcd_dma_transfers;
 static volatile uint32_t lcd_dma_last_us;
 static volatile uint32_t lcd_dma_max_us;
+static volatile uint32_t lcd_dma_last_start_phase_us;
+static volatile uint32_t lcd_dma_last_end_phase_us;
+static volatile uint32_t lcd_dma_last_start_delay_us;
+static volatile bool lcd_dma_te_synchronized;
+static bool lcd_te_phase_armed;
+static uint32_t lcd_te_last_target_us;
+static uint32_t lcd_last_frame_edge_us;
+static uint32_t lcd_te_period_us;
 static void displaylcd_dma_complete(void *cb_data);
 #endif
 
@@ -336,7 +344,6 @@ static void s5l_lcd_run_seq16(void *seq16)
 
 /* Update the display.
    This must be called after all other LCD functions that change the display. */
-void lcd_update(void) ICODE_ATTR;
 void lcd_update(void)
 {
     lcd_update_rect(0, 0, LCD_WIDTH, LCD_HEIGHT);
@@ -375,16 +382,38 @@ static void displaylcd_setup(int x, int y, int width, int height)
     }
 }
 
-static void displaylcd_dma(int pixels) ICODE_ATTR;
-static void displaylcd_dma(int pixels)
+static void displaylcd_prepare_dma(void)
 {
     s5l_lcd_set_frame_mode();
     commit_dcache();
+}
+
+static void displaylcd_start_dma(int pixels)
+{
 #ifdef IPOD_6G
     lcd_dma_started_us = USEC_TIMER;
+    lcd_dma_te_synchronized = lcd_te_phase_armed;
+    if (lcd_te_phase_armed && lcd_te_period_us != 0)
+    {
+        uint32_t phase =
+            (lcd_dma_started_us - lcd_last_frame_edge_us) %
+            lcd_te_period_us;
+
+        lcd_dma_last_start_phase_us = phase;
+        lcd_dma_last_start_delay_us = phase >= lcd_te_last_target_us
+            ? phase - lcd_te_last_target_us
+            : lcd_te_period_us + phase - lcd_te_last_target_us;
+    }
+    lcd_te_phase_armed = false;
 #endif
     dmac_ch_queue(&lcd_dma_ch, lcd_dblbuf,
             (void*)S5L8702_DADDR_PERI_LCD_WR, pixels*2, NULL);
+}
+
+static void displaylcd_dma(int pixels)
+{
+    displaylcd_prepare_dma();
+    displaylcd_start_dma(pixels);
 }
 
 #ifdef IPOD_6G
@@ -397,12 +426,15 @@ static void displaylcd_dma_complete(void *cb_data)
     lcd_dma_last_us = elapsed;
     if (elapsed > lcd_dma_max_us)
         lcd_dma_max_us = elapsed;
+    if (lcd_dma_te_synchronized && lcd_te_period_us != 0)
+        lcd_dma_last_end_phase_us =
+            (USEC_TIMER - lcd_last_frame_edge_us) % lcd_te_period_us;
+    lcd_dma_te_synchronized = false;
     ++lcd_dma_transfers;
 }
 #endif
 
 // TODO: wait if there is a DMA transfer in progress
-static void displaylcd_wait_dma(void) ICODE_ATTR;
 static void displaylcd_wait_dma(void)
 {
     while (dmac_ch_running(&lcd_dma_ch))
@@ -424,17 +456,434 @@ static void displaylcd_wait_dma(void)
 #define LCD_SCAN_SYNC_POLL_US               20
 #define LCD_SCAN_SYNC_PROBE_TIMEOUT_US   40000
 #define LCD_SCAN_SYNC_WRAP_LINES            64
+#define LCD_RCMD_READY_TIMEOUT_US          1000
+#define LCD_TE_INPUT_PROBE_US             120000
+#define LCD_TE_INPUT_POLL_US                   5
+#define LCD_TE_EXPECTED_PERIOD_US          14720
+#define LCD_TE_MIN_PERIOD_US               12000
+#define LCD_TE_MAX_PERIOD_US               18000
+#define LCD_TE_INPUT_BITS                    160
+#define LCD_TE_GPIO_SOURCE                      7
+#define LCD_TE_GPIO_GROUP                       6
+#define LCD_TE_GPIO_BIT                         7
+#define LCD_TE_GPIO_MASK              (1u << LCD_TE_GPIO_BIT)
+#define LCD_TE_MIN_PULSE_US                    20
+#define LCD_TE_MAX_PULSE_US                  4000
+#define LCD_TE_MAX_PERIOD_SPREAD_US           500
+#define LCD_TE_HOME_GUARD_LINES                 12
+#define LCD_TE_MUSIC_GUARD_LINES                 2
+#define LCD_TE_PHASE_RELOCK_FRAMES             128
 
 static enum lcd_frame_sync_method lcd_frame_sync_method;
 static bool lcd_frame_marker_idle_high;
 static struct lcd_frame_sync_diagnostics lcd_frame_sync_diagnostics;
-static uint32_t lcd_last_frame_edge_us;
+static bool lcd_te_input_probe_complete;
+static bool lcd_te_input_valid;
+static bool lcd_te_active_high;
+static bool lcd_te_phase_locked;
+static unsigned lcd_te_phase_frames;
+static uint32_t lcd_te_probe_high[LCD_TE_INPUT_BITS];
+static uint32_t lcd_te_probe_transitions[LCD_TE_INPUT_BITS];
+static uint32_t lcd_te_probe_last_edge[LCD_TE_INPUT_BITS];
+static uint32_t lcd_te_probe_min_edge[LCD_TE_INPUT_BITS];
+static uint32_t lcd_te_probe_last_rise[LCD_TE_INPUT_BITS];
+static uint32_t lcd_te_probe_period_count[LCD_TE_INPUT_BITS];
+static uint32_t lcd_te_probe_period_sum[LCD_TE_INPUT_BITS];
+static uint32_t lcd_te_probe_min_period[LCD_TE_INPUT_BITS];
+static uint32_t lcd_te_probe_max_period[LCD_TE_INPUT_BITS];
+
+static unsigned displaylcd_te_probe_index(unsigned source, unsigned bit)
+{
+    if (source == 0)
+        return bit;
+    return 32 + ((source - 1) * 8) + bit;
+}
+
+static unsigned displaylcd_te_probe_source_bits(unsigned source)
+{
+    return source == 0 ? 32 : 8;
+}
+
+static uint32_t displaylcd_te_probe_read(unsigned source)
+{
+    if (source == 0)
+        return LCD_INTCON;
+    return PDAT(source - 1) & 0xff;
+}
+
+static uint32_t displaylcd_te_candidate_score(unsigned index)
+{
+    uint32_t count = lcd_te_probe_period_count[index];
+    uint32_t average;
+    uint32_t error;
+
+    if (count < 2)
+        return UINT32_MAX;
+    average = lcd_te_probe_period_sum[index] / count;
+    if (average < LCD_TE_MIN_PERIOD_US ||
+        average > LCD_TE_MAX_PERIOD_US)
+        return UINT32_MAX;
+    error = average > LCD_TE_EXPECTED_PERIOD_US
+        ? average - LCD_TE_EXPECTED_PERIOD_US
+        : LCD_TE_EXPECTED_PERIOD_US - average;
+    return error;
+}
+
+static void displaylcd_te_probe_add_candidate(
+    unsigned source, unsigned bit, unsigned index)
+{
+    struct lcd_te_probe_candidate candidate;
+    uint32_t score = displaylcd_te_candidate_score(index);
+    unsigned count = lcd_frame_sync_diagnostics.te_probe_candidate_count;
+    unsigned insert;
+
+    if (score == UINT32_MAX)
+        return;
+
+    candidate.source = source;
+    candidate.bit = bit;
+    candidate.transitions = lcd_te_probe_transitions[index];
+    candidate.high_samples = lcd_te_probe_high[index];
+    candidate.period_count = lcd_te_probe_period_count[index];
+    candidate.average_period_us =
+        lcd_te_probe_period_sum[index] / candidate.period_count;
+    candidate.min_period_us = lcd_te_probe_min_period[index];
+    candidate.max_period_us = lcd_te_probe_max_period[index];
+    candidate.min_edge_interval_us = lcd_te_probe_min_edge[index];
+
+    insert = count;
+    if (insert > LCD_TE_PROBE_CANDIDATES)
+        insert = LCD_TE_PROBE_CANDIDATES;
+    while (insert > 0)
+    {
+        const struct lcd_te_probe_candidate *previous =
+            &lcd_frame_sync_diagnostics.te_probe_candidates[insert - 1];
+        uint32_t previous_error = previous->average_period_us >
+            LCD_TE_EXPECTED_PERIOD_US
+            ? previous->average_period_us - LCD_TE_EXPECTED_PERIOD_US
+            : LCD_TE_EXPECTED_PERIOD_US - previous->average_period_us;
+
+        if (previous_error <= score)
+            break;
+        if (insert < LCD_TE_PROBE_CANDIDATES)
+            lcd_frame_sync_diagnostics.te_probe_candidates[insert] =
+                *previous;
+        --insert;
+    }
+    if (insert < LCD_TE_PROBE_CANDIDATES)
+        lcd_frame_sync_diagnostics.te_probe_candidates[insert] = candidate;
+    if (count < LCD_TE_PROBE_CANDIDATES)
+        lcd_frame_sync_diagnostics.te_probe_candidate_count = count + 1;
+}
+
+static void displaylcd_validate_gpio_te(void)
+{
+    unsigned index = displaylcd_te_probe_index(
+        LCD_TE_GPIO_SOURCE, LCD_TE_GPIO_BIT);
+    uint32_t period_count = lcd_te_probe_period_count[index];
+    uint32_t high_samples = lcd_te_probe_high[index];
+    uint32_t samples = lcd_frame_sync_diagnostics.te_probe_samples;
+    uint32_t average_period = period_count == 0 ? 0
+        : lcd_te_probe_period_sum[index] / period_count;
+    uint32_t period_spread =
+        lcd_te_probe_max_period[index] -
+        lcd_te_probe_min_period[index];
+    bool narrow_high = high_samples > 0 &&
+        high_samples < samples / 3;
+    bool narrow_low = high_samples > (samples * 2) / 3 &&
+        high_samples < samples;
+
+    lcd_te_input_valid = period_count >= 2 &&
+        lcd_te_probe_transitions[index] >= 6 &&
+        average_period >= LCD_TE_MIN_PERIOD_US &&
+        average_period <= LCD_TE_MAX_PERIOD_US &&
+        period_spread <= LCD_TE_MAX_PERIOD_SPREAD_US &&
+        lcd_te_probe_min_edge[index] >= LCD_TE_MIN_PULSE_US &&
+        lcd_te_probe_min_edge[index] <= LCD_TE_MAX_PULSE_US &&
+        (narrow_high || narrow_low);
+    lcd_te_active_high = narrow_high;
+    lcd_frame_sync_diagnostics.te_sync_input_valid =
+        lcd_te_input_valid ? 1 : 0;
+    lcd_frame_sync_diagnostics.te_sync_active_high =
+        lcd_te_active_high ? 1 : 0;
+    if (lcd_te_input_valid)
+    {
+        lcd_te_period_us = average_period;
+        lcd_frame_sync_method = LCD_FRAME_SYNC_GPIO_TE;
+    }
+}
+
+static void displaylcd_probe_te_inputs(void)
+{
+    uint32_t previous[1 + LCD_TE_PROBE_GPIO_GROUPS];
+    uint32_t started;
+    uint32_t deadline;
+    unsigned source;
+    unsigned bit;
+
+    if (lcd_te_input_probe_complete)
+        return;
+    lcd_te_input_probe_complete = true;
+
+    memset(lcd_te_probe_high, 0, sizeof(lcd_te_probe_high));
+    memset(lcd_te_probe_transitions, 0,
+        sizeof(lcd_te_probe_transitions));
+    memset(lcd_te_probe_last_edge, 0,
+        sizeof(lcd_te_probe_last_edge));
+    memset(lcd_te_probe_min_edge, 0,
+        sizeof(lcd_te_probe_min_edge));
+    memset(lcd_te_probe_last_rise, 0,
+        sizeof(lcd_te_probe_last_rise));
+    memset(lcd_te_probe_period_count, 0,
+        sizeof(lcd_te_probe_period_count));
+    memset(lcd_te_probe_period_sum, 0,
+        sizeof(lcd_te_probe_period_sum));
+    memset(lcd_te_probe_min_period, 0,
+        sizeof(lcd_te_probe_min_period));
+    memset(lcd_te_probe_max_period, 0,
+        sizeof(lcd_te_probe_max_period));
+    memset(lcd_frame_sync_diagnostics.te_probe_candidates, 0,
+        sizeof(lcd_frame_sync_diagnostics.te_probe_candidates));
+    lcd_frame_sync_diagnostics.te_probe_candidate_count = 0;
+
+    previous[0] = displaylcd_te_probe_read(0);
+    lcd_frame_sync_diagnostics.te_probe_intcon_first = previous[0];
+    lcd_frame_sync_diagnostics.te_probe_intcon_or = previous[0];
+    lcd_frame_sync_diagnostics.te_probe_intcon_and = previous[0];
+    for (source = 1; source <= LCD_TE_PROBE_GPIO_GROUPS; ++source)
+    {
+        unsigned group = source - 1;
+
+        previous[source] = displaylcd_te_probe_read(source);
+        lcd_frame_sync_diagnostics.te_probe_gpio_pcon[group] =
+            PCON(group);
+        lcd_frame_sync_diagnostics.te_probe_gpio_first[group] =
+            previous[source];
+        lcd_frame_sync_diagnostics.te_probe_gpio_or[group] =
+            previous[source];
+        lcd_frame_sync_diagnostics.te_probe_gpio_and[group] =
+            previous[source];
+    }
+
+    started = USEC_TIMER;
+    deadline = started + LCD_TE_INPUT_PROBE_US;
+    while (TIME_BEFORE(USEC_TIMER, deadline))
+    {
+        uint32_t now;
+
+        udelay(LCD_TE_INPUT_POLL_US);
+        now = USEC_TIMER;
+        ++lcd_frame_sync_diagnostics.te_probe_samples;
+        for (source = 0; source <= LCD_TE_PROBE_GPIO_GROUPS; ++source)
+        {
+            uint32_t current = displaylcd_te_probe_read(source);
+            uint32_t changed = current ^ previous[source];
+            unsigned bits = displaylcd_te_probe_source_bits(source);
+
+            if (source == 0)
+            {
+                lcd_frame_sync_diagnostics.te_probe_intcon_or |= current;
+                lcd_frame_sync_diagnostics.te_probe_intcon_and &= current;
+                lcd_frame_sync_diagnostics.te_probe_intcon_changed |=
+                    changed;
+            }
+            else
+            {
+                unsigned group = source - 1;
+
+                lcd_frame_sync_diagnostics.te_probe_gpio_or[group] |=
+                    current;
+                lcd_frame_sync_diagnostics.te_probe_gpio_and[group] &=
+                    current;
+                lcd_frame_sync_diagnostics.te_probe_gpio_changed[group] |=
+                    changed;
+            }
+
+            for (bit = 0; bit < bits; ++bit)
+            {
+                uint32_t mask = 1u << bit;
+                unsigned index =
+                    displaylcd_te_probe_index(source, bit);
+
+                if (current & mask)
+                    ++lcd_te_probe_high[index];
+                if (changed & mask)
+                {
+                    uint32_t edge_interval =
+                        now - lcd_te_probe_last_edge[index];
+
+                    ++lcd_te_probe_transitions[index];
+                    if (lcd_te_probe_last_edge[index] != 0 &&
+                        (lcd_te_probe_min_edge[index] == 0 ||
+                         edge_interval < lcd_te_probe_min_edge[index]))
+                        lcd_te_probe_min_edge[index] = edge_interval;
+                    lcd_te_probe_last_edge[index] = now;
+
+                    if (current & mask)
+                    {
+                        uint32_t period =
+                            now - lcd_te_probe_last_rise[index];
+
+                        if (lcd_te_probe_last_rise[index] != 0)
+                        {
+                            ++lcd_te_probe_period_count[index];
+                            lcd_te_probe_period_sum[index] += period;
+                            if (lcd_te_probe_min_period[index] == 0 ||
+                                period < lcd_te_probe_min_period[index])
+                                lcd_te_probe_min_period[index] = period;
+                            if (period > lcd_te_probe_max_period[index])
+                                lcd_te_probe_max_period[index] = period;
+                        }
+                        lcd_te_probe_last_rise[index] = now;
+                    }
+                }
+            }
+            previous[source] = current;
+        }
+    }
+
+    lcd_frame_sync_diagnostics.te_probe_elapsed_us =
+        USEC_TIMER - started;
+    lcd_frame_sync_diagnostics.te_probe_intcon_last = previous[0];
+    for (source = 1; source <= LCD_TE_PROBE_GPIO_GROUPS; ++source)
+        lcd_frame_sync_diagnostics.te_probe_gpio_last[source - 1] =
+            previous[source];
+
+    for (source = 0; source <= LCD_TE_PROBE_GPIO_GROUPS; ++source)
+    {
+        unsigned bits = displaylcd_te_probe_source_bits(source);
+
+        for (bit = 0; bit < bits; ++bit)
+        {
+            unsigned index = displaylcd_te_probe_index(source, bit);
+
+            displaylcd_te_probe_add_candidate(source, bit, index);
+        }
+    }
+    displaylcd_validate_gpio_te();
+}
 
 static void displaylcd_reset_frame_sync(void)
 {
-    lcd_frame_sync_method = LCD_FRAME_SYNC_PROBING;
+    lcd_frame_sync_method = lcd_te_input_valid
+        ? LCD_FRAME_SYNC_GPIO_TE : LCD_FRAME_SYNC_PROBING;
     lcd_frame_marker_idle_high = false;
     lcd_last_frame_edge_us = 0;
+    lcd_te_phase_locked = false;
+    lcd_te_phase_frames = 0;
+    lcd_te_phase_armed = false;
+}
+
+static void displaylcd_note_frame_edge(void);
+
+static bool displaylcd_gpio_te_active(void)
+{
+    bool high = (PDAT(LCD_TE_GPIO_GROUP) & LCD_TE_GPIO_MASK) != 0;
+
+    return high == lcd_te_active_high;
+}
+
+static bool displaylcd_wait_gpio_te(void)
+{
+    unsigned deadline = USEC_TIMER + LCD_FRAME_SYNC_TIMEOUT_US;
+
+    /* Finish any pulse already active, then wait for a fresh frame edge. */
+    while (TIME_BEFORE(USEC_TIMER, deadline))
+    {
+        if (!displaylcd_gpio_te_active())
+            break;
+        udelay(LCD_FRAME_SYNC_POLL_US);
+    }
+    while (TIME_BEFORE(USEC_TIMER, deadline))
+    {
+        if (displaylcd_gpio_te_active())
+        {
+            displaylcd_note_frame_edge();
+            lcd_te_phase_locked = true;
+            lcd_te_phase_frames = 0;
+            return true;
+        }
+        udelay(LCD_FRAME_SYNC_POLL_US);
+    }
+    return false;
+}
+
+static void displaylcd_note_wait_duration(uint32_t started)
+{
+    lcd_frame_sync_diagnostics.last_wait_us = USEC_TIMER - started;
+    if (lcd_frame_sync_diagnostics.last_wait_us >
+        lcd_frame_sync_diagnostics.max_wait_us)
+        lcd_frame_sync_diagnostics.max_wait_us =
+            lcd_frame_sync_diagnostics.last_wait_us;
+}
+
+static void displaylcd_wait_te_phase(
+    int y, int height, unsigned guard_lines)
+{
+    uint32_t started = USEC_TIMER;
+    uint32_t now;
+    uint32_t phase;
+    uint32_t target_phase;
+    uint32_t target_time;
+    unsigned bottom = y + height;
+
+    lcd_te_phase_armed = false;
+    ++lcd_frame_sync_diagnostics.waits;
+    if (lcd_frame_sync_method != LCD_FRAME_SYNC_GPIO_TE ||
+        lcd_te_period_us == 0)
+    {
+        displaylcd_note_wait_duration(started);
+        return;
+    }
+
+    if (!lcd_te_phase_locked ||
+        lcd_te_phase_frames >= LCD_TE_PHASE_RELOCK_FRAMES)
+    {
+        if (!displaylcd_wait_gpio_te())
+        {
+            ++lcd_frame_sync_diagnostics.timeouts;
+            lcd_frame_sync_method = LCD_FRAME_SYNC_UNAVAILABLE;
+            displaylcd_note_wait_duration(started);
+            return;
+        }
+        ++lcd_frame_sync_diagnostics.te_phase_relocks;
+    }
+
+    if (bottom > LCD_HEIGHT)
+        bottom = LCD_HEIGHT;
+    bottom += guard_lines;
+    if (bottom > LCD_HEIGHT)
+        bottom = LCD_HEIGHT;
+    target_phase = (lcd_te_period_us * bottom) / LCD_HEIGHT;
+
+    now = USEC_TIMER;
+    phase = now - lcd_last_frame_edge_us;
+    if (phase >= lcd_te_period_us)
+    {
+        uint32_t periods = phase / lcd_te_period_us;
+
+        lcd_last_frame_edge_us += periods * lcd_te_period_us;
+        phase -= periods * lcd_te_period_us;
+    }
+    target_time = lcd_last_frame_edge_us + target_phase;
+    if (phase > target_phase)
+    {
+        lcd_last_frame_edge_us += lcd_te_period_us;
+        target_time = lcd_last_frame_edge_us + target_phase;
+    }
+
+    while (TIME_BEFORE(USEC_TIMER, target_time))
+        udelay(LCD_FRAME_SYNC_POLL_US);
+
+    lcd_frame_sync_diagnostics.last_te_phase_us =
+        USEC_TIMER - lcd_last_frame_edge_us;
+    lcd_frame_sync_diagnostics.last_te_target_us = target_phase;
+    lcd_te_last_target_us = target_phase;
+    lcd_te_phase_armed = true;
+    ++lcd_frame_sync_diagnostics.gpio_te_waits;
+    ++lcd_frame_sync_diagnostics.te_phase_waits;
+    ++lcd_te_phase_frames;
+    displaylcd_note_wait_duration(started);
 }
 
 static void displaylcd_note_frame_edge(void)
@@ -454,21 +903,28 @@ static void displaylcd_note_frame_edge(void)
     lcd_last_frame_edge_us = now;
 }
 
-static bool displaylcd_probe_frame_marker(void) ICODE_ATTR;
 static bool displaylcd_probe_frame_marker(void)
 {
     unsigned deadline = USEC_TIMER + LCD_FRAME_SYNC_PROBE_US;
     unsigned high_samples = 0;
     unsigned low_samples = 0;
     unsigned transitions = 0;
-    bool previous = (LCD_STATUS & LCD_STATUS_FRAME_MARKER) != 0;
+    uint32_t status = LCD_STATUS;
+    uint32_t status_or = status;
+    uint32_t status_and = status;
+    bool previous = (status & LCD_STATUS_FRAME_MARKER) != 0;
+
+    lcd_frame_sync_diagnostics.marker_probe_status_first = status;
 
     while (TIME_BEFORE(USEC_TIMER, deadline))
     {
         bool current;
 
         udelay(LCD_FRAME_SYNC_POLL_US);
-        current = (LCD_STATUS & LCD_STATUS_FRAME_MARKER) != 0;
+        status = LCD_STATUS;
+        status_or |= status;
+        status_and &= status;
+        current = (status & LCD_STATUS_FRAME_MARKER) != 0;
         if (current)
             ++high_samples;
         else
@@ -477,6 +933,15 @@ static bool displaylcd_probe_frame_marker(void)
             ++transitions;
         previous = current;
     }
+
+    lcd_frame_sync_diagnostics.marker_probe_samples =
+        high_samples + low_samples;
+    lcd_frame_sync_diagnostics.marker_probe_high_samples = high_samples;
+    lcd_frame_sync_diagnostics.marker_probe_low_samples = low_samples;
+    lcd_frame_sync_diagnostics.marker_probe_transitions = transitions;
+    lcd_frame_sync_diagnostics.marker_probe_status_last = status;
+    lcd_frame_sync_diagnostics.marker_probe_status_or = status_or;
+    lcd_frame_sync_diagnostics.marker_probe_status_and = status_and;
 
     if (transitions < 2 || high_samples < 3 || low_samples < 3)
         return false;
@@ -497,7 +962,6 @@ static bool displaylcd_probe_frame_marker(void)
     return true;
 }
 
-static bool displaylcd_wait_frame_marker(void) ICODE_ATTR;
 static bool displaylcd_wait_frame_marker(void)
 {
     unsigned deadline = USEC_TIMER + LCD_FRAME_SYNC_TIMEOUT_US;
@@ -526,17 +990,108 @@ static bool displaylcd_wait_frame_marker(void)
     return false;
 }
 
-static unsigned displaylcd_get_scanline(void) ICODE_ATTR;
-static unsigned displaylcd_get_scanline(void)
+static unsigned displaylcd_get_scanline(uint32_t *raw)
 {
     uint8_t data[3];
 
     /* The first byte returned by a DBI read is a dummy byte. */
     s5l_lcd_recv_cmd8(R_GET_SCANLINE, 3, data);
+    if (raw != NULL)
+        *raw = ((uint32_t)data[0] << 16) |
+            ((uint32_t)data[1] << 8) | data[2];
     return ((data[1] & 0x03) << 8) | data[2];
 }
 
-static bool displaylcd_wait_scanline(bool probe) ICODE_ATTR;
+static bool displaylcd_wait_status(uint32_t mask, uint32_t value)
+{
+    unsigned deadline = USEC_TIMER + LCD_RCMD_READY_TIMEOUT_US;
+
+    while (TIME_BEFORE(USEC_TIMER, deadline))
+    {
+        if ((LCD_STATUS & mask) == value)
+            return true;
+    }
+    return false;
+}
+
+static bool displaylcd_get_scanline_rcmd(
+    unsigned *scanline, uint32_t *raw)
+{
+    uint8_t data[3];
+    unsigned index;
+
+    if (!displaylcd_wait_status(0x10, 0))
+        return false;
+    LCD_RCMD = R_GET_SCANLINE;
+    for (index = 0; index < 3; ++index)
+    {
+        if (!displaylcd_wait_status(0x2, 0x2))
+            return false;
+        LCD_RDATA = 0;
+        if (!displaylcd_wait_status(0x1, 0x1))
+            return false;
+        data[index] = LCD_DBUFF >> 1;
+    }
+    *raw = ((uint32_t)data[0] << 16) |
+        ((uint32_t)data[1] << 8) | data[2];
+    *scanline = ((data[1] & 0x03) << 8) | data[2];
+    return true;
+}
+
+static void displaylcd_probe_scanline_rcmd(void)
+{
+    unsigned deadline = USEC_TIMER + LCD_SCAN_SYNC_PROBE_TIMEOUT_US;
+    unsigned previous;
+    uint32_t raw;
+
+    if (!displaylcd_get_scanline_rcmd(&previous, &raw))
+    {
+        ++lcd_frame_sync_diagnostics.rcmd_probe_timeouts;
+        return;
+    }
+
+    lcd_frame_sync_diagnostics.rcmd_probe_samples = 1;
+    lcd_frame_sync_diagnostics.rcmd_probe_changes = 0;
+    lcd_frame_sync_diagnostics.rcmd_probe_wraps = 0;
+    lcd_frame_sync_diagnostics.rcmd_probe_first = previous;
+    lcd_frame_sync_diagnostics.rcmd_probe_last = previous;
+    lcd_frame_sync_diagnostics.rcmd_probe_min = previous;
+    lcd_frame_sync_diagnostics.rcmd_probe_max = previous;
+    lcd_frame_sync_diagnostics.rcmd_probe_raw_first = raw;
+    lcd_frame_sync_diagnostics.rcmd_probe_raw_last = raw;
+    lcd_frame_sync_diagnostics.rcmd_probe_raw_or = raw;
+    lcd_frame_sync_diagnostics.rcmd_probe_raw_and = raw;
+
+    while (TIME_BEFORE(USEC_TIMER, deadline))
+    {
+        unsigned current;
+        int delta;
+
+        udelay(LCD_SCAN_SYNC_POLL_US);
+        if (!displaylcd_get_scanline_rcmd(&current, &raw))
+        {
+            ++lcd_frame_sync_diagnostics.rcmd_probe_timeouts;
+            return;
+        }
+        delta = (int)current - (int)previous;
+        ++lcd_frame_sync_diagnostics.rcmd_probe_samples;
+        if (current != previous)
+            ++lcd_frame_sync_diagnostics.rcmd_probe_changes;
+        if (delta >= LCD_SCAN_SYNC_WRAP_LINES ||
+            delta <= -LCD_SCAN_SYNC_WRAP_LINES)
+            ++lcd_frame_sync_diagnostics.rcmd_probe_wraps;
+        if (current < lcd_frame_sync_diagnostics.rcmd_probe_min)
+            lcd_frame_sync_diagnostics.rcmd_probe_min = current;
+        if (current > lcd_frame_sync_diagnostics.rcmd_probe_max)
+            lcd_frame_sync_diagnostics.rcmd_probe_max = current;
+        lcd_frame_sync_diagnostics.rcmd_probe_last = current;
+        lcd_frame_sync_diagnostics.rcmd_probe_raw_last = raw;
+        lcd_frame_sync_diagnostics.rcmd_probe_raw_or |= raw;
+        lcd_frame_sync_diagnostics.rcmd_probe_raw_and &= raw;
+        previous = current;
+    }
+}
+
 static bool displaylcd_wait_scanline(bool probe)
 {
     s5l_lcd_set_command_mode();
@@ -544,20 +1099,55 @@ static bool displaylcd_wait_scanline(bool probe)
     unsigned timeout = probe ? LCD_SCAN_SYNC_PROBE_TIMEOUT_US
                              : LCD_FRAME_SYNC_TIMEOUT_US;
     unsigned deadline = USEC_TIMER + timeout;
-    unsigned previous = displaylcd_get_scanline();
+    uint32_t raw;
+    unsigned previous = displaylcd_get_scanline(&raw);
     int direction = 0;
     unsigned stable_steps = 0;
+
+    if (probe)
+    {
+        lcd_frame_sync_diagnostics.scanline_probe_samples = 1;
+        lcd_frame_sync_diagnostics.scanline_probe_changes = 0;
+        lcd_frame_sync_diagnostics.scanline_probe_wraps = 0;
+        lcd_frame_sync_diagnostics.scanline_probe_first = previous;
+        lcd_frame_sync_diagnostics.scanline_probe_last = previous;
+        lcd_frame_sync_diagnostics.scanline_probe_min = previous;
+        lcd_frame_sync_diagnostics.scanline_probe_max = previous;
+        lcd_frame_sync_diagnostics.scanline_probe_raw_first = raw;
+        lcd_frame_sync_diagnostics.scanline_probe_raw_last = raw;
+        lcd_frame_sync_diagnostics.scanline_probe_raw_or = raw;
+        lcd_frame_sync_diagnostics.scanline_probe_raw_and = raw;
+    }
 
     while (TIME_BEFORE(USEC_TIMER, deadline))
     {
         udelay(LCD_SCAN_SYNC_POLL_US);
 
-        unsigned current = displaylcd_get_scanline();
+        unsigned current = displaylcd_get_scanline(&raw);
         int delta = (int)current - (int)previous;
+
+        if (probe)
+        {
+            ++lcd_frame_sync_diagnostics.scanline_probe_samples;
+            if (current != previous)
+                ++lcd_frame_sync_diagnostics.scanline_probe_changes;
+            if (current <
+                lcd_frame_sync_diagnostics.scanline_probe_min)
+                lcd_frame_sync_diagnostics.scanline_probe_min = current;
+            if (current >
+                lcd_frame_sync_diagnostics.scanline_probe_max)
+                lcd_frame_sync_diagnostics.scanline_probe_max = current;
+            lcd_frame_sync_diagnostics.scanline_probe_last = current;
+            lcd_frame_sync_diagnostics.scanline_probe_raw_last = raw;
+            lcd_frame_sync_diagnostics.scanline_probe_raw_or |= raw;
+            lcd_frame_sync_diagnostics.scanline_probe_raw_and &= raw;
+        }
 
         if (delta >= LCD_SCAN_SYNC_WRAP_LINES ||
             delta <= -LCD_SCAN_SYNC_WRAP_LINES)
         {
+            if (probe)
+                ++lcd_frame_sync_diagnostics.scanline_probe_wraps;
             if (!probe || stable_steps >= 3)
             {
                 displaylcd_note_frame_edge();
@@ -589,7 +1179,6 @@ static bool displaylcd_wait_scanline(bool probe)
     return false;
 }
 
-static void displaylcd_wait_frame_start(void) ICODE_ATTR;
 static void displaylcd_wait_frame_start(void)
 {
     unsigned started = USEC_TIMER;
@@ -597,6 +1186,17 @@ static void displaylcd_wait_frame_start(void)
     bool synced = false;
 
     ++lcd_frame_sync_diagnostics.waits;
+    if (lcd_frame_sync_method == LCD_FRAME_SYNC_GPIO_TE)
+    {
+        synced = displaylcd_wait_gpio_te();
+        if (synced)
+            ++lcd_frame_sync_diagnostics.gpio_te_waits;
+        else
+        {
+            ++lcd_frame_sync_diagnostics.timeouts;
+            lcd_frame_sync_method = LCD_FRAME_SYNC_UNAVAILABLE;
+        }
+    }
     if (lcd_frame_sync_method == LCD_FRAME_SYNC_PROBING)
     {
         if (displaylcd_probe_frame_marker())
@@ -637,6 +1237,8 @@ static void displaylcd_wait_frame_start(void)
         else
         {
             ++lcd_frame_sync_diagnostics.timeouts;
+            if (scanline_probe)
+                displaylcd_probe_scanline_rcmd();
             lcd_frame_sync_method = LCD_FRAME_SYNC_UNAVAILABLE;
         }
     }
@@ -659,14 +1261,22 @@ void lcd_get_frame_sync_diagnostics(
     diagnostics->dma_transfers = lcd_dma_transfers;
     diagnostics->last_dma_us = lcd_dma_last_us;
     diagnostics->max_dma_us = lcd_dma_max_us;
+    diagnostics->last_dma_start_phase_us =
+        lcd_dma_last_start_phase_us;
+    diagnostics->last_dma_end_phase_us =
+        lcd_dma_last_end_phase_us;
+    diagnostics->last_dma_start_delay_us =
+        lcd_dma_last_start_delay_us;
 }
 #endif
 
-/* Update a fraction of the display. */
-void lcd_update_rect(int, int, int, int) ICODE_ATTR;
-void lcd_update_rect(int x, int y, int width, int height)
+static void displaylcd_update_rect(
+    int, int, int, int, int) ICODE_ATTR;
+static void displaylcd_update_rect(
+    int x, int y, int width, int height, int phase_guard_lines)
 {
     int pixels = width * height;
+    bool frame_sync = phase_guard_lines >= 0;
     fb_data* p = FBADDR(x,y);
     uint16_t* out = lcd_dblbuf[0];
 
@@ -698,15 +1308,46 @@ void lcd_update_rect(int x, int y, int width, int height)
         }
 
 #ifdef IPOD_6G
-        if (x == 0 && y == 0 && width == LCD_WIDTH && height == LCD_HEIGHT)
+        if (!frame_sync && x == 0 && y == 0 &&
+            width == LCD_WIDTH && height == LCD_HEIGHT)
             displaylcd_wait_frame_start();
 #endif
 
         displaylcd_setup(x, y, width, height);
-        displaylcd_dma(pixels);
+#ifdef IPOD_6G
+        if (frame_sync)
+        {
+            displaylcd_prepare_dma();
+            displaylcd_wait_te_phase(
+                y, height, (unsigned)phase_guard_lines);
+            displaylcd_start_dma(pixels);
+        }
+        else
+#endif
+            displaylcd_dma(pixels);
     }
     mutex_unlock(&lcd_mutex);
 }
+
+/* Update a fraction of the display. */
+void lcd_update_rect(int x, int y, int width, int height)
+{
+    displaylcd_update_rect(x, y, width, height, -1);
+}
+
+#ifdef IPOD_6G
+void lcd_update_rect_frame_sync(int x, int y, int width, int height)
+{
+    displaylcd_update_rect(
+        x, y, width, height, LCD_TE_HOME_GUARD_LINES);
+}
+
+void lcd_update_rect_music_sync(int x, int y, int width, int height)
+{
+    displaylcd_update_rect(
+        x, y, width, height, LCD_TE_MUSIC_GUARD_LINES);
+}
+#endif
 
 /* Line write helper function for lcd_yuv_blit. Writes two lines of yuv420. */
 extern void lcd_write_yuv420_lines(unsigned char const * const src[3],
@@ -831,6 +1472,7 @@ void lcd_awake(void)
 #ifdef IPOD_6G
     lcd_run_seq(lcd_info->seq_frame_sync);
     displaylcd_reset_frame_sync();
+    displaylcd_probe_te_inputs();
 #endif
     lcd_ispowered = true;       // XXX: we have to put the lcd_ispowered before the lcd_update()
 
@@ -908,6 +1550,7 @@ void lcd_init_device(void)
 #ifdef IPOD_6G
     lcd_run_seq(lcd_info->seq_frame_sync);
     displaylcd_reset_frame_sync();
+    displaylcd_probe_te_inputs();
 #endif
 
     lcd_ispowered = true;

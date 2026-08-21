@@ -19,6 +19,7 @@ struct crazypod_lock_screen_callbacks {
 struct crazypod_lock_media_snapshot {
     bool active;
     bool playing;
+    bool metadata_ready;
     const char *track_path;
     const char *title;
     const char *artist;

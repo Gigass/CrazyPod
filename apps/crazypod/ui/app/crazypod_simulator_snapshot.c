@@ -735,6 +735,7 @@ static bool open_lock_cjk_snapshot(
     const struct crazypod_lock_media_snapshot snapshot = {
         .active = true,
         .playing = true,
+        .metadata_ready = true,
         .track_path = "/Music/crazypod-lock-cjk-test.mp3",
         .title = "夜航测试歌曲",
         .artist = "疯狂播客乐队",
@@ -1015,6 +1016,12 @@ bool crazypod_simulator_snapshot_prepare(
         return open_runtime_font_catalog();
     else if(strcmp(screen, "power") == 0)
         host->show_power_prompt();
+    else if(strcmp(screen, "coverflow") == 0)
+        host->open_root_route(MUSIC_ROUTE_ALBUM_FLOW);
+    else if(strcmp(screen, "coverflow-power") == 0) {
+        host->open_root_route(MUSIC_ROUTE_ALBUM_FLOW);
+        host->show_power_prompt();
+    }
     else if(sscanf(screen, "music-%d", &preview_index) == 1) {
         host->open_app(CRAZYPOD_APP_MUSIC);
         if(current_route() != NULL &&

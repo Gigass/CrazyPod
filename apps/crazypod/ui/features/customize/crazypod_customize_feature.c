@@ -23,6 +23,7 @@
 #define EDITOR_CHARACTER_COUNT 36
 
 static unsigned photo_generation_seen;
+static unsigned photo_thumbnail_generation_seen;
 static unsigned photo_view_generation_seen;
 
 static const char *const editor_characters[EDITOR_CHARACTER_COUNT] = {
@@ -293,6 +294,8 @@ bool crazypod_customize_feature_item_title(
 void crazypod_customize_feature_initialize_media(void)
 {
     photo_generation_seen = crazypod_photo_generation();
+    photo_thumbnail_generation_seen =
+        crazypod_photo_thumbnail_generation();
     photo_view_generation_seen =
         crazypod_photo_view_generation();
 }
@@ -313,6 +316,12 @@ crazypod_customize_feature_poll_media(
         return CRAZYPOD_FEATURE_MEDIA_ROUTE;
     }
     if(route == DIY_ROUTE_WALLPAPER_FILES) {
+        generation = crazypod_photo_thumbnail_generation();
+        if(generation != photo_thumbnail_generation_seen) {
+            photo_thumbnail_generation_seen = generation;
+            crazypod_photos_feature_refresh_grid_media();
+            return CRAZYPOD_FEATURE_MEDIA_NONE;
+        }
         generation = crazypod_photo_generation();
         if(generation == photo_generation_seen)
             return CRAZYPOD_FEATURE_MEDIA_NONE;

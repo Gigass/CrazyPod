@@ -372,8 +372,7 @@ static bool save_catalog(void)
         write_exact(fd, &header, sizeof(header)) &&
         write_exact(
             fd, entries,
-            (size_t)entry_count * sizeof(entries[0])) &&
-        fsync(fd) >= 0;
+            (size_t)entry_count * sizeof(entries[0]));
     close(fd);
     if(!complete ||
        rename(PHOTO_CATALOG_TMP, PHOTO_CATALOG_PATH) < 0) {

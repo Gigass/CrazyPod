@@ -147,7 +147,13 @@ static bool modal_prompt_visible(void)
 {
     return crazypod_system_prompts_usb_visible() ||
         crazypod_system_prompts_power_visible() ||
-        crazypod_system_prompts_headphone_visible();
+        crazypod_system_prompts_headphone_visible() ||
+        crazypod_now_playing_overlay_visible();
+}
+static bool coverflow_overlay_visible(bool locked)
+{
+    return locked || modal_prompt_visible() ||
+        crazypod_choice_coordinator_visible();
 }
 static void set_cpu_boost(bool enabled)
 {
@@ -270,9 +276,10 @@ static void create_lock_screen(void)
 {
     const struct crazypod_lock_screen_callbacks callbacks = {
         .play_wheel_feedback = play_wheel_feedback,
-        .previous_track = crazypod_playback_previous_or_restart,
-        .toggle_playback = crazypod_playback_toggle,
-        .next_track = crazypod_playback_next,
+        .previous_track =
+            crazypod_playback_previous_or_restart_async,
+        .toggle_playback = crazypod_playback_toggle_async,
+        .next_track = crazypod_playback_next_async,
         .refresh_media = crazypod_playback_refresh_lock_screen,
         .unlocked = lock_screen_unlocked,
         .lock_inhibited =
@@ -575,6 +582,8 @@ static void configure_app_input(void)
         .toggle_playback = crazypod_playback_toggle,
         .open_now_playing =
             crazypod_app_launcher_open_now_playing,
+        .show_home_queue =
+            crazypod_now_playing_overlay_show_queue,
         .begin_music_scan = begin_music_scan,
     };
 
@@ -665,9 +674,12 @@ void crazypod_ui_run(void)
                 platform_capture_desktop_native,
             .capture_flush =
                 crazypod_desktop_native_capture_flush,
-            .coverflow_active = crazypod_coverflow_active,
+            .coverflow_active =
+                crazypod_coverflow_compositing_active,
             .coverflow_invalidate =
                 crazypod_coverflow_invalidate,
+            .coverflow_capture_flush =
+                crazypod_coverflow_capture_flush,
             .queue_present = platform_queue_present,
         };
         display = crazypod_platform_display_init(
@@ -800,6 +812,8 @@ void crazypod_ui_run(void)
         }
         process_lock_state();
         locked = crazypod_lock_screen_is_locked();
+        crazypod_coverflow_set_compositing_suspended(
+            coverflow_overlay_visible(locked));
         if(crazypod_runtime_services_screen_off_tick()) {
             set_cpu_boost(false);
             continue;
@@ -820,7 +834,8 @@ void crazypod_ui_run(void)
         }
         crazypod_now_capsule_tick(
             current_tick, !locked && !crazypod_shell_product_active() &&
-            !modal_prompt_visible());
+            !modal_prompt_visible(),
+            crazypod_desktop_wheel_touch_active());
         if(!locked) {
             crazypod_playback_tick_wave(current_tick);
         }

@@ -17,6 +17,8 @@ struct crazypod_choice_overlay_callbacks {
         void *context);
     bool (*action_layout)(
         int kind, int id, void *context);
+    lv_obj_t *(*create_underlay)(
+        lv_obj_t *parent, void *context);
     lv_obj_t *(*create_panel)(
         lv_obj_t *parent, int x, int y,
         int width, int height, void *context);

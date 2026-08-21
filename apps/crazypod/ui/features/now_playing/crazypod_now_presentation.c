@@ -6,16 +6,19 @@
 #include <string.h>
 
 #include "file.h"
+#include "kernel.h"
 #include "lcd.h"
 #include "system.h"
 #include "lvgl.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
 
 #include "../../../crazypod_image.h"
+#include "../../presentation/crazypod_glass_sampler.h"
 #include "crazypod_now_presentation.h"
 
 #define PRESENTATION_BANKS 2
 #define COVER_SIZE 108
+#define COVER_CAPTION_HEIGHT (COVER_SIZE / 3)
 #define BACKDROP_WIDTH 40
 #define BACKDROP_HEIGHT 30
 #define SHADE_OPA 118
@@ -34,6 +37,10 @@ static lv_image_dsc_t backdrop_descriptors[PRESENTATION_BANKS];
 static fb_data cover_pixels[PRESENTATION_BANKS][COVER_SIZE * COVER_SIZE]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static lv_image_dsc_t cover_descriptors[PRESENTATION_BANKS];
+static fb_data cover_caption_pixels[
+    PRESENTATION_BANKS][COVER_SIZE * COVER_CAPTION_HEIGHT]
+    CACHEALIGN_AT_LEAST_ATTR(16);
+static lv_image_dsc_t cover_caption_descriptors[PRESENTATION_BANKS];
 static uint32_t text_colors[PRESENTATION_BANKS];
 static bool valid[PRESENTATION_BANKS];
 static int active_bank = -1;
@@ -63,6 +70,17 @@ static bool prepare_cover(const lv_image_dsc_t *source, int bank)
         &cover_descriptors[bank], cover_pixels[bank],
         COVER_SIZE, COVER_SIZE);
     return true;
+}
+
+static bool prepare_cover_caption(int bank)
+{
+    return crazypod_glass_render_descriptor(
+        cover_pixels[bank], COVER_SIZE, COVER_SIZE, COVER_SIZE,
+        0, COVER_SIZE - COVER_CAPTION_HEIGHT,
+        COVER_SIZE, COVER_CAPTION_HEIGHT,
+        CRAZYPOD_GLASS_ARTWORK_CAPTION,
+        cover_caption_pixels[bank],
+        &cover_caption_descriptors[bank], NULL);
 }
 
 static bool prepare_backdrop(const lv_image_dsc_t *artwork, int bank)
@@ -95,6 +113,9 @@ static bool prepare_backdrop(const lv_image_dsc_t *artwork, int bank)
         crop_y = (crop_height - target_height) / 2;
         crop_height = target_height;
     }
+
+    /* Give PCM refill work a chance to run before scanning a cold cover. */
+    yield();
 
     for(y = 0; y < BACKDROP_HEIGHT; ++y) {
         int sy0 = crop_y + y * crop_height / BACKDROP_HEIGHT;
@@ -130,6 +151,9 @@ static bool prepare_backdrop(const lv_image_dsc_t *artwork, int bank)
         }
     }
 
+    /* The source descriptor is no longer accessed after this point. */
+    yield();
+
     for(y = 0; y < BACKDROP_HEIGHT; ++y) {
         int x;
         for(x = 0; x < BACKDROP_WIDTH; ++x) {
@@ -153,6 +177,7 @@ static bool prepare_backdrop(const lv_image_dsc_t *artwork, int bank)
                 LCD_RGBPACK(red / 5, green / 5, blue / 5);
         }
     }
+    yield();
     for(y = 0; y < BACKDROP_HEIGHT; ++y) {
         int x;
         for(x = 0; x < BACKDROP_WIDTH; ++x) {
@@ -178,10 +203,56 @@ static bool prepare_backdrop(const lv_image_dsc_t *artwork, int bank)
         }
     }
 
-    crazypod_image_scale_rgb565(
-        backdrop_pixels, BACKDROP_WIDTH, BACKDROP_HEIGHT,
-        BACKDROP_WIDTH, backdrop_render_pixels[bank],
-        LCD_WIDTH, LCD_HEIGHT);
+    yield();
+
+    for(y = 0; y < LCD_HEIGHT; ++y) {
+        int source_y_q8 = y *
+            ((BACKDROP_HEIGHT - 1) * 256 / (LCD_HEIGHT - 1));
+        int y0 = source_y_q8 >> 8;
+        int y1 = y0 + 1 < BACKDROP_HEIGHT ? y0 + 1 : y0;
+        int fy = source_y_q8 & 255;
+        int source_x_q8 = 0;
+        int source_x_step =
+            (BACKDROP_WIDTH - 1) * 256 / (LCD_WIDTH - 1);
+        int x;
+
+        for(x = 0; x < LCD_WIDTH; ++x) {
+            int x0 = source_x_q8 >> 8;
+            int x1 = x0 + 1 < BACKDROP_WIDTH ? x0 + 1 : x0;
+            int fx = source_x_q8 & 255;
+            fb_data p00 = backdrop_pixels[y0 * BACKDROP_WIDTH + x0];
+            fb_data p10 = backdrop_pixels[y0 * BACKDROP_WIDTH + x1];
+            fb_data p01 = backdrop_pixels[y1 * BACKDROP_WIDTH + x0];
+            fb_data p11 = backdrop_pixels[y1 * BACKDROP_WIDTH + x1];
+            unsigned red0 =
+                RGB_UNPACK_RED(p00) * (256 - fx) +
+                RGB_UNPACK_RED(p10) * fx;
+            unsigned red1 =
+                RGB_UNPACK_RED(p01) * (256 - fx) +
+                RGB_UNPACK_RED(p11) * fx;
+            unsigned green0 =
+                RGB_UNPACK_GREEN(p00) * (256 - fx) +
+                RGB_UNPACK_GREEN(p10) * fx;
+            unsigned green1 =
+                RGB_UNPACK_GREEN(p01) * (256 - fx) +
+                RGB_UNPACK_GREEN(p11) * fx;
+            unsigned blue0 =
+                RGB_UNPACK_BLUE(p00) * (256 - fx) +
+                RGB_UNPACK_BLUE(p10) * fx;
+            unsigned blue1 =
+                RGB_UNPACK_BLUE(p01) * (256 - fx) +
+                RGB_UNPACK_BLUE(p11) * fx;
+
+            backdrop_render_pixels[bank][y * LCD_WIDTH + x] =
+                LCD_RGBPACK(
+                    (red0 * (256 - fy) + red1 * fy) >> 16,
+                    (green0 * (256 - fy) + green1 * fy) >> 16,
+                    (blue0 * (256 - fy) + blue1 * fy) >> 16);
+            source_x_q8 += source_x_step;
+        }
+        if((y & 7) == 7)
+            yield();
+    }
     if(backdrop_descriptors[bank].header.magic ==
        LV_IMAGE_HEADER_MAGIC)
         lv_image_cache_drop(&backdrop_descriptors[bank]);
@@ -243,6 +314,7 @@ bool crazypod_now_presentation_prepare(
     bank = active_bank == 0 ? 1 : 0;
     valid[bank] = false;
     if(!prepare_cover(artwork, bank) ||
+       !prepare_cover_caption(bank) ||
        !prepare_backdrop(artwork, bank))
         return false;
     text_colors[bank] = contrast_color(bank);
@@ -257,6 +329,7 @@ bool crazypod_now_presentation_prepare(
 bool crazypod_now_presentation_get(
     const char *track_path, unsigned generation,
     const lv_image_dsc_t **cover,
+    const lv_image_dsc_t **cover_caption,
     const lv_image_dsc_t **backdrop,
     uint32_t *text_color)
 {
@@ -264,6 +337,8 @@ bool crazypod_now_presentation_get(
         return false;
     if(cover != NULL)
         *cover = &cover_descriptors[active_bank];
+    if(cover_caption != NULL)
+        *cover_caption = &cover_caption_descriptors[active_bank];
     if(backdrop != NULL)
         *backdrop = &backdrop_descriptors[active_bank];
     if(text_color != NULL)

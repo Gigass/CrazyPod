@@ -97,6 +97,21 @@ void crazypod_marquee_configure_centered(
     configure(label, active, true);
 }
 
+void crazypod_marquee_set_paused(lv_obj_t *label, bool paused)
+{
+    lv_anim_t *animation;
+
+    if(label == NULL)
+        return;
+    animation = lv_anim_get(label, NULL);
+    if(animation == NULL || lv_anim_is_paused(animation) == paused)
+        return;
+    if(paused)
+        lv_anim_pause(animation);
+    else
+        lv_anim_resume(animation);
+}
+
 void crazypod_marquee_set_text(
     lv_obj_t *label, const char *text, bool active)
 {

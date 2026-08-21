@@ -3,6 +3,7 @@
 #ifdef IPOD_6G
 
 #include "../../crazypod_frameclock.h"
+#include "../../crazypod_coverflow.h"
 #include "../../crazypod_lcd.h"
 #include "../../crazypod_state.h"
 #include "../features/books/crazypod_books_feature.h"
@@ -18,6 +19,7 @@
 #include "../presentation/crazypod_menu_list.h"
 #include "../presentation/crazypod_preview_motion.h"
 #include "../shell/crazypod_desktop.h"
+#include "../shell/crazypod_desktop_native.h"
 #include "../shell/crazypod_shell.h"
 #include "../shell/crazypod_status_bar.h"
 #include "../shell/crazypod_system_prompts.h"
@@ -65,8 +67,13 @@ static enum crazypod_route current_route_id(void)
 static void now_overlay_prepare(
     bool refresh, void *context)
 {
+    bool coverflow_active = crazypod_coverflow_active();
+
     (void)context;
-    crazypod_overlay_glass_prepare(refresh);
+    if(coverflow_active)
+        crazypod_coverflow_set_compositing_suspended(true);
+    crazypod_overlay_glass_prepare(
+        refresh && !coverflow_active);
 }
 
 static lv_obj_t *now_overlay_panel(
@@ -78,12 +85,17 @@ static lv_obj_t *now_overlay_panel(
         parent, x, y, width, height);
 }
 
-static void now_overlay_prefetch(
-    int queue_index, void *context)
+static void now_overlay_preserve_underlay(void *context)
 {
     (void)context;
-    crazypod_now_playing_prefetch_queue_artwork(
-        queue_index);
+    crazypod_desktop_native_preserve_modal_underlay();
+}
+
+static lv_obj_t *now_overlay_underlay(
+    lv_obj_t *parent, void *context)
+{
+    (void)context;
+    return crazypod_desktop_native_create_modal_underlay(parent);
 }
 
 static void now_overlay_render(void *context)
@@ -97,10 +109,12 @@ static void now_overlay_render(void *context)
 static void configure_now_playing(void)
 {
     const struct crazypod_now_playing_overlay_host overlay = {
-        .parent = crazypod_shell_product_content(),
+        .parent = crazypod_desktop_screen(),
         .prepare_glass = now_overlay_prepare,
+        .preserve_modal_underlay =
+            now_overlay_preserve_underlay,
+        .create_modal_underlay = now_overlay_underlay,
         .create_panel = now_overlay_panel,
-        .prefetch_queue_artwork = now_overlay_prefetch,
         .render = now_overlay_render,
     };
     crazypod_now_playing_overlay_configure(&overlay);

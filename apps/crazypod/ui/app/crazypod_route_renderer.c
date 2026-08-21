@@ -312,6 +312,8 @@ void crazypod_route_renderer_render(
         state->route, CRAZYPOD_ROUTE_FLAG_FULLSCREEN);
     bool solid_black = crazypod_route_registry_has_flag(
         state->route, CRAZYPOD_ROUTE_FLAG_SOLID_BLACK);
+    bool hide_status = crazypod_route_registry_has_flag(
+        state->route, CRAZYPOD_ROUTE_FLAG_HIDE_STATUS);
     int theme = crazypod_books_theme();
     uint32_t background = book_reader
         ? crazypod_books_feature_page_colors()[theme]
@@ -340,8 +342,9 @@ void crazypod_route_renderer_render(
                 state, content, primary_color());
         lv_obj_invalidate(content);
         crazypod_status_bar_set_visible(
-            1, state->route != MUSIC_ROUTE_NOW_PLAYING ||
-               !crazypod_now_playing_theme_owns_status_bar());
+            1, !hide_status &&
+               (state->route != MUSIC_ROUTE_NOW_PLAYING ||
+                !crazypod_now_playing_theme_owns_status_bar()));
         crazypod_status_bar_set_palette(
             1, foreground, background);
         crazypod_status_bar_foreground(1);
@@ -383,8 +386,9 @@ void crazypod_route_renderer_render(
         lv_obj_invalidate(content);
     }
     crazypod_status_bar_set_visible(
-        1, state->route != MUSIC_ROUTE_NOW_PLAYING ||
-           !crazypod_now_playing_theme_owns_status_bar());
+        1, !hide_status &&
+           (state->route != MUSIC_ROUTE_NOW_PLAYING ||
+            !crazypod_now_playing_theme_owns_status_bar()));
     crazypod_status_bar_set_palette(
         1, foreground, background);
     crazypod_status_bar_foreground(1);

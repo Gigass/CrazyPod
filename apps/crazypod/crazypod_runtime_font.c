@@ -8,7 +8,9 @@
 
 #include "file.h"
 #include "font.h"
+#include "kernel.h"
 #include "rbpaths.h"
+#include "rbunicode.h"
 #include "string-extra.h"
 #include "lvgl.h"
 #include "crazypod_l10n.h"
@@ -32,6 +34,7 @@ struct crazypod_asset_font_slot {
     bool semantic;
     bool persistent;
     bool used;
+    struct mutex glyph_mutex;
 };
 
 static struct crazypod_asset_font_slot runtime_fonts[
@@ -46,6 +49,8 @@ static bool asset_get_glyph_dsc(
     uint32_t letter, uint32_t letter_next);
 static const void *asset_get_glyph_bitmap(
     lv_font_glyph_dsc_t *glyph, lv_draw_buf_t *draw_buffer);
+static bool asset_ensure_loaded(
+    struct crazypod_asset_font_slot *slot);
 static const lv_font_t *semantic_font_resolve(
     enum crazypod_font_family family, unsigned size, unsigned weight,
     enum crazypod_font_style style, unsigned line_height, bool persistent);
@@ -146,9 +151,47 @@ const lv_font_t *crazypod_runtime_font(void)
 
 const lv_font_t *crazypod_runtime_font_at_size(unsigned size)
 {
+    return crazypod_runtime_font_at_size_weight(size, 400);
+}
+
+const lv_font_t *crazypod_runtime_font_at_size_weight(
+    unsigned size, unsigned weight)
+{
     return semantic_font_resolve(
-        CRAZYPOD_FONT_FAMILY_SYSTEM, size, 400,
+        CRAZYPOD_FONT_FAMILY_SYSTEM, size, weight,
         CRAZYPOD_FONT_STYLE_NORMAL, 0, true);
+}
+
+void crazypod_runtime_font_prewarm_text(
+    unsigned size, const char *text)
+{
+    const lv_font_t *lv_font;
+    struct crazypod_asset_font_slot *slot;
+    struct font *font;
+    const unsigned char *cursor;
+    ucschar_t character;
+
+    if(text == NULL || text[0] == '\0')
+        return;
+    lv_font = crazypod_runtime_font_at_size(size);
+    if(lv_font == NULL)
+        return;
+    slot = (struct crazypod_asset_font_slot *)lv_font->dsc;
+    if(slot == NULL || !asset_ensure_loaded(slot))
+        return;
+    cursor = (const unsigned char *)text;
+    while(*cursor != '\0') {
+        cursor = utf8decode(cursor, &character);
+        if(character == 0)
+            break;
+        mutex_lock(&slot->glyph_mutex);
+        font_lock(slot->font_id, true);
+        font = font_get(slot->font_id);
+        if(font != NULL)
+            (void)font_get_bits(font, character);
+        font_lock(slot->font_id, false);
+        mutex_unlock(&slot->glyph_mutex);
+    }
 }
 
 bool crazypod_runtime_fonts_ready(void)
@@ -316,6 +359,7 @@ static void font_slot_initialize(
     slot->lv_font.dsc = slot;
     slot->lv_font.subpx = LV_FONT_SUBPX_NONE;
     slot->lv_font.kerning = LV_FONT_KERNING_NONE;
+    mutex_init(&slot->glyph_mutex);
     slot->used = true;
 }
 
@@ -421,6 +465,7 @@ static bool asset_get_glyph_dsc(
     struct crazypod_asset_font_slot *slot =
         (struct crazypod_asset_font_slot *)font->dsc;
     struct font *rockbox_font;
+    int height;
     int width;
 
     (void)letter_next;
@@ -428,19 +473,23 @@ static bool asset_get_glyph_dsc(
        (slot->coverage[letter >> 3] & (1u << (letter & 7))) == 0 ||
        !asset_ensure_loaded(slot))
         return false;
+    mutex_lock(&slot->glyph_mutex);
     font_lock(slot->font_id, true);
     rockbox_font = font_get(slot->font_id);
     if(rockbox_font == NULL || letter < rockbox_font->firstchar ||
        letter - rockbox_font->firstchar >= (uint32_t)rockbox_font->size) {
         font_lock(slot->font_id, false);
+        mutex_unlock(&slot->glyph_mutex);
         return false;
     }
     width = font_get_width(rockbox_font, letter);
+    height = rockbox_font->height;
     font_lock(slot->font_id, false);
+    mutex_unlock(&slot->glyph_mutex);
     memset(glyph, 0, sizeof(*glyph));
     glyph->adv_w = width;
     glyph->box_w = width;
-    glyph->box_h = rockbox_font->height;
+    glyph->box_h = height;
     glyph->format = LV_FONT_GLYPH_FORMAT_A8;
     glyph->gid.index = letter;
     return true;
@@ -464,11 +513,13 @@ static const void *asset_get_glyph_bitmap(
         glyph->resolved_font->dsc;
     if(slot == NULL || !asset_ensure_loaded(slot))
         return NULL;
+    mutex_lock(&slot->glyph_mutex);
     font_lock(slot->font_id, true);
     font = font_get(slot->font_id);
     source = font != NULL ? font_get_bits(font, glyph->gid.index) : NULL;
     if(source == NULL) {
         font_lock(slot->font_id, false);
+        mutex_unlock(&slot->glyph_mutex);
         return NULL;
     }
     width = glyph->box_w;
@@ -499,6 +550,7 @@ static const void *asset_get_glyph_bitmap(
         }
     }
     font_lock(slot->font_id, false);
+    mutex_unlock(&slot->glyph_mutex);
     return draw_buffer;
 }
 

@@ -294,8 +294,15 @@ void crazypod_choice_overlay_show(
         ? callbacks->current_index(kind, id, callbacks->context)
         : selected;
     view.root = crazypod_ui_widget_box(
-        parent, 0, 0, LCD_WIDTH, LCD_HEIGHT, 0, 0x000000, 30);
+        parent, 0, 0, LCD_WIDTH, LCD_HEIGHT,
+        0, 0x000000, LV_OPA_TRANSP);
     lv_obj_remove_flag(view.root, LV_OBJ_FLAG_CLICKABLE);
+    if(callbacks->create_underlay != NULL)
+        (void)callbacks->create_underlay(
+            view.root, callbacks->context);
+    (void)crazypod_ui_widget_box(
+        view.root, 0, 0, LCD_WIDTH, LCD_HEIGHT,
+        0, 0x000000, 30);
     view.panel = callbacks->create_panel(
         view.root, view.geometry.x, view.geometry.y,
         view.geometry.width, view.geometry.height,

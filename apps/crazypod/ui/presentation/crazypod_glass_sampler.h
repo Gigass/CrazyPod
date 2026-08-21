@@ -13,7 +13,9 @@ enum crazypod_glass_material {
     CRAZYPOD_GLASS_MENU_TOPBAR,
     CRAZYPOD_GLASS_TEXT_PANEL,
     CRAZYPOD_GLASS_HOME_CAPSULE,
+    CRAZYPOD_GLASS_ARTWORK_CAPTION,
     CRAZYPOD_GLASS_INFO_TOAST,
+    CRAZYPOD_GLASS_HEADPHONE_POPUP,
 };
 
 typedef void (*crazypod_glass_boost_callback)(int ticks);

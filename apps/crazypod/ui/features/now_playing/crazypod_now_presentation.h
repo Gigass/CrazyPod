@@ -14,6 +14,7 @@ bool crazypod_now_presentation_prepare(
 bool crazypod_now_presentation_get(
     const char *track_path, unsigned generation,
     const lv_image_dsc_t **cover,
+    const lv_image_dsc_t **cover_caption,
     const lv_image_dsc_t **backdrop,
     uint32_t *text_color);
 void crazypod_now_presentation_discard(void);

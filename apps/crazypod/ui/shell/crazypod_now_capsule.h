@@ -22,6 +22,7 @@ void crazypod_now_capsule_poll_artwork(
 void crazypod_now_capsule_prepare_entry(void);
 void crazypod_now_capsule_start_entry(void);
 void crazypod_now_capsule_reset_motion(long now);
-void crazypod_now_capsule_tick(long now, bool home_active);
+void crazypod_now_capsule_tick(
+    long now, bool home_active, bool wheel_touch_active);
 
 #endif

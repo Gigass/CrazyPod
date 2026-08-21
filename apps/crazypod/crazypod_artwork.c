@@ -1680,7 +1680,7 @@ void crazypod_artwork_init(void)
     queue_init(&artwork_queue, false);
     create_thread(artwork_thread, artwork_stack, sizeof(artwork_stack), 0,
                   "crazypod art"
-                  IF_PRIO(, PRIORITY_BUFFERING)
+                  IF_PRIO(, PRIORITY_BACKGROUND)
                   IF_COP(, CPU));
 }
 

@@ -19,6 +19,7 @@ enum crazypod_route_flag {
     CRAZYPOD_ROUTE_FLAG_BOOK_READER = 1 << 3,
     CRAZYPOD_ROUTE_FLAG_PREVIEW = 1 << 4,
     CRAZYPOD_ROUTE_FLAG_SKEUOMORPHIC_PREVIEW = 1 << 5,
+    CRAZYPOD_ROUTE_FLAG_HIDE_STATUS = 1 << 6,
 };
 
 struct crazypod_route_descriptor {

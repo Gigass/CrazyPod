@@ -25,6 +25,7 @@ void crazypod_photo_screen_render_grid(
     int selected, const char *title,
     const lv_font_t *title_font,
     uint32_t primary_color, uint32_t panel_color);
+void crazypod_photo_screen_refresh_grid_media(void);
 void crazypod_photo_screen_render_detail(
     lv_obj_t *parent, int photo_index,
     uint32_t white_color,

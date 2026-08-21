@@ -27,23 +27,23 @@
 #define COLOR_GOLD 0xD9B45B
 #define COLOR_GREEN 0x5CCA6B
 
-#define PANEL_WIDTH 210
-#define PANEL_HEIGHT 190
+#define PANEL_WIDTH 184
+#define PANEL_HEIGHT 158
 #define PANEL_X ((LCD_WIDTH - PANEL_WIDTH) / 2)
 #define PANEL_Y ((LCD_HEIGHT - PANEL_HEIGHT) / 2)
-#define DEVICE_X 10
-#define DEVICE_Y 31
-#define DEVICE_WIDTH 190
-#define DEVICE_HEIGHT 128
-#define ENTRANCE_MS 450
-#define DEVICE_ENTRANCE_MS 520
-#define CONNECTION_MS 1200
-#define CONNECTION_REVEAL_MS 480
-#define HOVER_START_MS 1800
-#define HOVER_PERIOD_MS 2400
-#define HOLD_END_MS 5500
-#define EXIT_MS 300
-#define REDUCED_HOLD_MS 3500
+#define DEVICE_X 8
+#define DEVICE_Y 28
+#define DEVICE_WIDTH 168
+#define DEVICE_HEIGHT 105
+#define ENTRANCE_MS 280
+#define DEVICE_ENTRANCE_MS 360
+#define CONNECTION_MS 850
+#define CONNECTION_REVEAL_MS 320
+#define MOTION_END_MS \
+    (CONNECTION_MS + CONNECTION_REVEAL_MS + 750)
+#define HOLD_END_MS 4000
+#define EXIT_MS 180
+#define REDUCED_HOLD_MS 2800
 
 struct headphone_popup_state {
     lv_obj_t *parent;
@@ -57,7 +57,6 @@ struct headphone_popup_state {
     enum crazypod_headphone_popup_style style;
     int timeline_ms;
     int exit_origin_y;
-    int exit_origin_scale;
     int exit_origin_opacity;
     bool ui_ready;
     bool inserted;
@@ -67,6 +66,8 @@ struct headphone_popup_state {
 };
 
 static struct headphone_popup_state popup;
+
+static void hide_timer_cb(lv_timer_t *timer);
 
 static int clamp_int(int value, int minimum, int maximum)
 {
@@ -277,9 +278,8 @@ static void draw_airpods(
     int case_scale = lerp(1024, 840, settle);
     int combined_scale = intro * case_scale / 1024;
     int center_x = area->x1 + DEVICE_WIDTH / 2;
-    int base_y = area->y1 + 73;
-    int intro_y = lerp(40, 0, ease_out(intro_raw));
-    int hover_y = 0;
+    int base_y = area->y1 + 57;
+    int intro_y = lerp(24, 0, ease_out(intro_raw));
     int sway_x = 0;
     int body_width;
     int body_height;
@@ -295,14 +295,10 @@ static void draw_airpods(
     int led_opacity;
 
     if(timeline_ms < CONNECTION_MS)
-        sway_x = sine(timeline_ms * 360 / 2200) * 2 >>
+        sway_x = sine(timeline_ms * 360 / 1600) >>
             LV_TRIGO_SHIFT;
-    if(timeline_ms >= HOVER_START_MS)
-        hover_y = sine(
-            (timeline_ms - HOVER_START_MS) * 360 /
-                HOVER_PERIOD_MS) * 2 >> LV_TRIGO_SHIFT;
     center_x += sway_x;
-    base_y += intro_y + hover_y + lerp(0, 6, settle);
+    base_y += intro_y + lerp(0, 4, settle);
     body_width = clamp_int(52 * combined_scale / 1024, 2, 58);
     body_height = clamp_int(32 * combined_scale / 1024, 2, 36);
     body_x = center_x - body_width / 2;
@@ -476,39 +472,39 @@ static void draw_wired_earbuds(
         CONNECTION_MS + CONNECTION_REVEAL_MS, 180);
     lv_opa_t cable_opacity = scaled_opacity(235, cable);
     int center_x = area->x1 + DEVICE_WIDTH / 2;
-    int head_y = area->y1 + 35;
-    int left_x = center_x - 39;
-    int right_x = center_x + 39;
+    int head_y = area->y1 + 27;
+    int left_x = center_x - 34;
+    int right_x = center_x + 34;
     int left_anchor_x = left_x + 4;
     int right_anchor_x = right_x - 4;
     int anchor_y = head_y + 18;
-    int splitter_y = area->y1 + 87;
+    int splitter_y = area->y1 + 65;
     int plug_x = center_x + 2;
-    int plug_y = area->y1 + 108;
+    int plug_y = area->y1 + 82;
 
     if(cable > 0) {
         draw_line(
             layer, left_anchor_x, anchor_y,
-            center_x - 31, area->y1 + 62,
+            center_x - 28, area->y1 + 48,
             2, COLOR_CABLE, cable_opacity);
         draw_line(
-            layer, center_x - 31, area->y1 + 62,
-            center_x - 17, area->y1 + 76,
+            layer, center_x - 28, area->y1 + 48,
+            center_x - 15, area->y1 + 58,
             2, COLOR_CABLE, cable_opacity);
         draw_line(
-            layer, center_x - 17, area->y1 + 76,
+            layer, center_x - 15, area->y1 + 58,
             center_x - 3, splitter_y,
             2, COLOR_CABLE, cable_opacity);
         draw_line(
             layer, right_anchor_x, anchor_y,
-            center_x + 31, area->y1 + 62,
+            center_x + 28, area->y1 + 48,
             2, COLOR_CABLE, cable_opacity);
         draw_line(
-            layer, center_x + 31, area->y1 + 62,
-            center_x + 17, area->y1 + 76,
+            layer, center_x + 28, area->y1 + 48,
+            center_x + 15, area->y1 + 58,
             2, COLOR_CABLE, cable_opacity);
         draw_line(
-            layer, center_x + 17, area->y1 + 76,
+            layer, center_x + 15, area->y1 + 58,
             center_x + 3, splitter_y,
             2, COLOR_CABLE, cable_opacity);
         draw_rect(
@@ -519,10 +515,10 @@ static void draw_wired_earbuds(
             cable_opacity / 2);
         draw_line(
             layer, center_x, splitter_y + 7,
-            center_x + 6, area->y1 + 106,
+            center_x + 6, area->y1 + 80,
             2, COLOR_CABLE, cable_opacity);
         draw_line(
-            layer, center_x + 6, area->y1 + 106,
+            layer, center_x + 6, area->y1 + 80,
             center_x + 6, plug_y,
             2, COLOR_CABLE, cable_opacity);
         draw_rect(
@@ -570,10 +566,10 @@ static void draw_over_ear(
     int reveal = back_out(reveal_raw);
     int settle = smooth_step(reveal_raw);
     int center_x = area->x1 + DEVICE_WIDTH / 2;
-    int center_y = area->y1 + 70 +
-        lerp(40, 0, ease_out(intro_raw));
-    int spread = lerp(9, 48, clamp_int(reveal, 0, 1024));
-    int radius = lerp(23, 52, settle) * intro / 1024;
+    int center_y = area->y1 + 56 +
+        lerp(26, 0, ease_out(intro_raw));
+    int spread = lerp(9, 42, clamp_int(reveal, 0, 1024));
+    int radius = lerp(20, 44, settle) * intro / 1024;
     int cup_width = clamp_int(20 * intro / 1024, 2, 22);
     int cup_height = clamp_int(39 * intro / 1024, 3, 43);
     int left_x;
@@ -668,21 +664,15 @@ static void apply_timeline(int timeline_ms)
         timeline_ms, 0, ENTRANCE_MS));
     int reveal = progress_between(
         timeline_ms, CONNECTION_MS, CONNECTION_REVEAL_MS);
-    int bounce = reveal * (1024 - reveal) / 256;
     bool connected = timeline_ms >= CONNECTION_MS;
 
     popup.timeline_ms = timeline_ms;
     update_copy(connected);
-    if(popup.panel != NULL) {
-        lv_obj_set_style_transform_scale(
-            popup.panel, lerp(218, 256, entrance), 0);
-        lv_obj_set_style_opa(
-            popup.panel,
-            (lv_opa_t)(255 * entrance / 1024), 0);
-    }
+    if(popup.panel != NULL)
+        lv_obj_set_style_opa(popup.panel, LV_OPA_COVER, 0);
     if(popup.title != NULL)
-        lv_obj_set_style_transform_scale(
-            popup.title, 256 + 13 * bounce / 1024, 0);
+        lv_obj_set_style_text_opa(
+            popup.title, (lv_opa_t)lerp(150, 245, entrance), 0);
     if(popup.status != NULL)
         lv_obj_set_style_text_opa(
             popup.status,
@@ -755,10 +745,7 @@ static void exit_anim(void *target, int32_t value)
         return;
     lv_obj_set_y(
         popup.panel,
-        popup.exit_origin_y + 250 * progress / 1024);
-    lv_obj_set_style_transform_scale(
-        popup.panel,
-        lerp(popup.exit_origin_scale, 230, progress), 0);
+        popup.exit_origin_y + 12 * progress / 1024);
     lv_obj_set_style_opa(
         popup.panel,
         (lv_opa_t)(popup.exit_origin_opacity *
@@ -792,8 +779,6 @@ void crazypod_headphone_popup_dismiss(bool animated)
     }
     lv_anim_delete(popup.panel, NULL);
     popup.exit_origin_y = lv_obj_get_y(popup.panel);
-    popup.exit_origin_scale =
-        lv_obj_get_style_transform_scale_x(popup.panel, 0);
     popup.exit_origin_opacity =
         lv_obj_get_style_opa(popup.panel, 0);
     lv_anim_init(&animation);
@@ -809,11 +794,14 @@ void crazypod_headphone_popup_dismiss(bool animated)
 
 static void timeline_completed(lv_anim_t *animation)
 {
-    if(animation->var == popup.panel && !popup.dismissing)
-        crazypod_headphone_popup_dismiss(true);
+    if(animation->var != popup.panel || popup.dismissing)
+        return;
+    popup.hide_timer = lv_timer_create(
+        hide_timer_cb, HOLD_END_MS - MOTION_END_MS, NULL);
+    lv_timer_set_repeat_count(popup.hide_timer, 1);
 }
 
-static void reduced_hide(lv_timer_t *timer)
+static void hide_timer_cb(lv_timer_t *timer)
 {
     if(timer != popup.hide_timer)
         return;
@@ -829,7 +817,7 @@ static void start_motion(void)
     if(crazypod_state_reduce_motion()) {
         apply_timeline(CONNECTION_MS + CONNECTION_REVEAL_MS);
         popup.hide_timer = lv_timer_create(
-            reduced_hide, REDUCED_HOLD_MS, NULL);
+            hide_timer_cb, REDUCED_HOLD_MS, NULL);
         lv_timer_set_repeat_count(popup.hide_timer, 1);
         return;
     }
@@ -837,15 +825,15 @@ static void start_motion(void)
     lv_anim_init(&animation);
     lv_anim_set_var(&animation, popup.panel);
     lv_anim_set_exec_cb(&animation, timeline_anim);
-    lv_anim_set_values(&animation, 0, HOLD_END_MS);
-    lv_anim_set_duration(&animation, HOLD_END_MS);
+    lv_anim_set_values(&animation, 0, MOTION_END_MS);
+    lv_anim_set_duration(&animation, MOTION_END_MS);
     lv_anim_set_path_cb(&animation, lv_anim_path_linear);
     lv_anim_set_completed_cb(&animation, timeline_completed);
     lv_anim_set_early_apply(&animation, true);
     lv_anim_start(&animation);
 }
 
-static void show_popup(void)
+static void show_popup(enum crazypod_headphone_popup_style style)
 {
     const char *title_text;
 
@@ -856,7 +844,7 @@ static void show_popup(void)
         return;
     if(popup.callbacks.before_show != NULL)
         popup.callbacks.before_show();
-    popup.style = crazypod_state_headphone_popup_style();
+    popup.style = style;
     popup.root = crazypod_ui_widget_box(
         popup.parent, 0, 0, LCD_WIDTH, LCD_HEIGHT,
         0, 0x000000, LV_OPA_TRANSP);
@@ -872,10 +860,6 @@ static void show_popup(void)
         return;
     }
     lv_obj_remove_flag(popup.panel, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_transform_pivot_x(
-        popup.panel, PANEL_WIDTH / 2, 0);
-    lv_obj_set_style_transform_pivot_y(
-        popup.panel, PANEL_HEIGHT / 2, 0);
 
     title_text = popup.style == CRAZYPOD_HEADPHONE_POPUP_AIRPODS
         ? CP_TR("AirPods")
@@ -885,16 +869,12 @@ static void show_popup(void)
     popup.title = crazypod_ui_widget_label(
         popup.panel, title_text, &lv_font_montserrat_12,
         COLOR_WHITE, 245);
-    lv_obj_set_size(popup.title, PANEL_WIDTH - 24, 22);
-    lv_obj_set_pos(popup.title, 12, 8);
+    lv_obj_set_size(popup.title, PANEL_WIDTH - 20, 20);
+    lv_obj_set_pos(popup.title, 10, 7);
     lv_obj_set_style_text_align(
         popup.title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(
         popup.title, LV_LABEL_LONG_MODE_DOTS);
-    lv_obj_set_style_transform_pivot_x(
-        popup.title, (PANEL_WIDTH - 24) / 2, 0);
-    lv_obj_set_style_transform_pivot_y(
-        popup.title, 11, 0);
 
     popup.surface = crazypod_ui_widget_box(
         popup.panel, DEVICE_X, DEVICE_Y,
@@ -907,8 +887,8 @@ static void show_popup(void)
     popup.status = crazypod_ui_widget_label(
         popup.panel, CP_TR("Connecting..."),
         &lv_font_montserrat_10, COLOR_WHITE, 110);
-    lv_obj_set_size(popup.status, PANEL_WIDTH - 24, 20);
-    lv_obj_set_pos(popup.status, 12, 164);
+    lv_obj_set_size(popup.status, PANEL_WIDTH - 20, 18);
+    lv_obj_set_pos(popup.status, 10, 133);
     lv_obj_set_style_text_align(
         popup.status, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(
@@ -943,7 +923,7 @@ void crazypod_headphone_popup_connection_changed(bool inserted)
         return;
     popup.inserted = inserted;
     if(inserted)
-        show_popup();
+        show_popup(crazypod_state_headphone_popup_style());
     else
         crazypod_headphone_popup_dismiss(true);
 }
@@ -972,7 +952,7 @@ void crazypod_headphone_popup_simulator_show(void)
 {
     if(crazypod_headphone_popup_visible())
         crazypod_headphone_popup_dismiss(false);
-    show_popup();
+    show_popup(crazypod_state_headphone_popup_style());
 }
 #endif
 

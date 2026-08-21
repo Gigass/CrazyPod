@@ -8,6 +8,7 @@
 void crazypod_marquee_configure(lv_obj_t *label, bool active);
 void crazypod_marquee_configure_centered(
     lv_obj_t *label, bool active);
+void crazypod_marquee_set_paused(lv_obj_t *label, bool paused);
 void crazypod_marquee_set_text(
     lv_obj_t *label, const char *text, bool active);
 

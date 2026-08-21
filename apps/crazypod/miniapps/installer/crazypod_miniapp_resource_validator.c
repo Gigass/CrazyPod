@@ -7,6 +7,12 @@
 
 #include "crc32.h"
 #include "file.h"
+#if CONFIG_BINFMT == BINFMT_ROCK
+#include "kernel.h"
+#define VALIDATOR_YIELD() yield()
+#else
+#define VALIDATOR_YIELD() do { } while(0)
+#endif
 
 #include "../../crazypod_miniapps.h"
 #include "crazypod_miniapp_resource_validator.h"
@@ -18,7 +24,7 @@
 #define RESOURCE_ENTRY_SIZE 52u
 #define RESOURCE_MAGIC 0x53525043u
 #define RESOURCE_VERSION 1u
-#define IO_BUFFER_SIZE 1024u
+#define IO_BUFFER_SIZE (16u * 1024u)
 #define FONT_HEADER_SIZE 36u
 #define FONT_MAX (4u * 1024u * 1024u)
 #define FONT_LONG_OFFSET_THRESHOLD 0xffdbu
@@ -253,6 +259,7 @@ bool crazypod_miniapp_resource_container_valid(
             payload_crc = crc_32r(payload, amount, payload_crc);
             payload_offset += amount;
             remaining -= amount;
+            VALIDATOR_YIELD();
         }
         if(crc_finish(payload_crc) != read_le32(entry + 48))
             return false;

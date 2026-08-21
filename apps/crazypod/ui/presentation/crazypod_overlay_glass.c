@@ -19,6 +19,7 @@
 #define POPUP_RADIUS 18
 #define TINT_COLOR 0x11131A
 #define TINT_OPA 104
+#define HEADPHONE_TINT_OPA 72
 #define SAMPLE_WIDTH \
     ((POPUP_MAX_WIDTH + CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE - 1) / \
      CRAZYPOD_IMAGE_GLASS_SAMPLE_SCALE)
@@ -51,7 +52,7 @@ void crazypod_overlay_glass_prepare(bool refresh)
 }
 
 static void prepare_panel_descriptor(
-    int x, int y, int width, int height)
+    int x, int y, int width, int height, lv_opa_t tint_opacity)
 {
     const fb_data *framebuffer =
         (const fb_data *)crazypod_platform_display_framebuffer();
@@ -62,7 +63,7 @@ static void prepare_panel_descriptor(
        y + height > LCD_HEIGHT ||
        !crazypod_image_render_glass_rgb565(
            framebuffer, LCD_WIDTH, LCD_HEIGHT, LCD_WIDTH,
-           x, y, width, height, TINT_COLOR, TINT_OPA,
+           x, y, width, height, TINT_COLOR, tint_opacity,
            sample_pixels, sample_scratch,
            sizeof(sample_pixels) / sizeof(sample_pixels[0]),
            render_pixels, width, height)) {
@@ -78,10 +79,21 @@ static void prepare_panel_descriptor(
 lv_obj_t *crazypod_overlay_glass_panel(
     lv_obj_t *parent, int x, int y, int width, int height)
 {
-    prepare_panel_descriptor(x, y, width, height);
+    prepare_panel_descriptor(x, y, width, height, TINT_OPA);
     return crazypod_glass_panel_create(
         parent, x, y, width, height,
         POPUP_RADIUS, CRAZYPOD_GLASS_POPUP,
+        valid ? &descriptor : NULL);
+}
+
+lv_obj_t *crazypod_overlay_glass_headphone_panel(
+    lv_obj_t *parent, int x, int y, int width, int height)
+{
+    prepare_panel_descriptor(
+        x, y, width, height, HEADPHONE_TINT_OPA);
+    return crazypod_glass_panel_create(
+        parent, x, y, width, height,
+        POPUP_RADIUS, CRAZYPOD_GLASS_HEADPHONE_POPUP,
         valid ? &descriptor : NULL);
 }
 

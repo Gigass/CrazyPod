@@ -214,7 +214,7 @@ static void draw_torrent(lv_layer_t *layer, const lv_area_t *area,
 {
     int height = area_height(area);
     int primary_amp = ball ? height * 22 / 100
-                           : height * 29 / 100;
+                           : (height * 29 / 100 * 3 + 1) / 2;
     int secondary_amp = ball ? height * 17 / 100
                              : primary_amp * 72 / 100;
     int highlight_amp = ball ? height * 12 / 100

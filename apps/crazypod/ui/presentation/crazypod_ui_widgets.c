@@ -74,6 +74,16 @@ const lv_font_t *crazypod_ui_widget_resolve_font(
 void crazypod_ui_widget_make_plain(lv_obj_t *obj)
 {
     lv_obj_remove_style_all(obj);
+    /* Fixed presentation boxes must opt in to scrolling explicitly. */
+    lv_obj_remove_flag(
+        obj,
+        LV_OBJ_FLAG_SCROLLABLE |
+        LV_OBJ_FLAG_SCROLL_ELASTIC |
+        LV_OBJ_FLAG_SCROLL_MOMENTUM |
+        LV_OBJ_FLAG_SCROLL_CHAIN |
+        LV_OBJ_FLAG_SCROLL_ON_FOCUS |
+        LV_OBJ_FLAG_SCROLL_WITH_ARROW);
+    lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_pad_all(obj, 0, 0);
     lv_obj_set_style_border_width(obj, 0, 0);
 }

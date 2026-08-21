@@ -102,7 +102,7 @@ int crazypod_album_flow_screen_sync(void)
     if(album_title == NULL || album_artist == NULL ||
        album_position == NULL)
         return -1;
-    album_index = crazypod_coverflow_center_album();
+    album_index = crazypod_coverflow_selected_album();
     if(album_index != displayed_album)
         set_metadata(album_index);
     return album_index;

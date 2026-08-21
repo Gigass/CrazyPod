@@ -514,7 +514,7 @@ bool crazypod_desktop_native_render(
     rendered_top = dirty_top;
     rendered_width = dirty_right - dirty_left;
     rendered_height = dirty_bottom - dirty_top;
-    crazypod_present_queue_rect(
+    crazypod_present_queue_home_rect(
         dirty_left, dirty_top,
         dirty_right - dirty_left,
         dirty_bottom - dirty_top);

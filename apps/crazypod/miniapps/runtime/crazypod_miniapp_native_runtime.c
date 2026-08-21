@@ -13,6 +13,7 @@
 
 #include "load_code.h"
 #include "logf.h"
+#include "kernel.h"
 #include "misc.h"
 #include "powermgmt.h"
 #include "timefuncs.h"
@@ -51,6 +52,8 @@ static struct {
     void *handle;
     const struct cp_native_app_ops *ops;
     bool close_requested;
+    bool mounting;
+    unsigned mount_ui_operations;
 } native;
 
 static struct {
@@ -74,11 +77,29 @@ static size_t bounded_length(const char *text, size_t capacity);
     CP_NATIVE_CAP_TEXT_PROMPT | CP_NATIVE_CAP_FILE_EXCHANGE | \
     CP_NATIVE_CAP_SOUND_EFFECTS | CP_NATIVE_CAP_ALARMS)
 
+#define MOUNT_UI_YIELD_INTERVAL 8u
+#define BSS_CLEAR_CHUNK_SIZE (16u * 1024u)
+
+static void mount_ui_checkpoint(void)
+{
+    if(!native.mounting)
+        return;
+    ++native.mount_ui_operations;
+    if(native.mount_ui_operations >= MOUNT_UI_YIELD_INTERVAL) {
+        native.mount_ui_operations = 0;
+        yield();
+    }
+}
+
 static int ui_begin_update(void)
 {
+    int result;
+
     diagnostics.update_started_ms =
         crazypod_miniapp_host_monotonic_ms();
-    return crazypod_miniapps_ui_begin_update();
+    result = crazypod_miniapps_ui_begin_update();
+    mount_ui_checkpoint();
+    return result;
 }
 
 static int ui_end_update(void)
@@ -90,6 +111,77 @@ static int ui_end_update(void)
         now - diagnostics.update_started_ms;
     if(diagnostics.update_last_ms > diagnostics.update_max_ms)
         diagnostics.update_max_ms = diagnostics.update_last_ms;
+    mount_ui_checkpoint();
+    return result;
+}
+
+static cp_ui_handle_t ui_create(uint8_t object_type)
+{
+    cp_ui_handle_t result = crazypod_miniapps_ui_create(object_type);
+
+    mount_ui_checkpoint();
+    return result;
+}
+
+static int ui_insert(
+    cp_ui_handle_t child, cp_ui_handle_t parent,
+    cp_ui_handle_t before)
+{
+    int result = crazypod_miniapps_ui_insert(child, parent, before);
+
+    mount_ui_checkpoint();
+    return result;
+}
+
+static int ui_set_i32(
+    cp_ui_handle_t target, uint16_t property, int32_t value)
+{
+    int result = crazypod_miniapps_ui_set_i32(
+        target, property, value);
+
+    mount_ui_checkpoint();
+    return result;
+}
+
+static int ui_set_color(
+    cp_ui_handle_t target, uint16_t property, uint32_t rgb)
+{
+    int result = crazypod_miniapps_ui_set_color(
+        target, property, rgb);
+
+    mount_ui_checkpoint();
+    return result;
+}
+
+static int ui_set_string(
+    cp_ui_handle_t target, uint16_t property, const char *value)
+{
+    int result = crazypod_miniapps_ui_set_string(
+        target, property, value);
+
+    mount_ui_checkpoint();
+    return result;
+}
+
+static int ui_set_bytes(
+    cp_ui_handle_t target, uint16_t property,
+    const void *data, size_t size)
+{
+    int result = crazypod_miniapps_ui_set_bytes(
+        target, property, data, size);
+
+    mount_ui_checkpoint();
+    return result;
+}
+
+static int ui_listen(
+    cp_ui_handle_t target, uint8_t event_type,
+    cp_event_handler_t handler)
+{
+    int result = crazypod_miniapps_ui_listen(
+        target, event_type, handler);
+
+    mount_ui_checkpoint();
     return result;
 }
 
@@ -97,12 +189,34 @@ static int ui_animate(
     cp_ui_handle_t target, uint16_t property,
     const struct cp_native_ui_animation *animation)
 {
+    int result;
+
     if(animation == NULL || animation->flags != 0)
         return CP_NATIVE_ERROR_ARGUMENT;
-    return crazypod_miniapps_ui_animate(
+    result = crazypod_miniapps_ui_animate(
         target, property, animation->from, animation->to,
         animation->duration_ms, animation->delay_ms,
         animation->easing, animation->completion_handler);
+    mount_ui_checkpoint();
+    return result;
+}
+
+static int ui_commit_drawing(
+    cp_ui_handle_t target, const void *data, size_t size)
+{
+    int result = crazypod_miniapps_ui_commit_drawing(
+        target, data, size);
+
+    mount_ui_checkpoint();
+    return result;
+}
+
+static int ui_remove(cp_ui_handle_t target)
+{
+    int result = crazypod_miniapps_ui_remove(target);
+
+    mount_ui_checkpoint();
+    return result;
 }
 
 static const struct cp_native_ui_api ui_api = {
@@ -110,16 +224,16 @@ static const struct cp_native_ui_api ui_api = {
     .abi_minor = CP_NATIVE_ABI_MINOR,
     .struct_size = sizeof(struct cp_native_ui_api),
     .begin_update = ui_begin_update,
-    .create = crazypod_miniapps_ui_create,
-    .insert = crazypod_miniapps_ui_insert,
-    .set_i32 = crazypod_miniapps_ui_set_i32,
-    .set_color = crazypod_miniapps_ui_set_color,
-    .set_string = crazypod_miniapps_ui_set_string,
-    .set_bytes = crazypod_miniapps_ui_set_bytes,
-    .listen = crazypod_miniapps_ui_listen,
+    .create = ui_create,
+    .insert = ui_insert,
+    .set_i32 = ui_set_i32,
+    .set_color = ui_set_color,
+    .set_string = ui_set_string,
+    .set_bytes = ui_set_bytes,
+    .listen = ui_listen,
     .animate = ui_animate,
-    .commit_drawing = crazypod_miniapps_ui_commit_drawing,
-    .remove = crazypod_miniapps_ui_remove,
+    .commit_drawing = ui_commit_drawing,
+    .remove = ui_remove,
     .end_update = ui_end_update,
 };
 
@@ -510,6 +624,25 @@ static bool header_valid(
     return true;
 }
 
+#if CONFIG_BINFMT == BINFMT_ROCK
+static void clear_bss_cooperatively(
+    const struct cp_native_binary_header_runtime *header)
+{
+    unsigned char *cursor = header->bss_start;
+    size_t remaining =
+        (size_t)(header->lc_header.end_addr - header->bss_start);
+
+    while(remaining > 0) {
+        size_t amount = MIN(remaining, BSS_CLEAR_CHUNK_SIZE);
+
+        memset(cursor, 0, amount);
+        cursor += amount;
+        remaining -= amount;
+        yield();
+    }
+}
+#endif
+
 void crazypod_miniapp_native_close(void)
 {
     void *handle = native.handle;
@@ -548,6 +681,7 @@ int crazypod_miniapp_native_open(
     if(!crazypod_miniapp_host_session_begin(0))
         return CRAZYPOD_MINIAPP_ERROR_LIMIT;
 #if CONFIG_BINFMT == BINFMT_ROCK
+    yield();
     handle = lc_open(
         metadata->binary_path, pluginbuf, PLUGIN_BUFFER_SIZE);
 #else
@@ -561,10 +695,7 @@ int crazypod_miniapp_native_open(
         return CRAZYPOD_MINIAPP_ERROR_ABI;
     }
 #if CONFIG_BINFMT == BINFMT_ROCK
-    memset(
-        header->bss_start, 0,
-        (size_t)(header->lc_header.end_addr -
-                 header->bss_start));
+    clear_bss_cooperatively(header);
 #endif
     native.metadata = metadata;
     native.handle = handle;
@@ -578,7 +709,12 @@ int crazypod_miniapp_native_open(
     }
     native.ops = ops;
     crazypod_runtime_font_error_clear();
+    native.mounting = true;
+    native.mount_ui_operations = 0;
+    yield();
     result = native.ops->mount();
+    native.mounting = false;
+    yield();
     if(result != CP_NATIVE_OK) {
 #ifdef SIMULATOR
         fprintf(stderr,
