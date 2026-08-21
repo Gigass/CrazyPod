@@ -40,20 +40,21 @@
         ? (UNLOCK_HOLD_TICKS - UNLOCK_FEEDBACK_DELAY_TICKS) : 1)
 #define UNLOCK_OPEN_TICKS \
     ((HZ * 13 / 50) > 0 ? (HZ * 13 / 50) : 1)
-#define MEDIA_PANEL_SIDE_MARGIN 8
-#define MEDIA_PANEL_BOTTOM_MARGIN 8
+#define MEDIA_PANEL_SIDE_MARGIN 12
+#define MEDIA_PANEL_BOTTOM_MARGIN 12
 #define MEDIA_PANEL_X MEDIA_PANEL_SIDE_MARGIN
 #define MEDIA_PANEL_WIDTH (LCD_WIDTH - MEDIA_PANEL_SIDE_MARGIN * 2)
-#define MEDIA_PANEL_HEIGHT 104
+#define MEDIA_PANEL_HEIGHT 94
 #define MEDIA_PANEL_Y \
     (LCD_HEIGHT - MEDIA_PANEL_HEIGHT - MEDIA_PANEL_BOTTOM_MARGIN)
 #define MEDIA_PANEL_TINT_COLOR 0x11131A
 #define MEDIA_PANEL_TINT_OPA 48
-#define MEDIA_ARTWORK_SIZE 84
-#define MEDIA_ARTWORK_X 20
-#define MEDIA_TEXT_X 116
-#define MEDIA_TEXT_WIDTH 178
-#define MEDIA_PROGRESS_WIDTH 178
+#define MEDIA_ARTWORK_SIZE 74
+#define MEDIA_ARTWORK_X 12
+#define MEDIA_ARTWORK_Y 10
+#define MEDIA_TEXT_X 96
+#define MEDIA_TEXT_WIDTH 188
+#define MEDIA_PROGRESS_WIDTH 188
 #define MEDIA_TITLE_FONT_SIZE 15
 #define MEDIA_ARTIST_FONT_SIZE 12
 #define MEDIA_ALBUM_FONT_SIZE 10
@@ -320,6 +321,8 @@ static void layout_lock_row(void)
     lv_point_t date_size = { 0, 0 };
     int available_width;
     int date_width;
+    int date_scale;
+    int scaled_date_width;
     int row_width;
     int row_x;
     int row_y;
@@ -333,12 +336,19 @@ static void layout_lock_row(void)
     lv_text_get_size(
         &date_size, date_text != NULL ? date_text : "", font,
         0, 0, LV_COORD_MAX, LV_TEXT_FLAG_EXPAND);
+    date_scale = lv_obj_get_style_transform_scale_x(
+        lock_state.date_label, LV_PART_MAIN);
+    if(date_scale <= 0)
+        date_scale = 256;
     available_width = LCD_WIDTH - LOCK_DATE_MARGIN * 2 -
         LOCK_SURFACE_SIZE - LOCK_DATE_GAP;
     date_width = date_size.x;
-    if(date_width > available_width)
-        date_width = available_width;
-    row_width = LOCK_SURFACE_SIZE + LOCK_DATE_GAP + date_width;
+    if(date_width * date_scale / 256 > available_width)
+        date_width = available_width * 256 / date_scale;
+    scaled_date_width =
+        (date_width * date_scale + 255) / 256;
+    row_width = LOCK_SURFACE_SIZE + LOCK_DATE_GAP +
+        scaled_date_width;
     row_x = (LCD_WIDTH - row_width) / 2;
     row_y = lock_state.date_y +
         (lv_font_get_line_height(font) - LOCK_SURFACE_SIZE) / 2 +
@@ -1103,7 +1113,7 @@ lv_obj_t *crazypod_lock_screen_create(
     }
 
     lock_state.media_artwork = make_box(
-        lock_state.media_panel, MEDIA_ARTWORK_X, 8,
+        lock_state.media_panel, MEDIA_ARTWORK_X, MEDIA_ARTWORK_Y,
         MEDIA_ARTWORK_SIZE, MEDIA_ARTWORK_SIZE, 10,
         0x25485A, LV_OPA_COVER);
     lv_obj_set_style_bg_grad_color(

@@ -60,6 +60,25 @@ cc -std=c99 -Wall -Wextra -Werror \
 "$test_root/crazypod_screen_off_policy_host_test"
 
 cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/apps/crazypod/crazypod_audio_memory_policy.c" \
+    "$repo_root/tests/crazypod_audio_memory_policy_host_test.c" \
+    -o "$test_root/crazypod_audio_memory_policy_host_test"
+
+"$test_root/crazypod_audio_memory_policy_host_test"
+
+cc -std=gnu99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-buflib-stubs" \
+    -I"$repo_root/firmware/include" \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/firmware/buflib_mempool.c" \
+    "$repo_root/apps/crazypod/crazypod_audio_memory_policy.c" \
+    "$repo_root/tests/crazypod_audio_memory_buflib_host_test.c" \
+    -o "$test_root/crazypod_audio_memory_buflib_host_test"
+
+"$test_root/crazypod_audio_memory_buflib_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-image-stubs" \
     -I"$repo_root/apps/crazypod" \
     "$repo_root/apps/crazypod/crazypod_image.c" \

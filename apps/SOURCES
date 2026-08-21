@@ -52,6 +52,7 @@ crazypod/crazypod_music.c
 crazypod/crazypod_music_storage.c
 crazypod/crazypod_collation.c
 crazypod/crazypod_playlist.c
+crazypod/crazypod_audio_memory_policy.c
 crazypod/crazypod_audio_shims.c
 crazypod/crazypod_soundwave.c
 crazypod/crazypod_apps.c

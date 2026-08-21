@@ -1,0 +1,3 @@
+#ifndef TEST_STRING_EXTRA_H
+#define TEST_STRING_EXTRA_H
+#endif

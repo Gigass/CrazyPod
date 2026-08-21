@@ -49,6 +49,10 @@
 #include "general.h"
 #include <stdio.h>
 
+#ifdef IPOD_6G
+#include "crazypod/crazypod_audio_memory_policy.h"
+#endif
+
 #ifdef HAVE_TAGCACHE
 #include "tagcache.h"
 #endif
@@ -859,6 +863,10 @@ static int audiobuf_handle;
 #define AUDIO_BUFFER_RESERVE (256*1024)
 static size_t filebuflen;
 
+#ifdef IPOD_6G
+static int runtime_handle_reserve[CRAZYPOD_RUNTIME_HANDLE_HEADROOM];
+#endif
+
 
 size_t audio_buffer_size(void)
 {
@@ -967,6 +975,19 @@ static int shrink_callback(int handle, unsigned hints, void* start, size_t old_s
 
     bool give_up = false;
 
+#ifdef IPOD_6G
+    bool playback_running =
+        (audio_status() & (AUDIO_STATUS_PLAY | AUDIO_STATUS_PAUSE)) ==
+            AUDIO_STATUS_PLAY;
+
+    /* CrazyPod keeps playback continuous. Late UI, font and media-cache
+     * allocations use the runtime headroom left by audio_reset_buffer().
+     * Once that headroom is exhausted, fail the allocation instead of
+     * stopping and restarting the codec to shrink a live audio buffer. */
+    if (!crazypod_audio_buffer_may_shrink(playback_running))
+        return BUFLIB_CB_CANNOT_SHRINK;
+#endif
+
     /* filebuflen is, at this point, the buffering.c buffer size,
      * i.e. the audiobuf except voice, scratch mem, pcm, ... */
     ssize_t extradata_size = old_size - filebuflen;
@@ -1067,6 +1088,12 @@ static struct buflib_callbacks ops = {
 
 static void audio_reset_buffer(void)
 {
+#ifdef IPOD_6G
+    int runtime_reserve_handle = -1;
+    size_t runtime_headroom;
+    unsigned int runtime_handle_count = 0;
+#endif
+
     if (audiobuf_handle > 0)
     {
         core_free(audiobuf_handle);
@@ -1074,7 +1101,33 @@ static void audio_reset_buffer(void)
     }
     if (core_allocatable() < pcmbuf_size_reqd())
         talk_buffer_set_policy(TALK_BUFFER_LOOSE); /* back off voice buffer */
+#ifdef IPOD_6G
+    /* core_alloc_maximum() otherwise consumes every remaining byte. Hold a
+     * locked block and enough handles across that call, then free them to
+     * leave a separate arena for all allocations that can occur after
+     * playback starts. Buflib's maximum allocation keeps only a small default
+     * handle reserve, which is not enough for a 512-node Mini App scene. */
+    while (runtime_handle_count < CRAZYPOD_RUNTIME_HANDLE_HEADROOM)
+    {
+        int handle = core_alloc(1);
+
+        if (handle <= 0)
+            break;
+        runtime_handle_reserve[runtime_handle_count++] = handle;
+    }
+    runtime_headroom =
+        crazypod_audio_runtime_headroom(core_allocatable());
+    if (runtime_headroom > 0)
+        runtime_reserve_handle = core_alloc_ex(
+            runtime_headroom, &buflib_ops_locked);
+#endif
     audiobuf_handle = core_alloc_maximum(&filebuflen, &ops);
+#ifdef IPOD_6G
+    if (runtime_reserve_handle > 0)
+        core_free(runtime_reserve_handle);
+    while (runtime_handle_count > 0)
+        core_free(runtime_handle_reserve[--runtime_handle_count]);
+#endif
 
     if (audiobuf_handle > 0)
         audio_reset_buffer_noalloc(core_get_data(audiobuf_handle));
