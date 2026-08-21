@@ -702,7 +702,7 @@ static void show_now_actions_popup(void)
                        &lv_font_montserrat_10,
                        COLOR_WHITE, 92);
     lv_obj_set_width(title, geometry.width - 28);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(title, 14, title_y);
 
     now_actions_view.queue_row = crazypod_ui_widget_box(
@@ -956,7 +956,7 @@ static void show_now_queue_popup(void)
     lv_obj_set_width(
         now_queue_view.mode, geometry.width - 72);
     lv_obj_set_style_text_align(
-        now_queue_view.mode, LV_TEXT_ALIGN_LEFT, 0);
+        now_queue_view.mode, LV_TEXT_ALIGN_CENTER, 0);
     now_queue_view.count = crazypod_ui_widget_label(
         now_overlay_panel, "0/0",
         &lv_font_montserrat_8,
@@ -978,14 +978,14 @@ static void show_now_queue_popup(void)
     lv_obj_set_width(
         source_title, geometry.width - 68);
     lv_obj_set_style_text_align(
-        source_title, LV_TEXT_ALIGN_LEFT, 0);
+        source_title, LV_TEXT_ALIGN_CENTER, 0);
     now_queue_view.empty = crazypod_ui_widget_label(
         now_overlay_panel, CP_TR("No Queue"),
         CRAZYPOD_METADATA_FONT,
         COLOR_WHITE, 225);
     lv_obj_set_width(now_queue_view.empty, row_width);
     lv_obj_set_style_text_align(
-        now_queue_view.empty, LV_TEXT_ALIGN_LEFT, 0);
+        now_queue_view.empty, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(
         now_queue_view.empty, 14,
         58 + (geometry.height - 58 - empty_height) / 2);
@@ -1132,7 +1132,7 @@ static void show_now_progress_popup(void)
                        &lv_font_montserrat_10,
                        COLOR_WHITE, 100);
     lv_obj_set_width(title, geometry.width - 28);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(title, 14, title_y);
     now_progress_view.icon = crazypod_ui_widget_icon(
         now_overlay_panel, 22, track_y - 3,

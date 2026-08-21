@@ -310,7 +310,7 @@ void crazypod_choice_overlay_show(
         COLOR_WHITE, 100);
     lv_obj_set_width(view.title, view.geometry.width - 24);
     lv_obj_set_style_text_align(
-        view.title, LV_TEXT_ALIGN_LEFT, 0);
+        view.title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(view.title, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_pos(view.title, 12, 12);
 
@@ -319,7 +319,7 @@ void crazypod_choice_overlay_show(
         COLOR_WHITE, 170);
     lv_obj_set_width(view.value, view.geometry.width - 24);
     lv_obj_set_style_text_align(
-        view.value, LV_TEXT_ALIGN_LEFT, 0);
+        view.value, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(view.value, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_pos(view.value, 12, 29);
     if(view.action_layout)
@@ -467,7 +467,7 @@ void crazypod_choice_overlay_show_receipt(
         view.receipt_label, geometry.width - 20);
     lv_obj_set_height(view.receipt_label, label_height);
     lv_obj_set_style_text_align(
-        view.receipt_label, LV_TEXT_ALIGN_LEFT, 0);
+        view.receipt_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(
         view.receipt_label, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_line_space(

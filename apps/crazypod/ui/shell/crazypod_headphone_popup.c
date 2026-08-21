@@ -888,7 +888,7 @@ static void show_popup(void)
     lv_obj_set_size(popup.title, PANEL_WIDTH - 24, 22);
     lv_obj_set_pos(popup.title, 12, 8);
     lv_obj_set_style_text_align(
-        popup.title, LV_TEXT_ALIGN_LEFT, 0);
+        popup.title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(
         popup.title, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_style_transform_pivot_x(
@@ -910,7 +910,7 @@ static void show_popup(void)
     lv_obj_set_size(popup.status, PANEL_WIDTH - 24, 20);
     lv_obj_set_pos(popup.status, 12, 164);
     lv_obj_set_style_text_align(
-        popup.status, LV_TEXT_ALIGN_LEFT, 0);
+        popup.status, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(
         popup.status, LV_LABEL_LONG_MODE_DOTS);
     popup.connected_copy = false;

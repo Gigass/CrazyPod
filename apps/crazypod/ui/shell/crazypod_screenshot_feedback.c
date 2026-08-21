@@ -99,7 +99,7 @@ static lv_obj_t *create_prompt(bool saved)
         &lv_font_montserrat_10, COLOR_WHITE, LV_OPA_COVER);
     lv_obj_set_width(label, geometry.width - 54);
     lv_obj_set_style_text_align(
-        label, LV_TEXT_ALIGN_LEFT, 0);
+        label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_pos(
         label, 40,

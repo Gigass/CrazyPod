@@ -268,13 +268,13 @@ void crazypod_usb_prompt_show(unsigned request)
         prompt.panel, CP_TR("USB CONNECTED"), &lv_font_montserrat_10,
         COLOR_WHITE, 110);
     lv_obj_set_width(title, geometry.width - 2 * option_inset);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(title, option_inset, title_y);
     detail = make_label(
         prompt.panel, CP_TR("Choose Mode"), &lv_font_montserrat_12,
         COLOR_WHITE, 235);
     lv_obj_set_width(detail, geometry.width - 2 * option_inset);
-    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_style_text_align(detail, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_pos(detail, option_inset, detail_y);
 
     for(index = 0; index < 2; ++index) {
