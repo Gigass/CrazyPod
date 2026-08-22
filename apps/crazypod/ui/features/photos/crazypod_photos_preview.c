@@ -34,42 +34,100 @@ static lv_obj_t *make_label(
         parent, text, font, color, opacity);
 }
 
-static void render_procedural_photo(
-    lv_obj_t *parent, int x, int y,
-    int width, int height, int seed)
+static void set_rotation(void *target, int32_t rotation)
 {
-    static const uint32_t sky_colors[] = {
-        0x8EC5D8, 0xD7A7B8, 0x8AB89B, 0xC8A66A
-    };
-    static const uint32_t ground_colors[] = {
-        0x385869, 0x744A61, 0x46654F, 0x725537
-    };
-    lv_obj_t *scene = make_box(
-        parent, x, y, width, height, 2,
-        sky_colors[seed % 4], LV_OPA_COVER);
-    int horizon = height * 2 / 3;
+    lv_obj_set_style_transform_rotation(target, rotation, 0);
+}
+
+static void start_rotation_loop(
+    lv_obj_t *object, int start, int end,
+    int duration, int delay, bool reverse)
+{
+    lv_anim_t animation;
+
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, object);
+    lv_anim_set_exec_cb(&animation, set_rotation);
+    lv_anim_set_values(&animation, start, end);
+    lv_anim_set_duration(&animation, duration);
+    lv_anim_set_delay(&animation, delay);
+    lv_anim_set_path_cb(
+        &animation,
+        reverse ? lv_anim_path_ease_in_out : lv_anim_path_linear);
+    if(reverse)
+        lv_anim_set_reverse_duration(&animation, duration);
+    lv_anim_set_repeat_count(&animation, LV_ANIM_REPEAT_INFINITE);
+    (void)lv_anim_start(&animation);
+}
+
+static lv_obj_t *render_memory_aperture(
+    lv_obj_t *parent, bool favorite)
+{
+    static const int blade_x[] = { 21, 39, 32, 10, 3 };
+    static const int blade_y[] = { 4, 20, 43, 43, 20 };
+    static const int blade_angle[] = { 0, 720, 1440, 2160, 2880 };
+    uint32_t surface = favorite ? 0x190A10 : 0x071416;
+    uint32_t surface_deep = favorite ? 0x070306 : 0x020708;
+    uint32_t primary = favorite ? 0xEA7E98 : 0x64D8CB;
+    uint32_t secondary = favorite ? 0xD7A45B : 0x6F84E8;
+    uint32_t warm = favorite ? 0xFFE0A3 : 0xF1C66D;
+    lv_obj_t *stage = make_box(
+        parent, 186, 44, 108, 108, 0,
+        surface_deep, LV_OPA_TRANSP);
+    lv_obj_t *lens = make_box(
+        stage, 8, 8, 92, 92, LV_RADIUS_CIRCLE,
+        surface, LV_OPA_COVER);
+    lv_obj_t *orbit;
+    lv_obj_t *blades;
+    int i;
 
     lv_obj_set_style_bg_grad_color(
-        scene, lv_color_hex(sky_colors[(seed + 1) % 4]), 0);
-    lv_obj_set_style_bg_grad_dir(scene, LV_GRAD_DIR_VER, 0);
-    lv_obj_set_style_border_width(scene, 1, 0);
+        lens, lv_color_hex(surface_deep), 0);
+    lv_obj_set_style_bg_grad_dir(lens, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_border_width(lens, 2, 0);
     lv_obj_set_style_border_color(
-        scene, lv_color_hex(0xF8FAF8), 0);
-    lv_obj_set_style_border_opa(scene, 62, 0);
+        lens, lv_color_hex(primary), 0);
+    lv_obj_set_style_border_opa(lens, 150, 0);
+    crazypod_preview_add_bevel(
+        lens, 92, 92, secondary, surface_deep);
+
+    orbit = make_box(
+        lens, 3, 3, 86, 86, 0,
+        surface_deep, LV_OPA_TRANSP);
+    lv_obj_set_style_transform_pivot_x(orbit, 43, 0);
+    lv_obj_set_style_transform_pivot_y(orbit, 43, 0);
     make_box(
-        scene, width * 2 / 3, height / 7,
-        width / 7, width / 7,
-        LV_RADIUS_CIRCLE, 0xF7DE8B, 210);
+        orbit, 40, 0, 6, 6, LV_RADIUS_CIRCLE,
+        warm, LV_OPA_COVER);
     make_box(
-        scene, 0, horizon, width, height - horizon,
-        0, ground_colors[seed % 4], LV_OPA_COVER);
+        orbit, 76, 57, 4, 4, LV_RADIUS_CIRCLE,
+        primary, 210);
+
+    blades = make_box(
+        lens, 11, 11, 70, 70, 0,
+        surface_deep, LV_OPA_TRANSP);
+    lv_obj_set_style_transform_pivot_x(blades, 35, 0);
+    lv_obj_set_style_transform_pivot_y(blades, 35, 0);
+    for(i = 0; i < 5; ++i) {
+        lv_obj_t *blade = make_box(
+            blades, blade_x[i], blade_y[i], 27, 11, 6,
+            (i & 1) != 0 ? secondary : primary,
+            (lv_opa_t)(205 - i * 9));
+
+        lv_obj_set_style_transform_pivot_x(blade, 13, 0);
+        lv_obj_set_style_transform_pivot_y(blade, 5, 0);
+        lv_obj_set_style_transform_rotation(
+            blade, blade_angle[i], 0);
+    }
     make_box(
-        scene, width / 8, horizon - height / 5,
-        width * 3 / 5, height / 4,
-        height / 8, ground_colors[(seed + 1) % 4], 210);
-    make_box(
-        scene, width * 3 / 4, horizon - height / 9,
-        width / 9, height / 3, 1, 0x253B35, 145);
+        lens, 40, 40, 12, 12, LV_RADIUS_CIRCLE,
+        warm, LV_OPA_COVER);
+
+    if(!crazypod_preview_motion_reduced()) {
+        start_rotation_loop(orbit, 0, 3600, 7200, 520, false);
+        start_rotation_loop(blades, -35, 45, 1800, 520, true);
+    }
+    return stage;
 }
 
 static void format_media_duration(
@@ -180,50 +238,14 @@ void crazypod_photos_preview_render(
     lv_obj_t *label;
     lv_obj_t *text_panel;
     char detail[48];
-    int i;
 
     crazypod_preview_make_plinth(
         parent, 180, 149, 120, 0xAEB6B9, 0x252A2C);
     if(state->selected == 0) {
-        static const int x[] = { 181, 213, 244 };
-        static const int y[] = { 70, 57, 72 };
-        static const int angle[] = { -75, 15, 80 };
-        for(i = 0; i < 3; ++i) {
-            const lv_image_dsc_t *descriptor = NULL;
-
-            if(i < count) {
-                descriptor = crazypod_photo_thumbnail(i, i);
-                if(context->defer_media) {
-                    if(context->media_deferred != NULL)
-                        *context->media_deferred = true;
-                    descriptor = NULL;
-                }
-            }
-            preview = make_box(
-                parent, x[i], y[i], 57, 76, 3,
-                0xF0E9DB, LV_OPA_COVER);
-            lv_obj_set_style_border_width(preview, 1, 0);
-            lv_obj_set_style_border_color(
-                preview, lv_color_hex(0xB8AE9F), 0);
-            lv_obj_set_style_border_opa(preview, 155, 0);
-            crazypod_preview_add_bevel(
-                preview, 57, 76, 0xFFFFFF, 0x867C6C);
-            render_procedural_photo(
-                preview, 4, 4, 49, 54, i);
-            if(descriptor != NULL)
-                (void)crazypod_photo_screen_render_image(
-                    preview, descriptor, 4, 4, 49, 54);
-            make_box(preview, 12, 65, 33, 2, 1, 0x6C6258, 82);
-            make_box(preview, 17, 70, 23, 1, 0, 0x6C6258, 48);
-            if(i == 1)
-                make_box(preview, 22, 0, 14, 4, 1, 0xD2B879, 185);
-            lv_obj_set_style_transform_rotation(preview, angle[i], 0);
-            crazypod_preview_motion_register(
-                preview, (i - 1) * 28, 25 + i * 4, 194,
-                angle[i] + (i - 1) * 110, 0,
-                i * 45, 280, (i - 1) * 23, -16, 194,
-                angle[i] + (i - 1) * 80);
-        }
+        preview = render_memory_aperture(parent, false);
+        crazypod_preview_motion_register(
+            preview, 0, 22, 194, -80, 0,
+            0, 340, 0, -13, 194, 80);
     }
     else if(state->selected == 1) {
         int video_index = count > 0 ? 0 : -1;
@@ -237,74 +259,10 @@ void crazypod_photos_preview_render(
                 0, 280, 18, -4, 205, 80);
     }
     else if(state->selected == 2) {
-        int photo_index = crazypod_photo_favorite_index(0);
-        const lv_image_dsc_t *descriptor = NULL;
-
-        if(photo_index >= 0) {
-            descriptor = crazypod_photo_thumbnail(0, photo_index);
-            if(context->defer_media) {
-                if(context->media_deferred != NULL)
-                    *context->media_deferred = true;
-                descriptor = NULL;
-            }
-        }
-        preview = make_box(
-            parent, 188, 56, 104, 96, 7,
-            0x6B4429, LV_OPA_COVER);
-        lv_obj_set_style_bg_grad_color(
-            preview, lv_color_hex(0x2D1B12), 0);
-        lv_obj_set_style_bg_grad_dir(preview, LV_GRAD_DIR_HOR, 0);
-        lv_obj_set_style_border_width(preview, 3, 0);
-        lv_obj_set_style_border_color(
-            preview, lv_color_hex(0xB7834D), 0);
-        lv_obj_set_style_border_opa(preview, 190, 0);
-        crazypod_preview_add_bevel(
-            preview, 104, 96, 0xD1A36A, 0x160B06);
-        make_box(preview, 5, 5, 1, 86, 0, 0xD8A76B, 70);
-        make_box(preview, 98, 5, 1, 86, 0, 0x160B06, 120);
-        {
-            lv_obj_t *mat = make_box(
-                preview, 9, 9, 86, 77, 3,
-                0xE7DDC9, LV_OPA_COVER);
-            lv_obj_set_style_border_width(mat, 1, 0);
-            lv_obj_set_style_border_color(
-                mat, lv_color_hex(0xBEB39F), 0);
-            lv_obj_set_style_border_opa(mat, 135, 0);
-            if(count > 0) {
-                render_procedural_photo(
-                    mat, 5, 5, 76, 67, 3);
-                (void)crazypod_photo_screen_render_image(
-                    mat, descriptor, 5, 5, 76, 67);
-            }
-            else {
-                make_box(mat, 5, 5, 76, 67, 2,
-                         0xA8B0B2, LV_OPA_COVER);
-                label = make_label(
-                    mat, LV_SYMBOL_IMAGE, &lv_font_montserrat_24,
-                    COLOR_WHITE, 82);
-                lv_obj_center(label);
-            }
-        }
-        make_box(parent, 228, 151, 24, 5, 2, 0x6E452A, 225);
-        {
-            lv_obj_t *pin = make_box(
-                parent, 257, 48, 29, 29,
-                LV_RADIUS_CIRCLE, 0x8D243A, LV_OPA_COVER);
-            lv_obj_set_style_border_width(pin, 1, 0);
-            lv_obj_set_style_border_color(
-                pin, lv_color_hex(0xE1B46E), 0);
-            lv_obj_set_style_border_opa(pin, 130, 0);
-            crazypod_preview_add_bevel(
-                pin, 29, 29, 0xF0CE91, 0x310914);
-            crazypod_ui_widget_pixel_heart(
-                pin, 6, 8, 2, 0xFFE2A8, LV_OPA_COVER);
-            crazypod_preview_motion_register(
-                pin, 13, -14, 170, 120, 0,
-                80, 240, 11, -11, 170, 180);
-        }
+        preview = render_memory_aperture(parent, true);
         crazypod_preview_motion_register(
-            preview, 17, 0, 214, 65, 0,
-            0, 280, 18, -5, 214, 95);
+            preview, 0, 22, 194, 80, 0,
+            0, 340, 0, -13, 194, -80);
     }
     else {
         preview = make_box(

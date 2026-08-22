@@ -44,6 +44,7 @@ struct photo_slot {
     int decoded_index;
     int active_bank;
     bool pending;
+    bool decoding;
     bool valid;
 };
 
@@ -198,7 +199,8 @@ static bool find_request(struct photo_decode_request *request)
         return true;
     }
     for(slot = 0; slot < CRAZYPOD_PHOTO_THUMB_SLOTS; ++slot) {
-        if(!thumbnail_slots[slot].pending)
+        if(!thumbnail_slots[slot].pending ||
+           thumbnail_slots[slot].decoding)
             continue;
         request->slot = slot;
         request->index = thumbnail_slots[slot].requested_index;
@@ -210,6 +212,7 @@ static bool find_request(struct photo_decode_request *request)
         snprintf(request->path, sizeof(request->path), "%s",
                  thumbnail_slots[slot].requested_path);
         thumbnail_slots[slot].pending = false;
+        thumbnail_slots[slot].decoding = true;
         photo_worker_decoding = true;
         mutex_unlock(&photo_mutex);
         return true;
@@ -220,8 +223,8 @@ static bool find_request(struct photo_decode_request *request)
     return false;
 }
 
-static void publish_request(const struct photo_decode_request *request,
-                            int bank, bool valid)
+static void complete_request(const struct photo_decode_request *request,
+                             int bank, bool valid)
 {
     mutex_lock(&photo_mutex);
     if(request->view) {
@@ -251,7 +254,9 @@ static void publish_request(const struct photo_decode_request *request,
             slot->valid = valid;
             ++photo_thumbnail_publish_generation;
         }
+        slot->decoding = false;
     }
+    photo_worker_decoding = false;
     mutex_unlock(&photo_mutex);
 }
 
@@ -265,13 +270,6 @@ static void update_view_progress(
        view_slot.requested_index == request->index &&
        strcmp(view_slot.requested_path, request->path) == 0)
         view_slot.progress = progress;
-    mutex_unlock(&photo_mutex);
-}
-
-static void finish_request(void)
-{
-    mutex_lock(&photo_mutex);
-    photo_worker_decoding = false;
     mutex_unlock(&photo_mutex);
 }
 
@@ -336,7 +334,6 @@ static void photo_thread(void)
                 decode_photo(&request, descriptor, pixels);
             if(request.view && valid)
                 update_view_progress(&request, 90);
-            publish_request(&request, bank, valid);
             if(valid && request.view && !cache_hit)
                 crazypod_photo_cache_store(
                     true, request.path, request.size, request.mtime,
@@ -345,7 +342,7 @@ static void photo_thread(void)
                 crazypod_photo_cache_store(
                     false, request.path, request.size, request.mtime,
                     descriptor);
-            finish_request();
+            complete_request(&request, bank, valid);
             yield();
         }
     }
@@ -670,13 +667,29 @@ const lv_image_dsc_t *crazypod_photo_thumbnail(int slot_index, int index)
         for(candidate = 0; candidate < CRAZYPOD_PHOTO_THUMB_SLOTS;
             ++candidate) {
             if(!thumbnail_slots[candidate].valid &&
-               !thumbnail_slots[candidate].pending) {
+               !thumbnail_slots[candidate].pending &&
+               !thumbnail_slots[candidate].decoding) {
                 slot = &thumbnail_slots[candidate];
                 break;
             }
         }
-        if(slot == NULL)
+        if(slot == NULL && !thumbnail_slots[slot_index].decoding)
             slot = &thumbnail_slots[slot_index];
+        if(slot == NULL) {
+            for(candidate = 0;
+                candidate < CRAZYPOD_PHOTO_THUMB_SLOTS;
+                ++candidate) {
+                if(!thumbnail_slots[candidate].pending &&
+                   !thumbnail_slots[candidate].decoding) {
+                    slot = &thumbnail_slots[candidate];
+                    break;
+                }
+            }
+        }
+        if(slot == NULL) {
+            mutex_unlock(&photo_mutex);
+            return NULL;
+        }
         slot->requested_index = index;
         slot->requested_size = entry->size;
         slot->requested_mtime = entry->mtime;

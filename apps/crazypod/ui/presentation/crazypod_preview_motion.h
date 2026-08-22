@@ -37,6 +37,7 @@ lv_obj_t *crazypod_preview_motion_parent(lv_obj_t *fallback);
 void crazypod_preview_motion_start_entrance(void);
 void crazypod_preview_motion_start_exit(void);
 bool crazypod_preview_motion_active(void);
+bool crazypod_preview_motion_reduced(void);
 void crazypod_preview_motion_settle(void);
 bool *crazypod_preview_motion_media_deferred_flag(void);
 bool crazypod_preview_motion_media_refresh_pending(void);

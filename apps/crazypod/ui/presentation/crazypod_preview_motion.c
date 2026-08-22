@@ -592,6 +592,12 @@ bool crazypod_preview_motion_active(void)
     return menu_preview_motion_active();
 }
 
+bool crazypod_preview_motion_reduced(void)
+{
+    return motion_host.reduced_motion != NULL &&
+        motion_host.reduced_motion();
+}
+
 void crazypod_preview_motion_settle(void)
 {
     settle_menu_preview_motion();
