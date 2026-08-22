@@ -78,6 +78,7 @@ struct lcd_info_rec {
     void *seq_init;
 #endif
 #ifdef IPOD_6G
+    /* Non-NULL only for panel types with physical TE validation. */
     void *seq_frame_sync;
 #endif
 };

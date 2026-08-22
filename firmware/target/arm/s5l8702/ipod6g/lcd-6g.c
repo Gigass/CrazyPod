@@ -26,17 +26,11 @@
 #include "s5l87xx.h"
 #include "lcd-s5l8702.h"
 
-static const uint8_t lcd_frame_sync_seq_01[] =
+/* TE synchronization is enabled only for the physically verified type 1
+ * panel. Other panel types retain the upstream Rockbox initialization. */
+static const uint8_t lcd_frame_sync_seq_1[] =
 {
     CMD,   0x35,  1, 0x00,  /* Vertical blanking TE signal */
-    END
-};
-
-static const uint16_t lcd_frame_sync_seq_23[] =
-{
-    /* FMKM=0 selects the panel frame signal. FMI=0 emits every frame and
-       FMP=0 places the pulse at the start of the back porch. */
-    MREG16(1),  0x090, 0x0000,
     END
 };
 
@@ -120,7 +114,7 @@ static const uint16_t lcd_init_seq_23[] =
     MREG16(1),  0x008, 0x0808,
     MREG16(7),  0x010, 0x0013, 0x0300, 0x0101, 0x0a03, 0x0a0e, 0x0a19, 0x2402,
     MREG16(1),  0x018, 0x0001,
-    MREG16(1),  0x090, 0x0000,
+    MREG16(1),  0x090, 0x0021,
 
     /* Gamma settings */
     MREG16(14), 0x300, 0x0307, 0x0003, 0x0402, 0x0303, 0x0300, 0x0407, 0x1c04,
@@ -216,7 +210,6 @@ static struct lcd_info_rec lcd_info_list[] =
         .lcd_type   = 0,
         .mpuiface   = LCD_MPUIFACE_PAR18,
         .cmdset     = LCD_CMDSET_8BIT,
-        .seq_frame_sync = (void*) lcd_frame_sync_seq_01,
     #if defined(HAVE_LCD_SLEEP) || defined(HAVE_LCD_SHUTDOWN)
         .seq_sleep  = (void*) lcd_sleep_seq_01,
     #endif
@@ -232,7 +225,7 @@ static struct lcd_info_rec lcd_info_list[] =
         .lcd_type   = 1,
         .mpuiface   = LCD_MPUIFACE_PAR18,
         .cmdset     = LCD_CMDSET_8BIT,
-        .seq_frame_sync = (void*) lcd_frame_sync_seq_01,
+        .seq_frame_sync = (void*) lcd_frame_sync_seq_1,
     #if defined(HAVE_LCD_SLEEP) || defined(HAVE_LCD_SHUTDOWN)
         .seq_sleep  = (void*) lcd_sleep_seq_01,
     #endif
@@ -248,7 +241,6 @@ static struct lcd_info_rec lcd_info_list[] =
         .lcd_type   = 2,
         .mpuiface   = LCD_MPUIFACE_PAR18,
         .cmdset     = LCD_CMDSET_16BIT,
-        .seq_frame_sync = (void*) lcd_frame_sync_seq_23,
     #if defined(HAVE_LCD_SLEEP) || defined(HAVE_LCD_SHUTDOWN)
         .seq_sleep  = (void*) lcd_deepstandby_seq_23,
     #endif
@@ -264,7 +256,6 @@ static struct lcd_info_rec lcd_info_list[] =
         .lcd_type   = 3,
         .mpuiface   = LCD_MPUIFACE_PAR18,
         .cmdset     = LCD_CMDSET_16BIT,
-        .seq_frame_sync = (void*) lcd_frame_sync_seq_23,
     #if defined(HAVE_LCD_SLEEP) || defined(HAVE_LCD_SHUTDOWN)
         .seq_sleep  = (void*) lcd_deepstandby_seq_23,
     #endif

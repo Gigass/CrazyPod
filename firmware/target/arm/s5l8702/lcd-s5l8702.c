@@ -1308,7 +1308,8 @@ static void displaylcd_update_rect(
         }
 
 #ifdef IPOD_6G
-        if (!frame_sync && x == 0 && y == 0 &&
+        if (!frame_sync && lcd_info->seq_frame_sync != NULL &&
+            x == 0 && y == 0 &&
             width == LCD_WIDTH && height == LCD_HEIGHT)
             displaylcd_wait_frame_start();
 #endif
@@ -1338,14 +1339,14 @@ void lcd_update_rect(int x, int y, int width, int height)
 #ifdef IPOD_6G
 void lcd_update_rect_frame_sync(int x, int y, int width, int height)
 {
-    displaylcd_update_rect(
-        x, y, width, height, LCD_TE_HOME_GUARD_LINES);
+    displaylcd_update_rect(x, y, width, height,
+        lcd_info->seq_frame_sync != NULL ? LCD_TE_HOME_GUARD_LINES : -1);
 }
 
 void lcd_update_rect_music_sync(int x, int y, int width, int height)
 {
-    displaylcd_update_rect(
-        x, y, width, height, LCD_TE_MUSIC_GUARD_LINES);
+    displaylcd_update_rect(x, y, width, height,
+        lcd_info->seq_frame_sync != NULL ? LCD_TE_MUSIC_GUARD_LINES : -1);
 }
 #endif
 
@@ -1470,9 +1471,12 @@ void lcd_awake(void)
     s5l_lcd_set_command_mode();
     lcd_run_seq(lcd_info->seq_awake);
 #ifdef IPOD_6G
-    lcd_run_seq(lcd_info->seq_frame_sync);
-    displaylcd_reset_frame_sync();
-    displaylcd_probe_te_inputs();
+    if (lcd_info->seq_frame_sync != NULL)
+    {
+        lcd_run_seq(lcd_info->seq_frame_sync);
+        displaylcd_reset_frame_sync();
+        displaylcd_probe_te_inputs();
+    }
 #endif
     lcd_ispowered = true;       // XXX: we have to put the lcd_ispowered before the lcd_update()
 
@@ -1548,10 +1552,12 @@ void lcd_init_device(void)
     lcd_run_seq(lcd_info->seq_init);
 #endif
 #ifdef IPOD_6G
-    lcd_run_seq(lcd_info->seq_frame_sync);
-    displaylcd_reset_frame_sync();
-    displaylcd_probe_te_inputs();
+    if (lcd_info->seq_frame_sync != NULL)
+    {
+        lcd_run_seq(lcd_info->seq_frame_sync);
+        displaylcd_reset_frame_sync();
+        displaylcd_probe_te_inputs();
+    }
 #endif
-
     lcd_ispowered = true;
 }

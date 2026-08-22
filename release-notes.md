@@ -1,5 +1,10 @@
 # CrazyPod V1.0
 
+> Compatibility hotfix: TE/FMARK synchronization is restricted to the
+> physically verified type 1 panel. Types 0, 2, and 3 use the original
+> Rockbox LCD initialization; the type 2/3 register `0x090` is restored to
+> `0x0021`.
+
 Released: 2026-08-22
 
 V1.0 is CrazyPod's first public experimental release for the iPod Classic
@@ -33,6 +38,9 @@ Rockbox platform, not a Rockbox theme.
   art changes are published without stale frames.
 - Added frame-clock and LCD presentation controls used to reduce visible
   tearing during Cover Flow transitions.
+- Restricted TE/FMARK panel commands and phase synchronization to the
+  physically verified type 1 display. Unverified type 0/2/3 displays now use
+  the original Rockbox initialization and ordinary partial updates.
 - Added centered success/error notifications and simplified screenshot-save
   feedback ownership.
 - Corrected book-reader input/session transitions and removed stale workflow
@@ -52,8 +60,8 @@ Rockbox platform, not a Rockbox theme.
 
 | File | Purpose | SHA-256 |
 | --- | --- | --- |
-| `CrazyPod-V1.0-iPod6G.zip` | Complete install archive | `91ba3a284e19510c4ab5e18955ccf198fda12af59d1eba6dc6b8f9d50e2b538d` |
-| `CrazyPod-V1.0-iPod6G-rockbox.ipod` | Standalone firmware binary for controlled updates | `8b37b32d8785536ed70944f222b4d669f9badc99d8ba8f494518167cf4334d68` |
+| `CrazyPod-V1.0-iPod6G.zip` | Complete install archive | `17d9eddc5ec2acecec245b7afd4e0d0d433c5ceb8f9b90986e62360b346e4c7b` |
+| `CrazyPod-V1.0-iPod6G-rockbox.ipod` | Standalone firmware binary for controlled updates | `555c9e3526fb839d4a419f86b90d75436989803ec021098728a3b55ed8744ae1` |
 | `SHA256SUMS.txt` | Download integrity checks | — |
 
 Install the complete ZIP for a first CrazyPod copy or when resources changed.
