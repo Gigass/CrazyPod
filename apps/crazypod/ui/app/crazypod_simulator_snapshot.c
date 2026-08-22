@@ -1044,20 +1044,44 @@ bool crazypod_simulator_snapshot_prepare(
             select_bounded(host, preview_index);
     }
     else if(sscanf(screen, "play-video-%d", &preview_index) == 1) {
-        enum crazypod_video_result result;
+        const char *requested_path =
+            getenv("CRAZYPOD_SIM_VIDEO_PATH");
+        enum crazypod_video_result result =
+            CRAZYPOD_VIDEO_INVALID_FILE;
         int count;
+        int index;
 
         open_photos_route(host, PHOTOS_ROUTE_VIDEOS);
+        /* Snapshot playback must observe the fixture files from this run,
+         * never a copied or stale catalog. */
+        crazypod_videos_resume();
+        crazypod_videos_set_lock_suspended(false);
+        crazypod_videos_set_route_suspended(false);
+        crazypod_videos_refresh();
         count = item_count();
+        if(requested_path != NULL) {
+            preview_index = -1;
+            for(index = 0; index < count; ++index) {
+                const char *path = crazypod_video_path(index);
+
+                if(path != NULL && strcmp(path, requested_path) == 0) {
+                    preview_index = index;
+                    break;
+                }
+            }
+        }
         select_bounded(host, preview_index);
         lv_refr_now(NULL);
         crazypod_present_now();
-        if(count > 0) {
+        if(count > 0 && preview_index >= 0) {
             result = crazypod_video_play(current_route()->selected);
-            fprintf(stderr, "CrazyPod video smoke: %d (%s)\n",
-                    result, crazypod_video_result_message(result));
         }
+        fprintf(stderr, "CrazyPod video smoke: path=%s result=%d (%s)\n",
+                requested_path != NULL ? requested_path : "<catalog-index>",
+                result, crazypod_video_result_message(result));
         host->render(false);
+        if(getenv("CRAZYPOD_SIM_EXIT_AFTER_DUMP") != NULL)
+            exit(result == CRAZYPOD_VIDEO_OK ? 0 : 2);
         return false;
     }
     else if(sscanf(screen, "videos-%d", &preview_index) == 1) {

@@ -8,6 +8,11 @@ crazypod/crazypod_photos.c
 crazypod/crazypod_screenshot.c
 crazypod/video/crazypod_video_catalog.c
 crazypod/video/crazypod_video_poster.c
+crazypod/video/crazypod_video_engine.c
+crazypod/video/crazypod_video_engine_mpeg.c
+#ifdef SIMULATOR
+crazypod/video/crazypod_video_engine_ffmpeg.c
+#endif
 crazypod/photos/crazypod_photo_catalog.c
 crazypod/photos/crazypod_photo_cache.c
 crazypod/photos/crazypod_photo_viewport.c

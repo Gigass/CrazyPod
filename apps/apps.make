@@ -13,6 +13,12 @@ SRC += $(call preprocess, $(APPSDIR)/SOURCES)
 ifeq ($(MODELNAME),ipod6g)
   include $(ROOTDIR)/lib/lvgl/lvgl-rockbox.make
   include $(ROOTDIR)/miniapps/miniapps.make
+  ifeq ($(APP_TYPE),sdl-sim)
+    CRAZYPOD_FFMPEG_PACKAGES := libavformat libavcodec libavutil \
+      libswscale libswresample
+    INCLUDES += $(shell pkg-config --cflags $(CRAZYPOD_FFMPEG_PACKAGES))
+    LDOPTS += $(shell pkg-config --libs $(CRAZYPOD_FFMPEG_PACKAGES))
+  endif
 endif
 
 # apps/features.txt is a file that (is preprocessed and) lists named features

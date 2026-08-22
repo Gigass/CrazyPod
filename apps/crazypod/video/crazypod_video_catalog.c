@@ -3,6 +3,7 @@
 #ifdef IPOD_6G
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "dir.h"
@@ -12,6 +13,7 @@
 
 #include "../crazypod_videos.h"
 #include "crazypod_video_catalog.h"
+#include "crazypod_video_engine.h"
 
 #define VIDEO_DIRECTORY "/Videos"
 #define VIDEO_DIRECTORY_DEPTH 4
@@ -95,11 +97,7 @@ static bool read_exact(int fd, void *data, size_t size)
 
 bool crazypod_video_catalog_path_supported(const char *path)
 {
-    const char *extension = strrchr(path, '.');
-
-    return extension != NULL &&
-        (strcasecmp(extension, ".mpg") == 0 ||
-         strcasecmp(extension, ".mpeg") == 0);
+    return crazypod_video_engine_path_supported(path);
 }
 
 static int compare_entries(
@@ -180,8 +178,13 @@ static void scan_directory(const char *path, int depth)
        entry_count >= CRAZYPOD_VIDEO_MAX_FILES)
         return;
     directory = opendir(path);
-    if(directory == NULL)
+    if(directory == NULL) {
+#ifdef SIMULATOR
+        if(getenv("CRAZYPOD_SIM_VIDEO_DIAGNOSTICS") != NULL)
+            fprintf(stderr, "CrazyPod video catalog: cannot open %s\n", path);
+#endif
         return;
+    }
     while(entry_count < CRAZYPOD_VIDEO_MAX_FILES &&
           (entry = readdir(directory)) != NULL) {
         struct dirinfo info = dir_get_info(directory, entry);
@@ -194,8 +197,13 @@ static void scan_directory(const char *path, int depth)
             continue;
         if(info.attribute & ATTR_DIRECTORY)
             scan_directory(child, depth + 1);
-        else if(crazypod_video_catalog_path_supported(child))
+        else if(crazypod_video_catalog_path_supported(child)) {
+#ifdef SIMULATOR
+            if(getenv("CRAZYPOD_SIM_VIDEO_DIAGNOSTICS") != NULL)
+                fprintf(stderr, "CrazyPod video catalog: found %s\n", child);
+#endif
             insert_entry(child, &info);
+        }
         yield();
     }
     closedir(directory);

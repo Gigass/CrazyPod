@@ -24,6 +24,13 @@ require_tools() {
         fi
     done
     [ "$missing" -eq 0 ] || exit 2
+    for package in libavformat libavcodec libavutil libswscale libswresample; do
+        if ! pkg-config --exists "$package"; then
+            echo "Error: missing required FFmpeg package '$package'." >&2
+            missing=1
+        fi
+    done
+    [ "$missing" -eq 0 ] || exit 2
 }
 
 usage() {

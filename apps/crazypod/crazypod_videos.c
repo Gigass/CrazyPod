@@ -53,6 +53,7 @@
 #include "crazypod_videos.h"
 #include "platform/crazypod_platform_display.h"
 #include "video/crazypod_video_catalog.h"
+#include "video/crazypod_video_engine.h"
 #include "video/crazypod_video_poster.h"
 
 struct mpeg_settings settings = {
@@ -75,6 +76,7 @@ static bool videos_storage_suspended;
 static bool videos_lock_suspended;
 static bool videos_route_suspended;
 static bool videos_refresh_pending;
+static struct mutex video_controls_mutex;
 
 static struct {
     const char *title;
@@ -95,6 +97,12 @@ static void video_engine_splashf(int ticks, const char *format, ...)
     vsnprintf(video_engine_message, sizeof(video_engine_message),
               format, arguments);
     va_end(arguments);
+}
+
+static void video_engine_set_error(const char *message)
+{
+    snprintf(video_engine_message, sizeof(video_engine_message),
+             "%s", message != NULL ? message : "");
 }
 
 static int video_engine_open(const char *path, int flags)
@@ -149,6 +157,7 @@ static void video_engine_lcd_blit_yuv(
     int destination_x, int destination_y,
     int width, int height)
 {
+    mutex_lock(&video_controls_mutex);
     crazypod_lcd_draw_video_frame(
         source, source_x, source_y, stride,
         destination_x, destination_y, width, height,
@@ -157,7 +166,13 @@ static void video_engine_lcd_blit_yuv(
         video_controls.duration_seconds,
         video_controls.volume, video_controls.paused,
         video_controls.message);
+    mutex_unlock(&video_controls_mutex);
 }
+
+static const struct crazypod_video_engine_host video_session_host = {
+    .present_yuv = video_engine_lcd_blit_yuv,
+    .set_error = video_engine_set_error,
+};
 
 static const struct crazypod_video_plugin_api video_engine_api = {
     .splash = video_engine_splashf,
@@ -248,20 +263,20 @@ static void draw_video_controls(
     const struct crazypod_video_catalog_entry *video,
     bool paused, const char *message)
 {
-    uint32_t duration = stream_get_duration();
-    uint32_t elapsed = stream_get_time();
+    uint32_t duration = crazypod_video_engine_duration_ms();
+    uint32_t elapsed = crazypod_video_engine_position_ms();
 
-    vo_lock();
+    mutex_lock(&video_controls_mutex);
     video_controls.visible = false;
     video_controls.title = video->name;
     video_controls.message = message;
-    video_controls.elapsed_seconds = elapsed / TS_SECOND;
-    video_controls.duration_seconds = duration / TS_SECOND;
+    video_controls.elapsed_seconds = elapsed / 1000u;
+    video_controls.duration_seconds = duration / 1000u;
     video_controls.volume = global_status.volume;
     video_controls.paused = paused;
     video_controls.visible = true;
-    vo_unlock();
-    (void)stream_draw_frame(false);
+    mutex_unlock(&video_controls_mutex);
+    crazypod_video_engine_redraw();
 }
 
 static void reveal_video_controls(
@@ -274,10 +289,10 @@ static void reveal_video_controls(
 
 static void hide_video_controls(void)
 {
-    vo_lock();
+    mutex_lock(&video_controls_mutex);
     video_controls.visible = false;
-    vo_unlock();
-    (void)stream_draw_frame(false);
+    mutex_unlock(&video_controls_mutex);
+    crazypod_video_engine_redraw();
 }
 
 static void flash_video_frame(void)
@@ -300,18 +315,20 @@ static void flash_video_frame(void)
     lcd_update();
 }
 
-static uint32_t valid_resume_time(
-                                  const struct crazypod_video_catalog_entry *video,
-                                  uint32_t duration)
+static uint32_t valid_resume_position_ms(
+    const struct crazypod_video_catalog_entry *video,
+    uint32_t duration_ms)
 {
-    uint32_t minimum = CRAZYPOD_VIDEO_RESUME_MIN_SECONDS * TS_SECOND;
-    uint32_t end_margin = CRAZYPOD_VIDEO_RESUME_END_SECONDS * TS_SECOND;
+    uint32_t resume_ms = (uint32_t)(
+        (uint64_t)video->resume_ticks * 1000u / TS_SECOND);
+    uint32_t minimum_ms = CRAZYPOD_VIDEO_RESUME_MIN_SECONDS * 1000u;
+    uint32_t end_margin_ms =
+        CRAZYPOD_VIDEO_RESUME_END_SECONDS * 1000u;
 
-    if(video->resume_ticks < minimum ||
-       duration <= end_margin ||
-       video->resume_ticks >= duration - end_margin)
+    if(resume_ms < minimum_ms || duration_ms <= end_margin_ms ||
+       resume_ms >= duration_ms - end_margin_ms)
         return 0;
-    return video->resume_ticks;
+    return resume_ms;
 }
 
 static void adjust_video_volume(int direction)
@@ -329,11 +346,11 @@ static void adjust_video_volume(int direction)
     crazypod_state_mark_dirty();
 }
 
-static uint32_t seek_target(int direction)
+static uint32_t seek_target_ms(int direction)
 {
-    uint32_t current = stream_get_time();
-    uint32_t duration = stream_get_duration();
-    uint32_t amount = CRAZYPOD_VIDEO_SEEK_SECONDS * TS_SECOND;
+    uint32_t current = crazypod_video_engine_position_ms();
+    uint32_t duration = crazypod_video_engine_duration_ms();
+    uint32_t amount = CRAZYPOD_VIDEO_SEEK_SECONDS * 1000u;
 
     if(direction < 0)
         return current > amount ? current - amount : 0;
@@ -346,6 +363,8 @@ void crazypod_videos_init(void)
 {
     bool catalog_loaded;
 
+    mutex_init(&video_controls_mutex);
+    crazypod_video_engine_set_host(&video_session_host);
     videos_storage_suspended = false;
     videos_lock_suspended = false;
     videos_route_suspended = true;
@@ -495,17 +514,34 @@ bool crazypod_video_delete(int index)
     return deleted;
 }
 
+static enum crazypod_video_result map_engine_result(
+    enum crazypod_video_engine_result result)
+{
+    switch(result) {
+    case CRAZYPOD_VIDEO_ENGINE_OK:
+        return CRAZYPOD_VIDEO_OK;
+    case CRAZYPOD_VIDEO_ENGINE_UNSUPPORTED:
+        return CRAZYPOD_VIDEO_UNSUPPORTED;
+    case CRAZYPOD_VIDEO_ENGINE_OPEN_FAILED:
+        return CRAZYPOD_VIDEO_OPEN_FAILED;
+    case CRAZYPOD_VIDEO_ENGINE_NO_MEMORY:
+        return CRAZYPOD_VIDEO_NO_MEMORY;
+    case CRAZYPOD_VIDEO_ENGINE_ERROR:
+    default:
+        return CRAZYPOD_VIDEO_ENGINE_FAILED;
+    }
+}
+
 enum crazypod_video_result crazypod_video_play(int index)
 {
     const struct crazypod_video_catalog_entry *video;
     enum crazypod_video_result result = CRAZYPOD_VIDEO_OK;
-    uint32_t duration = 0;
-    uint32_t resume = 0;
+    uint32_t duration_ms = 0;
+    uint32_t resume_ms = 0;
     uint32_t last_draw_tick = 0;
     uint32_t clock_check_time = 0;
     long clock_check_tick = 0;
-    bool engine_initialized = false;
-    bool stream_opened = false;
+    bool engine_opened = false;
     bool paused = false;
     bool clock_checked = false;
     bool clock_stalled = false;
@@ -554,56 +590,55 @@ enum crazypod_video_result crazypod_video_play(int index)
     lcd_clear_display();
     lcd_update();
 
-    if(stream_init() < STREAM_OK) {
-        result = video_buffer_allocation_failed
-            ? CRAZYPOD_VIDEO_NO_MEMORY
-            : CRAZYPOD_VIDEO_ENGINE_FAILED;
-        goto cleanup;
-    }
-    engine_initialized = true;
     memset(&video_controls, 0, sizeof(video_controls));
     {
-        int open_result = stream_open(video->path);
+        enum crazypod_video_engine_result open_result =
+            crazypod_video_engine_open(video->path);
 
-        if(open_result < STREAM_OK) {
-            result = open_result == STREAM_UNSUPPORTED
-                ? CRAZYPOD_VIDEO_UNSUPPORTED
-                : CRAZYPOD_VIDEO_OPEN_FAILED;
+        if(open_result != CRAZYPOD_VIDEO_ENGINE_OK) {
+            result = video_buffer_allocation_failed
+                ? CRAZYPOD_VIDEO_NO_MEMORY
+                : map_engine_result(open_result);
             goto cleanup;
         }
     }
-    stream_opened = true;
-    duration = stream_get_duration();
-    stream_vo_set_clip(NULL);
-    stream_show_vo(true);
-    resume = valid_resume_time(video, duration);
-    if(resume > 0)
-        stream_seek(resume, SEEK_SET);
-    if(stream_play() < STREAM_OK) {
-        result = CRAZYPOD_VIDEO_ENGINE_FAILED;
+    engine_opened = true;
+    duration_ms = crazypod_video_engine_duration_ms();
+    resume_ms = valid_resume_position_ms(video, duration_ms);
+    if(resume_ms > 0)
+        crazypod_video_engine_seek(resume_ms);
+    result = map_engine_result(crazypod_video_engine_play());
+    if(result != CRAZYPOD_VIDEO_OK)
         goto cleanup;
-    }
-    clock_check_time = stream_get_time();
+    clock_check_time = crazypod_video_engine_position_ms();
     clock_check_tick =
         current_tick + CRAZYPOD_VIDEO_CLOCK_CHECK_SECONDS * HZ;
     reveal_video_controls(
-        video, false, resume > 0 ? CP_TR("RESUMED") : NULL,
+        video, false, resume_ms > 0 ? CP_TR("RESUMED") : NULL,
         &controls_hide_tick);
     last_draw_tick = current_tick;
 
     for(;;) {
-        int status = stream_status();
+        enum crazypod_video_engine_status status;
         int button;
         int base;
 
-        if(status == STREAM_STOPPED) {
+        crazypod_video_engine_service();
+        status = crazypod_video_engine_status();
+        if(status == CRAZYPOD_VIDEO_ENGINE_ENDED ||
+           status == CRAZYPOD_VIDEO_ENGINE_STOPPED) {
             completed = true;
+            break;
+        }
+        if(status == CRAZYPOD_VIDEO_ENGINE_STATUS_FAILED) {
+            result = CRAZYPOD_VIDEO_ENGINE_FAILED;
             break;
         }
         if(!clock_checked &&
            !TIME_BEFORE(current_tick, clock_check_tick)) {
             clock_checked = true;
-            clock_stalled = stream_get_time() == clock_check_time;
+            clock_stalled =
+                crazypod_video_engine_position_ms() == clock_check_time;
         }
         if(controls_visible && !paused &&
            !TIME_BEFORE(current_tick, controls_hide_tick)) {
@@ -653,11 +688,11 @@ enum crazypod_video_result crazypod_video_play(int index)
                 bool saved;
 
                 if(resume_after_flash)
-                    stream_pause();
+                    crazypod_video_engine_pause();
                 saved = crazypod_screenshot_capture();
                 flash_video_frame();
                 if(resume_after_flash)
-                    stream_resume();
+                    crazypod_video_engine_resume();
                 screenshot_message = saved
                     ? CP_TR("Saved to Photos")
                     : CP_TR("Screenshot failed");
@@ -676,9 +711,10 @@ enum crazypod_video_result crazypod_video_play(int index)
         }
         if(base == BUTTON_PLAY && (button & BUTTON_REL)) {
             if(paused) {
-                stream_resume();
+                crazypod_video_engine_resume();
                 paused = false;
-                clock_check_time = stream_get_time();
+                clock_check_time =
+                    crazypod_video_engine_position_ms();
                 clock_check_tick =
                     current_tick +
                     CRAZYPOD_VIDEO_CLOCK_CHECK_SECONDS * HZ;
@@ -686,7 +722,7 @@ enum crazypod_video_result crazypod_video_play(int index)
                 clock_stalled = false;
             }
             else {
-                stream_pause();
+                crazypod_video_engine_pause();
                 paused = true;
             }
             reveal_video_controls(
@@ -697,10 +733,11 @@ enum crazypod_video_result crazypod_video_play(int index)
         else if((base == BUTTON_LEFT || base == BUTTON_RIGHT) &&
                 !(button & BUTTON_REL)) {
             uint32_t target =
-                seek_target(base == BUTTON_RIGHT ? 1 : -1);
+                seek_target_ms(base == BUTTON_RIGHT ? 1 : -1);
 
-            stream_seek(target, SEEK_SET);
-            clock_check_time = stream_get_time();
+            crazypod_video_engine_seek(target);
+            clock_check_time =
+                crazypod_video_engine_position_ms();
             clock_check_tick =
                 current_tick +
                 CRAZYPOD_VIDEO_CLOCK_CHECK_SECONDS * HZ;
@@ -728,29 +765,34 @@ enum crazypod_video_result crazypod_video_play(int index)
     }
 
 cleanup:
+    mutex_lock(&video_controls_mutex);
     video_controls.visible = false;
-    if(stream_opened) {
-        uint32_t elapsed = stream_get_time();
-        uint32_t next_resume;
+    mutex_unlock(&video_controls_mutex);
+    if(engine_opened) {
+        uint32_t elapsed_ms =
+            crazypod_video_engine_position_ms();
+        uint32_t next_resume_ticks;
+        uint32_t duration_ticks = (uint32_t)(
+            (uint64_t)duration_ms * TS_SECOND / 1000u);
 
-        stream_stop();
-        stream_close();
         if(completed ||
-           (duration > 0 &&
-            elapsed + CRAZYPOD_VIDEO_RESUME_END_SECONDS * TS_SECOND >=
-                duration))
-            next_resume = 0;
-        else if(elapsed >=
-                CRAZYPOD_VIDEO_RESUME_MIN_SECONDS * TS_SECOND)
-            next_resume = elapsed;
+           (duration_ms > 0 &&
+            elapsed_ms + CRAZYPOD_VIDEO_RESUME_END_SECONDS * 1000u >=
+                duration_ms))
+            next_resume_ticks = 0;
+        else if(elapsed_ms >=
+                CRAZYPOD_VIDEO_RESUME_MIN_SECONDS * 1000u)
+            next_resume_ticks = (uint32_t)(
+                (uint64_t)elapsed_ms * TS_SECOND / 1000u);
         else
-            next_resume = 0;
+            next_resume_ticks = 0;
+        crazypod_video_engine_close();
         crazypod_video_catalog_update_playback(
-            index, next_resume, duration);
+            index, next_resume_ticks, duration_ticks);
         crazypod_video_poster_mark_changed();
     }
-    if(engine_initialized)
-        stream_exit();
+    else
+        crazypod_video_engine_close();
     video_engine_release_audio_buffer();
     cpu_boost(false);
     button_clear_queue();
@@ -781,7 +823,9 @@ const char *crazypod_video_result_message(
     case CRAZYPOD_VIDEO_NO_MEMORY:
         return CP_TR("Not enough memory to play this video");
     case CRAZYPOD_VIDEO_UNSUPPORTED:
-        return CP_TR("Convert this video to MPEG-1 or MPEG-2");
+        return video_engine_message[0] != '\0'
+            ? video_engine_message
+            : CP_TR("Convert this video to MPEG-1 or MPEG-2");
     case CRAZYPOD_VIDEO_OPEN_FAILED:
         return CP_TR("Could not open this video");
     case CRAZYPOD_VIDEO_ENGINE_FAILED:
