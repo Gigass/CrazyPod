@@ -1,3 +1,10 @@
+> **归属说明：** CrazyPod 源自
+> [Poorfocus/Rockbox-UI-UX-Overhaul](https://github.com/Poorfocus/Rockbox-UI-UX-Overhaul)，
+> 该项目基于 [nuxcodes/rockpod](https://github.com/nuxcodes/rockpod)，而
+> Rockpod 本身基于 [Rockbox](https://www.rockbox.org/)。所有继承的原始代码版权声明
+> 均予以保留。完整的项目来源与许可信息请参阅 [NOTICE](NOTICE) 和
+> [LICENSE](LICENSE)。
+
 # CrazyPod
 
 CrazyPod V1.0 is experimental standalone firmware for the iPod Classic 6G
