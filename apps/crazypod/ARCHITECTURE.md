@@ -119,6 +119,20 @@ Every migration stage must pass:
 The migration preserves behavior. UI redesign, storage-format migration, and
 domain-rule changes are separate work.
 
+## Display presentation contract
+
+Home and Music CoverFlow mix native RGB565 drawing with LVGL partial rendering.
+Their moving regions use geometry-aware hardware TE synchronization and must
+remain separate from ordinary LVGL dirty rectangles. While the Home wheel is
+touched, the present scheduler defers every non-full ordinary partial update
+until release and continues to submit only TE-synchronized Home frames.
+
+Do not replace this contract with an FPS cap, animation-speed limit, fixed
+delay, or inferred wheel-idle timeout. Read
+[the LCD tearing maintenance guide](../../docs/CRAZYPOD_LCD_TEARING.zh-CN.md)
+before changing the display adapter, frame clock, click-wheel touch state,
+Home native renderer, Now Playing capsule, or Music CoverFlow renderer.
+
 ## Enforcement
 
 Run `tests/check-crazypod-ui-architecture.sh` after changing UI ownership.

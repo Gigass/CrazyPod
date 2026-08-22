@@ -233,6 +233,27 @@ static struct artwork_directory_cache artwork_parent_directory;
 static volatile unsigned artwork_cache_generation;
 static bool artwork_validation_required;
 
+static int begin_background_work(void)
+{
+#ifdef HAVE_PRIORITY_SCHEDULING
+    return thread_set_priority(
+        thread_self(), PRIORITY_BACKGROUND);
+#else
+    return -1;
+#endif
+}
+
+static void finish_background_work(int old_priority)
+{
+#ifdef HAVE_PRIORITY_SCHEDULING
+    if(old_priority >= HIGHEST_PRIORITY &&
+       old_priority <= LOWEST_PRIORITY)
+        thread_set_priority(thread_self(), old_priority);
+#else
+    (void)old_priority;
+#endif
+}
+
 static const char *file_extension(const char *path)
 {
     const char *dot = strrchr(path, '.');
@@ -1525,6 +1546,7 @@ static void artwork_thread(void)
 
             {
                 int album_index;
+                int old_priority;
                 bool completed = true;
                 bool last_album;
 
@@ -1535,6 +1557,10 @@ static void artwork_thread(void)
                         album_index, false);
                     break;
                 }
+                /* Library priming is not visible work. Product requests run
+                   at UI priority so touch-wheel traffic cannot starve them,
+                   but the bulk cache walk must remain opportunistic. */
+                old_priority = begin_background_work();
                 reset_poweroff_timer();
                 if(completed && request.track_path[0] != '\0') {
                     memset(&source, 0, sizeof(source));
@@ -1572,6 +1598,7 @@ static void artwork_thread(void)
                 if(!completed)
                     fail_prime_request();
                 end_disk_work();
+                finish_background_work(old_priority);
                 if(!completed)
                     break;
             }
@@ -1678,9 +1705,12 @@ void crazypod_artwork_init(void)
     artwork_cache_generation = 1;
     mutex_init(&artwork_mutex);
     queue_init(&artwork_queue, false);
+    /* Touch-wheel input can keep the UI thread continuously runnable. Keep
+       demand artwork at the same priority so visible CoverFlow requests are
+       decoded before release; the library-prime path lowers itself above. */
     create_thread(artwork_thread, artwork_stack, sizeof(artwork_stack), 0,
                   "crazypod art"
-                  IF_PRIO(, PRIORITY_BACKGROUND)
+                  IF_PRIO(, PRIORITY_USER_INTERFACE)
                   IF_COP(, CPU));
 }
 

@@ -4,6 +4,36 @@ Entries are point-in-time records. Use the newest entry and
 [PROJECT_STATUS.md](PROJECT_STATUS.md) for current status; older open items may
 have been completed later.
 
+## 2026-08-22 (Home and Music CoverFlow LCD tearing)
+
+Goal: eliminate partial-update tearing during CoverFlow motion, including
+playback and stationary finger contact on the click wheel.
+
+Changed:
+
+- validated the panel TE pulse on `PDAT(6)` bit 7 and scheduled partial DMA
+  after the scan passes each update rectangle;
+- added separate Home and Music TE paths with geometry-specific guard lines;
+- kept synchronized motion rectangles separate from ordinary LVGL dirt;
+- exported the click-wheel driver's real touch state instead of inferring
+  contact from position packets and a timeout;
+- paused Home sound-wave and marquee animation during touch;
+- deferred every ordinary non-full partial update during Home touch, covering
+  playback progress, status updates, notifications and already queued dirt;
+- added host coverage for synchronized-route selection, deferred LVGL priority,
+  touch blocking and release promotion.
+
+Verified:
+
+- UI host tests, architecture checks and the iPod 6G hardware build pass;
+- the installed firmware was byte-compared after writing;
+- real-device playback, continuous Home movement, stationary touch and release
+  showed no visible tearing in the final test;
+- Music CoverFlow also showed no visible tearing with its separate sync path.
+
+Maintenance rules, failed approaches and the real-device test matrix are in
+[docs/CRAZYPOD_LCD_TEARING.zh-CN.md](docs/CRAZYPOD_LCD_TEARING.zh-CN.md).
+
 ## 2026-08-10 (Lock-screen power and idle shutdown)
 
 Goal: stop indefinite battery drain after the display is locked while keeping

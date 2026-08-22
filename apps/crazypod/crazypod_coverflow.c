@@ -18,10 +18,10 @@
 #include "crazypod_frameclock.h"
 #include "crazypod_music.h"
 
-#define FLOW_CACHE_SLOTS 25
-#define FLOW_PREFETCH_AHEAD 12
-#define FLOW_PREFETCH_BEHIND 12
-#define FLOW_PREFETCH_VISIBLE 4
+#define FLOW_CACHE_SLOTS CRAZYPOD_COVERFLOW_ARTWORK_SLOTS
+#define FLOW_PREFETCH_AHEAD 25
+#define FLOW_PREFETCH_BEHIND 25
+#define FLOW_PREFETCH_VISIBLE 12
 #define FLOW_COVER_SIZE CRAZYPOD_COVERFLOW_ARTWORK_SIZE
 #define FLOW_TOP 40
 #define FLOW_BOTTOM 180
@@ -48,6 +48,7 @@
 #define FLOW_VISIBLE_DISTANCE_Q16 (FLOW_POSITION_ONE * 7 / 2)
 #define FLOW_WHEEL_POSITIONS 96
 #define FLOW_WHEEL_CLICKS_PER_ALBUM 12
+#define FLOW_WHEEL_SNAP_CLICKS (FLOW_WHEEL_CLICKS_PER_ALBUM / 2)
 #define FLOW_WHEEL_RELEASE_TICKS \
     (((HZ * 6) / 100) > 0 ? ((HZ * 6) / 100) : 1)
 
@@ -89,6 +90,7 @@ static bool wheel_input_suspended;
 static bool compositing_suspended;
 static bool wheel_tracking;
 static int wheel_position;
+static int wheel_anchor_album;
 static int wheel_step_accumulator;
 static long wheel_last_seen;
 static int wheel_feedback_direction;
@@ -920,6 +922,7 @@ void crazypod_coverflow_enter(int selected)
     compositing_suspended = false;
     wheel_tracking = false;
     wheel_position = -1;
+    wheel_anchor_album = selected;
     wheel_step_accumulator = 0;
     wheel_last_seen = 0;
     wheel_feedback_direction = 0;
@@ -956,6 +959,7 @@ bool crazypod_coverflow_warm(int selected)
     flow_direction = 1;
     gesture_min_album = selected;
     input_active = false;
+    wheel_anchor_album = selected;
     prefetched_visual_album = -1;
     complete = prefetch_covers(false);
     prefetch_deep_pending = true;
@@ -973,6 +977,7 @@ void crazypod_coverflow_leave(void)
     wheel_input_suspended = false;
     compositing_suspended = false;
     wheel_tracking = false;
+    wheel_anchor_album = 0;
     wheel_step_accumulator = 0;
     wheel_feedback_direction = 0;
     first_present = false;
@@ -1028,6 +1033,7 @@ void crazypod_coverflow_set_input_suspended(bool suspended)
     wheel_input_suspended = suspended;
     wheel_tracking = false;
     wheel_position = -1;
+    wheel_anchor_album = crazypod_coverflow_center_album();
     wheel_step_accumulator = 0;
     wheel_last_seen = 0;
     wheel_feedback_direction = 0;
@@ -1040,6 +1046,7 @@ void crazypod_coverflow_set_input_suspended(bool suspended)
         album_index = crazypod_coverflow_center_album();
         selected_album = album_index;
         metadata_album = album_index;
+        wheel_anchor_album = album_index;
         position_q16 = album_index * FLOW_POSITION_ONE;
         target_position_q16 = position_q16;
         flow_dirty = true;
@@ -1146,30 +1153,26 @@ int crazypod_coverflow_take_wheel_feedback(void)
     return direction;
 }
 
-static bool step_wheel_album_target(int direction)
+#ifdef HAVE_WHEEL_POSITION
+static bool step_wheel_album_anchor(int direction)
 {
     int count = crazypod_music_album_count();
     int target_album;
 
     if(count <= 0 || direction == 0)
         return false;
-    target_album =
-        (target_position_q16 + FLOW_POSITION_ONE / 2) >> 16;
-    target_album += direction;
+    target_album = wheel_anchor_album + direction;
     if(target_album < 0)
         target_album = 0;
     if(target_album >= count)
         target_album = count - 1;
-    if(target_position_q16 == target_album * FLOW_POSITION_ONE)
+    if(target_album == wheel_anchor_album)
         return false;
 
-    if(direction != flow_direction)
-        velocity_q16 = 0;
-    flow_direction = direction;
+    wheel_anchor_album = target_album;
     gesture_min_album = target_album;
     selected_album = target_album;
     metadata_album = target_album;
-    target_position_q16 = target_album * FLOW_POSITION_ONE;
     input_velocity_q16 = 0;
     wheel_feedback_direction = direction;
     flow_dirty = true;
@@ -1178,6 +1181,47 @@ static bool step_wheel_album_target(int direction)
     last_prefetch = 0;
     return true;
 }
+
+static void update_wheel_fractional_target(void)
+{
+    int count = crazypod_music_album_count();
+    int64_t target_q16;
+    int64_t maximum_q16;
+
+    if(count <= 0)
+        return;
+    target_q16 =
+        (int64_t)wheel_anchor_album * FLOW_POSITION_ONE +
+        (int64_t)wheel_step_accumulator * FLOW_POSITION_ONE /
+            FLOW_WHEEL_CLICKS_PER_ALBUM;
+    maximum_q16 = (int64_t)(count - 1) * FLOW_POSITION_ONE;
+    if(target_q16 < 0)
+        target_q16 = 0;
+    if(target_q16 > maximum_q16)
+        target_q16 = maximum_q16;
+    if(target_position_q16 == (int32_t)target_q16)
+        return;
+
+    target_position_q16 = (int32_t)target_q16;
+    flow_dirty = true;
+}
+
+static int snapped_wheel_album(void)
+{
+    int count = crazypod_music_album_count();
+    int album = wheel_anchor_album;
+
+    if(wheel_step_accumulator >= FLOW_WHEEL_SNAP_CLICKS)
+        ++album;
+    else if(wheel_step_accumulator <= -FLOW_WHEEL_SNAP_CLICKS)
+        --album;
+    if(album < 0)
+        album = 0;
+    if(album >= count)
+        album = count > 0 ? count - 1 : 0;
+    return album;
+}
+#endif
 
 static void sample_wheel_position(long now, uint32_t now_usec)
 {
@@ -1198,6 +1242,7 @@ static void sample_wheel_position(long now, uint32_t now_usec)
             last_physics_usec = now_usec;
             selected_album = target_album;
             metadata_album = target_album;
+            wheel_anchor_album = target_album;
             target_position_q16 = target_album * FLOW_POSITION_ONE;
             gesture_min_album = target_album;
             velocity_q16 = 0;
@@ -1212,8 +1257,12 @@ static void sample_wheel_position(long now, uint32_t now_usec)
             else if(delta > FLOW_WHEEL_POSITIONS / 2)
                 delta -= FLOW_WHEEL_POSITIONS;
             if(delta != 0) {
+                int delta_direction = delta < 0 ? -1 : 1;
                 int step_direction;
 
+                if(delta_direction != flow_direction)
+                    velocity_q16 = 0;
+                flow_direction = delta_direction;
                 wheel_position = current;
                 wheel_step_accumulator += delta;
                 while(wheel_step_accumulator >=
@@ -1222,13 +1271,14 @@ static void sample_wheel_position(long now, uint32_t now_usec)
                           -FLOW_WHEEL_CLICKS_PER_ALBUM) {
                     step_direction =
                         wheel_step_accumulator < 0 ? -1 : 1;
-                    if(!step_wheel_album_target(step_direction)) {
+                    if(!step_wheel_album_anchor(step_direction)) {
                         wheel_step_accumulator = 0;
                         break;
                     }
                     wheel_step_accumulator -=
                         step_direction * FLOW_WHEEL_CLICKS_PER_ALBUM;
                 }
+                update_wheel_fractional_target();
             }
         }
         wheel_last_seen = now;
@@ -1239,7 +1289,7 @@ static void sample_wheel_position(long now, uint32_t now_usec)
     if(wheel_tracking &&
        !TIME_BEFORE(now, wheel_last_seen + FLOW_WHEEL_RELEASE_TICKS)) {
         wheel_tracking = false;
-        wheel_step_accumulator = 0;
+        wheel_position = -1;
     }
 #else
     (void)now;
@@ -1257,21 +1307,24 @@ static void advance_position(long now, uint32_t now_usec)
         !TIME_BEFORE(now, last_input + FLOW_RELEASE_GRACE_TICKS);
 
     if(released && input_active) {
+#ifndef HAVE_WHEEL_POSITION
         int32_t projected_position_q16;
+#endif
         int target_album;
 
         input_active = false;
 #ifdef HAVE_WHEEL_POSITION
-        /* Wheel input has already selected an exact album step. Do not let
-           release velocity create extra selections after the user's hand
-           leaves the wheel. */
-        projected_position_q16 = target_position_q16;
+        /* The wheel moves the cover continuously inside each 12-click
+           detent. On release, six clicks is the midpoint: below it returns
+           to the anchor, at or beyond it advances in that direction. */
+        target_album = snapped_wheel_album();
+        wheel_anchor_album = target_album;
+        wheel_step_accumulator = 0;
 #else
         projected_position_q16 =
             position_q16 +
             (int32_t)(((int64_t)velocity_q16 *
                        FLOW_RELEASE_PROJECTION_TICKS) / HZ);
-#endif
         target_album =
             (projected_position_q16 + FLOW_POSITION_ONE / 2) >> 16;
         if(flow_direction > 0) {
@@ -1282,6 +1335,7 @@ static void advance_position(long now, uint32_t now_usec)
             if(target_album > gesture_min_album)
                 target_album = gesture_min_album;
         }
+#endif
         if(target_album < 0)
             target_album = 0;
         if(target_album >= count)

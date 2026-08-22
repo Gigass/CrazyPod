@@ -382,6 +382,7 @@ __pycache__
 !/docs/CRAZYPOD_MINIAPP_NATIVE_AOT_VERIFICATION.zh-CN.md
 !/docs/CRAZYPOD_MINIAPP_CPK5_FORMAT.zh-CN.md
 !/docs/CRAZYPOD_NOW_PLAYING_THEMES.zh-CN.md
+!/docs/CRAZYPOD_LCD_TEARING.zh-CN.md
 /docs/**/*.txt
 /docs/**/*.html
 /apps/plugins/**/README.md
