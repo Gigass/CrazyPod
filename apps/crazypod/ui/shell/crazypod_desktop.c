@@ -398,7 +398,11 @@ bool crazypod_desktop_motion_active(void)
 
 bool crazypod_desktop_wheel_touch_active(void)
 {
-    return desktop_active && wheel_tracking;
+#ifdef HAVE_WHEEL_POSITION
+    return desktop_active && wheel_touch_status();
+#else
+    return false;
+#endif
 }
 
 int crazypod_desktop_take_wheel_feedback(void)

@@ -87,6 +87,7 @@ bool lineout_inserted(void);
 #endif
 #ifdef HAVE_WHEEL_POSITION
 int wheel_status(void);
+bool wheel_touch_status(void);
 void wheel_send_events(bool send);
 void wheel_set_backlight_on_touch(bool enable);
 #endif

@@ -20,9 +20,6 @@ static unsigned photo_generation_seen;
 static unsigned photo_thumbnail_generation_seen;
 static unsigned photo_view_generation_seen;
 static unsigned video_generation_seen;
-static long delete_feedback_until;
-static enum crazypod_route delete_feedback_route;
-static bool delete_feedback_success;
 
 int crazypod_photos_feature_item_count(
     const struct route_state *state)
@@ -314,8 +311,8 @@ bool crazypod_photos_feature_render(
             mode, state->selected);
         if(state->route != PHOTOS_ROUTE_DELETE_PHOTOS)
             crazypod_photo_screen_render_favorite_status(
-                context->parent, photo_index, context->now,
-                context->foreground_color, context->muted_color);
+                context->parent, photo_index,
+                context->foreground_color);
         return true;
     }
     if(state->route == PHOTOS_ROUTE_DELETE_PHOTO_CONFIRM ||
@@ -342,15 +339,14 @@ bool crazypod_photos_feature_render(
         context->foreground_color,
         create_detail_info_panel, NULL);
     crazypod_photo_screen_render_favorite_status(
-        context->parent, state->group, context->now,
-        context->foreground_color, context->muted_color);
+        context->parent, state->group,
+        context->foreground_color);
     return true;
 }
 
 struct crazypod_photos_confirmation_result
 crazypod_photos_feature_confirm(
-    const struct route_state *state, long now,
-    long feedback_ticks)
+    const struct route_state *state)
 {
     struct crazypod_photos_confirmation_result result = { 0 };
     int count;
@@ -372,58 +368,7 @@ crazypod_photos_feature_confirm(
     result.selected = state->group;
     if(result.selected >= count)
         result.selected = count > 0 ? count - 1 : 0;
-    if(feedback_ticks > 0) {
-        delete_feedback_success = result.deleted;
-        delete_feedback_route = result.deleted
-            ? result.return_route : state->route;
-        delete_feedback_until = now + feedback_ticks;
-    }
-    else
-        delete_feedback_until = 0;
     return result;
-}
-
-bool crazypod_photos_feature_service_feedback(long now)
-{
-    if(delete_feedback_until == 0 ||
-       TIME_BEFORE(now, delete_feedback_until))
-        return false;
-    delete_feedback_until = 0;
-    return true;
-}
-
-void crazypod_photos_feature_render_feedback(
-    const struct route_state *state, lv_obj_t *parent,
-    uint32_t foreground_color, uint32_t muted_color,
-    long now)
-{
-    lv_obj_t *panel;
-    lv_obj_t *label;
-
-    if(delete_feedback_until == 0 ||
-       state->route != delete_feedback_route ||
-       !TIME_BEFORE(now, delete_feedback_until))
-        return;
-    panel = crazypod_glass_slot_panel(
-        CRAZYPOD_GLASS_SLOT_INFO_TOAST,
-        crazypod_glass_slot_prepare_frame(
-            CRAZYPOD_GLASS_SLOT_INFO_TOAST,
-            64, 172, 192, 34,
-            CRAZYPOD_GLASS_INFO_TOAST),
-        parent, 64, 172, 192, 34, 12,
-        CRAZYPOD_GLASS_INFO_TOAST);
-    label = crazypod_ui_widget_label(
-        panel, LV_SYMBOL_TRASH, &lv_font_montserrat_12,
-        delete_feedback_success ? 0xFF453A : muted_color,
-        LV_OPA_COVER);
-    lv_obj_set_pos(label, 12, 9);
-    label = crazypod_ui_widget_label(
-        panel,
-        delete_feedback_success
-            ? CP_TR("Deleted") : CP_TR("Delete Failed"),
-        &lv_font_montserrat_10,
-        foreground_color, LV_OPA_COVER);
-    lv_obj_set_pos(label, 39, 10);
 }
 
 lv_obj_t *crazypod_photos_feature_render_image(

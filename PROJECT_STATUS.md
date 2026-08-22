@@ -1,118 +1,96 @@
 # CrazyPod project status
 
-Status date: 2026-07-31 CST
+Status date: 2026-08-22 CST
 
-CrazyPod targets only iPod Classic 6G (`ipod6g`): ARMv5, 64 MiB RAM and a
-320×240 RGB565 display. Rockbox supplies the kernel, drivers, codecs, storage,
-USB, power and playback. CrazyPod supplies the LVGL 9.5 product UI.
+CrazyPod V1.0 is the first public experimental release for the Rockbox
+`ipod6g` target family. The release candidate passes the repository's host,
+localization, font, architecture, and clean ARM build gates. It has not been
+physically certified on an iPod in this release cycle.
 
-## Current Mini App architecture
+## Product boundary
+
+- Target: iPod Classic 6th, 6.5th, and 7th generation family (`ipod6g`, target
+  id 71), ARMv5, 64 MiB RAM, 320×240 RGB565.
+- Platform: Rockbox kernel, codecs, playback, storage, USB, power, and device
+  drivers.
+- Product UI: CrazyPod and LVGL 9.5.0.
+- Network services: none. User media and application state remain local.
+- Excluded: the Rockbox menu/browser/WPS/skin UI, recording, USB Audio, HID,
+  and iPod accessory protocol.
+
+## Current contracts
 
 ```text
 React-style TypeScript/TSX
-  → strict React Profile v1 AOT
+  → React Profile v1 AOT
   → deterministic C
   → app.arm / app.dylib
   → CPK5
-  → Native ABI 1.1
+  → Native ABI 1.20
   → host-owned LVGL
 ```
 
-Device runtime contains no JavaScript engine, React, Solid, Virtual DOM,
-`app.js`, bytecode cache or serialized UI command interpreter. CPK4/ABI3 and
-older packages are rejected; there is no fallback runtime.
+- Device runtime contains no JavaScript engine, React runtime, Virtual DOM,
+  or serialized UI command interpreter.
+- Native ABI 1.20 supports bounded services, package/private and role-based
+  fonts, Now Playing themes, host-owned artwork and sound-wave data, paged
+  lyrics, and adaptive four-line lyric layout.
+- Persistent CrazyPod state format is version 14.
+- The localization catalog contains 839 complete source entries across
+  English plus eight translated locales.
+- Fixed UI fonts cover all 1317 currently required renderable characters at
+  8, 10, 12, 14, and 16px. Runtime AOT fonts provide 38 semantic tuples across
+  SC, TC, JP, and KR faces.
 
-Implemented:
+## V1.0 verification
 
-- versioned Native Host/UI/App Ops ABI;
-- CPK5 reader, verifier, staging and atomic installation;
-- same generated C for simulator and hardware;
-- React Native-style imports, `useState`, static StyleSheet/Flexbox, supported
-  components, absolute positioning, wrap/overflow, animated images,
-  conditional JSX, UI events and Click Wheel input;
-- retained scene handles and dynamic-property updates;
-- native resources, state persistence, log and request-close services;
-- Native Reference, Capability Lab and 2048;
-- deterministic builder, CLI and host/simulator regression suites.
+The following release gates passed on 2026-08-22:
 
-Accurate limitations:
+```sh
+sh tests/check-crazypod-ui-architecture.sh
+sh tests/run-crazypod-ui-host-tests.sh
+sh tests/run-miniapp-host-tests.sh
+sh tests/run-epub-host-tests.sh
+sh tests/run-crazypod-font-tests.sh
+python3 tools/check-crazypod-l10n.py --strict-bare
+git diff --check
+VERSION=V1.0 ./build-hw.sh
+unzip -tq build-hw-ipod6g/CrazyPod-6G.zip
+```
 
-- React Profile v1 is not arbitrary TypeScript-to-C;
-- it currently lacks custom components, object/array state, list diff,
-  effects, context, async and arbitrary npm libraries;
-- 2048 uses a build-time platform intrinsic for its domain logic;
-- Native ABI 1 does not yet expose the old file picker, player, PCM, effect,
-  device-setting or alarm APIs;
-- package signing and permission UI are intentionally not implemented.
+The EPUB gate covers two IDPF EPUB 3 samples, a deterministic local EPUB 2
+fixture, path traversal rejection, corrupt ZIP rejection, metadata probing,
+text extraction, cover extraction, and reading-cache generation.
 
-## Current validation
+The final ARM build used `arm-none-eabi-gcc 16.1.0` and produced:
 
-Completed in this working tree:
+| Artifact | Result |
+| --- | --- |
+| Embedded version | `V1.0` |
+| Firmware binary size | 2,075,168 bytes |
+| Reported RAM usage | 16,629,176 bytes |
+| Install archive | 499 entries; ZIP integrity passes |
+| Bundled CPK5 packages | Native Reference, Capability Lab, 2048, Neon, Signal One |
+| `CrazyPod-V1.0-iPod6G.zip` SHA-256 | `3574a52689254b3069336df68f50457f8a6a571e3fdb6e34b4a471c483315f25` |
+| `CrazyPod-V1.0-iPod6G-rockbox.ipod` SHA-256 | `5c431005dcda6f7d30b3c5ca726bce6b2c0e420c416e652e47eaa1219acf81f7` |
 
-- builder and CLI tests;
-- strict TypeScript checking;
-- generated C with `-Wall -Wextra -Werror`;
-- Native ABI, CPK5, installer, state, resource, input and 2048 engine host
-  tests;
-- simulator build and native dylib loading;
-- CPK5 install with explicit absence of JS artifacts;
-- Native Reference event/rerender test;
-- 2048 → exit → Capability Lab reproduction loop with latency capture;
-- UI architecture, UI host, EPUB, font, strict localization and
-  `git diff --check` gates;
-- current iPod 6G ARM build with zero warnings;
-- CPK5 hardware packages containing only manifest, `app.arm`, profile,
-  assets and icon;
-- firmware ELF and all three native payloads inspected for removed-runtime
-  symbols and markers;
-- the earlier ABI 1.0 release was copied to the validated iPod 6G volume with
-  an external backup, firmware-last atomic installation and source/device
-  SHA-256 comparison, then safely ejected;
-- separate production (`build-hw-ipod6g/`) and one-shot reproduction
-  (`build-hw-ipod6g-repro/`) ABI 1.1 clean builds complete with zero compiler
-  warnings, including cleanup of six dead upstream codec variables exposed by
-  GCC 16; the reproduction symbols are absent from the production ELF;
-- production firmware SHA-256 is
-  `8a491ed4a59cfeb4c26d5e02fe70a302ee06b349f2a0b7f4cf18af70d5653b50`;
-  reproduction firmware SHA-256 is
-  `afab895b04f9ca307d6c3ec61a6845eb639394325dafd1a27a9c5ece263fcca9`.
+The hardware packager now copies only the two themes generated by the current
+build. Historical `dist/miniapps/now-playing-*.cpk` files can no longer leak
+into an otherwise clean release archive.
 
-The retained-handle compiler change reduced the 2048 movement regression from
-p95 360ms / max 390ms to aggregate p95 60ms / worst-cycle p95 70ms / max
-70ms in the final five-cycle simulator run. Continuous-interaction heartbeat
-max was 30ms, button queue max was 1 and Mini App queue max was 0. The
-all-phase heartbeat max was 280ms; cold loading is recorded separately and is
-not mixed into the continuous-interaction gate. No-op 2048 moves are settled
-on their present frame but counted separately from visibly changed frames, so
-they cannot shift later latency samples.
+## Physical validation boundary
 
-Still required before calling the firmware physically certified:
+Earlier development firmware was installed and file-integrity checked on an
+iPod Classic 6G. That evidence does not certify the final V1.0 bytes.
 
-- installing the final ABI 1.1 firmware and packages (the installed ABI 1.0
-  build is superseded and is not final evidence);
-- booting the freshly installed firmware;
-- the full five-cycle 2048/Lab test on the connected iPod;
-- USB, playback coexistence, restart persistence and long-duration device
-  regression.
+Still not run against the final V1.0 package:
 
-Simulator success and ARM compilation do not prove physical-device timing.
+- first boot after installation;
+- playback, USB charge/data switching, restart, and state migration;
+- Mini App and Now Playing theme interaction on device;
+- lock, power menu, idle shutdown, and long-duration regression;
+- storage-adapter coverage across HDD, CF, SD, and mSATA configurations.
 
-## Seven-phase completion audit
-
-| Phase | Result | Authoritative evidence |
-| --- | --- | --- |
-| 1. Baseline and reproduction | PASS | Five-cycle harness records button queue, present sequence, framebuffer CRC, latency and heartbeat; the pre-refactor 360/390ms regression is preserved in this status. |
-| 2. Native ABI, CPK5 and lifecycle | PASS | ABI/manifest/reader/verifier/installer/storage/resource/runtime/lifecycle host tests pass; packages declare CPK5 and ABI 1.1. |
-| 3. React Profile AOT | PASS | Builder 22/22, strict TypeScript, deterministic C/CPK and generated C compiled with `-Wall -Wextra -Werror`. |
-| 4. Layout, components, events and animation | PASS | The 12-scene framebuffer matrix covers controls, wrap/absolute layout, animated assets, lifecycle and a real modal overlay; unsupported incomplete components are compile errors. |
-| 5. Capability Lab | PASS | CPK5 simulator install/load and all Lab directory/controls/assets/lifecycle/modal scenes pass. |
-| 6. Native 2048 | PASS | Generated-C engine host tests and five cycles × 32 real button-queue moves pass with per-cycle latency gates. |
-| 7. Legacy removal and release | PARTIAL | Legacy runtime files/symbols are absent, all local gates and separate zero-warning production/reproduction ARM builds pass. Final ABI 1.1 device installation and physical tests remain mandatory. |
-
-## Contracts
-
-- [Power management](docs/CRAZYPOD_POWER_MANAGEMENT.zh-CN.md)
-- [Native AOT architecture](docs/CRAZYPOD_MINIAPP_NATIVE_AOT_ARCHITECTURE.zh-CN.md)
-- [Native AOT development](docs/CRAZYPOD_MINIAPP_NATIVE_AOT_DEVELOPMENT.zh-CN.md)
-- [CPK5 format](docs/CRAZYPOD_MINIAPP_CPK5_FORMAT.zh-CN.md)
-- [Native AOT verification](docs/CRAZYPOD_MINIAPP_NATIVE_AOT_VERIFICATION.zh-CN.md)
+V1.0 must therefore remain labeled experimental. The complete manual install,
+dual-boot, and recovery procedure is in
+[README.md](README.md#install-crazypod-v10).

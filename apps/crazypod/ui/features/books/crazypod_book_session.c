@@ -50,19 +50,19 @@ void crazypod_book_session_set_error(const char *message)
              message != NULL ? message : "");
 }
 
-void crazypod_book_session_turn(int direction)
+bool crazypod_book_session_turn(int direction)
 {
     const struct crazypod_book *book =
         crazypod_book_get(selected_index);
     uint32_t target;
 
     if(book == NULL)
-        return;
+        return false;
     if(direction > 0) {
         if(next_offset <= page_offset ||
            (book->content_size > 0 &&
             next_offset >= book->content_size))
-            return;
+            return false;
         if(history_count <
            (int)(sizeof(history) / sizeof(history[0])))
             history[history_count++] = page_offset;
@@ -74,12 +74,13 @@ void crazypod_book_session_turn(int direction)
         else
             target = history[--history_count];
         if(target == page_offset)
-            return;
+            return false;
     }
     if(!crazypod_book_session_load(selected_index, target))
-        return;
+        return false;
     crazypod_book_set_progress(selected_index, target);
     crazypod_state_mark_dirty();
+    return true;
 }
 
 int crazypod_book_session_index(void)

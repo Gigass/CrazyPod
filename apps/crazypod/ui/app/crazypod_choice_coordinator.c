@@ -12,6 +12,7 @@
 #include "../../crazypod_books.h"
 #include "../../crazypod_coverflow.h"
 #include "../../crazypod_icons.h"
+#include "../../crazypod_music.h"
 #include "../../crazypod_photos.h"
 #include "../../crazypod_state.h"
 #include "../../crazypod_wallpaper.h"
@@ -25,6 +26,7 @@
 #include "../presentation/crazypod_popup_motion.h"
 #include "../shell/crazypod_app_catalog.h"
 #include "../shell/crazypod_desktop_native.h"
+#include "../shell/crazypod_notification.h"
 #include "crazypod_choice_coordinator.h"
 
 #define ROUTE_ACTION_DEPTH 4
@@ -89,6 +91,8 @@ static int choice_count(int kind_value, int id, void *context)
         return 3;
     case CRAZYPOD_CHOICE_BOOK_THEME:
         return 4;
+    case CRAZYPOD_CHOICE_PLAYLIST:
+        return crazypod_music_playlist_count();
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME:
         return crazypod_now_playing_theme_choice_count();
     case CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS:
@@ -135,6 +139,8 @@ static int current_index(int kind_value, int id, void *context)
         return crazypod_books_font_size();
     case CRAZYPOD_CHOICE_BOOK_THEME:
         return crazypod_books_theme();
+    case CRAZYPOD_CHOICE_PLAYLIST:
+        return -1;
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME: {
         int index;
         int count = crazypod_now_playing_theme_choice_count();
@@ -180,6 +186,8 @@ static const char *choice_title(
         return CP_TR("TEXT SIZE");
     case CRAZYPOD_CHOICE_BOOK_THEME:
         return CP_TR("PAGE THEME");
+    case CRAZYPOD_CHOICE_PLAYLIST:
+        return CP_TR("PLAYLISTS");
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME:
         return CP_TR("Themes");
     case CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS: {
@@ -236,6 +244,12 @@ static const char *item_title(
         };
 
         return index >= 0 && index < 4 ? themes[index] : "";
+    }
+    case CRAZYPOD_CHOICE_PLAYLIST: {
+        const struct crazypod_playlist *playlist =
+            crazypod_music_playlist(index);
+
+        return playlist != NULL ? playlist->name : "";
     }
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME:
         return crazypod_now_playing_theme_choice_title(index);
@@ -441,6 +455,12 @@ void crazypod_choice_coordinator_show(
     show_overlay(kind, id, selected);
 }
 
+void crazypod_choice_coordinator_show_playlists(void)
+{
+    crazypod_choice_coordinator_show(
+        CRAZYPOD_CHOICE_PLAYLIST, -1, 0);
+}
+
 void crazypod_choice_coordinator_show_route(
     enum crazypod_route route, int group, int selected)
 {
@@ -466,8 +486,15 @@ void crazypod_choice_coordinator_show_receipt(
     const char *label, bool success, long now,
     bool refresh_route)
 {
-    if(!crazypod_choice_coordinator_visible())
-        show_overlay(CRAZYPOD_CHOICE_RECEIPT, 0, 0);
+    if(!crazypod_choice_coordinator_visible()) {
+        receipt_until = 0;
+        receipt_refresh_route = false;
+        crazypod_notification_show(
+            success ? CRAZYPOD_NOTIFICATION_SUCCESS
+                    : CRAZYPOD_NOTIFICATION_ERROR,
+            label);
+        return;
+    }
     receipt_until = now + RECEIPT_TICKS;
     receipt_refresh_route = refresh_route;
     crazypod_choice_overlay_show_receipt(
@@ -575,6 +602,23 @@ void crazypod_choice_coordinator_activate(long now)
             applied, now, applied);
         return;
     }
+    if(kind == CRAZYPOD_CHOICE_PLAYLIST) {
+        bool started = crazypod_music_play(
+            CRAZYPOD_SCOPE_PLAYLIST, selected, 0);
+
+        if(!started) {
+            crazypod_choice_coordinator_show_receipt(
+                CP_TR("No track available"), false,
+                now, false);
+            return;
+        }
+        crazypod_state_forget_resume();
+        crazypod_state_mark_dirty();
+        crazypod_choice_coordinator_dismiss(false);
+        lv_refr_now(NULL);
+        crazypod_now_playing_overlay_show_queue();
+        return;
+    }
     if(kind == CRAZYPOD_CHOICE_ICON_THEME) {
         crazypod_appearance_set_icon_theme(selected);
         host.appearance_changed();
@@ -619,9 +663,12 @@ void crazypod_choice_coordinator_activate(long now)
         }
     }
     else if(kind == CRAZYPOD_CHOICE_SETTING) {
-        crazypod_settings_feature_apply_choice(id, selected);
+        bool applied =
+            crazypod_settings_feature_apply_choice(id, selected);
+
         crazypod_choice_coordinator_show_receipt(
-            CP_TR("Saved"), true, now, true);
+            applied ? CP_TR("Saved") : CP_TR("Failed"),
+            applied, now, applied);
     }
     else if(kind == CRAZYPOD_CHOICE_BOOK_FONT_SIZE) {
         crazypod_choice_coordinator_dismiss(false);

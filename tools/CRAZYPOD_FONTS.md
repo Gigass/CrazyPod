@@ -35,7 +35,7 @@ regeneration requires a separately supplied, redistributable source.
 Arbitrary song, artist, album, playlist, book, theme, and Mini App text uses
 the CrazyPod Noto font service. Devtool converts the exact semantic
 `family:weight:size` tuples used by a CPK into regional RB12 bitmap fonts before
-installation. The firmware package includes the 23 tuples used by the system,
+installation. The firmware package includes the 38 tuples used by the system,
 bundled Mini Apps, and bundled themes. Firmware loads glyphs through Rockbox's
 bounded bitmap cache; it does not parse or rasterize Noto outlines. `fontWeight`
 selects 100–900; CJK requests use the nearest available physical Noto weight.

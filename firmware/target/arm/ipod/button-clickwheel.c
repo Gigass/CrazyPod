@@ -74,7 +74,7 @@ int  old_wheel_value  = -1;
 int  new_wheel_value  = 0;
 static int  repeat           = 0;
 int  wheel_delta      = 0;
-bool wheel_is_touched = false;
+volatile bool wheel_is_touched = false;
 unsigned int  accumulated_wheel_delta = 0;
 static unsigned int  wheel_repeat            = 0;
 unsigned int  wheel_velocity          = 0;
@@ -347,6 +347,11 @@ static inline int ipod_4g_button_read(void)
 int wheel_status(void)
 {
     return wheel_position;
+}
+
+bool wheel_touch_status(void)
+{
+    return wheel_is_touched;
 }
  
 void wheel_send_events(bool send)

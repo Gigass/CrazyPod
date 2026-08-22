@@ -5,6 +5,7 @@
 #include "button.h"
 #include "kernel.h"
 
+#include "../../../crazypod_l10n.h"
 #include "../../../crazypod_photos.h"
 #include "../../../crazypod_wallpaper.h"
 #include "crazypod_photo_controller.h"
@@ -18,8 +19,6 @@
     ((HZ * 8 / 10) > 0 ? (HZ * 8 / 10) : 1)
 #define FAVORITE_PROGRESS_DELAY_TICKS \
     ((HZ / 2) > 0 ? (HZ / 2) : 1)
-#define FAVORITE_FEEDBACK_TICKS \
-    ((HZ * 6 / 5) > 0 ? (HZ * 6 / 5) : 1)
 #define FAVORITE_PROGRESS_WIDTH 126
 
 static struct {
@@ -59,11 +58,17 @@ static void feedback_removed(void)
 
 static void set_home_wallpaper(void)
 {
-    if(runtime.state->route == PHOTOS_ROUTE_DETAIL &&
-       crazypod_wallpaper_select(
-           CRAZYPOD_WALLPAPER_HOME,
-           crazypod_photo_path(runtime.state->group)))
+    bool saved = runtime.state->route == PHOTOS_ROUTE_DETAIL &&
+        crazypod_wallpaper_select(
+            CRAZYPOD_WALLPAPER_HOME,
+            crazypod_photo_path(runtime.state->group));
+
+    if(saved)
         runtime.host.appearance_changed();
+    if(runtime.host.notify != NULL)
+        runtime.host.notify(
+            saved ? CP_TR("Saved") : CP_TR("Failed"),
+            saved);
 }
 
 void crazypod_photos_runtime_configure(
@@ -110,8 +115,7 @@ static void service_favorite(
     event = crazypod_photo_controller_tick(
         now, photo_index,
         FAVORITE_PROGRESS_DELAY_TICKS,
-        FAVORITE_HOLD_TICKS,
-        FAVORITE_FEEDBACK_TICKS);
+        FAVORITE_HOLD_TICKS);
     model = crazypod_photo_controller_model();
     if(event == CRAZYPOD_PHOTO_EVENT_HOLD_PROGRESS) {
         if(model->select_hold_percent >= 0 &&
@@ -135,13 +139,15 @@ static void service_favorite(
                     count > 0 ? count - 1 : 0;
         }
         runtime.host.render(false);
-        return;
+        if(runtime.host.notify != NULL)
+            runtime.host.notify(
+                model->favorite_feedback_error
+                    ? CP_TR("Favorite Save Failed")
+                    : model->favorite_feedback_added
+                        ? CP_TR("Saved to Favorites")
+                        : CP_TR("Removed from Favorites"),
+                !model->favorite_feedback_error);
     }
-    if(event == CRAZYPOD_PHOTO_EVENT_FEEDBACK_EXPIRED &&
-       (state->route == PHOTOS_ROUTE_LIBRARY ||
-        state->route == PHOTOS_ROUTE_FAVORITES ||
-        state->route == PHOTOS_ROUTE_DETAIL))
-        runtime.host.render(false);
 }
 
 void crazypod_photos_runtime_service(

@@ -32,8 +32,8 @@ void crazypod_photo_screen_render_detail(
     crazypod_photo_info_panel_factory info_panel_factory,
     void *factory_context);
 void crazypod_photo_screen_render_favorite_status(
-    lv_obj_t *parent, int photo_index, long now,
-    uint32_t white_color, uint32_t muted_color);
+    lv_obj_t *parent, int photo_index,
+    uint32_t white_color);
 void crazypod_photo_screen_reset_transient(void);
 bool crazypod_photo_screen_favorite_progress_ready(void);
 void crazypod_photo_screen_update_favorite_progress(int width);

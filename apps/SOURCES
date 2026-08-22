@@ -143,6 +143,7 @@ crazypod/ui/features/settings/crazypod_settings_feature.c
 crazypod/ui/features/miniapps/crazypod_miniapps_feature.c
 crazypod/ui/shell/crazypod_now_capsule.c
 crazypod/ui/shell/crazypod_desktop.c
+crazypod/ui/shell/crazypod_notification.c
 crazypod/ui/shell/crazypod_screenshot_feedback.c
 crazypod/ui/features/organizer/crazypod_calendar_controller.c
 crazypod/ui/features/organizer/crazypod_activity_controller.c

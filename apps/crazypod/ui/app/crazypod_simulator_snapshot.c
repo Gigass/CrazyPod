@@ -35,6 +35,7 @@
 #include "../navigation/crazypod_route_query.h"
 #include "../shell/crazypod_headphone_popup.h"
 #include "../shell/crazypod_lock_screen.h"
+#include "../shell/crazypod_notification.h"
 #include "../shell/crazypod_shell.h"
 #include "crazypod_app_input.h"
 #include "crazypod_simulator_snapshot.h"
@@ -977,6 +978,20 @@ bool crazypod_simulator_snapshot_prepare(
                 break;
             }
         }
+    }
+    if(screen != NULL &&
+       strcmp(screen, "notification-success") == 0) {
+        crazypod_notification_show_for(
+            CRAZYPOD_NOTIFICATION_SUCCESS,
+            CP_TR("Saved to Photos"), 5000);
+        return true;
+    }
+    if(screen != NULL &&
+       strcmp(screen, "notification-error") == 0) {
+        crazypod_notification_show_for(
+            CRAZYPOD_NOTIFICATION_ERROR,
+            CP_TR("Screenshot failed"), 5000);
+        return true;
     }
     if(screen == NULL || strcmp(screen, "home") == 0)
         return true;

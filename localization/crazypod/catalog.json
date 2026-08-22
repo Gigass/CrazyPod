@@ -257,6 +257,12 @@
         "apps/crazypod/ui/features/organizer/crazypod_calendar_screen.c:68"
       ]
     },
+    "%s  %d/%d": {
+      "locations": [
+        "apps/crazypod/ui/presentation/crazypod_choice_overlay.c:155"
+      ],
+      "keepEnglish": true
+    },
     "%s · %s": {
       "locations": [
         "apps/crazypod/ui/features/music/crazypod_music_feature.c:209"
@@ -1605,11 +1611,6 @@
         "apps/crazypod/ui/features/organizer/crazypod_utility_preview.c:266"
       ]
     },
-    "Eject CrazyPod before unplugging the cable": {
-      "locations": [
-        "apps/crazypod/ui/shell/crazypod_usb_prompt.c:271"
-      ]
-    },
     "Elapsed-time totals": {
       "locations": [
         "apps/crazypod/ui/features/organizer/crazypod_utility_preview.c:115"
@@ -1788,14 +1789,6 @@
     "Flexibility": {
       "locations": [
         "apps/crazypod/crazypod_workouts.c:37"
-      ]
-    },
-    "Follow Home": {
-      "locations": [
-        "apps/crazypod/ui/app/crazypod_choice_coordinator.c:122",
-        "apps/crazypod/ui/features/customize/crazypod_customize_controller.c:202",
-        "apps/crazypod/ui/features/customize/crazypod_customize_feature.c:245",
-        "apps/crazypod/ui/features/customize/crazypod_customize_preview.c:82"
       ]
     },
     "Font, size and page theme": {
@@ -2048,16 +2041,6 @@
         "apps/crazypod/ui/features/customize/crazypod_customize_feature.c:191"
       ]
     },
-    "Import / Rescan": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_feature.c:192"
-      ]
-    },
-    "Import EPUB, TXT or MD": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_preview.c:155"
-      ]
-    },
     "Imported contact": {
       "locations": [
         "apps/crazypod/ui/features/organizer/crazypod_utility_preview.c:295"
@@ -2151,11 +2134,6 @@
     "Keep": {
       "locations": [
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:158"
-      ]
-    },
-    "Keep CrazyPod running": {
-      "locations": [
-        "apps/crazypod/ui/shell/crazypod_usb_prompt.c:148"
       ]
     },
     "Keeping your current reading position": {
@@ -2560,11 +2538,6 @@
     "More Features": {
       "locations": [
         "apps/crazypod/ui/shell/crazypod_extras_preview.c:81"
-      ]
-    },
-    "Mount disk on computer": {
-      "locations": [
-        "apps/crazypod/ui/shell/crazypod_usb_prompt.c:148"
       ]
     },
     "Move": {
@@ -3283,11 +3256,6 @@
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:121"
       ]
     },
-    "Reading Books folders": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_workflow.c:217"
-      ]
-    },
     "Reading book titles and covers": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_workflow.c:152"
@@ -3338,11 +3306,6 @@
         "apps/crazypod/ui/features/books/crazypod_books_workflow.c:189"
       ]
     },
-    "Refreshing imported books and cover data": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_workflow.c:213"
-      ]
-    },
     "Release MENU to Cancel": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_wallpaper_crop_screen.c:92"
@@ -3383,19 +3346,9 @@
         "apps/crazypod/ui/features/settings/crazypod_settings_model.c:67"
       ]
     },
-    "Resetting cover cache": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_workflow.c:215"
-      ]
-    },
     "Restart": {
       "locations": [
         "apps/crazypod/ui/shell/crazypod_power_prompt.c:113"
-      ]
-    },
-    "Restart CrazyPod": {
-      "locations": [
-        "apps/crazypod/ui/shell/crazypod_power_prompt.c:115"
       ]
     },
     "Restore": {
@@ -3641,16 +3594,6 @@
     "Saving reading position": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_workflow.c:268"
-      ]
-    },
-    "Scan Books folders again": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_preview.c:356"
-      ]
-    },
-    "Scanning Books": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_workflow.c:212"
       ]
     },
     "Scanning Books folder": {
@@ -4090,11 +4033,6 @@
         "apps/crazypod/ui/features/organizer/crazypod_clock_screen.c:73"
       ]
     },
-    "Turn CrazyPod off": {
-      "locations": [
-        "apps/crazypod/ui/shell/crazypod_power_prompt.c:115"
-      ]
-    },
     "U": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_customize_feature.c:27",
@@ -4440,31 +4378,6 @@
         "apps/crazypod/ui/features/books/crazypod_books_preview.c:183"
       ]
     },
-    "Invalid lyrics file": {
-      "locations": [
-        "apps/crazypod/ui/features/now_playing/crazypod_now_lyrics_view.c:200"
-      ]
-    },
-    "Lyrics file is too large": {
-      "locations": [
-        "apps/crazypod/ui/features/now_playing/crazypod_now_lyrics_view.c:202"
-      ]
-    },
-    "No lyrics available": {
-      "locations": [
-        "apps/crazypod/ui/features/now_playing/crazypod_now_lyrics_view.c:204"
-      ]
-    },
-    "No lyrics file": {
-      "locations": [
-        "apps/crazypod/ui/features/now_playing/crazypod_now_lyrics_view.c:198"
-      ]
-    },
-    "Select: cover  Wheel: scroll": {
-      "locations": [
-        "apps/crazypod/ui/features/now_playing/crazypod_now_lyrics_view.c:337"
-      ]
-    },
     "Z": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_customize_feature.c:27",
@@ -4532,6 +4445,41 @@
     "Language": {
       "locations": [
         "apps/crazypod/ui/features/settings"
+      ]
+    },
+    "DATE & TIME": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_feature.c"
+      ]
+    },
+    "Date & Time": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_catalog.c"
+      ]
+    },
+    "Day": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c"
+      ]
+    },
+    "Hour": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c"
+      ]
+    },
+    "Minute": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c"
+      ]
+    },
+    "Second": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c"
+      ]
+    },
+    "Year": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c"
       ]
     }
   }

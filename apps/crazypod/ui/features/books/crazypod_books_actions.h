@@ -15,7 +15,6 @@ enum crazypod_books_action_kind {
     CRAZYPOD_BOOKS_ACTION_BEGIN_READER,
     CRAZYPOD_BOOKS_ACTION_SHOW_FONT_SIZE,
     CRAZYPOD_BOOKS_ACTION_SHOW_THEME,
-    CRAZYPOD_BOOKS_ACTION_RESCAN,
 };
 
 struct crazypod_books_action {

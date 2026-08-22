@@ -21,6 +21,7 @@ struct crazypod_photos_runtime_host {
     void (*activate)(void);
     void (*pop)(void);
     void (*appearance_changed)(void);
+    void (*notify)(const char *message, bool success);
 };
 
 struct crazypod_photos_render_context {
@@ -66,13 +67,7 @@ bool crazypod_photos_feature_render(
     const struct crazypod_photos_render_context *context);
 struct crazypod_photos_confirmation_result
 crazypod_photos_feature_confirm(
-    const struct route_state *state, long now,
-    long feedback_ticks);
-bool crazypod_photos_feature_service_feedback(long now);
-void crazypod_photos_feature_render_feedback(
-    const struct route_state *state, lv_obj_t *parent,
-    uint32_t foreground_color, uint32_t muted_color,
-    long now);
+    const struct route_state *state);
 void crazypod_photos_feature_reset_view(void);
 void crazypod_photos_runtime_configure(
     const struct crazypod_photos_runtime_host *host);

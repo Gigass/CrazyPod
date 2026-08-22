@@ -375,8 +375,6 @@ void crazypod_route_renderer_render(
         lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
     }
     render_feature(state, now);
-    crazypod_photos_feature_render_feedback(
-        state, content, COLOR_WHITE, COLOR_MUTED, now);
     lv_obj_invalidate(content);
     if(transition) {
         lv_obj_set_x(content, 0);

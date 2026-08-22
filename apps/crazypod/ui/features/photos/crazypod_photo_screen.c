@@ -39,21 +39,18 @@ int crazypod_photo_screen_grid_count(enum crazypod_photo_grid_mode mode)
 }
 
 void crazypod_photo_screen_render_favorite_status(
-    lv_obj_t *parent, int photo_index, long now,
-    uint32_t white_color, uint32_t muted_color)
+    lv_obj_t *parent, int photo_index,
+    uint32_t white_color)
 {
     const struct crazypod_photo_controller_model *model =
         crazypod_photo_controller_model();
     bool show_progress =
         model->select_holding && !model->select_long_handled &&
         model->select_hold_percent >= 0;
-    bool show_feedback =
-        model->favorite_feedback_until != 0 &&
-        TIME_BEFORE(now, model->favorite_feedback_until);
     lv_obj_t *panel;
     lv_obj_t *label;
 
-    if(!show_progress && !show_feedback)
+    if(!show_progress)
         return;
     panel = crazypod_glass_slot_panel(
         CRAZYPOD_GLASS_SLOT_INFO_TOAST,
@@ -64,11 +61,9 @@ void crazypod_photo_screen_render_favorite_status(
         parent, 64, 172, 192, 34, 12,
         CRAZYPOD_GLASS_INFO_TOAST);
     crazypod_ui_widget_pixel_heart(
-        panel, 11, 10, 2,
-        model->favorite_feedback_error
-            ? muted_color : 0xFF375F,
+        panel, 11, 10, 2, 0xFF375F,
         LV_OPA_COVER);
-    if(show_progress) {
+    {
         int width = FAVORITE_PROGRESS_WIDTH *
             model->select_hold_percent / 100;
         lv_obj_t *track;
@@ -88,18 +83,6 @@ void crazypod_photo_screen_render_favorite_status(
         favorite_progress_fill = crazypod_ui_widget_box(
             track, 0, 0, width, 3, LV_RADIUS_CIRCLE,
             0xFF375F, LV_OPA_COVER);
-    }
-    else {
-        const char *message = model->favorite_feedback_error
-            ? CP_TR("Favorite Save Failed")
-            : model->favorite_feedback_added
-                ? CP_TR("Saved to Favorites")
-                : CP_TR("Removed from Favorites");
-
-        label = crazypod_ui_widget_label(
-            panel, message, &lv_font_montserrat_10,
-            white_color, LV_OPA_COVER);
-        lv_obj_set_pos(label, 35, 10);
     }
 }
 

@@ -2437,7 +2437,7 @@ static bool cpu_boost_log_dump(void)
 
 #if (defined(HAVE_WHEEL_ACCELERATION) && (CONFIG_KEYPAD==IPOD_4G_PAD) \
      && !defined(IPOD_MINI) && !defined(SIMULATOR))
-extern bool wheel_is_touched;
+extern volatile bool wheel_is_touched;
 extern int old_wheel_value;
 extern int new_wheel_value;
 extern int wheel_delta;

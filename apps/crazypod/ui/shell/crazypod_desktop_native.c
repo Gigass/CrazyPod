@@ -16,7 +16,7 @@
 #include "../../platform/crazypod_platform_display.h"
 #include "crazypod_app_catalog.h"
 #include "crazypod_desktop_native.h"
-#include "crazypod_screenshot_feedback.h"
+#include "crazypod_notification.h"
 
 #define NATIVE_TOP CRAZYPOD_DESKTOP_NATIVE_TOP
 #define NATIVE_BOTTOM CRAZYPOD_DESKTOP_NATIVE_BOTTOM
@@ -454,7 +454,7 @@ bool crazypod_desktop_native_render(
         backdrop_ready = true;
         rendered_bounds_valid = false;
     }
-    overlay_active = crazypod_screenshot_feedback_bounds(
+    overlay_active = crazypod_notification_bounds(
         &overlay_left, &overlay_top,
         &overlay_right, &overlay_bottom);
     icon_size = clamp_icon_size(icon_size);

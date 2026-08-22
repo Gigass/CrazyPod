@@ -9,6 +9,7 @@
 #include "settings.h"
 #include "sound.h"
 #include "storage.h"
+#include "timefuncs.h"
 #include "usb.h"
 
 #include "lvgl.h"
@@ -41,6 +42,44 @@ static const int setting_repeat_values[] = {
     REPEAT_OFF, REPEAT_ALL, REPEAT_ONE
 };
 
+#define SETTINGS_RTC_YEAR_MIN 2000
+#define SETTINGS_RTC_YEAR_MAX 2099
+
+static bool settings_is_leap_year(int year)
+{
+    return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+}
+
+static int settings_days_in_month(int year, int month)
+{
+    static const unsigned char days[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+    };
+
+    if(month < 0 || month > 11)
+        return 31;
+    if(month == 1 && settings_is_leap_year(year))
+        return 29;
+    return days[month];
+}
+
+static struct tm settings_rtc_time(void)
+{
+    struct tm value = *get_time();
+
+    if(!valid_time(&value)) {
+        value.tm_sec = 0;
+        value.tm_min = 0;
+        value.tm_hour = 0;
+        value.tm_mday = 1;
+        value.tm_mon = 0;
+        value.tm_year = SETTINGS_RTC_YEAR_MIN - 1900;
+        set_day_of_week(&value);
+        set_day_of_year(&value);
+    }
+    return value;
+}
+
 const char *crazypod_ui_settings_item_title(int item)
 {
     switch(item) {
@@ -54,6 +93,12 @@ const char *crazypod_ui_settings_item_title(int item)
     case SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED: return CP_TR("Charging Light");
     case SETTINGS_ITEM_LCD_SLEEP: return CP_TR("LCD Sleep");
     case SETTINGS_ITEM_REDUCE_MOTION: return CP_TR("Reduce Motion");
+    case SETTINGS_ITEM_DATE_YEAR: return CP_TR("Year");
+    case SETTINGS_ITEM_DATE_MONTH: return CP_TR("Month");
+    case SETTINGS_ITEM_DATE_DAY: return CP_TR("Day");
+    case SETTINGS_ITEM_TIME_HOUR: return CP_TR("Hour");
+    case SETTINGS_ITEM_TIME_MINUTE: return CP_TR("Minute");
+    case SETTINGS_ITEM_TIME_SECOND: return CP_TR("Second");
     case SETTINGS_ITEM_SHUFFLE: return CP_TR("Shuffle");
     case SETTINGS_ITEM_REPEAT: return CP_TR("Repeat");
     case SETTINGS_ITEM_IDLE_POWEROFF: return CP_TR("Idle Power Off");
@@ -93,6 +138,13 @@ const char *crazypod_ui_settings_item_symbol(int item)
         return LV_SYMBOL_EYE_OPEN;
     case SETTINGS_ITEM_REDUCE_MOTION:
         return LV_SYMBOL_EYE_CLOSE;
+    case SETTINGS_ITEM_DATE_YEAR:
+    case SETTINGS_ITEM_DATE_MONTH:
+    case SETTINGS_ITEM_DATE_DAY:
+    case SETTINGS_ITEM_TIME_HOUR:
+    case SETTINGS_ITEM_TIME_MINUTE:
+    case SETTINGS_ITEM_TIME_SECOND:
+        return LV_SYMBOL_SETTINGS;
     case SETTINGS_ITEM_SHUFFLE:
         return LV_SYMBOL_SHUFFLE;
     case SETTINGS_ITEM_REPEAT:
@@ -114,14 +166,29 @@ const char *crazypod_ui_settings_item_symbol(int item)
 
 const char *crazypod_ui_settings_group_detail(int index)
 {
+    static char date_time[40];
+    char date[16];
+    char time[16];
+    struct tm now;
+
     switch(index) {
     case 0: return CP_TR("EQ, tone and balance");
     case 1: return CP_TR("Backlight, sleep and brightness");
-    case 2: return CP_TR("Shuffle and repeat");
-    case 3: return CP_TR("Charging, storage and sleep");
-    case 4: return CP_TR("Beeps and wheel feedback");
-    case 5: return CP_TR("Reorder or hide entries");
-    case 6:
+    case 2:
+        now = *get_time();
+        if(!valid_time(&now))
+            return CP_TR("Date & Time");
+        snprintf(date, sizeof(date), CP_FMT("%04d-%02d-%02d"),
+                 now.tm_year + 1900, now.tm_mon + 1, now.tm_mday);
+        snprintf(time, sizeof(time), CP_FMT("%02d:%02d"),
+                 now.tm_hour, now.tm_min);
+        snprintf(date_time, sizeof(date_time), CP_FMT("%s · %s"), date, time);
+        return date_time;
+    case 3: return CP_TR("Shuffle and repeat");
+    case 4: return CP_TR("Charging, storage and sleep");
+    case 5: return CP_TR("Beeps and wheel feedback");
+    case 6: return CP_TR("Reorder or hide entries");
+    case 7:
         return crazypod_language_native_name(crazypod_language_current());
     default: return "";
     }
@@ -236,6 +303,26 @@ static int settings_item_current_value(int item)
         return global_settings.lcd_sleep_after_backlight_off;
     case SETTINGS_ITEM_REDUCE_MOTION:
         return crazypod_state_reduce_motion() ? 1 : 0;
+    case SETTINGS_ITEM_DATE_YEAR:
+    case SETTINGS_ITEM_DATE_MONTH:
+    case SETTINGS_ITEM_DATE_DAY:
+    case SETTINGS_ITEM_TIME_HOUR:
+    case SETTINGS_ITEM_TIME_MINUTE:
+    case SETTINGS_ITEM_TIME_SECOND: {
+        struct tm now = settings_rtc_time();
+
+        if(item == SETTINGS_ITEM_DATE_YEAR)
+            return now.tm_year + 1900;
+        if(item == SETTINGS_ITEM_DATE_MONTH)
+            return now.tm_mon;
+        if(item == SETTINGS_ITEM_DATE_DAY)
+            return now.tm_mday;
+        if(item == SETTINGS_ITEM_TIME_HOUR)
+            return now.tm_hour;
+        if(item == SETTINGS_ITEM_TIME_MINUTE)
+            return now.tm_min;
+        return now.tm_sec;
+    }
     case SETTINGS_ITEM_SHUFFLE:
         return global_settings.playlist_shuffle ? 1 : 0;
     case SETTINGS_ITEM_REPEAT:
@@ -320,6 +407,20 @@ int crazypod_ui_settings_choice_count(int item)
     case SETTINGS_ITEM_LCD_SLEEP:
         return (int)(sizeof(setting_lcd_sleep_values) /
                      sizeof(setting_lcd_sleep_values[0]));
+    case SETTINGS_ITEM_DATE_YEAR:
+        return SETTINGS_RTC_YEAR_MAX - SETTINGS_RTC_YEAR_MIN + 1;
+    case SETTINGS_ITEM_DATE_MONTH:
+        return 12;
+    case SETTINGS_ITEM_DATE_DAY: {
+        struct tm now = settings_rtc_time();
+
+        return settings_days_in_month(now.tm_year + 1900, now.tm_mon);
+    }
+    case SETTINGS_ITEM_TIME_HOUR:
+        return 24;
+    case SETTINGS_ITEM_TIME_MINUTE:
+    case SETTINGS_ITEM_TIME_SECOND:
+        return 60;
     case SETTINGS_ITEM_REPEAT:
         return (int)(sizeof(setting_repeat_values) /
                      sizeof(setting_repeat_values[0]));
@@ -393,6 +494,23 @@ static int settings_choice_value(int item, int index)
         return setting_timeout_values[index];
     case SETTINGS_ITEM_LCD_SLEEP:
         return setting_lcd_sleep_values[index];
+    case SETTINGS_ITEM_DATE_YEAR:
+        return range_choice_value(index, SETTINGS_RTC_YEAR_MIN,
+                                  SETTINGS_RTC_YEAR_MAX, 1);
+    case SETTINGS_ITEM_DATE_MONTH:
+        return range_choice_value(index, 0, 11, 1);
+    case SETTINGS_ITEM_DATE_DAY: {
+        struct tm now = settings_rtc_time();
+
+        return range_choice_value(
+            index, 1,
+            settings_days_in_month(now.tm_year + 1900, now.tm_mon), 1);
+    }
+    case SETTINGS_ITEM_TIME_HOUR:
+        return range_choice_value(index, 0, 23, 1);
+    case SETTINGS_ITEM_TIME_MINUTE:
+    case SETTINGS_ITEM_TIME_SECOND:
+        return range_choice_value(index, 0, 59, 1);
     case SETTINGS_ITEM_REPEAT:
         return setting_repeat_values[index];
     case SETTINGS_ITEM_IDLE_POWEROFF:
@@ -481,6 +599,23 @@ int crazypod_ui_settings_choice_index(int item)
             (int)(sizeof(setting_lcd_sleep_values) /
                   sizeof(setting_lcd_sleep_values[0])),
             current);
+    case SETTINGS_ITEM_DATE_YEAR:
+        return range_choice_index(current, SETTINGS_RTC_YEAR_MIN,
+                                  SETTINGS_RTC_YEAR_MAX, 1);
+    case SETTINGS_ITEM_DATE_MONTH:
+        return range_choice_index(current, 0, 11, 1);
+    case SETTINGS_ITEM_DATE_DAY: {
+        struct tm now = settings_rtc_time();
+
+        return range_choice_index(
+            current, 1,
+            settings_days_in_month(now.tm_year + 1900, now.tm_mon), 1);
+    }
+    case SETTINGS_ITEM_TIME_HOUR:
+        return range_choice_index(current, 0, 23, 1);
+    case SETTINGS_ITEM_TIME_MINUTE:
+    case SETTINGS_ITEM_TIME_SECOND:
+        return range_choice_index(current, 0, 59, 1);
     case SETTINGS_ITEM_REPEAT:
         return find_value_index(
             setting_repeat_values,
@@ -584,6 +719,16 @@ const char *crazypod_ui_settings_choice_title(int item, int index)
         else
             snprintf(text, sizeof(text), CP_FMT("Center"));
         return text;
+    case SETTINGS_ITEM_DATE_YEAR:
+    case SETTINGS_ITEM_DATE_DAY:
+    case SETTINGS_ITEM_TIME_HOUR:
+    case SETTINGS_ITEM_TIME_MINUTE:
+    case SETTINGS_ITEM_TIME_SECOND:
+        snprintf(text, sizeof(text), CP_FMT("%d"), value);
+        return text;
+    case SETTINGS_ITEM_DATE_MONTH:
+        snprintf(text, sizeof(text), CP_FMT("%d"), value + 1);
+        return text;
 #ifdef HAVE_BACKLIGHT_BRIGHTNESS
     case SETTINGS_ITEM_BRIGHTNESS:
         snprintf(text, sizeof(text), CP_FMT("%d"), value);
@@ -626,9 +771,44 @@ const char *crazypod_ui_settings_item_value_label(int item)
     return crazypod_ui_settings_choice_title(item, crazypod_ui_settings_choice_index(item));
 }
 
-void crazypod_ui_settings_apply_choice(int item, int index)
+bool crazypod_ui_settings_apply_choice(int item, int index)
 {
     int value = settings_choice_value(item, index);
+
+    if(item >= SETTINGS_ITEM_DATE_YEAR &&
+       item <= SETTINGS_ITEM_TIME_SECOND) {
+        struct tm now = settings_rtc_time();
+        int max_day;
+
+        switch(item) {
+        case SETTINGS_ITEM_DATE_YEAR:
+            now.tm_year = value - 1900;
+            break;
+        case SETTINGS_ITEM_DATE_MONTH:
+            now.tm_mon = value;
+            break;
+        case SETTINGS_ITEM_DATE_DAY:
+            now.tm_mday = value;
+            break;
+        case SETTINGS_ITEM_TIME_HOUR:
+            now.tm_hour = value;
+            break;
+        case SETTINGS_ITEM_TIME_MINUTE:
+            now.tm_min = value;
+            break;
+        case SETTINGS_ITEM_TIME_SECOND:
+            now.tm_sec = value;
+            break;
+        default:
+            break;
+        }
+        max_day = settings_days_in_month(now.tm_year + 1900, now.tm_mon);
+        if(now.tm_mday > max_day)
+            now.tm_mday = max_day;
+        set_day_of_week(&now);
+        set_day_of_year(&now);
+        return set_time(&now) == 0;
+    }
 
     switch(item) {
     case SETTINGS_ITEM_LANGUAGE:
@@ -731,4 +911,5 @@ void crazypod_ui_settings_apply_choice(int item, int index)
     }
     crazypod_state_mark_dirty();
     crazypod_state_save(false);
+    return true;
 }

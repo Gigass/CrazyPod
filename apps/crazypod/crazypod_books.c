@@ -572,6 +572,7 @@ void crazypod_books_init(void)
     static struct books_state_disk loaded;
     int fd;
 
+    mkdir(BOOKS_DIRECTORY);
     memset(books, 0, sizeof(books));
     memset(recent_sequences, 0, sizeof(recent_sequences));
     memset(book_text_encodings, 0, sizeof(book_text_encodings));

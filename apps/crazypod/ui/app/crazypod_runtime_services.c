@@ -220,10 +220,6 @@ void crazypod_runtime_services_tick(
     }
     if(!locked && routed)
         crazypod_photos_runtime_service(state, now);
-    if(!locked && routed &&
-       crazypod_photos_feature_service_feedback(now) &&
-       !crazypod_choice_coordinator_visible())
-        render_route(false);
     if(!locked)
         crazypod_wallpaper_crop_runtime_service(now);
     crazypod_music_library_service(

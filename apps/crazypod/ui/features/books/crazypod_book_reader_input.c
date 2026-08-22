@@ -10,6 +10,7 @@ void crazypod_book_reader_input_handle(
     const struct crazypod_input_event *event,
     const struct crazypod_book_reader_input_actions *actions)
 {
+    bool changed = false;
     int count;
 
     if(event->base == BUTTON_SCROLL_FWD ||
@@ -19,18 +20,20 @@ void crazypod_book_reader_input_handle(
 
         count = crazypod_input_wheel_steps(event, 12);
         while(count-- > 0)
-            actions->turn_page(direction);
+            changed = actions->turn_page(direction) || changed;
     }
     else if(event->base == BUTTON_RIGHT)
-        actions->turn_page(1);
+        changed = actions->turn_page(1);
     else if(event->base == BUTTON_LEFT)
-        actions->turn_page(-1);
+        changed = actions->turn_page(-1);
     else if(event->base == BUTTON_SELECT && !event->repeated)
-        actions->activate();
+        actions->choose_playback_playlist();
     else if(event->base == BUTTON_PLAY && !event->repeated)
         actions->toggle_bookmark();
     else if(event->base == BUTTON_MENU && !event->repeated)
         actions->leave();
+    if(changed)
+        actions->refresh();
 }
 
 #endif

@@ -17,7 +17,6 @@ void crazypod_photo_controller_reset(void)
     model.select_holding = false;
     model.select_hold_start = 0;
     model.select_hold_percent = -1;
-    model.favorite_feedback_until = 0;
     model.favorite_feedback_added = false;
     model.favorite_feedback_error = false;
     model.wheel_touch_active = false;
@@ -110,7 +109,7 @@ void crazypod_photo_controller_release_select(
 
 enum crazypod_photo_controller_event crazypod_photo_controller_tick(
     long now, int photo_index, long progress_delay,
-    long hold_duration, long feedback_duration)
+    long hold_duration)
 {
     if(model.select_holding && !model.select_long_handled) {
         long elapsed = now - model.select_hold_start;
@@ -141,15 +140,8 @@ enum crazypod_photo_controller_event crazypod_photo_controller_tick(
             model.favorite_feedback_added =
                 saved ? crazypod_photo_is_favorite(photo_index)
                       : was_favorite;
-            model.favorite_feedback_until = now + feedback_duration;
             return CRAZYPOD_PHOTO_EVENT_FAVORITE_CHANGED;
         }
-    }
-    if(model.favorite_feedback_until != 0 &&
-       now >= model.favorite_feedback_until) {
-        model.favorite_feedback_until = 0;
-        model.favorite_feedback_error = false;
-        return CRAZYPOD_PHOTO_EVENT_FEEDBACK_EXPIRED;
     }
     return CRAZYPOD_PHOTO_EVENT_NONE;
 }

@@ -1,6 +1,8 @@
 #ifndef CRAZYPOD_UI_SETTINGS_MODEL_H
 #define CRAZYPOD_UI_SETTINGS_MODEL_H
 
+#include <stdbool.h>
+
 #include "config.h"
 
 enum settings_item {
@@ -14,6 +16,12 @@ enum settings_item {
     SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED,
     SETTINGS_ITEM_LCD_SLEEP,
     SETTINGS_ITEM_REDUCE_MOTION,
+    SETTINGS_ITEM_DATE_YEAR,
+    SETTINGS_ITEM_DATE_MONTH,
+    SETTINGS_ITEM_DATE_DAY,
+    SETTINGS_ITEM_TIME_HOUR,
+    SETTINGS_ITEM_TIME_MINUTE,
+    SETTINGS_ITEM_TIME_SECOND,
     SETTINGS_ITEM_SHUFFLE,
     SETTINGS_ITEM_REPEAT,
     SETTINGS_ITEM_IDLE_POWEROFF,
@@ -42,6 +50,6 @@ int crazypod_ui_settings_choice_count(int item);
 int crazypod_ui_settings_choice_index(int item);
 const char *crazypod_ui_settings_choice_title(int item, int index);
 const char *crazypod_ui_settings_item_value_label(int item);
-void crazypod_ui_settings_apply_choice(int item, int index);
+bool crazypod_ui_settings_apply_choice(int item, int index);
 
 #endif

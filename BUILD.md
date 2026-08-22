@@ -63,7 +63,8 @@ CRAZYPOD_SIM_SCREEN=clock \
   "build-sim/CrazyPod Simulator.app/Contents/MacOS/CrazyPod Simulator"
 ```
 
-Supported routes are `home`, `power`, `coverflow`, `coverflow-power`, `more`,
+Supported routes are `home`, `notification-success`, `notification-error`,
+`power`, `coverflow`, `coverflow-power`, `more`,
 `more-second`,
 `settings-main-menu`, `settings-language`, `settings-reduce-motion`, `notes`,
 `note-compose`,
@@ -93,6 +94,17 @@ Set `CRAZYPOD_SIM_LANGUAGE` to `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `de`,
 The script rejects target arguments because no target other than `ipod6g` is
 supported.
 
+Set Rockbox's build version explicitly for a tagged release. V1.0 was built
+with:
+
+```sh
+VERSION=V1.0 ./build-hw.sh
+cp build-hw-ipod6g/CrazyPod-6G.zip \
+  build-hw-ipod6g/CrazyPod-V1.0-iPod6G.zip
+cp build-hw-ipod6g/rockbox.ipod \
+  build-hw-ipod6g/CrazyPod-V1.0-iPod6G-rockbox.ipod
+```
+
 ## Verification
 
 Run the structural and host tests from the repository root:
@@ -108,9 +120,9 @@ git diff --check
 ```
 
 The UI host test covers collation, A-Z wheel-jump state, route dispatch,
-navigation commands, menu layout, and text helpers. The architecture gate
-requires `crazypod_ui.c` to remain between 400 and 800 lines and rejects
-feature-private includes outside their owner.
+navigation commands, menu layout, book-reader input, and text helpers. The
+architecture gate requires `crazypod_ui.c` to remain between 400 and 1500
+lines and rejects feature-private includes outside their owner.
 
 For a user-visible change, also run the simulator and exercise the affected
 route. For LCD, storage, USB, power, audio, or native Mini App changes, an ARM
@@ -169,6 +181,8 @@ Artifacts:
 - `dist/miniapps/game2048-5.0.1.cpk`
 - `dist/miniapps/capability-lab-5.0.1.cpk`
 - `dist/miniapps/native-reference-1.0.0.cpk`
+- `dist/miniapps/now-playing-neon-1.4.6.cpk`
+- `dist/miniapps/now-playing-signal-1.0.7.cpk`
 
 The zip deliberately contains only the firmware and the runtime resources
 required by the independent product:
@@ -178,11 +192,14 @@ required by the independent product:
 .rockbox/rockbox-info.txt
 .rockbox/codecs/*.codec
 .rockbox/codepages/936.cp
+.rockbox/fonts/crazypod-aot/*.fnt
 .rockbox/crazypod/default-home.bmp
 .rockbox/crazypod/icons/<theme>/*.bmp
 .rockbox/crazypod/miniapps/packages/game2048-5.0.1.cpk
 .rockbox/crazypod/miniapps/packages/capability-lab-5.0.1.cpk
 .rockbox/crazypod/miniapps/packages/native-reference-1.0.0.cpk
+.rockbox/crazypod/miniapps/packages/now-playing-neon-1.4.6.cpk
+.rockbox/crazypod/miniapps/packages/now-playing-signal-1.0.7.cpk
 ```
 
 There are no Rockbox WPS files, themes, skin fonts, plugins, or recording
@@ -241,8 +258,10 @@ Before device testing:
    `.cpk` files against their local hashes.
 7. Check the data volume again and safely eject the whole device.
 
-CrazyPod does not yet provide a supported end-user installer. See
-[PROJECT_STATUS.md](PROJECT_STATUS.md) for the current validation record.
+CrazyPod V1.0 has a manual installation and recovery procedure for Windows,
+macOS, and Linux in [README.md](README.md#install-crazypod-v10). It does not
+provide a one-click CrazyPod installer. See [PROJECT_STATUS.md](PROJECT_STATUS.md)
+for the current validation record.
 
 ## Environment variables
 

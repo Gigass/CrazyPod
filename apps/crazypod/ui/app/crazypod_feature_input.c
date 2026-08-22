@@ -18,6 +18,7 @@
 #include "../features/settings/crazypod_settings_feature.h"
 #include "../navigation/crazypod_input_event.h"
 #include "crazypod_feature_input.h"
+#include "crazypod_choice_coordinator.h"
 #include "crazypod_route_actions.h"
 
 static struct crazypod_feature_input_host host;
@@ -121,7 +122,7 @@ static bool handle_books_pressed(
     const struct crazypod_feature_input_context input = {
         .now = host.now(),
         .render = host.render,
-        .activate = activate,
+        .activate = crazypod_choice_coordinator_show_playlists,
         .pop = crazypod_route_actions_pop,
     };
 

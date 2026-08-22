@@ -9,7 +9,6 @@ enum crazypod_photo_controller_event {
     CRAZYPOD_PHOTO_EVENT_NONE = 0,
     CRAZYPOD_PHOTO_EVENT_HOLD_PROGRESS,
     CRAZYPOD_PHOTO_EVENT_FAVORITE_CHANGED,
-    CRAZYPOD_PHOTO_EVENT_FEEDBACK_EXPIRED,
 };
 
 struct crazypod_photo_controller_model {
@@ -20,7 +19,6 @@ struct crazypod_photo_controller_model {
     bool select_holding;
     long select_hold_start;
     int select_hold_percent;
-    long favorite_feedback_until;
     bool favorite_feedback_added;
     bool favorite_feedback_error;
     bool wheel_touch_active;
@@ -46,7 +44,7 @@ void crazypod_photo_controller_release_select(
     bool *activate, bool *remove_progress);
 enum crazypod_photo_controller_event crazypod_photo_controller_tick(
     long now, int photo_index, long progress_delay,
-    long hold_duration, long feedback_duration);
+    long hold_duration);
 
 void crazypod_photo_controller_wheel_sample(
     int position, long now, long recent_ticks,

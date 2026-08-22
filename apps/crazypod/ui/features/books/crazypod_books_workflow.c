@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../../../crazypod_book_cover.h"
 #include "../../../crazypod_books.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_book_session.h"
@@ -205,23 +204,6 @@ void crazypod_books_workflow_apply_font_size(int value)
             100, loaded ? CP_TR("Text ready")
                         : CP_TR("Could not reload page"), NULL);
     }
-    workflow_host.render_route(false);
-}
-
-void crazypod_books_workflow_rescan(void)
-{
-    render_loading(
-        NULL, CP_TR("Scanning Books"),
-        CP_TR("Refreshing imported books and cover data"));
-    metadata_ready = false;
-    update_progress(12, CP_TR("Resetting cover cache"), NULL);
-    crazypod_book_cover_reset();
-    update_progress(20, CP_TR("Reading Books folders"), NULL);
-    crazypod_books_scan();
-    load_metadata(30, 94);
-    metadata_ready = true;
-    crazypod_book_session_reset();
-    update_progress(100, CP_TR("Library ready"), NULL);
     workflow_host.render_route(false);
 }
 

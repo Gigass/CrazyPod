@@ -30,6 +30,7 @@
 #include "../presentation/crazypod_preview_motion.h"
 #include "../shell/crazypod_app_catalog.h"
 #include "../shell/crazypod_desktop.h"
+#include "../shell/crazypod_notification.h"
 #include "crazypod_app_launcher.h"
 #include "crazypod_choice_coordinator.h"
 #include "crazypod_menu_preview.h"
@@ -137,14 +138,12 @@ void crazypod_route_actions_request_now_playing(void)
 }
 
 bool crazypod_route_actions_confirm_photos(
-    const struct route_state *state, long now,
-    long feedback_ticks)
+    const struct route_state *state, long now)
 {
     bool overlay =
         crazypod_choice_coordinator_owns_route_state(state);
     struct crazypod_photos_confirmation_result result =
-        crazypod_photos_feature_confirm(
-            state, now, overlay ? 0 : feedback_ticks);
+        crazypod_photos_feature_confirm(state);
 
     if(!result.handled)
         return false;
@@ -169,6 +168,11 @@ bool crazypod_route_actions_confirm_photos(
             parent->selected = result.selected;
     }
     host.render(result.deleted);
+    crazypod_notification_show(
+        result.deleted ? CRAZYPOD_NOTIFICATION_SUCCESS
+                       : CRAZYPOD_NOTIFICATION_ERROR,
+        result.deleted
+            ? CP_TR("Deleted") : CP_TR("Delete Failed"));
     return true;
 }
 
@@ -234,6 +238,11 @@ static void play_selected_track(struct route_state *state)
         crazypod_state_forget_resume();
         crazypod_state_mark_dirty();
         crazypod_route_actions_request_now_playing();
+    }
+    else {
+        crazypod_notification_show(
+            CRAZYPOD_NOTIFICATION_ERROR,
+            CP_TR("No track available"));
     }
 }
 
@@ -389,6 +398,9 @@ void crazypod_route_actions_commit_pending_main_menu_reorder(void)
     if(crazypod_apps_is_known(id))
         persist_main_menu(reorder_preferred);
     reorder_preferred = CRAZYPOD_APP_INVALID;
+    if(crazypod_apps_is_known(id))
+        crazypod_choice_coordinator_show_receipt(
+            CP_TR("Saved"), true, current_tick, false);
 }
 
 static void show_main_menu_actions(enum crazypod_app_id id)

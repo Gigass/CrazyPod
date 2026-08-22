@@ -12,14 +12,14 @@
 #include "crazypod_settings_catalog.h"
 
 const char *const crazypod_settings_menu_titles[] = {
-    CP_TR("Sound"), CP_TR("Display"), CP_TR("Playback"), CP_TR("Power"), CP_TR("Controls"), CP_TR("Main Menu"),
-    CP_TR("Language")
+    CP_TR("Sound"), CP_TR("Display"), CP_TR("Date & Time"), CP_TR("Playback"),
+    CP_TR("Power"), CP_TR("Controls"), CP_TR("Main Menu"), CP_TR("Language")
 };
 
 const char *const crazypod_settings_menu_symbols[] = {
-    LV_SYMBOL_AUDIO, LV_SYMBOL_EYE_OPEN, LV_SYMBOL_PLAY,
-    LV_SYMBOL_POWER, LV_SYMBOL_SETTINGS, LV_SYMBOL_LIST,
-    LV_SYMBOL_HOME
+    LV_SYMBOL_AUDIO, LV_SYMBOL_EYE_OPEN, LV_SYMBOL_SETTINGS,
+    LV_SYMBOL_PLAY, LV_SYMBOL_POWER, LV_SYMBOL_SETTINGS,
+    LV_SYMBOL_LIST, LV_SYMBOL_HOME
 };
 
 static const int sound_items[] = {
@@ -44,6 +44,15 @@ static const int display_items[] = {
 static const int playback_items[] = {
     SETTINGS_ITEM_SHUFFLE,
     SETTINGS_ITEM_REPEAT,
+};
+
+static const int date_time_items[] = {
+    SETTINGS_ITEM_DATE_YEAR,
+    SETTINGS_ITEM_DATE_MONTH,
+    SETTINGS_ITEM_DATE_DAY,
+    SETTINGS_ITEM_TIME_HOUR,
+    SETTINGS_ITEM_TIME_MINUTE,
+    SETTINGS_ITEM_TIME_SECOND,
 };
 
 static const int power_items[] = {
@@ -87,6 +96,8 @@ int crazypod_settings_catalog_count(enum crazypod_route route)
         return EQ_NUM_BANDS;
     case SETTINGS_ROUTE_DISPLAY:
         return ARRAY_COUNT(display_items);
+    case SETTINGS_ROUTE_DATE_TIME:
+        return ARRAY_COUNT(date_time_items);
     case SETTINGS_ROUTE_PLAYBACK:
         return ARRAY_COUNT(playback_items);
     case SETTINGS_ROUTE_POWER:
@@ -114,6 +125,10 @@ int crazypod_settings_catalog_item(
     case SETTINGS_ROUTE_DISPLAY:
         items = display_items;
         count = ARRAY_COUNT(display_items);
+        break;
+    case SETTINGS_ROUTE_DATE_TIME:
+        items = date_time_items;
+        count = ARRAY_COUNT(date_time_items);
         break;
     case SETTINGS_ROUTE_PLAYBACK:
         items = playback_items;

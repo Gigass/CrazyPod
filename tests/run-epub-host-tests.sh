@@ -97,6 +97,68 @@ run_sample \
 run_sample \
     wasteland \
     https://github.com/IDPF/epub3-samples/releases/download/20230704/wasteland.epub
-run_sample \
-    alice-epub2 \
-    https://www.gutenberg.org/cache/epub/11/pg11-images.epub
+
+# Keep EPUB 2 coverage deterministic. The former Project Gutenberg download
+# endpoint intermittently returned 503/504 and made an unchanged parser fail
+# its release gate before the sample could run.
+python3 - "$test_root/epub2-fixture.epub" <<'PY'
+import sys
+import zipfile
+
+path = sys.argv[1]
+container = '''<?xml version="1.0"?>
+<container version="1.0"
+ xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+ <rootfiles>
+  <rootfile full-path="OPS/content.opf"
+   media-type="application/oebps-package+xml"/>
+ </rootfiles>
+</container>
+'''
+package = '''<?xml version="1.0" encoding="UTF-8"?>
+<package version="2.0" unique-identifier="book-id"
+ xmlns="http://www.idpf.org/2007/opf">
+ <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <dc:identifier id="book-id">crazypod-epub2-fixture</dc:identifier>
+  <dc:title>CrazyPod EPUB 2 Fixture</dc:title>
+  <dc:creator>CrazyPod Tests</dc:creator>
+  <dc:language>en</dc:language>
+ </metadata>
+ <manifest>
+  <item id="ncx" href="toc.ncx"
+   media-type="application/x-dtbncx+xml"/>
+  <item id="chapter" href="chapter.xhtml"
+   media-type="application/xhtml+xml"/>
+ </manifest>
+ <spine toc="ncx"><itemref idref="chapter"/></spine>
+</package>
+'''
+navigation = '''<?xml version="1.0" encoding="UTF-8"?>
+<ncx version="2005-1" xmlns="http://www.daisy.org/z3986/2005/ncx/">
+ <head><meta name="dtb:uid" content="crazypod-epub2-fixture"/></head>
+ <docTitle><text>CrazyPod EPUB 2 Fixture</text></docTitle>
+ <navMap><navPoint id="chapter" playOrder="1">
+  <navLabel><text>Chapter One</text></navLabel>
+  <content src="chapter.xhtml"/>
+ </navPoint></navMap>
+</ncx>
+'''
+chapter = '''<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head><title>Chapter One</title></head>
+ <body><h1>Chapter One</h1><p>Deterministic EPUB 2 parser text.</p></body>
+</html>
+'''
+with zipfile.ZipFile(path, "w") as archive:
+    archive.writestr(
+        "mimetype", "application/epub+zip", zipfile.ZIP_STORED)
+    archive.writestr("META-INF/container.xml", container)
+    archive.writestr("OPS/content.opf", package)
+    archive.writestr("OPS/toc.ncx", navigation)
+    archive.writestr("OPS/chapter.xhtml", chapter)
+PY
+mkdir "$test_root/epub2-fixture"
+"$test_root/zip_extract_test" \
+    "$test_root/epub2-fixture.epub" "$test_root/epub2-fixture"
+"$test_root/epub_parser_test" \
+    "$test_root/epub2-fixture" "$test_root/epub2-fixture.epub"

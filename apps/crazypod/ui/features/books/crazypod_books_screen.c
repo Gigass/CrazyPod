@@ -75,9 +75,7 @@ void crazypod_books_screen_render_reader(
     lv_obj_set_pos(label, 47, 6);
     label = crazypod_ui_widget_label(
         toolbar,
-        book != NULL && book->bookmark == page_offset &&
-                page_offset > 0
-            ? LV_SYMBOL_OK : LV_SYMBOL_SAVE,
+        LV_SYMBOL_LIST,
         &lv_font_montserrat_12,
         ink_color, 155);
     lv_obj_set_pos(label, 151, 7);

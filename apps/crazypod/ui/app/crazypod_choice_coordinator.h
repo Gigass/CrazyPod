@@ -14,6 +14,7 @@ enum crazypod_choice_kind {
     CRAZYPOD_CHOICE_SETTING,
     CRAZYPOD_CHOICE_BOOK_FONT_SIZE,
     CRAZYPOD_CHOICE_BOOK_THEME,
+    CRAZYPOD_CHOICE_PLAYLIST,
     CRAZYPOD_CHOICE_NOW_PLAYING_THEME,
     CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS,
     CRAZYPOD_CHOICE_ROUTE_ACTIONS,
@@ -49,6 +50,7 @@ void crazypod_choice_coordinator_reset(void);
 bool crazypod_choice_coordinator_visible(void);
 void crazypod_choice_coordinator_show(
     enum crazypod_choice_kind kind, int id, int selected);
+void crazypod_choice_coordinator_show_playlists(void);
 void crazypod_choice_coordinator_show_route(
     enum crazypod_route route, int group, int selected);
 void crazypod_choice_coordinator_show_receipt(

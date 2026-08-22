@@ -58,7 +58,7 @@ int crazypod_books_feature_item_count(
         return book != NULL && book->bookmark > 0 ? 1 : 0;
     }
     case BOOKS_ROUTE_READING_SETTINGS:
-        return 3;
+        return 2;
     default:
         return 0;
     }
@@ -191,7 +191,7 @@ bool crazypod_books_feature_item_title(
             *title = themes[crazypod_books_theme()];
         }
         else
-            *title = index == 2 ? CP_TR("Import / Rescan") : "";
+            *title = "";
         return true;
     case BOOKS_ROUTE_STATS:
         *title = CP_TR("Library Summary");
@@ -249,7 +249,6 @@ enum crazypod_menu_icon crazypod_books_feature_item_icon(
     case BOOKS_ROUTE_READING_SETTINGS:
         return index == 0 ? CRAZYPOD_MENU_ICON_TEXT_SIZE :
             index == 1 ? CRAZYPOD_MENU_ICON_PAGE_THEME :
-            index == 2 ? CRAZYPOD_MENU_ICON_IMPORT :
             CRAZYPOD_MENU_ICON_NONE;
     case BOOKS_ROUTE_DELETE_CONFIRM:
         return CRAZYPOD_MENU_ICON_TRASH;
@@ -295,9 +294,6 @@ bool crazypod_books_feature_activate(
         break;
     case CRAZYPOD_BOOKS_ACTION_SHOW_THEME:
         host->show_theme(crazypod_books_theme());
-        break;
-    case CRAZYPOD_BOOKS_ACTION_RESCAN:
-        crazypod_books_workflow_rescan();
         break;
     case CRAZYPOD_BOOKS_ACTION_NONE:
     case CRAZYPOD_BOOKS_ACTION_UNHANDLED:
@@ -347,6 +343,11 @@ void crazypod_books_feature_reset_view(void)
 
 static struct crazypod_feature_input_context book_input_context;
 
+static void refresh_reader(void)
+{
+    book_input_context.render(false);
+}
+
 static void toggle_bookmark(void)
 {
     crazypod_book_toggle_bookmark(
@@ -362,7 +363,8 @@ bool crazypod_books_feature_handle_input(
 {
     const struct crazypod_book_reader_input_actions actions = {
         .turn_page = crazypod_book_session_turn,
-        .activate = context->activate,
+        .refresh = refresh_reader,
+        .choose_playback_playlist = context->activate,
         .toggle_bookmark = toggle_bookmark,
         .leave = context->pop,
     };

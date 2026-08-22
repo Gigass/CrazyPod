@@ -24,6 +24,7 @@ int crazypod_settings_feature_item_count(
     case SETTINGS_ROUTE_SOUND:
     case SETTINGS_ROUTE_EQ_STUDIO:
     case SETTINGS_ROUTE_DISPLAY:
+    case SETTINGS_ROUTE_DATE_TIME:
     case SETTINGS_ROUTE_PLAYBACK:
     case SETTINGS_ROUTE_POWER:
     case SETTINGS_ROUTE_CONTROLS:
@@ -49,6 +50,8 @@ const char *crazypod_settings_feature_title(
         return CP_TR("EQ STUDIO");
     case SETTINGS_ROUTE_DISPLAY:
         return CP_TR("DISPLAY");
+    case SETTINGS_ROUTE_DATE_TIME:
+        return CP_TR("DATE & TIME");
     case SETTINGS_ROUTE_PLAYBACK:
         return CP_TR("PLAYBACK");
     case SETTINGS_ROUTE_POWER:
@@ -121,6 +124,7 @@ bool crazypod_settings_feature_item_title(
     }
     case SETTINGS_ROUTE_SOUND:
     case SETTINGS_ROUTE_DISPLAY:
+    case SETTINGS_ROUTE_DATE_TIME:
     case SETTINGS_ROUTE_PLAYBACK:
     case SETTINGS_ROUTE_POWER:
     case SETTINGS_ROUTE_CONTROLS:
@@ -155,6 +159,14 @@ static enum crazypod_menu_icon settings_item_icon(int item)
         return CRAZYPOD_MENU_ICON_DISPLAY_SLEEP;
     case SETTINGS_ITEM_REDUCE_MOTION:
         return CRAZYPOD_MENU_ICON_MOTION_OFF;
+    case SETTINGS_ITEM_DATE_YEAR:
+    case SETTINGS_ITEM_DATE_MONTH:
+    case SETTINGS_ITEM_DATE_DAY:
+        return CRAZYPOD_MENU_ICON_DATE;
+    case SETTINGS_ITEM_TIME_HOUR:
+    case SETTINGS_ITEM_TIME_MINUTE:
+    case SETTINGS_ITEM_TIME_SECOND:
+        return CRAZYPOD_MENU_ICON_TIME;
     case SETTINGS_ITEM_SHUFFLE:
         return CRAZYPOD_MENU_ICON_SHUFFLE;
     case SETTINGS_ITEM_REPEAT:
@@ -196,6 +208,7 @@ enum crazypod_menu_icon crazypod_settings_feature_item_icon(
     static const enum crazypod_menu_icon root_icons[] = {
         CRAZYPOD_MENU_ICON_SOUND,
         CRAZYPOD_MENU_ICON_DISPLAY,
+        CRAZYPOD_MENU_ICON_DATE,
         CRAZYPOD_MENU_ICON_PLAYBACK,
         CRAZYPOD_MENU_ICON_POWER,
         CRAZYPOD_MENU_ICON_CONTROLS,
@@ -211,6 +224,7 @@ enum crazypod_menu_icon crazypod_settings_feature_item_icon(
             ? root_icons[index] : CRAZYPOD_MENU_ICON_NONE;
     case SETTINGS_ROUTE_SOUND:
     case SETTINGS_ROUTE_DISPLAY:
+    case SETTINGS_ROUTE_DATE_TIME:
     case SETTINGS_ROUTE_PLAYBACK:
     case SETTINGS_ROUTE_POWER:
     case SETTINGS_ROUTE_CONTROLS:
@@ -361,10 +375,10 @@ const char *crazypod_settings_feature_choice_title(
         item, index);
 }
 
-void crazypod_settings_feature_apply_choice(
+bool crazypod_settings_feature_apply_choice(
     int item, int index)
 {
-    crazypod_ui_settings_apply_choice(item, index);
+    return crazypod_ui_settings_apply_choice(item, index);
 }
 
 void crazypod_settings_feature_begin_main_menu_reorder(

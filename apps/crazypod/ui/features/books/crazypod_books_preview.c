@@ -154,7 +154,8 @@ static void render_books_menu_stage(
 
     if(logical == 1) {
         *detail = count > 0
-            ? CP_TR("Browse the local library") : CP_TR("Import EPUB, TXT or MD");
+            ? CP_TR("Browse the local library")
+            : CP_TR("Add EPUB, TXT or Markdown files to /Books.");
         make_box(parent, 183, 70, 114, 83, 4,
                  0x261A12, 82);
         stage = crazypod_preview_make_plinth(
@@ -347,17 +348,6 @@ static void render_books_settings_stage(
     lv_obj_t *label;
     int selected = state->selected;
     int i;
-
-    if(selected == 2) {
-        page = make_box(parent, 198, 67, 84, 84, 18,
-                        0xA56D2E, LV_OPA_COVER);
-        label = make_label(page, LV_SYMBOL_REFRESH,
-                           &lv_font_montserrat_24,
-                           COLOR_WHITE, 235);
-        lv_obj_center(label);
-        *detail = CP_TR("Scan Books folders again");
-        return;
-    }
 
     {
         static const uint32_t page_colors[] = {

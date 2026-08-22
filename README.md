@@ -1,23 +1,23 @@
 # CrazyPod
 
-CrazyPod is experimental standalone firmware for the iPod Classic 6th
-generation. It replaces the Rockbox interface with a 320×240 LVGL application
-carousel while retaining Rockbox's codecs, playback engine, storage, power,
-USB, and device drivers.
+CrazyPod V1.0 is experimental standalone firmware for the iPod Classic 6G
+hardware family. It replaces the Rockbox interface with a 320×240 LVGL
+application carousel while retaining Rockbox's codecs, playback engine,
+storage, power, USB, and device drivers.
 
 ![CrazyPod home screen](screenshots/crazypod-home.png)
 
 > [!WARNING]
-> CrazyPod is experimental firmware. Development builds have been installed
-> and file-integrity checked on an iPod Classic 6G, but the project has no
-> release-grade installer or complete hardware regression suite. Keep a full
-> backup and a tested recovery path.
+> CrazyPod is experimental firmware. V1.0 compiles and packages cleanly, and
+> earlier development builds were installed and file-integrity checked on an
+> iPod Classic 6G. V1.0 has not completed a full physical-device regression
+> suite. Keep a backup and a tested Apple Disk Mode/DFU recovery path.
 
 ## Scope
 
 | | Current support |
 | --- | --- |
-| Device | iPod Classic 6G (`ipod6g`) only |
+| Device | iPod Classic 6G target family (`ipod6g`: 6th, 6.5th, and 7th generation) |
 | Display | 320×240 RGB565 |
 | Interface | LVGL 9.5.0; click-wheel navigation |
 | Languages | English, Simplified Chinese, Traditional Chinese, Japanese, Korean, German, French, Spanish, and Brazilian Portuguese |
@@ -72,6 +72,9 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
   ABI 1.8 adds modal-scoped Menu back and coalesced wheel steps. Outer-page
   Menu and held Menu remain firmware escape paths. ABI 1.9 adds automatic
   committed-cover binding, atomic theme replacement, and next-two prefetch.
+  The current Native ABI is 1.20, including theme status bars, role-based and
+  package-private fonts, configurable cover decode size, host sound-wave
+  styles, paged lyric context, and four-line adaptive lyrics.
 - **Workouts:** 20 timed activities with pause, resume, history, and summaries.
   CrazyPod records elapsed time only; it does not invent distance, steps, or
   calorie data.
@@ -99,14 +102,14 @@ paused/stopped inactivity. See the [power-management contract](docs/CRAZYPOD_POW
 
 - Settings → Language applies one of nine languages immediately and persists
   it across restarts.
-- The firmware catalog contains 831 translated UI keys.
+- The firmware catalog contains 839 translated UI keys.
 - Generated 8, 10, 12, 14, and 16px font subsets cover the current CJK,
   Hangul, and accented Latin catalog. The non-LVGL LCD text path also decodes
   UTF-8.
 
 ### Mini Apps
 
-The firmware bundles three CPK5 Native AOT references and one theme demo:
+The firmware bundles three CPK5 Native AOT references and two theme demos:
 
 - **2048:** React-style TSX UI, generated native C game logic, Click Wheel
   input and CRC-checked persistent board state.
@@ -116,6 +119,8 @@ The firmware bundles three CPK5 Native AOT references and one theme demo:
 - **Neon Playback:** pure TSX Now Playing theme using firmware playback,
   dynamic artwork, a theme-drawn progress bar, and bounded PCM-derived peak
   telemetry for its VU segments.
+- **Signal One:** pure TSX Now Playing theme with the same firmware-owned
+  playback and escape-path guarantees in a warm industrial visual system.
 
 Fast wheel input never skips visible actionable controls. The host keeps a
 bounded input queue and consumes at most one discrete focus movement per
@@ -173,19 +178,216 @@ existing build directory.
 | Simulator | `build-sim/rockboxui` |
 | Firmware | `build-hw-ipod6g/rockbox.ipod` |
 | Install archive | `build-hw-ipod6g/CrazyPod-6G.zip` |
+| V1.0 release archive | `build-hw-ipod6g/CrazyPod-V1.0-iPod6G.zip` |
 | Optional bootloader | `build-bootloader-ipod6g/bootloader-ipod6g.ipod` |
 | 2048 package | `dist/miniapps/game2048-5.0.1.cpk` |
 
-The project does not yet claim a supported hardware installation procedure.
-The generated archive is for controlled device testing by users who already
-have a compatible bootloader and recovery method.
+The V1.0 release uses a manual install. Follow the complete procedure below;
+do not copy only `rockbox.ipod`, because the archive also contains required
+codecs, fonts, icons, and Native Mini App packages.
 
 See [PROJECT_STATUS.md](PROJECT_STATUS.md) for the current validation level,
-conversation audit, and known release blockers.
+release evidence, and remaining physical-device validation gaps.
+
+## Install CrazyPod V1.0
+
+This procedure covers a first installation and an update from an existing
+Rockbox-compatible bootloader on Windows, macOS, and Linux.
+
+### 1. Confirm the device and prepare recovery
+
+CrazyPod supports only the Rockbox `ipod6g` target: the iPod Classic 6th,
+6.5th, and 7th generation family. Check the model in Apple firmware under
+Settings → About. Known family model prefixes include `MB029`, `MB145`,
+`MB147`, `MB150`, `MB562`, `MB565`, `MC293`, and `MC297` (including regional
+`PB`/`PC` variants).
+
+Before writing anything:
+
+1. Back up the iPod's media and the existing `.rockbox` and `.crazypod`
+   directories.
+2. Confirm that the data volume is FAT32. HFS/HFS+ “MacPods” cannot boot
+   Rockbox; restore the iPod from Windows first to create a FAT32 “WinPod”.
+3. Download `CrazyPod-V1.0-iPod6G.zip` and `SHA256SUMS.txt` from the
+   [V1.0 release](https://github.com/Gigass/CrazyPod/releases/tag/V1.0).
+4. Keep a USB cable and the Apple Disk Mode/DFU button sequences available.
+
+The firmware archive does not alter the Apple firmware partition, repartition
+the disk, or install a bootloader. Never use `mks5lboot --single`: that option
+destroys the normal dual-boot Apple NOR path.
+
+### 2. Install a bootloader on a first-time device
+
+Skip this section if the iPod already starts a Rockbox-compatible iPod 6G
+bootloader. CrazyPod V1.0 uses the official Rockbox iPod 6G bootloader; the
+separate experimental CrazyPod bootloader is not required or included.
+
+Download the official
+[`bootloader-ipod6g.ipod`](https://download.rockbox.org/bootloader/ipod/bootloader-ipod6g.ipod).
+
+#### Windows bootloader install
+
+1. Install the current [Rockbox Utility](https://www.rockbox.org/download/)
+   and run it as an administrator.
+2. Select iPod Classic 6G and the correct iPod drive letter. If necessary,
+   enable **Show disabled targets** in the utility's configuration.
+3. Choose a bootloader-only installation and follow the utility's DFU prompts.
+   Do not install the standard Rockbox firmware over CrazyPod after completing
+   the V1.0 copy in section 3.
+4. If Windows has no usable Apple DFU driver, install/update Apple Devices or
+   iTunes from Apple, reconnect the iPod, and retry Rockbox Utility.
+
+Manual `mks5lboot` installation on Windows is not supported by the inherited
+Rockbox manual; use Rockbox Utility.
+
+#### macOS bootloader install
+
+Install the command-line tools, build `mks5lboot` from this repository, and
+scan for the iPod:
+
+```sh
+xcode-select --install
+brew install libusb
+git clone https://github.com/Gigass/CrazyPod.git
+cd CrazyPod
+make -C utils/mks5lboot
+./utils/mks5lboot/mks5lboot --dfuscan -l
+```
+
+Quit Music/iTunes and close any Finder iPod window before entering DFU. Once
+the scan reports the device, press Control-C and install the bootloader:
+
+```sh
+./utils/mks5lboot/mks5lboot --bl-inst \
+  "$HOME/Downloads/bootloader-ipod6g.ipod"
+```
+
+#### Linux bootloader install
+
+Install a compiler and the libusb development package, then build and run
+`mks5lboot`. Debian/Ubuntu commands are:
+
+```sh
+sudo apt update
+sudo apt install build-essential libusb-1.0-0-dev
+git clone https://github.com/Gigass/CrazyPod.git
+cd CrazyPod
+make -C utils/mks5lboot
+sudo ./utils/mks5lboot/mks5lboot --dfuscan -l
+```
+
+Once the scan reports the device, press Control-C and install the bootloader:
+
+```sh
+sudo ./utils/mks5lboot/mks5lboot --bl-inst \
+  "$HOME/Downloads/bootloader-ipod6g.ipod"
+```
+
+On Fedora use `gcc make libusb1-devel`; on Arch use `base-devel libusb`.
+
+#### Enter iPod Classic DFU mode
+
+1. Connect the iPod by USB.
+2. Lock the HOLD switch, wait one second, then unlock it.
+3. Hold **Menu + Center** together for 12 seconds.
+4. Release both buttons. The screen remains completely black in DFU mode.
+5. Confirm that Rockbox Utility or `mks5lboot --dfuscan -l` detects USB product
+   ID `1223` before installing the bootloader.
+
+If the Apple logo appears, the timing missed DFU; repeat the sequence. Do not
+run `--bl-inst` until the scan identifies the DFU device.
+
+### 3. Copy the V1.0 firmware package
+
+Boot Apple Disk Mode for the most conservative file-transfer path: reboot with
+**Menu + Center**, then immediately hold **Center + Play** until Disk Mode
+appears. Mount the iPod's FAT32 data volume and use the instructions for your
+host OS. The commands merge the package and do not delete music, `.crazypod`,
+or unrelated files. Replace the example mount path with the actual iPod.
+
+#### Windows firmware copy (PowerShell)
+
+```powershell
+$archive = "$HOME\Downloads\CrazyPod-V1.0-iPod6G.zip"
+$mount = "E:"
+$temp = New-Item -ItemType Directory -Path `
+  (Join-Path $env:TEMP ("crazypod-" + [guid]::NewGuid()))
+Expand-Archive -Path $archive -DestinationPath $temp.FullName
+Copy-Item "$($temp.FullName)\.rockbox" "$mount\" -Recurse -Force
+"Music","Podcasts","Books","Pictures","Videos","Contacts",`
+  "Calendars","MiniApps" | ForEach-Object {
+    New-Item -ItemType Directory -Force -Path "$mount\$_" | Out-Null
+  }
+# Write the firmware again last, after every resource has reached the iPod.
+Copy-Item "$($temp.FullName)\.rockbox\rockbox.ipod" `
+  "$mount\.rockbox\rockbox.ipod" -Force
+Get-FileHash "$mount\.rockbox\rockbox.ipod" -Algorithm SHA256
+```
+
+Compare the printed firmware hash with `SHA256SUMS.txt`, then use **Safely
+Remove Hardware** before unplugging the cable.
+
+#### macOS firmware copy (Terminal)
+
+```sh
+archive="$HOME/Downloads/CrazyPod-V1.0-iPod6G.zip"
+mount="/Volumes/IPOD"
+tmp="$(mktemp -d)"
+ditto -x -k "$archive" "$tmp"
+mkdir -p "$mount/.rockbox"
+cp -R "$tmp/.rockbox/." "$mount/.rockbox/"
+for dir in Music Podcasts Books Pictures Videos Contacts Calendars MiniApps; do
+    mkdir -p "$mount/$dir"
+done
+# Write the firmware again last.
+cp "$tmp/.rockbox/rockbox.ipod" "$mount/.rockbox/rockbox.ipod"
+sync
+shasum -a 256 "$mount/.rockbox/rockbox.ipod"
+diskutil eject "$mount"
+```
+
+#### Linux firmware copy (Terminal)
+
+```sh
+archive="$HOME/Downloads/CrazyPod-V1.0-iPod6G.zip"
+mount="/media/$USER/IPOD"
+tmp="$(mktemp -d)"
+unzip -q "$archive" -d "$tmp"
+mkdir -p "$mount/.rockbox"
+cp -a "$tmp/.rockbox/." "$mount/.rockbox/"
+for dir in Music Podcasts Books Pictures Videos Contacts Calendars MiniApps; do
+    mkdir -p "$mount/$dir"
+done
+# Write the firmware again last.
+cp "$tmp/.rockbox/rockbox.ipod" "$mount/.rockbox/rockbox.ipod"
+sync
+sha256sum "$mount/.rockbox/rockbox.ipod"
+udisksctl unmount -b "$(findmnt -no SOURCE --target "$mount")"
+```
+
+Compare the installed firmware hash with `SHA256SUMS.txt` before unmounting.
+
+### 4. First boot and recovery
+
+Disconnect USB and reboot with **Menu + Center**. The bootloader loads
+`/.rockbox/rockbox.ipod`; V1.0 then creates or migrates state under
+`/.crazypod` without deleting media.
+
+- If the bootloader reports a missing firmware, enter Apple Disk Mode with
+  **Center + Play** during reboot and repeat the package copy.
+- To boot Apple firmware through the dual-boot loader, power on and immediately
+  engage HOLD or hold Menu.
+- With flash/SD storage adapters, use Apple Disk Mode for transfers if Rockbox
+  USB is slow or unstable. Stop immediately if files disappear, sizes change,
+  or the filesystem becomes read-only.
+- To remove the bootloader, use Rockbox Utility or
+  `mks5lboot --bl-uninst ipod6g`; removing `.rockbox` alone does not uninstall
+  the bootloader.
 
 ## Device content
 
-Create these directories at the root of the iPod's storage:
+The install archive includes these directories at the root of the iPod's
+storage. Create them manually when installing without the archive:
 
 | Content | Location |
 | --- | --- |

@@ -145,8 +145,9 @@ static void home_open_selected_app(void)
             crazypod_desktop_selected()));
 }
 
-static void handle_home_queue_overlay(
-    long base, bool repeated, intptr_t data)
+static void handle_now_playing_overlay(
+    long base, bool repeated, intptr_t data,
+    bool refresh_on_dismiss)
 {
     if(base == BUTTON_SCROLL_FWD)
         crazypod_now_playing_overlay_move(
@@ -161,7 +162,8 @@ static void handle_home_queue_overlay(
     else if(base == BUTTON_SELECT && !repeated)
         crazypod_now_playing_overlay_activate();
     else if(base == BUTTON_MENU && !repeated)
-        crazypod_now_playing_overlay_dismiss(false);
+        crazypod_now_playing_overlay_dismiss(
+            refresh_on_dismiss);
     else if(base == BUTTON_PLAY && !repeated)
         host.toggle_playback();
 }
@@ -343,7 +345,8 @@ void crazypod_app_input_handle(
     if(!album_flow_owns_wheel_feedback(base))
         wheel_feedback(button);
     if(crazypod_shell_product_active() &&
-       crazypod_ui_routes_depth() > 0) {
+       crazypod_ui_routes_depth() > 0 &&
+       !crazypod_now_playing_overlay_visible()) {
         const struct crazypod_input_event event =
             crazypod_input_event_make(button, data);
 
@@ -376,9 +379,15 @@ void crazypod_app_input_handle(
     repeated = (button & BUTTON_REPEAT) != 0;
     base = button_base(button);
     backlight_on();
-    if(!crazypod_shell_product_active() &&
-       crazypod_now_playing_overlay_visible()) {
-        handle_home_queue_overlay(base, repeated, data);
+    if(crazypod_now_playing_overlay_visible()) {
+        bool refresh_on_dismiss =
+            crazypod_shell_product_active() &&
+            crazypod_ui_routes_depth() > 0 &&
+            crazypod_ui_routes_current()->route ==
+                MUSIC_ROUTE_NOW_PLAYING;
+
+        handle_now_playing_overlay(
+            base, repeated, data, refresh_on_dismiss);
         return;
     }
     if(crazypod_shell_product_active() &&

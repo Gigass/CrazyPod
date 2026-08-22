@@ -55,7 +55,7 @@ int crazypod_settings_feature_choice_index(int item);
 const char *crazypod_settings_feature_choice_item_title(int item);
 const char *crazypod_settings_feature_choice_title(
     int item, int index);
-void crazypod_settings_feature_apply_choice(
+bool crazypod_settings_feature_apply_choice(
     int item, int index);
 void crazypod_settings_feature_begin_main_menu_reorder(
     enum crazypod_app_id id);

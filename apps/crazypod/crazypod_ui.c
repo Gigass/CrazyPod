@@ -431,7 +431,7 @@ static bool handle_confirmation(const struct route_state *state)
     struct crazypod_organizer_confirmation_result organizer;
 
     if(crazypod_route_actions_confirm_photos(
-           state, current_tick, HZ * 6 / 5))
+           state, current_tick))
         return true;
     if(notes.handled) {
         if(!notes.succeeded) {
@@ -441,6 +441,10 @@ static bool handle_confirmation(const struct route_state *state)
                     current_tick, false);
             else
                 render_current_route(false);
+            if(!overlay)
+                crazypod_choice_coordinator_show_receipt(
+                    CP_TR("Failed"), false,
+                    current_tick, false);
             return true;
         }
         if(notes.navigation ==
@@ -463,8 +467,13 @@ static bool handle_confirmation(const struct route_state *state)
                 deleted ? CP_TR("Deleted") : CP_TR("Done"),
                 true, current_tick, true);
         }
-        else
+        else {
             render_current_route(true);
+            crazypod_choice_coordinator_show_receipt(
+                state->route != NOTES_ROUTE_DISCARD_CONFIRM
+                    ? CP_TR("Deleted") : CP_TR("Done"),
+                true, current_tick, false);
+        }
         return true;
     }
 
@@ -485,6 +494,11 @@ static bool handle_confirmation(const struct route_state *state)
                 books.deleted
                     ? CP_TR("Deleted") : CP_TR("Delete Failed"),
                 books.deleted, current_tick, books.deleted);
+        else
+            crazypod_choice_coordinator_show_receipt(
+                books.deleted
+                    ? CP_TR("Deleted") : CP_TR("Delete Failed"),
+                books.deleted, current_tick, false);
         return true;
     }
 
@@ -498,6 +512,10 @@ static bool handle_confirmation(const struct route_state *state)
                 CP_TR("Failed"), false, current_tick, false);
         else
             render_current_route(false);
+        if(!overlay)
+            crazypod_choice_coordinator_show_receipt(
+                CP_TR("Failed"), false,
+                current_tick, false);
         return true;
     }
     if(organizer.navigation ==
@@ -520,8 +538,13 @@ static bool handle_confirmation(const struct route_state *state)
             deleted ? CP_TR("Deleted") : CP_TR("Saved"),
             true, current_tick, true);
     }
-    else
+    else {
         render_current_route(true);
+        crazypod_choice_coordinator_show_receipt(
+            state->route != WORKOUT_ROUTE_FINISH_CONFIRM
+                ? CP_TR("Deleted") : CP_TR("Saved"),
+            true, current_tick, false);
+    }
     return true;
 }
 

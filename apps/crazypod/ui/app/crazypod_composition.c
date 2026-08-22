@@ -12,6 +12,7 @@
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../features/photos/crazypod_photos_feature.h"
+#include "../shell/crazypod_notification.h"
 #include "../navigation/crazypod_render_scheduler.h"
 #include "../navigation/crazypod_ui_routes.h"
 #include "../presentation/crazypod_alpha_jump_hud.h"
@@ -35,6 +36,8 @@ static struct crazypod_composition_host host;
 
 static void move_photo(int direction);
 static void activate_photo(void);
+static void notify_photo_action(
+    const char *message, bool success);
 
 static bool route_available(void)
 {
@@ -290,6 +293,7 @@ void crazypod_composition_configure(
         .pop = crazypod_route_actions_pop,
         .appearance_changed =
             crazypod_desktop_refresh_appearance,
+        .notify = notify_photo_action,
     };
 
     crazypod_preview_motion_configure(&preview);
@@ -317,6 +321,15 @@ static void move_photo(int direction)
 static void activate_photo(void)
 {
     crazypod_route_actions_activate(host.now());
+}
+
+static void notify_photo_action(
+    const char *message, bool success)
+{
+    crazypod_notification_show(
+        success ? CRAZYPOD_NOTIFICATION_SUCCESS
+                : CRAZYPOD_NOTIFICATION_ERROR,
+        message);
 }
 
 #endif

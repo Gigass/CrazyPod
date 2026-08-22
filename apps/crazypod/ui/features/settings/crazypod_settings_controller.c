@@ -22,6 +22,7 @@ static enum crazypod_route settings_group_route(int index)
     static const enum crazypod_route routes[] = {
         SETTINGS_ROUTE_SOUND,
         SETTINGS_ROUTE_DISPLAY,
+        SETTINGS_ROUTE_DATE_TIME,
         SETTINGS_ROUTE_PLAYBACK,
         SETTINGS_ROUTE_POWER,
         SETTINGS_ROUTE_CONTROLS,

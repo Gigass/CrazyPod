@@ -140,8 +140,6 @@ struct crazypod_books_action crazypod_books_actions_activate(
             return action(CRAZYPOD_BOOKS_ACTION_SHOW_FONT_SIZE);
         if(state->selected == 1)
             return action(CRAZYPOD_BOOKS_ACTION_SHOW_THEME);
-        if(state->selected == 2)
-            return action(CRAZYPOD_BOOKS_ACTION_RESCAN);
         return action(CRAZYPOD_BOOKS_ACTION_NONE);
     case BOOKS_ROUTE_STATS:
     case BOOKS_ROUTE_INFO:

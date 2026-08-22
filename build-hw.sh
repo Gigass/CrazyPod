@@ -239,6 +239,10 @@ mkdir -p "$PACKAGE_DIR/.rockbox/codepages"
 mkdir -p "$PACKAGE_DIR/.rockbox/fonts"
 mkdir -p "$PACKAGE_DIR/.rockbox/crazypod/icons"
 mkdir -p "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages"
+for content_directory in Music Podcasts Books Pictures Videos Contacts \
+    Calendars MiniApps; do
+    mkdir -p "$PACKAGE_DIR/$content_directory"
+done
 CODEPAGE_TOOL="$(cd .. && pwd)/tools/codepages"
 CODEPAGE_BUILD_DIR="$PACKAGE_DIR/generated-codepages"
 if [ ! -x "$CODEPAGE_TOOL" ]; then
@@ -270,11 +274,10 @@ cp "../dist/miniapps/$CAPABILITY_LAB_PACKAGE" \
    "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
 cp "../dist/miniapps/$NATIVE_REFERENCE_PACKAGE" \
    "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
-for theme_package in ../dist/miniapps/now-playing-*.cpk; do
-    [ -f "$theme_package" ] || continue
-    cp "$theme_package" \
-       "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
-done
+cp "../dist/miniapps/$NOW_PLAYING_THEME_PACKAGE" \
+   "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
+cp "../dist/miniapps/$SIGNAL_THEME_PACKAGE" \
+   "$PACKAGE_DIR/.rockbox/crazypod/miniapps/packages/"
 for codec in lib/rbcodec/codecs/*.codec; do
     [ -f "$codec" ] || continue
     case "$codec" in
@@ -285,7 +288,9 @@ done
 rm -f CrazyPod-6G.zip
 (
     cd "$PACKAGE_DIR"
-    zip -q -r "$PACKAGE_DIR/../CrazyPod-6G.zip" .rockbox
+    zip -q -r "$PACKAGE_DIR/../CrazyPod-6G.zip" \
+        .rockbox Music Podcasts Books Pictures Videos Contacts Calendars \
+        MiniApps
 )
 mv "$PACKAGE_DIR/../CrazyPod-6G.zip" CrazyPod-6G.zip
 
