@@ -36,6 +36,8 @@ Rockbox platform, not a Rockbox theme.
 
 - Fixed Cover Flow cache invalidation and neighboring-cover loading so album
   art changes are published without stale frames.
+- Kept cache-only Cover Flow look-ahead active while a finger remains on the
+  wheel, instead of postponing lazy loading until wheel release.
 - Added frame-clock and LCD presentation controls used to reduce visible
   tearing during Cover Flow transitions.
 - Restored runtime-validated TE synchronization for both 8-bit type 0/1

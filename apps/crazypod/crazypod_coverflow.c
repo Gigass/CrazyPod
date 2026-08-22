@@ -1508,9 +1508,13 @@ void crazypod_coverflow_tick(void)
         prefetch_pending = !prefetch_covers(false);
         last_prefetch = current_tick;
     }
+    /* Distant look-ahead is cache-only, so it is safe to continue while the
+       wheel is touched. Gating it on wheel release made last_input advance on
+       every touch sample and postponed all look-ahead until the finger left
+       the wheel. Visible requests above still take priority. */
     if(!prefetch_pending && prefetch_deep_pending &&
-       !wheel_tracking && !animating &&
-       current_tick - last_input >= FLOW_PREFETCH_TICKS) {
+       (last_prefetch == 0 ||
+        current_tick - last_prefetch >= FLOW_PREFETCH_TICKS)) {
         prefetch_deep_pending = !prefetch_covers(true);
         last_prefetch = current_tick;
     }
