@@ -29,6 +29,10 @@ Rockbox platform, not a Rockbox theme.
 
 ## Release fixes
 
+- Fixed Cover Flow cache invalidation and neighboring-cover loading so album
+  art changes are published without stale frames.
+- Added frame-clock and LCD presentation controls used to reduce visible
+  tearing during Cover Flow transitions.
 - Added centered success/error notifications and simplified screenshot-save
   feedback ownership.
 - Corrected book-reader input/session transitions and removed stale workflow
@@ -48,8 +52,8 @@ Rockbox platform, not a Rockbox theme.
 
 | File | Purpose | SHA-256 |
 | --- | --- | --- |
-| `CrazyPod-V1.0-iPod6G.zip` | Complete install archive | `3574a52689254b3069336df68f50457f8a6a571e3fdb6e34b4a471c483315f25` |
-| `CrazyPod-V1.0-iPod6G-rockbox.ipod` | Standalone firmware binary for controlled updates | `5c431005dcda6f7d30b3c5ca726bce6b2c0e420c416e652e47eaa1219acf81f7` |
+| `CrazyPod-V1.0-iPod6G.zip` | Complete install archive | `91ba3a284e19510c4ab5e18955ccf198fda12af59d1eba6dc6b8f9d50e2b538d` |
+| `CrazyPod-V1.0-iPod6G-rockbox.ipod` | Standalone firmware binary for controlled updates | `8b37b32d8785536ed70944f222b4d669f9badc99d8ba8f494518167cf4334d68` |
 | `SHA256SUMS.txt` | Download integrity checks | — |
 
 Install the complete ZIP for a first CrazyPod copy or when resources changed.
@@ -61,7 +65,9 @@ fonts, icons, codecs, and CPK packages.
 The [README installation tutorial](README.md#install-crazypod-v10) covers:
 
 - compatible models and FAT32 requirements;
-- first-time bootloader installation on Windows, macOS, and Linux;
+- Apple-firmware-only installation with official dual boot on Windows,
+  macOS, and Linux;
+- package-only upgrades for existing Rockbox and CrazyPod users;
 - DFU and Apple Disk Mode entry;
 - non-destructive firmware copy with `rockbox.ipod` written last;
 - SHA-256 verification, safe eject, dual boot, and recovery.

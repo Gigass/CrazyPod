@@ -208,8 +208,18 @@ release evidence, and remaining physical-device validation gaps.
 
 ## Install CrazyPod V1.0
 
-This procedure covers a first installation and an update from an existing
-Rockbox-compatible bootloader on Windows, macOS, and Linux.
+This manual procedure covers two distinct starting points on Windows, macOS,
+and Linux. Choose one route before touching the bootloader:
+
+| Current iPod state | Required route |
+| --- | --- |
+| Apple firmware only; Rockbox has never been installed | Follow **2A** to install the official dual bootloader, then copy the complete package in **3**. |
+| Rockbox already boots | Skip **2A**. Read **2B**, then copy the complete package in **3**. |
+| An older CrazyPod build already boots | Use the same package-only route as an existing Rockbox user. |
+
+The complete ZIP is required in every route. Copying only `rockbox.ipod`
+creates a mismatched installation without the matching codecs, fonts, icons,
+and Native Mini App packages.
 
 ### 1. Confirm the device and prepare recovery
 
@@ -217,27 +227,49 @@ CrazyPod supports only the Rockbox `ipod6g` target: the iPod Classic 6th,
 6.5th, and 7th generation family. Check the model in Apple firmware under
 Settings → About. Known family model prefixes include `MB029`, `MB145`,
 `MB147`, `MB150`, `MB562`, `MB565`, `MC293`, and `MC297` (including regional
-`PB`/`PC` variants).
+`PB`/`PC` variants). Do not install this package on an iPod Video/5G, Nano,
+Mini, Touch, or any other target.
 
 Before writing anything:
 
 1. Back up the iPod's media and the existing `.rockbox` and `.crazypod`
    directories.
 2. Confirm that the data volume is FAT32. HFS/HFS+ “MacPods” cannot boot
-   Rockbox; restore the iPod from Windows first to create a FAT32 “WinPod”.
+   Rockbox. Converting one requires a Windows restore and erases the device;
+   complete that restore and restore the media backup before continuing.
 3. Download `CrazyPod-V1.0-iPod6G.zip` and `SHA256SUMS.txt` from the
    [V1.0 release](https://github.com/Gigass/CrazyPod/releases/tag/V1.0).
 4. Keep a USB cable and the Apple Disk Mode/DFU button sequences available.
 
 The firmware archive does not alter the Apple firmware partition, repartition
-the disk, or install a bootloader. Never use `mks5lboot --single`: that option
-destroys the normal dual-boot Apple NOR path.
+the disk, or install a bootloader. The official bootloader provides dual boot
+when installed without `--single`. Never use `mks5lboot --single`: that option
+destroys the normal Apple NOR boot path.
 
-### 2. Install a bootloader on a first-time device
+Verify the downloaded archive before installation. On Windows, compare
+`Get-FileHash "$HOME\Downloads\CrazyPod-V1.0-iPod6G.zip" -Algorithm SHA256`
+with the archive line in `SHA256SUMS.txt`. On macOS run:
 
-Skip this section if the iPod already starts a Rockbox-compatible iPod 6G
-bootloader. CrazyPod V1.0 uses the official Rockbox iPod 6G bootloader; the
-separate experimental CrazyPod bootloader is not required or included.
+```sh
+cd "$HOME/Downloads"
+grep 'CrazyPod-V1.0-iPod6G.zip' SHA256SUMS.txt | shasum -a 256 -c -
+```
+
+On Linux run:
+
+```sh
+cd "$HOME/Downloads"
+grep 'CrazyPod-V1.0-iPod6G.zip' SHA256SUMS.txt | sha256sum -c -
+```
+
+The macOS/Linux command must report `OK`.
+
+### 2A. Apple firmware-only users: install the dual bootloader
+
+Follow this section only if Rockbox has never booted on this iPod. If a Rockbox
+bootloader already appears at startup, skip directly to 2B. CrazyPod V1.0 uses
+the official Rockbox iPod 6G dual bootloader; the separate experimental
+CrazyPod bootloader is not required or included.
 
 Download the official
 [`bootloader-ipod6g.ipod`](https://download.rockbox.org/bootloader/ipod/bootloader-ipod6g.ipod).
@@ -314,13 +346,27 @@ On Fedora use `gcc make libusb1-devel`; on Arch use `base-devel libusb`.
 If the Apple logo appears, the timing missed DFU; repeat the sequence. Do not
 run `--bl-inst` until the scan identifies the DFU device.
 
-### 3. Copy the V1.0 firmware package
+### 2B. Existing Rockbox or CrazyPod users: keep the bootloader
+
+If the iPod already shows a Rockbox bootloader at startup, do not enter DFU and
+do not reinstall, update, or uninstall the bootloader. The existing bootloader
+already loads `/.rockbox/rockbox.ipod` and retains the Apple dual-boot path.
+
+Before replacing the firmware, keep a copy of the existing `.rockbox`
+directory if you want a simple rollback. Continue with section 3 and merge the
+complete CrazyPod package. Do not delete `.rockbox`, do not use a mirror mode
+that deletes destination files, and do not remove `.crazypod` or user media.
+To return to standard Rockbox later, restore the previous complete `.rockbox`
+backup; the bootloader does not need to change.
+
+### 3. Copy the V1.0 firmware package for either route
 
 Boot Apple Disk Mode for the most conservative file-transfer path: reboot with
 **Menu + Center**, then immediately hold **Center + Play** until Disk Mode
 appears. Mount the iPod's FAT32 data volume and use the instructions for your
-host OS. The commands merge the package and do not delete music, `.crazypod`,
-or unrelated files. Replace the example mount path with the actual iPod.
+host OS. The commands merge the package and do not delete `iPod_Control`,
+music, `.crazypod`, settings, application data, or unrelated files. Replace
+the example mount path with the actual iPod.
 
 #### Windows firmware copy (PowerShell)
 
@@ -330,7 +376,9 @@ $mount = "E:"
 $temp = New-Item -ItemType Directory -Path `
   (Join-Path $env:TEMP ("crazypod-" + [guid]::NewGuid()))
 Expand-Archive -Path $archive -DestinationPath $temp.FullName
-Copy-Item "$($temp.FullName)\.rockbox" "$mount\" -Recurse -Force
+New-Item -ItemType Directory -Force -Path "$mount\.rockbox" | Out-Null
+Copy-Item "$($temp.FullName)\.rockbox\*" `
+  "$mount\.rockbox\" -Recurse -Force
 "Music","Podcasts","Books","Pictures","Videos","Contacts",`
   "Calendars","MiniApps" | ForEach-Object {
     New-Item -ItemType Directory -Force -Path "$mount\$_" | Out-Null
@@ -384,16 +432,22 @@ udisksctl unmount -b "$(findmnt -no SOURCE --target "$mount")"
 
 Compare the installed firmware hash with `SHA256SUMS.txt` before unmounting.
 
-### 4. First boot and recovery
+### 4. First boot, dual-boot controls, and recovery
 
-Disconnect USB and reboot with **Menu + Center**. The bootloader loads
-`/.rockbox/rockbox.ipod`; V1.0 then creates or migrates state under
-`/.crazypod` without deleting media.
+Disconnect USB and reboot with **Menu + Center**. With no startup key held, the
+bootloader loads `/.rockbox/rockbox.ipod`; V1.0 then creates or migrates state
+under `/.crazypod` without deleting media.
+
+| Startup action | Result |
+| --- | --- |
+| No key held | Boot CrazyPod. |
+| Hold **Menu** during the first second of power-up | Boot the original Apple firmware. |
+| Engage HOLD immediately after power-up | Boot the original Apple firmware; release HOLD after it starts. |
+| Hold **Center + Play** during reboot | Enter Apple Disk Mode. |
+| Hold **Menu + Center** for about 12 seconds | Enter DFU recovery mode. |
 
 - If the bootloader reports a missing firmware, enter Apple Disk Mode with
   **Center + Play** during reboot and repeat the package copy.
-- To boot Apple firmware through the dual-boot loader, power on and immediately
-  engage HOLD or hold Menu.
 - With flash/SD storage adapters, use Apple Disk Mode for transfers if Rockbox
   USB is slow or unstable. Stop immediately if files disappear, sizes change,
   or the filesystem becomes read-only.
