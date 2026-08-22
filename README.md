@@ -13,6 +13,16 @@ storage, power, USB, and device drivers.
 > iPod Classic 6G. V1.0 has not completed a full physical-device regression
 > suite. Keep a backup and a tested Apple Disk Mode/DFU recovery path.
 
+## Project lineage
+
+CrazyPod was created from
+[Poorfocus/Rockbox-UI-UX-Overhaul](https://github.com/Poorfocus/Rockbox-UI-UX-Overhaul),
+which was developed from
+[nuxcodes/rockpod](https://github.com/nuxcodes/rockpod), itself based on
+[Rockbox](https://www.rockbox.org/). CrazyPod replaces the product UI and
+excludes the former Apple2026 theme, but retains inherited source code and Git
+history. Upstream copyright and license notices remain in place.
+
 ## Scope
 
 | | Current support |

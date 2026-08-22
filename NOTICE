@@ -7,7 +7,12 @@ endorsed by, or sponsored by Apple Inc.
 UPSTREAM
 --------
 
-CrazyPod is based on Rockpod by nuxcodes, which is based on Rockbox:
+CrazyPod was created from Rockbox-UI-UX-Overhaul by Poorfocus:
+
+  https://github.com/Poorfocus/Rockbox-UI-UX-Overhaul
+
+Rockbox-UI-UX-Overhaul was developed from Rockpod by nuxcodes, which is based
+on Rockbox:
 
   https://github.com/nuxcodes/rockpod
   https://www.rockbox.org
