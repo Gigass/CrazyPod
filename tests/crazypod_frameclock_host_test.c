@@ -201,6 +201,35 @@ static void test_home_motion_keeps_priority_over_deferred_lvgl(void)
     assert(lcd_y == 186);
 }
 
+static void test_home_touch_defers_ordinary_lvgl_until_release(void)
+{
+    reset_lcd();
+    crazypod_present_init(0);
+    crazypod_present_set_home_interaction(true);
+
+    crazypod_present_queue_rect(70, 225, 100, 3);
+    crazypod_present_tick();
+    assert(lcd_calls == 0);
+
+    crazypod_present_queue_home_rect(0, 40, LCD_WIDTH, 103);
+    crazypod_present_tick();
+    assert(lcd_calls == 1);
+    assert(lcd_sync_mode == 1);
+
+    test_current_tick = 1;
+    crazypod_present_tick();
+    assert(lcd_calls == 1);
+
+    crazypod_present_set_home_interaction(false);
+    crazypod_present_tick();
+    assert(lcd_calls == 2);
+    assert(lcd_sync_mode == 0);
+    assert(lcd_x == 70);
+    assert(lcd_y == 225);
+    assert(lcd_width == 100);
+    assert(lcd_height == 3);
+}
+
 int main(void)
 {
     test_frameclock_cadence();
@@ -210,5 +239,6 @@ int main(void)
     test_partial_sync_routes();
     test_home_sync_does_not_merge_playback_capsule();
     test_home_motion_keeps_priority_over_deferred_lvgl();
+    test_home_touch_defers_ordinary_lvgl_until_release();
     return 0;
 }

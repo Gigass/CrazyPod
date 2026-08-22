@@ -22,6 +22,7 @@ extern struct frame_buffer_t lcd_framebuffer_default;
 
 static struct crazypod_frameclock present_clock;
 static bool present_initialized;
+static bool home_interaction_active;
 static bool present_pending;
 static int present_x1;
 static int present_y1;
@@ -86,10 +87,16 @@ void crazypod_present_init(long now)
 {
     crazypod_frameclock_reset(&present_clock, now);
     present_initialized = true;
+    home_interaction_active = false;
     present_pending = false;
     present_sync = PRESENT_SYNC_NONE;
     deferred_present_pending = false;
     memset(&present_diagnostics, 0, sizeof(present_diagnostics));
+}
+
+void crazypod_present_set_home_interaction(bool active)
+{
+    home_interaction_active = active;
 }
 
 static void set_present_rect(
@@ -303,6 +310,14 @@ void crazypod_present_tick(void)
     uint32_t late_ticks;
 
     if(!present_pending)
+        return;
+
+    /* While a finger remains on the Home wheel, ordinary LVGL dirt can
+       continue to arrive from playback progress, status timers, or a frame
+       queued just before the touch began. Keep it in the framebuffer until
+       release; only the TE-synchronized Home band may reach the panel. */
+    if(home_interaction_active && present_sync == PRESENT_SYNC_NONE &&
+       !crazypod_present_is_full())
         return;
 
     /* Full-screen updates bypass the software frame clock. The LCD driver

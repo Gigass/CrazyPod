@@ -51,6 +51,7 @@ void crazypod_frameclock_schedule_next(struct crazypod_frameclock *clock,
 uint32_t crazypod_monotonic_usec(void);
 
 void crazypod_present_init(long now);
+void crazypod_present_set_home_interaction(bool active);
 void crazypod_present_queue_rect(int x, int y, int width, int height);
 void crazypod_present_queue_home_rect(
     int x, int y, int width, int height);

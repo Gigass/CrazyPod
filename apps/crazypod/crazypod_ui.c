@@ -855,10 +855,18 @@ void crazypod_ui_run(void)
             crazypod_playback_process_artwork();
             crazypod_playback_process_media();
         }
-        crazypod_now_capsule_tick(
-            current_tick, !locked && !crazypod_shell_product_active() &&
-            !modal_prompt_visible(),
-            crazypod_desktop_wheel_touch_active());
+        {
+            bool home_active =
+                !locked && !crazypod_shell_product_active() &&
+                !modal_prompt_visible();
+            bool wheel_touch_active =
+                crazypod_desktop_wheel_touch_active();
+
+            crazypod_present_set_home_interaction(
+                home_active && wheel_touch_active);
+            crazypod_now_capsule_tick(
+                current_tick, home_active, wheel_touch_active);
+        }
         if(!locked) {
             crazypod_playback_tick_wave(current_tick);
         }
