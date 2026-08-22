@@ -19,8 +19,9 @@ storage, power, USB, and device drivers.
 > earlier development builds were installed and file-integrity checked on an
 > iPod Classic 6G. V1.0 has not completed a full physical-device regression
 > suite. Keep a backup and a tested Apple Disk Mode/DFU recovery path.
-> TE/FMARK synchronization is enabled only on the physically verified type 1
-> display. Other display types retain the original Rockbox LCD initialization.
+> The existing TE command is retained on 8-bit type 0/1 displays, and phase
+> synchronization is used only after runtime GPIO validation. Type 2/3 displays
+> retain the original Rockbox LCD initialization and register values.
 
 ## Project lineage
 

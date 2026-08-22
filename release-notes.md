@@ -1,9 +1,9 @@
 # CrazyPod V1.0
 
-> Compatibility hotfix: TE/FMARK synchronization is restricted to the
-> physically verified type 1 panel. Types 0, 2, and 3 use the original
-> Rockbox LCD initialization; the type 2/3 register `0x090` is restored to
-> `0x0021`.
+> Compatibility hotfix: 8-bit type 0/1 panels retain the TE command already
+> used by the Rockbox bootloader, with phase synchronization enabled only after
+> runtime GPIO validation. Type 2/3 panels keep the original Rockbox register
+> `0x090` value of `0x0021` and do not receive experimental FMARK writes.
 
 Released: 2026-08-22
 
@@ -38,9 +38,9 @@ Rockbox platform, not a Rockbox theme.
   art changes are published without stale frames.
 - Added frame-clock and LCD presentation controls used to reduce visible
   tearing during Cover Flow transitions.
-- Restricted TE/FMARK panel commands and phase synchronization to the
-  physically verified type 1 display. Unverified type 0/2/3 displays now use
-  the original Rockbox initialization and ordinary partial updates.
+- Restored runtime-validated TE synchronization for both 8-bit type 0/1
+  displays. Type 2/3 displays retain the original Rockbox initialization and
+  ordinary partial updates.
 - Added centered success/error notifications and simplified screenshot-save
   feedback ownership.
 - Corrected book-reader input/session transitions and removed stale workflow

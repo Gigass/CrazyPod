@@ -89,13 +89,17 @@ bool dbg_hw_info(void)
             _DEBUG_PRINTF("sync: %s",
                 sync.method == LCD_FRAME_SYNC_MARKER ? "marker" :
                 sync.method == LCD_FRAME_SYNC_SCANLINE ? "scanline" :
+                sync.method == LCD_FRAME_SYNC_GPIO_TE ? "gpio-te" :
                 sync.method == LCD_FRAME_SYNC_UNAVAILABLE ? "unavailable" :
                 "probing");
             _DEBUG_PRINTF("waits: %u timeout: %u",
                 (unsigned)sync.waits, (unsigned)sync.timeouts);
-            _DEBUG_PRINTF("marker: %u scan: %u",
-                (unsigned)sync.marker_waits,
-                (unsigned)sync.scanline_waits);
+            _DEBUG_PRINTF("TE valid: %u waits: %u",
+                (unsigned)sync.te_sync_input_valid,
+                (unsigned)sync.gpio_te_waits);
+            _DEBUG_PRINTF("phase: %u/%u us",
+                (unsigned)sync.last_te_phase_us,
+                (unsigned)sync.last_te_target_us);
             _DEBUG_PRINTF("wait us: %u max: %u",
                 (unsigned)sync.last_wait_us,
                 (unsigned)sync.max_wait_us);
@@ -105,6 +109,9 @@ bool dbg_hw_info(void)
             _DEBUG_PRINTF("DMA: %u us max: %u",
                 (unsigned)sync.last_dma_us,
                 (unsigned)sync.max_dma_us);
+            _DEBUG_PRINTF("DMA phase: %u-%u",
+                (unsigned)sync.last_dma_start_phase_us,
+                (unsigned)sync.last_dma_end_phase_us);
 #endif
             line++;
             _DEBUG_PRINTF("capture HW type: %d", rec_hw_ver);

@@ -26,9 +26,10 @@
 #include "s5l87xx.h"
 #include "lcd-s5l8702.h"
 
-/* TE synchronization is enabled only for the physically verified type 1
- * panel. Other panel types retain the upstream Rockbox initialization. */
-static const uint8_t lcd_frame_sync_seq_1[] =
+/* The upstream bootloader already enables TE on the 8-bit type 0/1 panels.
+ * Runtime phase synchronization is used only after the GPIO signal passes
+ * validation. The unrelated 16-bit type 2/3 FMARK registers stay untouched. */
+static const uint8_t lcd_frame_sync_seq_01[] =
 {
     CMD,   0x35,  1, 0x00,  /* Vertical blanking TE signal */
     END
@@ -210,6 +211,7 @@ static struct lcd_info_rec lcd_info_list[] =
         .lcd_type   = 0,
         .mpuiface   = LCD_MPUIFACE_PAR18,
         .cmdset     = LCD_CMDSET_8BIT,
+        .seq_frame_sync = (void*) lcd_frame_sync_seq_01,
     #if defined(HAVE_LCD_SLEEP) || defined(HAVE_LCD_SHUTDOWN)
         .seq_sleep  = (void*) lcd_sleep_seq_01,
     #endif
@@ -225,7 +227,7 @@ static struct lcd_info_rec lcd_info_list[] =
         .lcd_type   = 1,
         .mpuiface   = LCD_MPUIFACE_PAR18,
         .cmdset     = LCD_CMDSET_8BIT,
-        .seq_frame_sync = (void*) lcd_frame_sync_seq_1,
+        .seq_frame_sync = (void*) lcd_frame_sync_seq_01,
     #if defined(HAVE_LCD_SLEEP) || defined(HAVE_LCD_SHUTDOWN)
         .seq_sleep  = (void*) lcd_sleep_seq_01,
     #endif
