@@ -13,6 +13,7 @@
 #include "sound.h"
 
 #include "../../crazypod_apps.h"
+#include "../../crazypod_screen_recording.h"
 #include "../../crazypod_screenshot.h"
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/notes/crazypod_notes_feature.h"
@@ -38,6 +39,8 @@ static bool home_menu_gesture_owned;
 static long home_hold_deadline;
 static long now_playing_direction_button;
 static bool now_playing_direction_held;
+static bool capture_chord_pending;
+static bool capture_chord_recording_toggled;
 static struct crazypod_alpha_jump_state alpha_jump;
 
 #define HOME_NOW_PLAYING_HOLD_TICKS \
@@ -170,18 +173,41 @@ static void handle_now_playing_overlay(
         host.toggle_playback();
 }
 
-static bool handle_screenshot_chord(long button)
+static bool handle_capture_chord(long button, long now)
 {
-    if(button_base(button) != (BUTTON_LEFT | BUTTON_RIGHT))
-        return false;
-    if((button & (BUTTON_REL | BUTTON_REPEAT)) == 0) {
-        bool saved;
+    long base = button_base(button);
 
+    if(!capture_chord_pending &&
+       base != (BUTTON_LEFT | BUTTON_RIGHT))
+        return false;
+    if(!capture_chord_pending) {
+        capture_chord_pending = true;
+        capture_chord_recording_toggled = false;
         backlight_on();
-        saved = crazypod_screenshot_capture();
-        crazypod_screenshot_feedback_show(saved);
+        return true;
     }
-    return true;
+    if((button & BUTTON_REPEAT) != 0 &&
+       base == (BUTTON_LEFT | BUTTON_RIGHT) &&
+       !capture_chord_recording_toggled) {
+        enum crazypod_screen_recording_result result =
+            crazypod_screen_recording_toggle(now);
+
+        capture_chord_recording_toggled = true;
+        crazypod_screenshot_feedback_show_recording(result);
+        return true;
+    }
+    if((button & BUTTON_REL) != 0) {
+        if(!capture_chord_recording_toggled) {
+            bool saved;
+
+            saved = crazypod_screenshot_capture();
+            crazypod_screenshot_feedback_show(saved);
+        }
+        capture_chord_pending = false;
+        capture_chord_recording_toggled = false;
+        return true;
+    }
+    return base == (BUTTON_LEFT | BUTTON_RIGHT);
 }
 
 static void finish_now_playing_direction_gesture(void)
@@ -250,6 +276,8 @@ void crazypod_app_input_configure(
         home_menu_gesture_owned = false;
         now_playing_direction_button = BUTTON_NONE;
         now_playing_direction_held = false;
+        capture_chord_pending = false;
+        capture_chord_recording_toggled = false;
         crazypod_alpha_jump_reset(&alpha_jump);
     }
 }
@@ -327,7 +355,7 @@ void crazypod_app_input_handle(
     if(crazypod_system_event_handle(
            button, data, &host.system_events))
         return;
-    if(handle_screenshot_chord(button))
+    if(handle_capture_chord(button, now))
         return;
     base = button_base(button);
     if(base == BUTTON_MENU &&

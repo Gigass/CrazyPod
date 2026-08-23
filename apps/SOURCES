@@ -6,6 +6,7 @@ crazypod/crazypod_frameclock.c
 crazypod/crazypod_image.c
 crazypod/crazypod_photos.c
 crazypod/crazypod_screenshot.c
+crazypod/crazypod_screen_recording.c
 crazypod/video/crazypod_video_catalog.c
 crazypod/video/crazypod_video_poster.c
 crazypod/video/crazypod_video_engine.c

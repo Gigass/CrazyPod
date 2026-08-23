@@ -17,6 +17,7 @@
 #include "../../crazypod_music.h"
 #include "../../crazypod_organizer.h"
 #include "../../crazypod_photos.h"
+#include "../../crazypod_screen_recording.h"
 #include "../../crazypod_state.h"
 #include "../../crazypod_videos.h"
 #include "../app/crazypod_choice_coordinator.h"
@@ -102,6 +103,7 @@ static void dismissed(void)
 
 static void execute(enum shutdown_type type)
 {
+    (void)crazypod_screen_recording_stop(prompts.host.now());
     if(crazypod_miniapps_feature_is_open()) {
         crazypod_miniapps_feature_reset_input();
         crazypod_miniapps_feature_close();
@@ -294,6 +296,7 @@ void crazypod_system_prompts_usb_done(unsigned request)
 void crazypod_system_prompts_usb_connected(intptr_t data)
 {
     crazypod_headphone_popup_dismiss(false);
+    (void)crazypod_screen_recording_stop(prompts.host.now());
     /*
      * The host may replace any storage-backed catalog while it owns mass
      * storage. Drop every product route now so stale numeric selections

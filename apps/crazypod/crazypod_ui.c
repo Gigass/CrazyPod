@@ -45,6 +45,7 @@
 #include "crazypod_lyrics.h"
 #include "crazypod_l10n.h"
 #include "crazypod_runtime_font.h"
+#include "crazypod_screen_recording.h"
 #include "crazypod_lcd.h"
 #include "crazypod_music.h"
 #include "crazypod_miniapp_input.h"
@@ -106,6 +107,7 @@
 #include "ui/shell/crazypod_now_capsule.h"
 #include "ui/shell/crazypod_power_prompt.h"
 #include "ui/shell/crazypod_shell.h"
+#include "ui/shell/crazypod_screenshot_feedback.h"
 #include "ui/shell/crazypod_status_bar.h"
 #include "ui/shell/crazypod_system_event.h"
 #include "ui/shell/crazypod_system_prompts.h"
@@ -669,8 +671,11 @@ void crazypod_ui_run(void)
     lv_obj_t *boot_screen;
 #ifdef SIMULATOR
     bool simulator_snapshot_pending;
+    bool simulator_recording_pending = false;
     long simulator_snapshot_due = 0;
     long simulator_snapshot_settle = HZ / 2;
+    long simulator_recording_due = 0;
+    int simulator_recording_seconds = 0;
     int simulator_snapshot_stage = 0;
 #endif
 
@@ -687,6 +692,7 @@ void crazypod_ui_run(void)
     crazypod_icons_init();
     crazypod_photos_init();
     crazypod_videos_init();
+    crazypod_screen_recording_init();
     crazypod_wallpaper_init();
     crazypod_miniapps_feature_initialize_runtime();
     crazypod_miniapps_feature_initialize();
@@ -752,6 +758,20 @@ void crazypod_ui_run(void)
             crazypod_simulator_snapshot_settle_ticks();
         simulator_snapshot_due = current_tick + HZ / 2;
     }
+    {
+        const char *record_seconds =
+            getenv("CRAZYPOD_SIM_RECORD_SECONDS");
+        int seconds = record_seconds != NULL
+            ? atoi(record_seconds) : 0;
+
+        if(seconds > 0 &&
+           crazypod_screen_recording_toggle(current_tick) ==
+               CRAZYPOD_SCREEN_RECORDING_COUNTDOWN_STARTED) {
+            simulator_recording_pending = true;
+            simulator_recording_seconds = seconds;
+            simulator_recording_due = current_tick + 3 * HZ;
+        }
+    }
 #endif
     crazypod_music_library_initialize(current_tick);
     crazypod_lock_screen_initialize_backlight_state();
@@ -791,8 +811,12 @@ void crazypod_ui_run(void)
             current_tick, &screen_off);
         if(!screen_off) {
             int input_wait = crazypod_app_input_wait_ticks(current_tick);
+            int recording_wait =
+                crazypod_screen_recording_wait_ticks(current_tick);
             if(input_wait < wait_ticks)
                 wait_ticks = input_wait;
+            if(recording_wait < wait_ticks)
+                wait_ticks = recording_wait;
             wait_ticks = MIN(wait_ticks,
                 crazypod_render_scheduler_wait_ticks(current_tick));
             if(crazypod_playback_refresh_after_unlock_pending() &&
@@ -893,6 +917,20 @@ void crazypod_ui_run(void)
             crazypod_playback_sync_album_flow();
         }
         crazypod_present_tick();
+        {
+            enum crazypod_screen_recording_event recording_event =
+                crazypod_screen_recording_service(current_tick);
+
+#ifdef SIMULATOR
+            if(simulator_recording_pending &&
+               recording_event ==
+                   CRAZYPOD_SCREEN_RECORDING_EVENT_STARTED)
+                simulator_recording_due = current_tick +
+                    simulator_recording_seconds * HZ;
+#endif
+            crazypod_screenshot_feedback_show_recording_event(
+                recording_event);
+        }
         if(!locked)
             crazypod_playback_service_after_unlock(
                 crazypod_present_sequence());
@@ -906,6 +944,13 @@ void crazypod_ui_run(void)
 #ifdef SIMULATOR
         crazypod_miniapp_repro_service(
             current_tick);
+        if(simulator_recording_pending &&
+           !TIME_BEFORE(current_tick, simulator_recording_due)) {
+            (void)crazypod_screen_recording_stop(current_tick);
+            simulator_recording_pending = false;
+            if(getenv("CRAZYPOD_SIM_EXIT_AFTER_RECORD") != NULL)
+                exit(0);
+        }
         if(simulator_snapshot_pending &&
            !TIME_BEFORE(current_tick, simulator_snapshot_due)) {
             if(simulator_snapshot_stage == 0) {

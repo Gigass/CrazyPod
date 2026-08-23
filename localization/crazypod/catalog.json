@@ -3591,6 +3591,11 @@
         "apps/crazypod/ui/shell/crazypod_screenshot_feedback.c"
       ]
     },
+    "Saved to Videos": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_screenshot_feedback.c"
+      ]
+    },
     "Saved to My Favorites  Center removes": {
       "locations": [
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:302"
@@ -3629,6 +3634,31 @@
     "Screen corner radius": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_customize_preview.c:133"
+      ]
+    },
+    "Screen recording failed": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_screenshot_feedback.c"
+      ]
+    },
+    "Screen recording cancelled": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_screenshot_feedback.c"
+      ]
+    },
+    "Screen recording ended": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_screenshot_feedback.c"
+      ]
+    },
+    "Screen recording started": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_screenshot_feedback.c"
+      ]
+    },
+    "Screen recording starts in %d": {
+      "locations": [
+        "apps/crazypod/ui/shell/crazypod_screenshot_feedback.c"
       ]
     },
     "Screenshot failed": {

@@ -11,11 +11,13 @@
 #include "powermgmt.h"
 #include "timefuncs.h"
 
+#include "../../crazypod_screen_recording.h"
 #include "../presentation/crazypod_ui_widgets.h"
 #include "crazypod_status_bar.h"
 
 #define STATUS_WHITE 0xFFFFFF
 #define STATUS_DARK 0x08080D
+#define STATUS_RECORDING 0xFF3B30
 
 struct status_bar {
     lv_obj_t *time;
@@ -32,6 +34,8 @@ struct status_bar {
 };
 
 static struct status_bar status_bars[CRAZYPOD_STATUS_BAR_COUNT];
+static lv_obj_t *recording_indicator;
+static int rendered_recording = -1;
 
 static struct status_bar *status_bar_at(int index)
 {
@@ -56,6 +60,14 @@ void crazypod_status_bar_create(int index, lv_obj_t *screen)
         STATUS_WHITE, LV_OPA_COVER);
     lv_obj_set_pos(bar->playing, 241, 11);
     lv_obj_add_flag(bar->playing, LV_OBJ_FLAG_HIDDEN);
+
+    if(recording_indicator == NULL) {
+        recording_indicator = crazypod_ui_widget_box(
+            lv_layer_top(), 228, 14, 7, 7,
+            LV_RADIUS_CIRCLE, STATUS_RECORDING, LV_OPA_COVER);
+        lv_obj_add_flag(
+            recording_indicator, LV_OBJ_FLAG_HIDDEN);
+    }
 
     bar->battery = crazypod_ui_widget_box(
         screen, 258, 11, 27, 12, 3, STATUS_WHITE, 64);
@@ -86,8 +98,20 @@ void crazypod_status_bars_update(void)
     int status = audio_status();
     bool playing = (status & AUDIO_STATUS_PLAY) != 0 &&
                    (status & AUDIO_STATUS_PAUSE) == 0;
+    bool screen_recording = crazypod_screen_recording_active();
     bool time_formatted = false;
     int i;
+
+    if(recording_indicator != NULL &&
+       rendered_recording != screen_recording) {
+        if(screen_recording)
+            lv_obj_remove_flag(
+                recording_indicator, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(
+                recording_indicator, LV_OBJ_FLAG_HIDDEN);
+        rendered_recording = screen_recording;
+    }
 
     if(level < 0)
         level = 0;
@@ -168,6 +192,8 @@ void crazypod_status_bar_foreground(int index)
         return;
     lv_obj_move_foreground(bar->time);
     lv_obj_move_foreground(bar->playing);
+    if(recording_indicator != NULL)
+        lv_obj_move_foreground(recording_indicator);
 }
 
 void crazypod_status_bar_set_visible(int index, bool visible)
