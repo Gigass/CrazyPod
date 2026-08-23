@@ -1,15 +1,17 @@
 <h1 align="center">
-  <a href="https://ultrapod.gigassbox.com/crazypod/">查看 CrazyPod 在线演示</a>
+  <a href="https://ultrapod.gigassbox.com/crazypod/">▶ WATCH THE CRAZYPOD LIVE DEMO</a>
 </h1>
 
-<p align="center"><strong>点击上方标题，进入正式交互落地页。</strong></p>
+<p align="center"><strong>Open the full interactive product showcase.</strong></p>
 
-> **归属说明：** CrazyPod 源自
-> [Poorfocus/Rockbox-UI-UX-Overhaul](https://github.com/Poorfocus/Rockbox-UI-UX-Overhaul)，
-> 该项目基于 [nuxcodes/rockpod](https://github.com/nuxcodes/rockpod)，而
-> Rockpod 本身基于 [Rockbox](https://www.rockbox.org/)。所有继承的原始代码版权声明
-> 均予以保留。完整的项目来源与许可信息请参阅 [NOTICE](NOTICE) 和
-> [LICENSE](LICENSE)。
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
+
+> **Lineage:** CrazyPod derives from
+> [Poorfocus/Rockbox-UI-UX-Overhaul](https://github.com/Poorfocus/Rockbox-UI-UX-Overhaul),
+> which derives from [nuxcodes/rockpod](https://github.com/nuxcodes/rockpod),
+> itself based on [Rockbox](https://www.rockbox.org/). All inherited copyright
+> notices remain intact. See [NOTICE](NOTICE) and
+> [LICENSE](LICENSE).
 
 # CrazyPod
 
