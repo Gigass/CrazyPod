@@ -6,7 +6,7 @@
 struct crazypod_book_reader_input_actions {
     bool (*turn_page)(int direction);
     void (*refresh)(void);
-    void (*choose_playback_playlist)(void);
+    void (*show_actions)(void);
     void (*toggle_bookmark)(void);
     void (*leave)(void);
 };

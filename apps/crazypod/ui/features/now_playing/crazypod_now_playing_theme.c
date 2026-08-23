@@ -190,6 +190,12 @@ bool crazypod_now_playing_theme_open(void)
             CRAZYPOD_MINIAPP_KIND_NOW_PLAYING_THEME;
 }
 
+bool crazypod_now_playing_theme_modal_visible(void)
+{
+    return crazypod_now_playing_theme_open() &&
+        crazypod_miniapps_feature_modal_visible();
+}
+
 bool crazypod_now_playing_theme_owns_status_bar(void)
 {
     const struct crazypod_miniapp_metadata *metadata;

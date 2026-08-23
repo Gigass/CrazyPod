@@ -12,7 +12,6 @@
 #include "../../crazypod_books.h"
 #include "../../crazypod_coverflow.h"
 #include "../../crazypod_icons.h"
-#include "../../crazypod_music.h"
 #include "../../crazypod_photos.h"
 #include "../../crazypod_state.h"
 #include "../../crazypod_wallpaper.h"
@@ -32,12 +31,18 @@
 #define ROUTE_ACTION_DEPTH 4
 #define RECEIPT_TICKS \
     ((HZ * 800 / 1000) > 0 ? (HZ * 800 / 1000) : 1)
+#define BOOK_READER_HOLD_MS 900
+#define BOOK_READER_HOLD_TICKS \
+    ((HZ * BOOK_READER_HOLD_MS / 1000) > 0 \
+        ? (HZ * BOOK_READER_HOLD_MS / 1000) : 1)
 
 static struct crazypod_choice_coordinator_host host;
 static struct route_state route_actions[ROUTE_ACTION_DEPTH];
 static int route_action_depth;
 static long receipt_until;
 static bool receipt_refresh_route;
+static bool book_reader_hold_pending;
+static long book_reader_hold_until;
 
 static struct route_state *route_action_current(void)
 {
@@ -91,8 +96,8 @@ static int choice_count(int kind_value, int id, void *context)
         return 3;
     case CRAZYPOD_CHOICE_BOOK_THEME:
         return 4;
-    case CRAZYPOD_CHOICE_PLAYLIST:
-        return crazypod_music_playlist_count();
+    case CRAZYPOD_CHOICE_BOOK_READER_ACTIONS:
+        return 2;
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME:
         return crazypod_now_playing_theme_choice_count();
     case CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS:
@@ -139,7 +144,7 @@ static int current_index(int kind_value, int id, void *context)
         return crazypod_books_font_size();
     case CRAZYPOD_CHOICE_BOOK_THEME:
         return crazypod_books_theme();
-    case CRAZYPOD_CHOICE_PLAYLIST:
+    case CRAZYPOD_CHOICE_BOOK_READER_ACTIONS:
         return -1;
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME: {
         int index;
@@ -186,8 +191,8 @@ static const char *choice_title(
         return CP_TR("TEXT SIZE");
     case CRAZYPOD_CHOICE_BOOK_THEME:
         return CP_TR("PAGE THEME");
-    case CRAZYPOD_CHOICE_PLAYLIST:
-        return CP_TR("PLAYLISTS");
+    case CRAZYPOD_CHOICE_BOOK_READER_ACTIONS:
+        return CP_TR("BOOK ACTIONS");
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME:
         return CP_TR("Themes");
     case CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS: {
@@ -245,12 +250,12 @@ static const char *item_title(
 
         return index >= 0 && index < 4 ? themes[index] : "";
     }
-    case CRAZYPOD_CHOICE_PLAYLIST: {
-        const struct crazypod_playlist *playlist =
-            crazypod_music_playlist(index);
-
-        return playlist != NULL ? playlist->name : "";
-    }
+    case CRAZYPOD_CHOICE_BOOK_READER_ACTIONS:
+        if(index == 0)
+            return crazypod_books_feature_reader_page_bookmarked()
+                ? CP_TR("Remove Bookmark")
+                : CP_TR("Add Bookmark");
+        return index == 1 ? CP_TR("Playback Queue") : "";
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME:
         return crazypod_now_playing_theme_choice_title(index);
     case CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS: {
@@ -323,6 +328,10 @@ static bool item_color(
             *color = 0x2EBFFF;
         return true;
     }
+    if(kind == CRAZYPOD_CHOICE_BOOK_READER_ACTIONS) {
+        *color = index == 0 ? 0x47E69A : 0x2EBFFF;
+        return true;
+    }
     if(kind == CRAZYPOD_CHOICE_ROUTE_ACTIONS) {
         const struct route_state *state = route_action_current();
 
@@ -355,7 +364,8 @@ static bool action_layout(
 
     (void)id;
     (void)context;
-    return kind == CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS ||
+    return kind == CRAZYPOD_CHOICE_BOOK_READER_ACTIONS ||
+        kind == CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS ||
         kind == CRAZYPOD_CHOICE_ROUTE_ACTIONS;
 }
 
@@ -438,6 +448,8 @@ void crazypod_choice_coordinator_reset(void)
     route_action_depth = 0;
     receipt_until = 0;
     receipt_refresh_route = false;
+    book_reader_hold_pending = false;
+    book_reader_hold_until = 0;
     crazypod_choice_overlay_reset();
 }
 
@@ -452,13 +464,36 @@ void crazypod_choice_coordinator_show(
     route_action_depth = 0;
     receipt_until = 0;
     receipt_refresh_route = false;
+    book_reader_hold_pending = false;
+    book_reader_hold_until = 0;
     show_overlay(kind, id, selected);
 }
 
-void crazypod_choice_coordinator_show_playlists(void)
+void crazypod_choice_coordinator_show_book_reader_actions(void)
 {
     crazypod_choice_coordinator_show(
-        CRAZYPOD_CHOICE_PLAYLIST, -1, 0);
+        CRAZYPOD_CHOICE_BOOK_READER_ACTIONS, -1, 0);
+}
+
+bool crazypod_choice_coordinator_handle_book_reader_repeat(void)
+{
+    if(crazypod_choice_overlay_kind() !=
+           CRAZYPOD_CHOICE_BOOK_READER_ACTIONS ||
+       crazypod_choice_overlay_receipt_visible() ||
+       crazypod_choice_overlay_selected() != 0)
+        return false;
+    return true;
+}
+
+bool crazypod_choice_coordinator_cancel_book_reader_hold(void)
+{
+    if(crazypod_choice_overlay_kind() !=
+           CRAZYPOD_CHOICE_BOOK_READER_ACTIONS)
+        return false;
+    book_reader_hold_pending = false;
+    book_reader_hold_until = 0;
+    crazypod_choice_overlay_cancel_hold_feedback();
+    return true;
 }
 
 void crazypod_choice_coordinator_show_route(
@@ -506,6 +541,8 @@ void crazypod_choice_coordinator_dismiss(bool refresh_route)
     route_action_depth = 0;
     receipt_until = 0;
     receipt_refresh_route = false;
+    book_reader_hold_pending = false;
+    book_reader_hold_until = 0;
     crazypod_choice_overlay_dismiss();
     if(refresh_route && host.route_available != NULL &&
        host.route_available())
@@ -540,6 +577,11 @@ bool crazypod_choice_coordinator_back(void)
 
 void crazypod_choice_coordinator_move(int direction)
 {
+    if(book_reader_hold_pending) {
+        book_reader_hold_pending = false;
+        book_reader_hold_until = 0;
+        crazypod_choice_overlay_cancel_hold_feedback();
+    }
     crazypod_choice_overlay_move(direction);
 }
 
@@ -602,18 +644,17 @@ void crazypod_choice_coordinator_activate(long now)
             applied, now, applied);
         return;
     }
-    if(kind == CRAZYPOD_CHOICE_PLAYLIST) {
-        bool started = crazypod_music_play(
-            CRAZYPOD_SCOPE_PLAYLIST, selected, 0);
-
-        if(!started) {
-            crazypod_choice_coordinator_show_receipt(
-                CP_TR("No track available"), false,
-                now, false);
+    if(kind == CRAZYPOD_CHOICE_BOOK_READER_ACTIONS) {
+        if(selected == 0) {
+            if(!book_reader_hold_pending) {
+                book_reader_hold_pending = true;
+                book_reader_hold_until =
+                    now + BOOK_READER_HOLD_TICKS;
+                crazypod_choice_overlay_begin_hold_feedback(
+                    BOOK_READER_HOLD_MS);
+            }
             return;
         }
-        crazypod_state_forget_resume();
-        crazypod_state_mark_dirty();
         crazypod_choice_coordinator_dismiss(false);
         lv_refr_now(NULL);
         crazypod_now_playing_overlay_show_queue();
@@ -687,6 +728,18 @@ void crazypod_choice_coordinator_tick(long now)
 {
     bool refresh;
 
+    if(book_reader_hold_pending &&
+       !TIME_BEFORE(now, book_reader_hold_until)) {
+        bool saved;
+
+        book_reader_hold_pending = false;
+        book_reader_hold_until = 0;
+        saved = crazypod_books_feature_toggle_reader_bookmark();
+        crazypod_choice_coordinator_show_receipt(
+            saved ? CP_TR("Saved") : CP_TR("Failed"),
+            saved, now, false);
+    }
+
     if(receipt_until == 0 || TIME_BEFORE(now, receipt_until))
         return;
     refresh = receipt_refresh_route;
@@ -696,13 +749,23 @@ void crazypod_choice_coordinator_tick(long now)
 int crazypod_choice_coordinator_wait_ticks(long now)
 {
     long remaining;
+    int wait = HZ > 0 ? HZ : 1;
 
-    if(receipt_until == 0)
-        return HZ > 0 ? HZ : 1;
-    remaining = receipt_until - now;
-    if(remaining <= 0)
-        return 1;
-    return remaining > HZ ? HZ : (int)remaining;
+    if(book_reader_hold_pending) {
+        remaining = book_reader_hold_until - now;
+        if(remaining <= 0)
+            return 1;
+        if(remaining < wait)
+            wait = (int)remaining;
+    }
+    if(receipt_until != 0) {
+        remaining = receipt_until - now;
+        if(remaining <= 0)
+            return 1;
+        if(remaining < wait)
+            wait = (int)remaining;
+    }
+    return wait;
 }
 
 bool crazypod_choice_coordinator_route_should_overlay(

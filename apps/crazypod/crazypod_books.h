@@ -7,6 +7,8 @@
 
 #include "file.h"
 
+#define CRAZYPOD_BOOKMARK_NONE UINT32_MAX
+
 enum crazypod_book_format {
     CRAZYPOD_BOOK_TXT,
     CRAZYPOD_BOOK_MARKDOWN,

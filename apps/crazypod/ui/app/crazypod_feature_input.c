@@ -122,7 +122,8 @@ static bool handle_books_pressed(
     const struct crazypod_feature_input_context input = {
         .now = host.now(),
         .render = host.render,
-        .activate = crazypod_choice_coordinator_show_playlists,
+        .activate =
+            crazypod_choice_coordinator_show_book_reader_actions,
         .pop = crazypod_route_actions_pop,
     };
 

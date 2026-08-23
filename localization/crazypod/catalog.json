@@ -1925,6 +1925,11 @@
         "apps/crazypod/ui/features/organizer/crazypod_organizer_feature.c:216"
       ]
     },
+    "Add Bookmark": {
+      "locations": [
+        "apps/crazypod/ui/app/crazypod_choice_coordinator.c:251"
+      ]
+    },
     "Hold Center to Delete": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:172",
@@ -1946,6 +1951,11 @@
     "Hold Center to Erase": {
       "locations": [
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:205"
+      ]
+    },
+    "Remove Bookmark": {
+      "locations": [
+        "apps/crazypod/ui/app/crazypod_choice_coordinator.c:250"
       ]
     },
     "Hold Center to Save": {
@@ -3066,6 +3076,11 @@
       "locations": [
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:368",
         "apps/crazypod/ui/features/settings/crazypod_settings_catalog.c:13"
+      ]
+    },
+    "Playback Queue": {
+      "locations": [
+        "apps/crazypod/ui/app/crazypod_choice_coordinator.c:252"
       ]
     },
     "Playlists": {

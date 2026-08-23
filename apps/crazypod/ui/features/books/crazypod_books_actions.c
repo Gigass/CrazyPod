@@ -131,7 +131,8 @@ struct crazypod_books_action crazypod_books_actions_activate(
         const struct crazypod_book *book =
             crazypod_book_get(state->group);
 
-        return book != NULL && book->bookmark > 0
+        return book != NULL &&
+               book->bookmark != CRAZYPOD_BOOKMARK_NONE
             ? begin_reader(state->group, book->bookmark)
             : action(CRAZYPOD_BOOKS_ACTION_NONE);
     }

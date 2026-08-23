@@ -27,7 +27,7 @@ void crazypod_book_reader_input_handle(
     else if(event->base == BUTTON_LEFT)
         changed = actions->turn_page(-1);
     else if(event->base == BUTTON_SELECT && !event->repeated)
-        actions->choose_playback_playlist();
+        actions->show_actions();
     else if(event->base == BUTTON_PLAY && !event->repeated)
         actions->toggle_bookmark();
     else if(event->base == BUTTON_MENU && !event->repeated)

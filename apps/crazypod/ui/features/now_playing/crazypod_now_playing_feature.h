@@ -103,6 +103,7 @@ bool crazypod_now_playing_theme_choice_current(int index);
 bool crazypod_now_playing_theme_select(int index);
 bool crazypod_now_playing_theme_enabled(void);
 bool crazypod_now_playing_theme_open(void);
+bool crazypod_now_playing_theme_modal_visible(void);
 bool crazypod_now_playing_theme_owns_status_bar(void);
 int crazypod_now_playing_theme_last_error(void);
 bool crazypod_now_playing_theme_render(

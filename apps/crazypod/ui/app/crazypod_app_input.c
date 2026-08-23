@@ -36,6 +36,8 @@ static bool play_short_press_pending;
 static bool home_hold_pending;
 static bool home_menu_gesture_owned;
 static long home_hold_deadline;
+static long now_playing_direction_button;
+static bool now_playing_direction_held;
 static struct crazypod_alpha_jump_state alpha_jump;
 
 #define HOME_NOW_PLAYING_HOLD_TICKS \
@@ -182,6 +184,63 @@ static bool handle_screenshot_chord(long button)
     return true;
 }
 
+static void finish_now_playing_direction_gesture(void)
+{
+    if(now_playing_direction_held)
+        crazypod_playback_seek_finish();
+    now_playing_direction_button = BUTTON_NONE;
+    now_playing_direction_held = false;
+}
+
+static bool handle_now_playing_direction_button(long button)
+{
+    long base = button_base(button);
+    bool owns_buttons =
+        crazypod_shell_product_active() &&
+        crazypod_ui_routes_depth() > 0 &&
+        crazypod_ui_routes_current()->route ==
+            MUSIC_ROUTE_NOW_PLAYING &&
+        (!crazypod_now_playing_theme_open() ||
+         !crazypod_now_playing_theme_modal_visible() ||
+         crazypod_now_playing_overlay_visible());
+
+    if(!owns_buttons ||
+       (base != BUTTON_LEFT && base != BUTTON_RIGHT)) {
+        if(now_playing_direction_button != BUTTON_NONE)
+            finish_now_playing_direction_gesture();
+        return false;
+    }
+    backlight_on();
+    if((button & BUTTON_REL) != 0) {
+        if(now_playing_direction_button == base) {
+            if(now_playing_direction_held)
+                crazypod_playback_seek_finish();
+            else if(base == BUTTON_RIGHT)
+                crazypod_playback_next();
+            else
+                crazypod_playback_previous_or_restart();
+        }
+        now_playing_direction_button = BUTTON_NONE;
+        now_playing_direction_held = false;
+        return true;
+    }
+    if((button & BUTTON_REPEAT) != 0) {
+        if(now_playing_direction_button == base) {
+            if(!now_playing_direction_held) {
+                now_playing_direction_held = true;
+                (void)crazypod_playback_seek_begin(
+                    base == BUTTON_RIGHT ? 1 : -1);
+            }
+            crazypod_playback_seek_step();
+        }
+        return true;
+    }
+    if(now_playing_direction_button != BUTTON_NONE)
+        finish_now_playing_direction_gesture();
+    now_playing_direction_button = base;
+    return true;
+}
+
 void crazypod_app_input_configure(
     const struct crazypod_app_input_host *new_host)
 {
@@ -189,6 +248,8 @@ void crazypod_app_input_configure(
         host = *new_host;
         home_hold_pending = false;
         home_menu_gesture_owned = false;
+        now_playing_direction_button = BUTTON_NONE;
+        now_playing_direction_held = false;
         crazypod_alpha_jump_reset(&alpha_jump);
     }
 }
@@ -344,6 +405,8 @@ void crazypod_app_input_handle(
        scroll events that this route discards below. */
     if(!album_flow_owns_wheel_feedback(base))
         wheel_feedback(button);
+    if(handle_now_playing_direction_button(button))
+        return;
     if(crazypod_shell_product_active() &&
        crazypod_ui_routes_depth() > 0 &&
        !crazypod_now_playing_overlay_visible()) {
@@ -357,6 +420,10 @@ void crazypod_app_input_handle(
             return;
     }
     if(play_initial_press)
+        return;
+    if((button & BUTTON_REL) != 0 &&
+       base == BUTTON_SELECT &&
+       crazypod_choice_coordinator_cancel_book_reader_hold())
         return;
     if(button & BUTTON_REL) {
         if(home_menu_short_release) {
@@ -399,12 +466,15 @@ void crazypod_app_input_handle(
     }
     if(crazypod_shell_product_active() &&
        crazypod_ui_routes_depth() > 0 &&
-       base == BUTTON_SELECT && repeated &&
-       host.handle_confirmation(
-           crazypod_choice_coordinator_confirmation_visible()
-               ? crazypod_choice_coordinator_route_state()
-               : crazypod_ui_routes_current()))
-        return;
+       base == BUTTON_SELECT && repeated) {
+        if(crazypod_choice_coordinator_handle_book_reader_repeat())
+            return;
+        if(host.handle_confirmation(
+               crazypod_choice_coordinator_confirmation_visible()
+                   ? crazypod_choice_coordinator_route_state()
+                   : crazypod_ui_routes_current()))
+            return;
+    }
     if(!crazypod_shell_product_active()) {
         const struct crazypod_input_event event =
             crazypod_input_event_make(button, data);

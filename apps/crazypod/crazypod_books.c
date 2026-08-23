@@ -19,7 +19,8 @@
 #define BOOKS_STATE_PATH BOOKS_STATE_DIRECTORY "/library.bin"
 #define BOOKS_STATE_TEMP BOOKS_STATE_DIRECTORY "/library.tmp"
 #define BOOKS_MAGIC 0x4350424bu
-#define BOOKS_VERSION 1u
+#define BOOKS_VERSION 2u
+#define BOOKS_VERSION_LEGACY 1u
 #define BOOKS_MAX 64
 #define BOOKS_SCAN_DEPTH 6
 #define BOOK_PAGE_INPUT_SIZE 1536
@@ -517,6 +518,7 @@ static void add_book(const char *path, const struct dirinfo *info,
         return;
     book = &books[book_count];
     memset(book, 0, sizeof(*book));
+    book->bookmark = CRAZYPOD_BOOKMARK_NONE;
     snprintf(book->path, sizeof(book->path), "%s", path);
     title_from_path(book->title, sizeof(book->title), path);
     book->format = format;
@@ -530,9 +532,11 @@ static void add_book(const char *path, const struct dirinfo *info,
         book->progress = format == CRAZYPOD_BOOK_EPUB ||
                          saved->progress < book->content_size
             ? saved->progress : 0;
-        book->bookmark = format == CRAZYPOD_BOOK_EPUB ||
-                         saved->bookmark < book->content_size
-            ? saved->bookmark : 0;
+        book->bookmark = saved->bookmark == CRAZYPOD_BOOKMARK_NONE
+            ? CRAZYPOD_BOOKMARK_NONE
+            : format == CRAZYPOD_BOOK_EPUB ||
+              saved->bookmark < book->content_size
+                ? saved->bookmark : CRAZYPOD_BOOKMARK_NONE;
         book->favorite = saved->favorite != 0;
         recent_sequences[book_count] = saved->recent_sequence;
     }
@@ -570,6 +574,7 @@ static void scan_directory(const char *path, int depth)
 void crazypod_books_init(void)
 {
     static struct books_state_disk loaded;
+    bool migrate_legacy = false;
     int fd;
 
     mkdir(BOOKS_DIRECTORY);
@@ -590,16 +595,30 @@ void crazypod_books_init(void)
     if(fd >= 0) {
         if(read_exact(fd, &loaded, sizeof(loaded)) &&
            loaded.magic == BOOKS_MAGIC &&
-           loaded.version == BOOKS_VERSION &&
+           (loaded.version == BOOKS_VERSION ||
+            loaded.version == BOOKS_VERSION_LEGACY) &&
            loaded.size == sizeof(loaded) &&
            loaded.count <= BOOKS_MAX &&
            loaded.checksum == state_checksum(&loaded)) {
             persisted = loaded;
+            if(persisted.version == BOOKS_VERSION_LEGACY) {
+                uint32_t i;
+
+                persisted.version = BOOKS_VERSION;
+                for(i = 0; i < persisted.count; ++i) {
+                    if(persisted.entries[i].bookmark == 0)
+                        persisted.entries[i].bookmark =
+                            CRAZYPOD_BOOKMARK_NONE;
+                }
+                migrate_legacy = true;
+            }
             if(persisted.next_sequence == 0)
                 persisted.next_sequence = 1;
         }
         close(fd);
     }
+    if(migrate_legacy)
+        (void)state_save();
 }
 
 void crazypod_books_scan(void)
@@ -736,6 +755,7 @@ static struct book_progress_disk *progress_entry(int index)
     i = persisted.count++;
     memset(&persisted.entries[i], 0, sizeof(persisted.entries[i]));
     persisted.entries[i].path_hash = hash;
+    persisted.entries[i].bookmark = CRAZYPOD_BOOKMARK_NONE;
     return &persisted.entries[i];
 }
 
@@ -843,7 +863,9 @@ bool crazypod_book_toggle_bookmark(int index, uint32_t offset)
     if(entry == NULL)
         return false;
     books[index].bookmark =
-        books[index].bookmark == offset ? 0 : offset;
+        books[index].bookmark != CRAZYPOD_BOOKMARK_NONE &&
+        books[index].bookmark == offset
+            ? CRAZYPOD_BOOKMARK_NONE : offset;
     entry->bookmark = books[index].bookmark;
     return state_save();
 }

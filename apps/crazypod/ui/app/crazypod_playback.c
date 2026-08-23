@@ -36,6 +36,8 @@
 #include "crazypod_playback.h"
 
 #define PREVIOUS_RESTART_THRESHOLD_MS 3000
+#define SEEK_MAX_STEP_PERCENT 3
+#define SEEK_MIN_STEP_MS 500u
 #define PLAYBACK_COMMAND_STACK_SIZE (DEFAULT_STACK_SIZE + 0x1000)
 #define LOCK_METADATA_WARM_STACK_SIZE (DEFAULT_STACK_SIZE + 0x800)
 #define LOCK_METADATA_WARM_EVENT 1
@@ -87,6 +89,11 @@ static struct {
     int track_album_index;
     long last_album_warm;
     uint32_t unlock_present_sequence;
+    uint32_t seek_target_ms;
+    uint32_t seek_length_ms;
+    uint32_t seek_step_ms;
+    int seek_direction;
+    bool seeking;
     bool unlock_refresh_pending;
     bool unlock_capsule_entry;
 } playback;
@@ -348,6 +355,11 @@ void crazypod_playback_initialize(void)
     playback.track_album_index = -1;
     playback.last_album_warm = 0;
     playback.unlock_present_sequence = 0;
+    playback.seek_target_ms = 0;
+    playback.seek_length_ms = 0;
+    playback.seek_step_ms = 0;
+    playback.seek_direction = 0;
+    playback.seeking = false;
     playback.unlock_refresh_pending = false;
     playback.unlock_capsule_entry = false;
     mutex_init(&lock_playback_mutex);
@@ -482,6 +494,68 @@ void crazypod_playback_previous_or_restart(void)
     }
     else
         audio_prev();
+}
+
+bool crazypod_playback_seek_begin(int direction)
+{
+    const struct mp3entry *id3 = audio_current_track();
+    uint32_t initial_step;
+
+    if(direction == 0 || id3 == NULL || id3->length <= 0 ||
+       (audio_status() & AUDIO_STATUS_PLAY) == 0)
+        return false;
+    playback.seek_length_ms = (uint32_t)id3->length;
+    playback.seek_target_ms = id3->elapsed > 0
+        ? (uint32_t)id3->elapsed : 0;
+    if(playback.seek_target_ms >= playback.seek_length_ms)
+        playback.seek_target_ms = playback.seek_length_ms - 1;
+    initial_step = 1000u *
+        (uint32_t)global_settings.ff_rewind_min_step;
+    playback.seek_step_ms = initial_step < SEEK_MIN_STEP_MS
+        ? SEEK_MIN_STEP_MS : initial_step;
+    playback.seek_direction = direction > 0 ? 1 : -1;
+    playback.seeking = true;
+    audio_pre_ff_rewind();
+    return true;
+}
+
+void crazypod_playback_seek_step(void)
+{
+    uint32_t remaining;
+    uint32_t maximum_step;
+    uint32_t step;
+    unsigned int shift;
+
+    if(!playback.seeking)
+        return;
+    remaining = playback.seek_direction > 0
+        ? playback.seek_length_ms - 1 - playback.seek_target_ms
+        : playback.seek_target_ms;
+    maximum_step = remaining * SEEK_MAX_STEP_PERCENT / 100u;
+    if(maximum_step < SEEK_MIN_STEP_MS)
+        maximum_step = SEEK_MIN_STEP_MS;
+    step = playback.seek_step_ms;
+    if(step > maximum_step)
+        step = maximum_step;
+    if(step > remaining)
+        step = remaining;
+    if(playback.seek_direction > 0)
+        playback.seek_target_ms += step;
+    else
+        playback.seek_target_ms -= step;
+    shift = (unsigned int)global_settings.ff_rewind_accel + 3u;
+    playback.seek_step_ms += playback.seek_step_ms >> shift;
+}
+
+void crazypod_playback_seek_finish(void)
+{
+    if(!playback.seeking)
+        return;
+    audio_ff_rewind((long)playback.seek_target_ms);
+    playback.seeking = false;
+    playback.seek_direction = 0;
+    crazypod_state_mark_dirty();
+    crazypod_now_playing_overlay_refresh_after_playback();
 }
 
 static int adjacent_queue_index(int index, int direction)
@@ -701,7 +775,9 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
     crazypod_now_playing_overlay_refresh_tick();
     if(id3 != NULL)
         crazypod_now_playing_feature_update_playback(
-            (uint32_t)id3->elapsed,
+            playback.seeking
+                ? playback.seek_target_ms
+                : (uint32_t)id3->elapsed,
             (uint32_t)id3->length);
 }
 

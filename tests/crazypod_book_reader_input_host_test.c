@@ -7,7 +7,7 @@
 static int page_delta;
 static int page_turns;
 static int refresh_calls;
-static int playlist_calls;
+static int action_calls;
 static int bookmark_calls;
 static int leave_calls;
 static bool page_can_change = true;
@@ -26,9 +26,9 @@ static void refresh(void)
     ++refresh_calls;
 }
 
-static void choose_playback_playlist(void)
+static void show_actions(void)
 {
-    ++playlist_calls;
+    ++action_calls;
 }
 
 static void toggle_bookmark(void)
@@ -46,7 +46,7 @@ static void send(long button, intptr_t data)
     static const struct crazypod_book_reader_input_actions actions = {
         .turn_page = turn_page,
         .refresh = refresh,
-        .choose_playback_playlist = choose_playback_playlist,
+        .show_actions = show_actions,
         .toggle_bookmark = toggle_bookmark,
         .leave = leave,
     };
@@ -85,7 +85,7 @@ int main(void)
     send(BUTTON_PLAY | BUTTON_REPEAT, 0);
     send(BUTTON_MENU, 0);
     send(BUTTON_MENU | BUTTON_REPEAT, 0);
-    assert(playlist_calls == 1);
+    assert(action_calls == 1);
     assert(bookmark_calls == 1);
     assert(leave_calls == 1);
     return 0;

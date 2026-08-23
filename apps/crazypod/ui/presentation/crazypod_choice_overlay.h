@@ -34,6 +34,8 @@ void crazypod_choice_overlay_show(
 void crazypod_choice_overlay_reset(void);
 void crazypod_choice_overlay_dismiss(void);
 void crazypod_choice_overlay_move(int direction);
+void crazypod_choice_overlay_begin_hold_feedback(int duration_ms);
+void crazypod_choice_overlay_cancel_hold_feedback(void);
 void crazypod_choice_overlay_show_receipt(
     const char *label, bool success, bool animated);
 bool crazypod_choice_overlay_visible(void);

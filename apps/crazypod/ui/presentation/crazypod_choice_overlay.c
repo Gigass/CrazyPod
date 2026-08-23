@@ -35,6 +35,7 @@ struct choice_overlay_view {
     lv_obj_t *title;
     lv_obj_t *value;
     lv_obj_t *rows[CHOICE_ROWS];
+    lv_obj_t *hold_fills[CHOICE_ROWS];
     lv_obj_t *swatches[CHOICE_ROWS];
     lv_obj_t *labels[CHOICE_ROWS];
     lv_obj_t *markers[CHOICE_ROWS];
@@ -46,11 +47,37 @@ struct choice_overlay_view {
     struct crazypod_popup_geometry geometry;
     int row_width;
     int row_y;
+    int visible_start;
+    bool hold_feedback_active;
     const lv_font_t *metadata_font;
     struct crazypod_choice_overlay_callbacks callbacks;
 };
 
 static struct choice_overlay_view view;
+static void refresh(void);
+
+static void hold_feedback_anim(void *target, int32_t value)
+{
+    lv_obj_set_width(target, value);
+}
+
+static void stop_hold_feedback(bool restore)
+{
+    int row;
+
+    if(!view.hold_feedback_active)
+        return;
+    for(row = 0; row < CHOICE_ROWS; ++row) {
+        if(view.hold_fills[row] != NULL) {
+            lv_anim_delete(
+                view.hold_fills[row], hold_feedback_anim);
+            lv_obj_set_width(view.hold_fills[row], 0);
+        }
+    }
+    view.hold_feedback_active = false;
+    if(restore)
+        refresh();
+}
 
 static void receipt_scale_anim(void *target, int32_t value)
 {
@@ -170,6 +197,7 @@ static void refresh(void)
             start = view.count - CHOICE_ROWS;
     }
 
+    view.visible_start = start;
     for(row = 0; row < CHOICE_ROWS; ++row) {
         int index = start + row;
         bool selected = index == view.selected;
@@ -209,6 +237,7 @@ static void refresh(void)
         lv_obj_set_style_text_opa(
             view.markers[row], current ? 235 :
             selected ? 190 : 80, 0);
+        lv_obj_set_width(view.hold_fills[row], 0);
 
         has_color = view.callbacks.item_color(
             view.kind, view.id, index, &swatch_color,
@@ -253,6 +282,7 @@ void crazypod_choice_overlay_reset(void)
 
 void crazypod_choice_overlay_dismiss(void)
 {
+    stop_hold_feedback(false);
     if(view.root != NULL) {
         lv_anim_delete(view.panel, NULL);
         if(view.receipt_ring != NULL)
@@ -339,6 +369,10 @@ void crazypod_choice_overlay_show(
             view.panel, 12, y,
             view.row_width, POPUP_ROW_HEIGHT, 8,
             COLOR_WHITE, LV_OPA_TRANSP);
+        view.hold_fills[row] = crazypod_ui_widget_box(
+            view.rows[row], 0, 0, 0,
+            POPUP_ROW_HEIGHT, 8,
+            COLOR_SUCCESS, 68);
         view.swatches[row] = crazypod_ui_widget_box(
             view.rows[row], 9, 9, 9, 9,
             LV_RADIUS_CIRCLE, COLOR_WHITE, 35);
@@ -389,6 +423,7 @@ void crazypod_choice_overlay_move(int direction)
     if(!crazypod_choice_overlay_visible() ||
        view.receipt_visible || view.count <= 0)
         return;
+    stop_hold_feedback(true);
     next = view.selected + direction;
     if(next < 0)
         next = 0;
@@ -398,6 +433,31 @@ void crazypod_choice_overlay_move(int direction)
         return;
     view.selected = next;
     refresh();
+}
+
+void crazypod_choice_overlay_begin_hold_feedback(int duration_ms)
+{
+    lv_anim_t animation;
+    int row = view.selected - view.visible_start;
+
+    if(!crazypod_choice_overlay_visible() ||
+       view.receipt_visible || row < 0 || row >= CHOICE_ROWS ||
+       view.hold_fills[row] == NULL || duration_ms <= 0)
+        return;
+    stop_hold_feedback(true);
+    view.hold_feedback_active = true;
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, view.hold_fills[row]);
+    lv_anim_set_exec_cb(&animation, hold_feedback_anim);
+    lv_anim_set_values(&animation, 0, view.row_width);
+    lv_anim_set_duration(&animation, duration_ms);
+    lv_anim_set_path_cb(&animation, lv_anim_path_linear);
+    lv_anim_start(&animation);
+}
+
+void crazypod_choice_overlay_cancel_hold_feedback(void)
+{
+    stop_hold_feedback(true);
 }
 
 void crazypod_choice_overlay_show_receipt(
@@ -419,6 +479,7 @@ void crazypod_choice_overlay_show_receipt(
     if(!crazypod_choice_overlay_visible() ||
        view.panel == NULL || view.receipt_visible)
         return;
+    stop_hold_feedback(false);
     label_width = crazypod_popup_text_width(
         resolved_label, view.metadata_font);
     geometry = crazypod_popup_centered_geometry(

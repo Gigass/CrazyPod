@@ -55,7 +55,8 @@ int crazypod_books_feature_item_count(
         const struct crazypod_book *book =
             crazypod_book_get(state->group);
 
-        return book != NULL && book->bookmark > 0 ? 1 : 0;
+        return book != NULL &&
+               book->bookmark != CRAZYPOD_BOOKMARK_NONE ? 1 : 0;
     }
     case BOOKS_ROUTE_READING_SETTINGS:
         return 2;
@@ -350,10 +351,25 @@ static void refresh_reader(void)
 
 static void toggle_bookmark(void)
 {
-    crazypod_book_toggle_bookmark(
+    (void)crazypod_books_feature_toggle_reader_bookmark();
+    book_input_context.render(false);
+}
+
+bool crazypod_books_feature_reader_page_bookmarked(void)
+{
+    int index = crazypod_book_session_index();
+    const struct crazypod_book *book = crazypod_book_get(index);
+
+    return book != NULL &&
+        book->bookmark != CRAZYPOD_BOOKMARK_NONE &&
+        book->bookmark == crazypod_book_session_offset();
+}
+
+bool crazypod_books_feature_toggle_reader_bookmark(void)
+{
+    return crazypod_book_toggle_bookmark(
         crazypod_book_session_index(),
         crazypod_book_session_offset());
-    book_input_context.render(false);
 }
 
 bool crazypod_books_feature_handle_input(
@@ -364,7 +380,7 @@ bool crazypod_books_feature_handle_input(
     const struct crazypod_book_reader_input_actions actions = {
         .turn_page = crazypod_book_session_turn,
         .refresh = refresh_reader,
-        .choose_playback_playlist = context->activate,
+        .show_actions = context->activate,
         .toggle_bookmark = toggle_bookmark,
         .leave = context->pop,
     };

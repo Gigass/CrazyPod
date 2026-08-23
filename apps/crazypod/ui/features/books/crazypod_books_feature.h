@@ -66,6 +66,8 @@ void crazypod_books_feature_apply_font_size(int value);
 void crazypod_books_feature_begin_reader(
     int index, uint32_t offset);
 void crazypod_books_feature_turn_page(int direction);
+bool crazypod_books_feature_reader_page_bookmarked(void);
+bool crazypod_books_feature_toggle_reader_bookmark(void);
 struct crazypod_books_confirmation_result
 crazypod_books_feature_confirm(
     const struct route_state *state);

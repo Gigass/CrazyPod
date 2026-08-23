@@ -523,7 +523,9 @@ void crazypod_photos_invalidate_catalog(void)
     photo_refresh_pending = true;
     mutex_unlock(&photo_mutex);
     crazypod_photo_catalog_invalidate();
-    crazypod_photo_cache_invalidate();
+    /* USB storage can change only part of /Pictures. Cache entries already
+       include the source path key, size and mtime, so changed files miss
+       naturally while unchanged thumbnails and views remain reusable. */
 }
 
 void crazypod_photos_note_file_added(void)
