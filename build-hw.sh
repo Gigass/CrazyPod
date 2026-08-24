@@ -95,6 +95,8 @@ Environment:
   CRAZYPOD_SKIP_DEP=1     skip make dep when make.dep exists
   CRAZYPOD_REPRO_DIAGNOSTICS=1
                            build the one-shot harness in build-hw-ipod6g-repro/
+  CRAZYPOD_IAP_DIAGNOSTICS=1
+                           capture raw iAP frames in build-hw-ipod6g-iap/
   CROSS_COMPILE=prefix-   default arm-none-eabi-
   JOBS=N                  parallel job count
 EOF
@@ -112,12 +114,34 @@ CROSS_COMPILE="${CROSS_COMPILE:-arm-none-eabi-}"
 export CROSS_COMPILE
 CRAZYPOD_BUILD_DEFINES=""
 CRAZYPOD_BUILD_VARIANT="production"
-case "${CRAZYPOD_REPRO_DIAGNOSTICS:-}" in
+repro_diagnostics="${CRAZYPOD_REPRO_DIAGNOSTICS:-}"
+iap_diagnostics="${CRAZYPOD_IAP_DIAGNOSTICS:-}"
+repro_enabled=0
+iap_enabled=0
+case "$repro_diagnostics" in
+    1|yes|true|YES|TRUE) repro_enabled=1 ;;
+esac
+case "$iap_diagnostics" in
+    1|yes|true|YES|TRUE) iap_enabled=1 ;;
+esac
+if [ "$repro_enabled" -eq 1 ] && [ "$iap_enabled" -eq 1 ]; then
+    echo "Error: select only one CrazyPod diagnostic build variant." >&2
+    exit 2
+fi
+case "$iap_diagnostics" in
     1|yes|true|YES|TRUE)
-        CRAZYPOD_BUILD_DEFINES="-DCRAZYPOD_REPRO_DIAGNOSTICS"
-        CRAZYPOD_BUILD_VARIANT="repro"
+        CRAZYPOD_BUILD_DEFINES="-DCRAZYPOD_IAP_DIAGNOSTICS"
+        CRAZYPOD_BUILD_VARIANT="iap"
         ;;
 esac
+if [ "$repro_enabled" -eq 1 ]; then
+    case "$repro_diagnostics" in
+        1|yes|true|YES|TRUE)
+            CRAZYPOD_BUILD_DEFINES="-DCRAZYPOD_REPRO_DIAGNOSTICS"
+            CRAZYPOD_BUILD_VARIANT="repro"
+            ;;
+    esac
+fi
 require_tools
 python3 tests/test-crazypod-lvgl-layer-budget.py
 npm ci --ignore-scripts --no-audit --no-fund \
@@ -139,6 +163,9 @@ test -f miniapps/themes/signal-one/generated/app.c
 if [ "$CRAZYPOD_BUILD_VARIANT" = "repro" ]; then
     BUILDDIR="build-hw-ipod6g-repro"
     STAMP="crazypod hardware ipod6g lvgl repro"
+elif [ "$CRAZYPOD_BUILD_VARIANT" = "iap" ]; then
+    BUILDDIR="build-hw-ipod6g-iap"
+    STAMP="crazypod hardware ipod6g lvgl iap diagnostics"
 else
     BUILDDIR="build-hw-ipod6g"
     STAMP="crazypod hardware ipod6g lvgl production"
@@ -262,6 +289,9 @@ if [ ! -x "$RUNTIME_FONT_BUILDER" ]; then
     exit 1
 fi
 "$RUNTIME_FONT_BUILDER" "$PACKAGE_DIR/.rockbox/fonts"
+python3 ../tools/crazypod_runtime_font_audit.py \
+    --font-dir "$PACKAGE_DIR/.rockbox/fonts/crazypod-aot" \
+    ../dist/miniapps/*.cpk
 cp rockbox.ipod "$PACKAGE_DIR/.rockbox/rockbox.ipod"
 [ ! -f rockbox-info.txt ] || cp rockbox-info.txt "$PACKAGE_DIR/.rockbox/rockbox-info.txt"
 cp -R ../assets/crazypod-icons/. \

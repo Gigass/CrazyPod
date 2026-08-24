@@ -1398,13 +1398,19 @@ Lyre prototype 1 */
 
 #ifdef IPOD_6G
 /*
- * CrazyPod exposes only mass storage. Audio, HID and iPod accessory
- * transports belong to the removed Rockbox application layer.
+ * CrazyPod keeps USB storage-only. The 30-pin UART accessory transport is
+ * independent of the USB device stack and remains available for dock remotes.
  */
+#ifdef IPOD_ACCESSORY_PROTOCOL
+#define CRAZYPOD_IAP_SIMPLE_REMOTE
+#endif
 #undef USB_ENABLE_AUDIO
 #undef USB_ENABLE_HID
 #undef USB_ENABLE_IAP_HID
-#undef IPOD_ACCESSORY_PROTOCOL
+#undef TARGET_EXTRA_THREADS
+#ifdef HAVE_PCM_CODEC_IDLE
+#define TARGET_EXTRA_THREADS 1 /* deferred codec power; iAP uses the UI queue */
+#endif
 #undef HAVE_DIRCACHE
 #endif
 

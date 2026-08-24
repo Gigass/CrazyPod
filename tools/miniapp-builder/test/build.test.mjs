@@ -39,6 +39,11 @@ test("Native 2048 builds as a deterministic CPK5", async () => {
     assert.equal(first.manifest.format, 5);
     assert.equal(first.manifest.runtime, "native-aot");
     assert.equal(first.manifest.entry, "app.dylib");
+    assert.equal(
+      first.manifest.fontSet,
+      "system:400:12,system:400:14,system:400:15," +
+      "system:400:28,system:400:40",
+    );
     assert.equal(first.sizes.binary, 15);
     assert.deepEqual(first.sizes, second.sizes);
   } finally {
@@ -65,6 +70,10 @@ test("Capability Lab packages a deterministic CPK5 native payload", async () => 
     assert.equal(result.manifest.format, 5);
     assert.equal(result.manifest.runtime, "native-aot");
     assert.equal(result.manifest.entry, "app.dylib");
+    assert.equal(
+      result.manifest.fontSet,
+      "system:400:12,system:400:14,system:400:15,system:400:24",
+    );
     assert.equal(result.sizes.binary, 21);
     assert.equal(result.sizes.profile, 16);
     assert.ok(result.sizes.assets > 50_000);
@@ -90,6 +99,12 @@ test("Now Playing theme packages its source artwork size", async () => {
       });
     assert.equal(result.manifest.kind, "now-playing-theme");
     assert.equal(result.manifest.artworkSourceSize, 104);
+    assert.equal(result.manifest.statusBar, "theme");
+    assert.equal(
+      result.manifest.fontSet,
+      "mono:400:12,serif:700:16,system:400:12,system:400:15," +
+      "system:400:16,system:700:18",
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

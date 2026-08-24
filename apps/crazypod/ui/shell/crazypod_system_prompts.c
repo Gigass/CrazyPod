@@ -11,6 +11,7 @@
 #include "powermgmt.h"
 #include "usb.h"
 
+#include "../../accessory/crazypod_iap_simple.h"
 #include "../../crazypod_artwork.h"
 #include "../../crazypod_books.h"
 #include "../../crazypod_coverflow.h"
@@ -226,6 +227,11 @@ bool crazypod_system_prompts_power_visible(void)
     return crazypod_power_prompt_visible();
 }
 
+bool crazypod_system_prompts_power_hold_feedback_visible(void)
+{
+    return crazypod_power_prompt_hold_feedback_visible();
+}
+
 bool crazypod_system_prompts_handle_power(
     long base, bool repeated, intptr_t data)
 {
@@ -238,6 +244,20 @@ bool crazypod_system_prompts_handle_power_hold(long button)
     configure_power();
     return crazypod_power_prompt_handle_play_hold(
         button, prompts.host.now(), POWER_HOLD_TICKS);
+}
+
+void crazypod_system_prompts_begin_power_hold(long start_tick)
+{
+    configure_power();
+    crazypod_power_prompt_begin_play_hold(start_tick);
+}
+
+void crazypod_system_prompts_tick(void)
+{
+    crazypod_power_prompt_tick(
+        prompts.host.now(), POWER_HOLD_TICKS);
+    if(crazypod_power_prompt_hold_feedback_visible())
+        crazypod_coverflow_set_compositing_suspended(true);
 }
 
 void crazypod_system_prompts_dismiss_power(void)
@@ -275,11 +295,25 @@ bool crazypod_system_prompts_handle_usb(
 void crazypod_system_prompts_show_usb(unsigned request)
 {
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+    if(crazypod_iap_simple_accessory_present()) {
+        crazypod_usb_prompt_finish(USB_MODE_CHARGE);
+        return;
+    }
     configure_usb();
     crazypod_usb_prompt_show(request);
 #else
     (void)request;
 #endif
+}
+
+bool crazypod_system_prompts_prepare_dock(void)
+{
+    if(prompts.storage_active)
+        return false;
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+    crazypod_usb_prompt_finish(USB_MODE_CHARGE);
+#endif
+    return true;
 }
 
 void crazypod_system_prompts_usb_done(unsigned request)

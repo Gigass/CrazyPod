@@ -249,13 +249,16 @@ static void pmu_read_inputs_gpio(void)
 static void pmu_read_inputs_ooc(void)
 {
     unsigned char oocstat = pmu_read(PCF5063X_REG_OOCSTAT);
+#ifdef IPOD_ACCESSORY_PROTOCOL
+    /* Publish EXTON3 before notifying USB about EXTON2. A Universal Dock
+     * changes both inputs together, and the USB policy must see the new
+     * accessory state when it chooses Charge versus mass storage. */
+    pmu_input_accessory = !(oocstat & PCF5063X_OOCSTAT_EXTON3);
+#endif
     if (oocstat & PCF5063X_OOCSTAT_EXTON2)
         usb_insert_int();
     else
         usb_remove_int();
-#ifdef IPOD_ACCESSORY_PROTOCOL
-    pmu_input_accessory = !(oocstat & PCF5063X_OOCSTAT_EXTON3);
-#endif
 }
 
 static void pmu_eint_isr(struct eic_handler *h)

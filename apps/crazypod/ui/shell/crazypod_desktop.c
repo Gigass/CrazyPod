@@ -15,6 +15,7 @@
 #include "../../crazypod_frameclock.h"
 #include "../../crazypod_icons.h"
 #include "../../crazypod_wallpaper.h"
+#include "../presentation/crazypod_hold_feedback.h"
 #include "../presentation/crazypod_ui_widgets.h"
 #include "crazypod_app_catalog.h"
 #include "crazypod_desktop.h"
@@ -52,6 +53,21 @@ static int wheel_feedback_direction;
 static bool desktop_active;
 static bool wheel_tracking;
 static bool springing;
+static lv_obj_t *hold_feedback_root;
+static bool hold_feedback_teardown_pending;
+static struct crazypod_hold_feedback hold_feedback;
+
+static void hold_feedback_teardown_ready(lv_event_t *event)
+{
+    lv_display_t *display = lv_event_get_target(event);
+
+    lv_display_remove_event_cb_with_user_data(
+        display, hold_feedback_teardown_ready, NULL);
+    if(!hold_feedback_teardown_pending)
+        return;
+    hold_feedback_teardown_pending = false;
+    crazypod_desktop_native_invalidate(true);
+}
 
 static const struct crazypod_app_descriptor *visible_app(int index)
 {
@@ -411,6 +427,56 @@ int crazypod_desktop_take_wheel_feedback(void)
 
     wheel_feedback_direction = 0;
     return direction;
+}
+
+bool crazypod_desktop_hold_feedback_visible(void)
+{
+    return hold_feedback_root != NULL ||
+        hold_feedback_teardown_pending;
+}
+
+void crazypod_desktop_hold_feedback_dismiss(
+    bool preserve_underlay)
+{
+    lv_obj_t *root = hold_feedback_root;
+    lv_display_t *display;
+
+    if(root == NULL)
+        return;
+    if(preserve_underlay)
+        crazypod_desktop_native_preserve_modal_underlay();
+    crazypod_hold_feedback_dismiss(&hold_feedback);
+    hold_feedback_root = NULL;
+    hold_feedback_teardown_pending = true;
+    display = lv_obj_get_display(root);
+    lv_display_remove_event_cb_with_user_data(
+        display, hold_feedback_teardown_ready, NULL);
+    lv_display_add_event_cb(
+        display, hold_feedback_teardown_ready,
+        LV_EVENT_REFR_READY, NULL);
+    lv_obj_delete(root);
+}
+
+void crazypod_desktop_hold_feedback_begin(
+    const char *symbol, int duration_ms)
+{
+    if(!desktop_active ||
+       screen == NULL || !lv_obj_is_valid(screen) ||
+       crazypod_desktop_hold_feedback_visible())
+        return;
+    hold_feedback_root = crazypod_ui_widget_box(
+        screen, 0, 0, LCD_WIDTH, LCD_HEIGHT,
+        0, 0x000000, LV_OPA_TRANSP);
+    lv_obj_remove_flag(
+        hold_feedback_root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_move_foreground(hold_feedback_root);
+    (void)crazypod_desktop_native_create_modal_underlay(
+        hold_feedback_root);
+    crazypod_hold_feedback_begin(
+        &hold_feedback, hold_feedback_root,
+        symbol, duration_ms);
+    if(hold_feedback.root == NULL)
+        crazypod_desktop_hold_feedback_dismiss(false);
 }
 
 void crazypod_desktop_refresh_appearance(void)

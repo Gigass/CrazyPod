@@ -132,10 +132,11 @@ static void serial_acc_tick(void)
             uartc_port_config(&ser_port, ULCON_DATA_BITS_8,
                                 ULCON_PARITY_NONE, ULCON_STOP_BITS_1);
             uartc_port_set_tx_mode(&ser_port, UCON_MODE_INTREQ);
-            serial_bitrate(bitrate);
+            iap_reset_state(IF_IAP_MP(0));
         }
         else
         {
+            iap_reset_state(IF_IAP_MP(0));
             uartc_port_close(&ser_port);
             uartc_close(ser_port.uartc);
         }
@@ -193,9 +194,6 @@ void serial_bitrate(int rate)
 
 static void iap_rx_isr(int len, char *data, char *err, uint32_t abr_cnt)
 {
-    /* ignore Rx errors, upper layer will discard bad packets */
-    (void) err;
-
     static int sync_retry;
 
     if (abr_status == ABR_STATUS_LAUNCHED) {
@@ -230,7 +228,20 @@ static void iap_rx_isr(int len, char *data, char *err, uint32_t abr_cnt)
     /* process received data */
     while (len--)
     {
-        bool sync_done = !iap_getc(IF_IAP_MP(0,) *data++);
+        unsigned char rx_error = (unsigned char)*err++;
+        unsigned char rx_data = (unsigned char)*data++;
+        bool sync_done;
+
+#ifdef CRAZYPOD_IAP_SIMPLE_REMOTE
+        if (rx_error != 0)
+        {
+            iap_report_rx_error(rx_error);
+            continue;
+        }
+#else
+        (void)rx_error;
+#endif
+        sync_done = !iap_getc(IF_IAP_MP(0,) rx_data);
 
         if (abr_status == ABR_STATUS_SYNCING)
         {

@@ -43,6 +43,14 @@ extern void iap_periodic(void);
 extern void iap_handlepkt(void);
 extern void iap_send_pkt(const unsigned char * data, int len);
 const unsigned char *iap_get_serbuf(void);
+#ifdef CRAZYPOD_IAP_SIMPLE_REMOTE
+/* Normalized UC87xx receive error flags. */
+#define IAP_RX_ERROR_OVERRUN 0x01
+#define IAP_RX_ERROR_PARITY  0x02
+#define IAP_RX_ERROR_FRAME   0x04
+#define IAP_RX_ERROR_BREAK   0x08
+void iap_report_rx_error(unsigned char error);
+#endif
 
 /* Transport abstraction — USB HID driver overrides this for iAP-over-USB */
 extern void (*iap_transport_send)(const unsigned char *buf, int len);

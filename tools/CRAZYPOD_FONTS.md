@@ -35,7 +35,7 @@ regeneration requires a separately supplied, redistributable source.
 Arbitrary song, artist, album, playlist, book, theme, and Mini App text uses
 the CrazyPod Noto font service. Devtool converts the exact semantic
 `family:weight:size` tuples used by a CPK into regional RB12 bitmap fonts before
-installation. The firmware package includes the 38 tuples used by the system,
+installation. The firmware package includes the 47 tuples used by the system,
 bundled Mini Apps, and bundled themes. Firmware loads glyphs through Rockbox's
 bounded bitmap cache; it does not parse or rasterize Noto outlines. `fontWeight`
 selects 100–900; CJK requests use the nearest available physical Noto weight.
@@ -51,6 +51,12 @@ Devtool staging installs every missing regional font before the CPK. The
 firmware installer rejects a package whose declared files are missing instead
 of substituting another size or weight. `fontSize` is static under AOT; text
 size animation uses transforms.
+
+The canonical base-firmware tuple list is
+`tools/crazypod-runtime-font-specs.txt`. Font generation, structural tests,
+and release-package audits all consume that file. Every CPK in `dist/miniapps`
+must declare a `fontSet` satisfied by the base firmware before a hardware
+release can be packaged.
 
 Native AOT MiniApps and now-playing themes may also package private fonts.
 Their `assets.json` source must be TTF, OTF, TTC, or BDF and the TSX reference

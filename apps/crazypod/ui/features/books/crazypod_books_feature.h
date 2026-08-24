@@ -48,6 +48,11 @@ bool crazypod_books_feature_activate(
     const struct crazypod_books_activation_host *host);
 bool crazypod_books_feature_render(
     const struct route_state *state, lv_obj_t *parent);
+void crazypod_books_feature_enter_reader(long now);
+int crazypod_books_feature_reader_wait_ticks(
+    const struct route_state *state, long now, int maximum);
+bool crazypod_books_feature_service_reader(
+    const struct route_state *state, long now);
 const uint32_t *crazypod_books_feature_page_colors(void);
 const uint32_t *crazypod_books_feature_ink_colors(void);
 void crazypod_books_feature_reset_view(void);

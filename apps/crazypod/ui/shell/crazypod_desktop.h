@@ -23,6 +23,11 @@ void crazypod_desktop_tick(long now);
 bool crazypod_desktop_motion_active(void);
 bool crazypod_desktop_wheel_touch_active(void);
 int crazypod_desktop_take_wheel_feedback(void);
+void crazypod_desktop_hold_feedback_begin(
+    const char *symbol, int duration_ms);
+void crazypod_desktop_hold_feedback_dismiss(
+    bool preserve_underlay);
+bool crazypod_desktop_hold_feedback_visible(void);
 void crazypod_desktop_refresh_appearance(void);
 void crazypod_desktop_render_icon(
     int tile_size, bool blocked);

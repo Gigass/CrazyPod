@@ -581,6 +581,9 @@ int crazypod_miniapp_manifest_parse(
         if((seen & CPK5_FONT_SET_FIELD) != 0 &&
            metadata->abi_minor < 16u)
             return CRAZYPOD_MINIAPP_ERROR_VERSION;
+        if(metadata->abi_minor >= 16u &&
+           (seen & CPK5_FONT_SET_FIELD) == 0)
+            return CRAZYPOD_MINIAPP_ERROR_VERSION;
         if((seen & CPK5_PERMISSIONS_FIELD) != 0 &&
            metadata->abi_minor < 17u)
             return CRAZYPOD_MINIAPP_ERROR_VERSION;

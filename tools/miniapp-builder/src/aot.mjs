@@ -306,6 +306,49 @@ function normalizeFontWeight(value, node) {
   return weight;
 }
 
+export function semanticFontSetFromGeneratedSource(source) {
+  const stateByHandle = new Map();
+  const specs = new Set();
+  const call = /ui->set_i32\(\s*([^,]+?)\s*,\s*CP_UI_PROP_(FONT_SIZE|FONT_WEIGHT|FONT)\s*,\s*(\d+)u?\s*\)|ui->set_i32\(\s*([^,]+?)\s*,\s*CP_UI_PROP_FONT\s*,\s*CP_UI_FONT_(SYSTEM|SERIF|MONO)\s*\)/g;
+  let match;
+
+  while ((match = call.exec(source)) !== null) {
+    const handle = (match[1] ?? match[4]).trim();
+    const state = stateByHandle.get(handle) ?? {};
+    if (match[2] === "FONT_SIZE") {
+      state.size = Number(match[3]);
+      stateByHandle.set(handle, state);
+      continue;
+    }
+    if (match[2] === "FONT_WEIGHT") {
+      state.weight = Number(match[3]);
+      stateByHandle.set(handle, state);
+      continue;
+    }
+    const family = match[5]?.toLowerCase();
+    if (!family || !Number.isInteger(state.size) ||
+        !Number.isInteger(state.weight)) {
+      throw new Error(
+        `generated source has an incomplete semantic font for ${handle}`,
+      );
+    }
+    if (state.size < 6 || state.size > 48 || state.weight < 100 ||
+        state.weight > 900 || state.weight % 100 !== 0) {
+      throw new Error(
+        `generated source has an invalid semantic font for ${handle}`,
+      );
+    }
+    specs.add(`${family}:${state.weight}:${state.size}`);
+  }
+  return [...specs].sort((left, right) => {
+    const [leftFamily, leftWeight, leftSize] = left.split(":");
+    const [rightFamily, rightWeight, rightSize] = right.split(":");
+    return leftFamily.localeCompare(rightFamily) ||
+      Number(leftWeight) - Number(rightWeight) ||
+      Number(leftSize) - Number(rightSize);
+  });
+}
+
 function styleLines(handle, style, node, component, fontAssets) {
   const lines = [];
   const flexContainers = new Set([
@@ -1466,7 +1509,7 @@ export async function generateNativeProject(
   return { output: destination, manifest: config.manifest };
 }
 
-function nativeManifest(source, target) {
+function nativeManifest(source, target, fontSet) {
   const required = [
     "id", "name", "version", "versionCode",
     "symbol", "summary", "accent",
@@ -1508,6 +1551,17 @@ function nativeManifest(source, target) {
       "manifest.artworkSourceSize requires kind now-playing-theme",
     );
   }
+  if (source.statusBar !== undefined &&
+      !["system", "theme"].includes(source.statusBar)) {
+    throw new Error("manifest.statusBar must be system or theme");
+  }
+  if (source.statusBar !== undefined &&
+      source.kind !== "now-playing-theme") {
+    throw new Error("manifest.statusBar requires kind now-playing-theme");
+  }
+  if (!Array.isArray(fontSet)) {
+    throw new TypeError("fontSet must be an array");
+  }
   if (!["simulator", "ipod6g"].includes(target)) {
     throw new Error("native target must be simulator or ipod6g");
   }
@@ -1515,7 +1569,11 @@ function nativeManifest(source, target) {
     format: 5,
     kind: source.kind === undefined ? "miniapp" : String(source.kind),
     ...(source.kind === "now-playing-theme"
-      ? { artworkSourceSize: source.artworkSourceSize }
+      ? {
+        ...(source.statusBar === undefined
+          ? {} : { statusBar: source.statusBar }),
+        artworkSourceSize: source.artworkSourceSize,
+      }
       : {}),
     id: source.id,
     name: String(source.name),
@@ -1531,6 +1589,7 @@ function nativeManifest(source, target) {
     symbol: String(source.symbol),
     summary: String(source.summary),
     accent: source.accent.toLowerCase(),
+    fontSet: fontSet.join(","),
   };
 }
 
@@ -1539,6 +1598,7 @@ export async function packageNativeProject(
     binary,
     target,
     output,
+    generatedSource,
   } = {},
 ) {
   if (!binary) throw new Error("native build requires --binary FILE");
@@ -1549,7 +1609,22 @@ export async function packageNativeProject(
   if (config.runtime !== "native-aot") {
     throw new Error("config.runtime must be native-aot");
   }
-  const manifest = nativeManifest(config.manifest ?? {}, target);
+  const generatedSourcePath = path.resolve(
+    generatedSource ?? path.join(project, "generated/app.c"),
+  );
+  let generatedSourceText;
+  try {
+    generatedSourceText = await readFile(generatedSourcePath, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      throw new Error(
+        `native build requires generated source ${generatedSourcePath}`,
+      );
+    }
+    throw error;
+  }
+  const fontSet = semanticFontSetFromGeneratedSource(generatedSourceText);
+  const manifest = nativeManifest(config.manifest ?? {}, target, fontSet);
   const binaryData = await readFile(path.resolve(binary));
   if (binaryData.length === 0 || binaryData.length > 8 * 1024 * 1024) {
     throw new Error("native binary must be 1 byte to 8 MiB");

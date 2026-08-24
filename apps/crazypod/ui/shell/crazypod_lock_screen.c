@@ -114,6 +114,7 @@ struct lock_screen_state {
     bool release_guard;
     bool opening;
     bool unlock_pressed;
+    bool unlock_button_down;
     long opening_start;
     long unlock_press_start;
     int progress_percent;
@@ -768,6 +769,7 @@ static void reset_unlock(void)
 {
     lock_state.opening = false;
     lock_state.unlock_pressed = false;
+    lock_state.unlock_button_down = false;
     lock_state.unlock_press_start = 0;
     lock_state.progress_percent = 0;
     if(lock_state.icon_shackle != NULL) {
@@ -825,8 +827,7 @@ static void finish_unlock(void)
     lock_state.unlock_pressed = false;
     lock_state.unlock_press_start = 0;
     lock_state.progress_percent = 0;
-    lock_state.release_guard =
-        (button_status() & BUTTON_SELECT) != 0;
+    lock_state.release_guard = lock_state.unlock_button_down;
     lock_state.wait_for_wake_release = false;
     crazypod_coverflow_set_input_suspended(false);
     crazypod_coverflow_set_compositing_suspended(false);
@@ -882,7 +883,7 @@ void crazypod_lock_screen_process(void)
         long feedback_elapsed;
         int progress;
 
-        if((button_status() & BUTTON_SELECT) == 0) {
+        if(!lock_state.unlock_button_down) {
             reset_unlock();
             return;
         }
@@ -963,8 +964,10 @@ bool crazypod_lock_screen_handle_button(long button, intptr_t data)
     if(lock_state.release_guard) {
         base = button & BUTTON_MAIN;
         if(base == BUTTON_SELECT) {
-            if((button & BUTTON_REL) != 0)
+            if((button & BUTTON_REL) != 0) {
                 lock_state.release_guard = false;
+                lock_state.unlock_button_down = false;
+            }
             return true;
         }
     }
@@ -974,8 +977,11 @@ bool crazypod_lock_screen_handle_button(long button, intptr_t data)
     repeated = (button & BUTTON_REPEAT) != 0;
     base = button & BUTTON_MAIN;
     if(release) {
-        if(base == BUTTON_SELECT && lock_state.unlock_pressed)
-            reset_unlock();
+        if(base == BUTTON_SELECT) {
+            lock_state.unlock_button_down = false;
+            if(lock_state.unlock_pressed)
+                reset_unlock();
+        }
         lock_state.wait_for_wake_release = false;
         return true;
     }
@@ -1013,6 +1019,7 @@ bool crazypod_lock_screen_handle_button(long button, intptr_t data)
     }
     if(base != BUTTON_SELECT)
         return true;
+    lock_state.unlock_button_down = true;
     if(!lock_state.unlock_pressed) {
         lock_state.unlock_pressed = true;
         lock_state.unlock_press_start = current_tick;
@@ -1020,6 +1027,14 @@ bool crazypod_lock_screen_handle_button(long button, intptr_t data)
         refresh_progress();
     }
     return true;
+}
+
+bool crazypod_lock_screen_media_controls_ready(void)
+{
+    return lock_state.locked && lock_state.media_active &&
+        lock_state.backlight_was_on &&
+        !lock_state.wait_for_wake_release &&
+        !lock_state.opening;
 }
 
 lv_obj_t *crazypod_lock_screen_create(

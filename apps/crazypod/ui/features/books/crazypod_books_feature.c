@@ -4,6 +4,8 @@
 
 #ifdef IPOD_6G
 
+#include "kernel.h"
+
 #include "../../../crazypod_books.h"
 #include "crazypod_book_session.h"
 #include "crazypod_book_reader_input.h"
@@ -29,6 +31,13 @@ static const uint32_t page_colors[] = {
 static const uint32_t ink_colors[] = {
     0x302A22, 0x252525, 0x24382D, 0xECECF1
 };
+
+static struct {
+    bool toolbar_visible;
+    long toolbar_hide_tick;
+} reader_view;
+
+#define READER_TOOLBAR_VISIBLE_TICKS (2 * HZ)
 
 int crazypod_books_feature_item_count(
     const struct route_state *state)
@@ -314,7 +323,8 @@ bool crazypod_books_feature_render(
             parent, state->group,
             crazypod_book_session_offset(),
             crazypod_book_session_text(),
-            page_colors[theme], ink_colors[theme]);
+            page_colors[theme], ink_colors[theme],
+            reader_view.toolbar_visible);
         return true;
     }
     if(state->route == BOOKS_ROUTE_STATS) {
@@ -324,6 +334,41 @@ bool crazypod_books_feature_render(
     if(state->route != BOOKS_ROUTE_INFO)
         return false;
     crazypod_books_screen_render_info(parent, state->group);
+    return true;
+}
+
+void crazypod_books_feature_enter_reader(long now)
+{
+    reader_view.toolbar_visible = true;
+    reader_view.toolbar_hide_tick =
+        now + READER_TOOLBAR_VISIBLE_TICKS;
+}
+
+int crazypod_books_feature_reader_wait_ticks(
+    const struct route_state *state, long now, int maximum)
+{
+    long remaining;
+
+    if(state == NULL || state->route != BOOKS_ROUTE_READER ||
+       !reader_view.toolbar_visible ||
+       reader_view.toolbar_hide_tick == 0)
+        return maximum;
+    remaining = reader_view.toolbar_hide_tick - now;
+    if(remaining <= 0)
+        return 1;
+    return remaining < maximum ? (int)remaining : maximum;
+}
+
+bool crazypod_books_feature_service_reader(
+    const struct route_state *state, long now)
+{
+    if(state == NULL || state->route != BOOKS_ROUTE_READER ||
+       !reader_view.toolbar_visible ||
+       reader_view.toolbar_hide_tick == 0 ||
+       TIME_BEFORE(now, reader_view.toolbar_hide_tick))
+        return false;
+    reader_view.toolbar_visible = false;
+    reader_view.toolbar_hide_tick = 0;
     return true;
 }
 
@@ -355,6 +400,13 @@ static void toggle_bookmark(void)
     book_input_context.render(false);
 }
 
+static void show_reader_actions(void)
+{
+    crazypod_books_feature_enter_reader(book_input_context.now);
+    book_input_context.render(false);
+    book_input_context.activate();
+}
+
 bool crazypod_books_feature_reader_page_bookmarked(void)
 {
     int index = crazypod_book_session_index();
@@ -380,7 +432,7 @@ bool crazypod_books_feature_handle_input(
     const struct crazypod_book_reader_input_actions actions = {
         .turn_page = crazypod_book_session_turn,
         .refresh = refresh_reader,
-        .show_actions = context->activate,
+        .show_actions = show_reader_actions,
         .toggle_bookmark = toggle_bookmark,
         .leave = context->pop,
     };

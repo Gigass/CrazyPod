@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   compileNativeSource,
   generateNativeProject,
+  semanticFontSetFromGeneratedSource,
 } from "../src/aot.mjs";
 
 const manifest = {
@@ -232,6 +233,11 @@ test("React Profile maps semantic families and typography to Noto", () => {
   }
   assert.match(output, /CP_UI_PROP_FONT_WEIGHT, 600/);
   assert.match(output, /CP_UI_PROP_LINE_HEIGHT, 18/);
+  assert.deepEqual(semanticFontSetFromGeneratedSource(output), [
+    "mono:400:14",
+    "serif:600:28",
+    "system:400:22",
+  ]);
 });
 
 test("React Profile rejects removed fixed host font families", () => {

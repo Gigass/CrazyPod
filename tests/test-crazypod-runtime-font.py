@@ -9,24 +9,28 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_HEADER = ROOT / "apps/crazypod/crazypod_runtime_font.h"
 RUNTIME_SOURCE = ROOT / "apps/crazypod/crazypod_runtime_font.c"
+SPEC_FILE = ROOT / "tools/crazypod-runtime-font-specs.txt"
 SCENE_SOURCE = ROOT / "apps/crazypod/ui/features/miniapps/crazypod_miniapp_scene.c"
 SCENE_RENDERER = ROOT / (
     "apps/crazypod/ui/features/miniapps/"
     "crazypod_miniapp_scene_renderer.c"
 )
 
-SPECS = {
-    *(('system', 400, size) for size in
-      (6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 18, 22, 24, 28, 32, 40)),
-    *(('system', weight, size) for weight, size in
-      ((500, 32), (700, 8), (700, 10), (700, 16), (700, 32),
-       (900, 32))),
-    *(('serif', 400, size) for size in (11, 12, 14, 16, 28)),
-    *(('serif', weight, size) for weight, size in
-      ((700, 14), (700, 16), (700, 28), (900, 22))),
-    *(('mono', 400, size) for size in (7, 8, 11, 12, 16)),
-    *(('mono', 700, size) for size in (8, 11, 14, 22)),
-}
+SPECS = set()
+for line_number, raw_line in enumerate(
+        SPEC_FILE.read_text(encoding="ascii").splitlines(), 1):
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    match = re.fullmatch(r"(system|serif|mono):(\d{3}):(\d{1,2})", line)
+    if match is None:
+        raise SystemExit(
+            f"invalid runtime font spec at {SPEC_FILE}:{line_number}: {line}"
+        )
+    spec = (match.group(1), int(match.group(2)), int(match.group(3)))
+    if spec in SPECS:
+        raise SystemExit(f"duplicate runtime font spec: {line}")
+    SPECS.add(spec)
 LOCALES = ("jp", "kr", "sc", "tc")
 CJK_ADVANCE_SAMPLES = {
     "sc": "设置正在播放中文",
@@ -162,5 +166,5 @@ for license_name in ("OFL-Noto-CJK.txt", "SOURCE"):
     if not (font_dir / license_name).is_file():
         raise SystemExit(f"missing {license_name}")
 
-print("Noto AOT runtime fonts: 3 semantic families, 38 tuples, "
+print(f"Noto AOT runtime fonts: 3 semantic families, {len(SPECS)} tuples, "
       "4 regional faces, identical regional line metrics")

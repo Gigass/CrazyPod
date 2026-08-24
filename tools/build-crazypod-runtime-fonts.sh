@@ -11,6 +11,7 @@ source_dir=${CRAZYPOD_NOTO_DIR:-"$repo_root/.cache/crazypod-noto"}
 cache_dir=${CRAZYPOD_AOT_FONT_CACHE:-"$repo_root/.cache/crazypod-noto-aot"}
 destination="$1/crazypod-aot"
 converter=${CRAZYPOD_CONVTTF:-"$repo_root/tools/convttf"}
+spec_file="$repo_root/tools/crazypod-runtime-font-specs.txt"
 # Bump this whenever convttf changes the meaning of stored glyph metrics.
 # Prefixing the cache entry keeps older artifacts available but unusable.
 cache_revision=advance-bearing-v1
@@ -20,6 +21,10 @@ if [ ! -f "$source_dir/SHA256SUMS" ]; then
 fi
 if [ ! -x "$converter" ]; then
     echo "Error: missing convttf '$converter'." >&2
+    exit 1
+fi
+if [ ! -f "$spec_file" ]; then
+    echo "Error: missing runtime font specification '$spec_file'." >&2
     exit 1
 fi
 (cd "$source_dir" && shasum -a 256 -c SHA256SUMS >/dev/null)
@@ -108,29 +113,20 @@ build_one()
     cp "$cached" "$destination/$name"
 }
 
-# Exact tuples used by the system UI and the eight bundled themes. Devtool
-# installs additional tuples beside these when a third-party package requests
-# another RN size or weight.
-font_specs='system:400:6 system:400:7 system:400:8 system:400:9
-system:400:10 system:400:11 system:400:12 system:400:14
-system:400:15 system:400:16 system:400:18 system:400:22 system:400:24
-system:400:28 system:400:32 system:400:40
-system:500:32 system:700:8 system:700:10 system:700:16
-system:700:32 system:900:32
-serif:400:12 serif:400:14 serif:400:16 serif:400:28
-serif:400:11 serif:700:14 serif:700:16 serif:700:28 serif:900:22
-mono:400:7 mono:400:8 mono:400:11 mono:400:12 mono:400:16
-mono:700:8 mono:700:11 mono:700:14 mono:700:22'
-
-for spec in $font_specs; do
-    family=${spec%%:*}
-    remainder=${spec#*:}
-    weight=${remainder%%:*}
-    size=${remainder##*:}
+# This file is also consumed by the runtime-font tests and release audit. It is
+# the only source of truth for the base firmware font set.
+while IFS=: read -r family weight size; do
+    case "$family" in
+        ''|'#'*) continue ;;
+    esac
+    if [ -z "$weight" ] || [ -z "$size" ]; then
+        echo "Error: invalid runtime font specification: $family:$weight:$size" >&2
+        exit 1
+    fi
     for locale in jp kr sc tc; do
         build_one "$locale" "$family" "$weight" "$size"
     done
-done
+done < "$spec_file"
 
 cp "$source_dir/OFL-Noto-CJK.txt" "$destination/OFL-Noto-CJK.txt"
 cp "$source_dir/SOURCE" "$destination/SOURCE"

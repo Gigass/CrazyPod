@@ -11,6 +11,9 @@ python3 tests/test-crazypod-font-tool.py
 tools/build-crazypod-runtime-fonts.sh "$test_root/runtime-fonts"
 python3 tests/test-crazypod-runtime-font.py \
     "$test_root/runtime-fonts/crazypod-aot"
+python3 tools/crazypod_runtime_font_audit.py \
+    --font-dir "$test_root/runtime-fonts/crazypod-aot" \
+    dist/miniapps/*.cpk
 
 python3 tools/crazypod_font_tool.py collect \
     --input apps/crazypod/crazypod_l10n.c \

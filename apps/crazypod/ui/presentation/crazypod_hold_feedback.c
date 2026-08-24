@@ -56,11 +56,10 @@ void crazypod_hold_feedback_begin(
     if(duration_ms < 1)
         duration_ms = 1;
     feedback->root = crazypod_ui_widget_box(
-        parent,
-        (LCD_WIDTH - HOLD_FEEDBACK_WIDTH) / 2,
-        LCD_HEIGHT - HOLD_FEEDBACK_HEIGHT - 12,
+        parent, 0, 0,
         HOLD_FEEDBACK_WIDTH, HOLD_FEEDBACK_HEIGHT,
         12, 0x111118, 226);
+    lv_obj_align(feedback->root, LV_ALIGN_CENTER, 0, 0);
     lv_obj_remove_flag(feedback->root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_border_width(feedback->root, 1, 0);
     lv_obj_set_style_border_color(

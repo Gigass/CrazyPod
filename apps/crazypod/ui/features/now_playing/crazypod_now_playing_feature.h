@@ -11,6 +11,7 @@
 enum crazypod_now_playing_overlay {
     CRAZYPOD_NOW_OVERLAY_NONE = 0,
     CRAZYPOD_NOW_OVERLAY_ACTIONS,
+    CRAZYPOD_NOW_OVERLAY_PLAYBACK,
     CRAZYPOD_NOW_OVERLAY_QUEUE,
     CRAZYPOD_NOW_OVERLAY_PROGRESS,
 };
@@ -24,6 +25,7 @@ struct crazypod_now_playing_overlay_host {
     lv_obj_t *(*create_panel)(
         lv_obj_t *parent, int x, int y,
         int width, int height, void *context);
+    void (*notify)(const char *message, bool success);
     void (*render)(void *context);
     void *context;
 };

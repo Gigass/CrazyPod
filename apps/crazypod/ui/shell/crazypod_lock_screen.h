@@ -41,6 +41,7 @@ void crazypod_lock_screen_show(bool turn_display_off);
 void crazypod_lock_screen_process(void);
 bool crazypod_lock_screen_handle_button(long button, intptr_t data);
 bool crazypod_lock_screen_is_locked(void);
+bool crazypod_lock_screen_media_controls_ready(void);
 bool crazypod_lock_screen_motion_active(void);
 void crazypod_lock_screen_initialize_backlight_state(void);
 #ifdef SIMULATOR

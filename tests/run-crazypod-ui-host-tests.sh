@@ -54,6 +54,25 @@ cc -std=c99 -Wall -Wextra -Werror \
 cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-home-input-stubs" \
     -I"$repo_root/apps/crazypod/ui" \
+    "$repo_root/apps/crazypod/ui/navigation/crazypod_remote_multitap.c" \
+    "$repo_root/tests/crazypod_remote_multitap_host_test.c" \
+    -o "$test_root/crazypod_remote_multitap_host_test"
+
+"$test_root/crazypod_remote_multitap_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-iap-stubs" \
+    -I"$repo_root/firmware/export" \
+    -I"$repo_root/apps/crazypod/accessory" \
+    "$repo_root/apps/crazypod/accessory/crazypod_iap_simple.c" \
+    "$repo_root/tests/crazypod_iap_simple_host_test.c" \
+    -o "$test_root/crazypod_iap_simple_host_test"
+
+"$test_root/crazypod_iap_simple_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-home-input-stubs" \
+    -I"$repo_root/apps/crazypod/ui" \
     "$repo_root/apps/crazypod/ui/navigation/crazypod_input_event.c" \
     "$repo_root/apps/crazypod/ui/features/books/crazypod_book_reader_input.c" \
     "$repo_root/tests/crazypod_book_reader_input_host_test.c" \

@@ -87,6 +87,7 @@ int main(void)
     char bad_target[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     char old_theme[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     char missing_artwork[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
+    char missing_font_set[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     char rejected_abi[CRAZYPOD_MINIAPP_MANIFEST_MAX + 1];
     const char unicode_manifest[] =
         "{"
@@ -132,6 +133,19 @@ int main(void)
         value[1] = '4';
     }
     assert(parse(rejected_abi, &metadata) ==
+           CRAZYPOD_MINIAPP_ERROR_VERSION);
+    snprintf(missing_font_set, sizeof(missing_font_set), "%s",
+             valid_manifest);
+    {
+        const char field[] =
+            "\"fontSet\":\"system:400:12,system:700:24\",";
+        char *start = strstr(missing_font_set, field);
+
+        assert(start != NULL);
+        memmove(start, start + strlen(field),
+                strlen(start + strlen(field)) + 1u);
+    }
+    assert(parse(missing_font_set, &metadata) ==
            CRAZYPOD_MINIAPP_ERROR_VERSION);
 
     assert(parse(valid_theme_manifest, &metadata) == CRAZYPOD_MINIAPP_OK);

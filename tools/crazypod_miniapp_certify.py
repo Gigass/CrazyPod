@@ -19,6 +19,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_ZIP = REPO_ROOT / "build-hw-ipod6g" / "CrazyPod-6G.zip"
 PACKAGES = tuple(sorted((REPO_ROOT / "dist" / "miniapps").glob("*.cpk")))
 MINIMUM_FREE_BYTES = 16 * 1024 * 1024
+CONTENT_DIRECTORIES = {
+    "Music/",
+    "Podcasts/",
+    "Books/",
+    "Pictures/",
+    "Videos/",
+    "Contacts/",
+    "Calendars/",
+    "MiniApps/",
+}
 REPRO_FILENAMES = (
     "summary.json",
     "environment.txt",
@@ -101,10 +111,16 @@ def artifact_report(
                     "release ZIP contains duplicate entry names"
                 )
             if any(
-                not name.startswith(".rockbox/")
+                (
+                    not name.startswith(".rockbox/")
+                    and not (
+                        entry.is_dir()
+                        and name in CONTENT_DIRECTORIES
+                    )
+                )
                 or Path(name).is_absolute()
                 or ".." in Path(name).parts
-                for name in names
+                for entry, name in zip(entries, names)
             ):
                 raise CertificationError(
                     "release ZIP contains an unsafe or non-firmware entry"
@@ -138,11 +154,32 @@ def artifact_report(
     return report
 
 
+def release_packages(release_zip: Path) -> tuple[Path, ...]:
+    prefix = ".rockbox/crazypod/miniapps/packages/"
+    try:
+        with zipfile.ZipFile(release_zip) as archive:
+            names = sorted(
+                Path(entry.filename).name
+                for entry in archive.infolist()
+                if not entry.is_dir()
+                and entry.filename.startswith(prefix)
+                and entry.filename.endswith(".cpk")
+            )
+    except zipfile.BadZipFile as error:
+        raise CertificationError("release ZIP is invalid") from error
+    packages = tuple(REPO_ROOT / "dist" / "miniapps" / name for name in names)
+    if not packages:
+        raise CertificationError("release ZIP contains no Mini App packages")
+    return packages
+
+
 def preflight(
     volume_value: str | Path,
     release_zip: Path = RELEASE_ZIP,
-    packages: tuple[Path, ...] = PACKAGES,
+    packages: tuple[Path, ...] | None = None,
 ) -> dict[str, object]:
+    if packages is None:
+        packages = release_packages(release_zip)
     volume, info = validate_volume(volume_value)
     free_bytes = shutil.disk_usage(volume).free
     if free_bytes < MINIMUM_FREE_BYTES:
@@ -239,8 +276,10 @@ def install_release(
     volume_value: str | Path,
     backup_value: str | Path,
     release_zip: Path = RELEASE_ZIP,
-    packages: tuple[Path, ...] = PACKAGES,
+    packages: tuple[Path, ...] | None = None,
 ) -> dict[str, object]:
+    if packages is None:
+        packages = release_packages(release_zip)
     report = preflight(volume_value, release_zip, packages)
     volume = Path(str(report["volume"]))
     backup = Path(backup_value).expanduser().resolve()
@@ -281,6 +320,9 @@ def install_release(
                 )
 
     with zipfile.ZipFile(release_zip) as archive:
+        for entry in archive.infolist():
+            if entry.is_dir() and entry.filename in CONTENT_DIRECTORIES:
+                (volume / entry.filename).mkdir(parents=True, exist_ok=True)
         files = [
             entry for entry in archive.infolist()
             if not entry.is_dir()

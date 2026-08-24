@@ -402,3 +402,4 @@ __pycache__
 /miniapps/themes/*/generated/*
 !/miniapps/themes/*/generated/app.c
 /build-bootloader-ipod6g
+/verification

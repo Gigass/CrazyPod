@@ -1,4 +1,7 @@
 crazypod/crazypod_main.c
+#ifdef IPOD_ACCESSORY_PROTOCOL
+crazypod/accessory/crazypod_iap_simple.c
+#endif
 crazypod/crazypod_lcd.c
 crazypod/crazypod_runtime_font.c
 crazypod/crazypod_miniapp_asset_font.c
@@ -125,6 +128,7 @@ crazypod/ui/presentation/crazypod_screen_corners.c
 crazypod/ui/presentation/crazypod_preview_primitives.c
 crazypod/ui/navigation/crazypod_feature_dispatcher.c
 crazypod/ui/navigation/crazypod_input_event.c
+crazypod/ui/navigation/crazypod_remote_multitap.c
 crazypod/ui/navigation/crazypod_alpha_jump.c
 crazypod/ui/navigation/crazypod_navigation_command.c
 crazypod/ui/navigation/crazypod_route_registry.c

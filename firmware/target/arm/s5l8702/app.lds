@@ -95,7 +95,13 @@ SECTIONS
        . = ALIGN(8);
        stackbegin = .;
        _stackbegin = .;
+#ifdef CRAZYPOD_IAP_SIMPLE_REMOTE
+       /* CrazyPod runs its UI on a dedicated DRAM stack. Reclaim 128 bytes
+        * here for the UART ISR/code that must remain in the 48 KiB IRAM. */
+       . += 0x1f80;
+#else
        . += 0x2000;
+#endif
        stackend = .;
        _stackend = .;
        _irqstackbegin = .;

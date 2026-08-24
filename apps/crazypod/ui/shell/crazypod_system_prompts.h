@@ -15,9 +15,12 @@ void crazypod_system_prompts_initialize_usb(void);
 void crazypod_system_prompts_set_ui_ready(void);
 bool crazypod_system_prompts_storage_active(void);
 bool crazypod_system_prompts_power_visible(void);
+bool crazypod_system_prompts_power_hold_feedback_visible(void);
 bool crazypod_system_prompts_handle_power(
     long base, bool repeated, intptr_t data);
 bool crazypod_system_prompts_handle_power_hold(long button);
+void crazypod_system_prompts_begin_power_hold(long start_tick);
+void crazypod_system_prompts_tick(void);
 void crazypod_system_prompts_dismiss_power(void);
 #ifdef SIMULATOR
 void crazypod_system_prompts_show_power(void);
@@ -31,6 +34,7 @@ bool crazypod_system_prompts_handle_headphone(
 void crazypod_system_prompts_headphone_changed(bool inserted);
 void crazypod_system_prompts_show_usb(unsigned request);
 void crazypod_system_prompts_usb_done(unsigned request);
+bool crazypod_system_prompts_prepare_dock(void);
 void crazypod_system_prompts_usb_connected(intptr_t data);
 void crazypod_system_prompts_usb_disconnected(void);
 void crazypod_system_prompts_power_off(void);

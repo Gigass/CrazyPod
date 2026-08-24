@@ -35,6 +35,9 @@
 #include "fs_defines.h"
 #include "logf.h"
 #include "backlight.h"
+#ifndef BOOTLOADER
+#include "audio.h"
+#endif
 
 #ifndef ATA_RETRIES
 #define ATA_RETRIES 3
@@ -87,6 +90,24 @@ static uint32_t ata_dma_flags;
 
 static const int ata_retries = ATA_RETRIES;
 static const bool ata_error_srst = true;
+
+/* Cutting AUTOLDO is substantially more disruptive than gating the ATA
+ * controller clock. CrazyPod retrofit builds keep this rail powered only
+ * while music is actively playing. Use the playback state rather than the
+ * lower-level PCM DMA state: codec-idle transitions can make PCM temporarily
+ * appear stopped even though playback is still active. Paused/stopped audio
+ * follows the normal deep-poweroff policy. */
+static bool ata_deep_poweroff_inhibited(void)
+{
+#if !defined(BOOTLOADER) && \
+    defined(CRAZYPOD_IAP_SIMPLE_REMOTE)
+    int status = audio_status();
+
+    return (status & AUDIO_STATUS_PLAY) != 0 &&
+           (status & AUDIO_STATUS_PAUSE) == 0;
+#endif
+    return false;
+}
 
 static int ata_reset(void);
 
@@ -1464,6 +1485,7 @@ int ata_event(long id, intptr_t data)
             if (ata_ssd_mode && ssd_flush_succeeded
                 && ata_clock_gated && !ata_powered
                 && !ssd_deep_asleep
+                && !ata_deep_poweroff_inhibited()
                 && TIME_AFTER(current_tick,
                               ssd_sleep_tick + ssd_deep_timeout))
             {
@@ -1473,6 +1495,7 @@ int ata_event(long id, intptr_t data)
                 if (ata_ssd_mode && ssd_flush_succeeded
                     && ata_clock_gated && !ata_powered
                     && !ssd_deep_asleep
+                    && !ata_deep_poweroff_inhibited()
                     && TIME_AFTER(current_tick,
                                   ssd_sleep_tick +
                                       ssd_deep_timeout))

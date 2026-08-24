@@ -15,6 +15,7 @@
 #include "../../crazypod_videos.h"
 #include "../../miniapps/runtime/crazypod_miniapp_alarm_service.h"
 #include "../../miniapps/runtime/crazypod_miniapp_host_system.h"
+#include "../features/books/crazypod_books_feature.h"
 #include "../features/customize/crazypod_customize_feature.h"
 #include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
@@ -56,14 +57,20 @@ static bool screen_off_idle;
     ((HZ / CRAZYPOD_TARGET_FPS) > 0 \
         ? (HZ / CRAZYPOD_TARGET_FPS) : 1)
 
-static int active_route_wait_ticks(void)
+static int active_route_wait_ticks(long now)
 {
+    const struct route_state *state;
     enum crazypod_route route;
 
     if(!crazypod_shell_product_active() ||
        crazypod_ui_routes_depth() <= 0)
         return CRAZYPOD_STATIC_WAIT_TICKS;
-    route = crazypod_ui_routes_current()->route;
+    state = crazypod_ui_routes_current();
+    route = state->route;
+    if(route == BOOKS_ROUTE_READER &&
+       !crazypod_choice_coordinator_visible())
+        return crazypod_books_feature_reader_wait_ticks(
+            state, now, CRAZYPOD_STATIC_WAIT_TICKS);
     if(route == CLOCK_ROUTE_VIEW)
         return CRAZYPOD_CLOCK_WAIT_TICKS;
     if(route == STOPWATCH_ROUTE_VIEW ||
@@ -87,7 +94,7 @@ void crazypod_runtime_services_start(void)
     crazypod_now_capsule_refresh_material();
 }
 
-static int runtime_wait_ticks(void)
+static int runtime_wait_ticks(long now)
 {
     int status;
 
@@ -121,7 +128,7 @@ static int runtime_wait_ticks(void)
     if((status & AUDIO_STATUS_PLAY) != 0 &&
        (status & AUDIO_STATUS_PAUSE) == 0)
         return CRAZYPOD_PLAYBACK_WAIT_TICKS;
-    return active_route_wait_ticks();
+    return active_route_wait_ticks(now);
 }
 
 static int screen_off_wait_ticks(void)
@@ -230,6 +237,10 @@ void crazypod_runtime_services_tick(
            state->route, now, HZ) &&
        !crazypod_choice_coordinator_visible())
         render_route(false);
+    if(!locked && routed &&
+       !crazypod_choice_coordinator_visible() &&
+       crazypod_books_feature_service_reader(state, now))
+        render_route(false);
     if(miniapp_active && crazypod_now_playing_theme_open()) {
         crazypod_now_playing_artwork_sync();
         crazypod_miniapps_feature_refresh_now_playing_artwork();
@@ -246,7 +257,7 @@ int crazypod_runtime_services_prepare_wait(
     *screen_off = active;
     if(!active) {
         screen_off_idle = false;
-        return runtime_wait_ticks();
+        return runtime_wait_ticks(now);
     }
     if(!screen_off_idle) {
         crazypod_runtime_services_tick(now, false, true);

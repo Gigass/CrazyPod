@@ -34,7 +34,7 @@ async function buildSimulatorBinary(project) {
     "-o",
     binary,
   ]);
-  return binary;
+  return { binary, source };
 }
 
 export async function buildProject(
@@ -54,8 +54,11 @@ export async function buildProject(
     );
   }
   let nativeBinary = binary;
+  let generatedSource;
   if (!nativeBinary && target === "simulator") {
-    nativeBinary = await buildSimulatorBinary(project);
+    const built = await buildSimulatorBinary(project);
+    nativeBinary = built.binary;
+    generatedSource = built.source;
   }
   if (!nativeBinary) {
     throw new Error(
@@ -66,5 +69,6 @@ export async function buildProject(
     binary: nativeBinary,
     target,
     output,
+    generatedSource,
   });
 }

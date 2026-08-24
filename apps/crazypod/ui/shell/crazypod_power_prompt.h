@@ -20,11 +20,14 @@ void crazypod_power_prompt_configure(
     lv_obj_t *parent,
     const struct crazypod_power_prompt_callbacks *callbacks);
 bool crazypod_power_prompt_visible(void);
+bool crazypod_power_prompt_hold_feedback_visible(void);
 void crazypod_power_prompt_show(void);
 void crazypod_power_prompt_dismiss(void);
 bool crazypod_power_prompt_handle_button(
     long base, bool repeated, intptr_t data);
 bool crazypod_power_prompt_handle_play_hold(
     long button, long now, long hold_ticks);
+void crazypod_power_prompt_begin_play_hold(long start_tick);
+void crazypod_power_prompt_tick(long now, long hold_ticks);
 
 #endif

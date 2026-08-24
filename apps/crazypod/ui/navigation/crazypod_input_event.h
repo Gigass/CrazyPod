@@ -14,6 +14,8 @@ struct crazypod_input_event {
 
 struct crazypod_input_event crazypod_input_event_make(
     long button, intptr_t data);
+bool crazypod_input_button_is_remote(long button);
+long crazypod_input_translate_remote(long button);
 int crazypod_input_wheel_steps(
     const struct crazypod_input_event *event, int maximum);
 

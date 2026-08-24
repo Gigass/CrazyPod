@@ -16,7 +16,8 @@
 
 void crazypod_books_screen_render_reader(
     lv_obj_t *content, int book_index, uint32_t page_offset,
-    const char *page_text, uint32_t page_color, uint32_t ink_color)
+    const char *page_text, uint32_t page_color, uint32_t ink_color,
+    bool toolbar_visible)
 {
     const struct crazypod_book *book =
         crazypod_book_get(book_index);
@@ -65,6 +66,8 @@ void crazypod_books_screen_render_reader(
         }
     }
 
+    if(!toolbar_visible)
+        return;
     toolbar = crazypod_ui_widget_box(
         page, 0, 206, 320, 34, 0,
         theme == 3 ? 0xFFFFFF : 0x000000,

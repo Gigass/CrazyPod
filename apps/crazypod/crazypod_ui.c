@@ -32,6 +32,7 @@
 #include "lvgl.h"
 #include "src/misc/cache/instance/lv_image_cache.h"
 
+#include "accessory/crazypod_iap_simple.h"
 #include "crazypod_audio_shims.h"
 #include "crazypod_apps.h"
 #include "crazypod_artwork.h"
@@ -147,8 +148,10 @@ static void headphone_changed(bool inserted)
 }
 static bool modal_prompt_visible(void)
 {
-    return crazypod_system_prompts_usb_visible() ||
+    return crazypod_desktop_hold_feedback_visible() ||
+        crazypod_system_prompts_usb_visible() ||
         crazypod_system_prompts_power_visible() ||
+        crazypod_system_prompts_power_hold_feedback_visible() ||
         crazypod_system_prompts_headphone_visible() ||
         crazypod_now_playing_overlay_visible();
 }
@@ -394,6 +397,16 @@ static void update_persistent_state(lv_timer_t *timer)
     crazypod_state_tick();
 }
 
+static void dock_connected(void)
+{
+    if(!crazypod_system_prompts_prepare_dock())
+        return;
+    if(crazypod_lock_screen_is_locked())
+        return;
+    backlight_on();
+    crazypod_app_launcher_open_now_playing();
+}
+
 void crazypod_ui_usb_prompt_init(void)
 {
     crazypod_system_prompts_initialize_usb();
@@ -599,14 +612,24 @@ static void configure_app_input(void)
             crazypod_system_prompts_handle_headphone,
         .handle_power_hold =
             crazypod_system_prompts_handle_power_hold,
+        .begin_power_hold =
+            crazypod_system_prompts_begin_power_hold,
         .handle_lock = handle_lock_button,
+        .locked = crazypod_lock_screen_is_locked,
+        .lock_media_controls_ready =
+            crazypod_lock_screen_media_controls_ready,
         .close_product = close_product,
         .render = render_current_route,
         .handle_confirmation = handle_confirmation,
         .previous_track = crazypod_playback_previous_or_restart,
         .toggle_playback = crazypod_playback_toggle,
+        .previous_track_async =
+            crazypod_playback_previous_or_restart_async,
+        .toggle_playback_async = crazypod_playback_toggle_async,
+        .next_track_async = crazypod_playback_next_async,
         .open_now_playing =
             crazypod_app_launcher_open_now_playing,
+        .dock_connected = dock_connected,
         .show_home_queue =
             crazypod_now_playing_overlay_show_queue,
         .begin_music_scan = begin_music_scan,
@@ -636,7 +659,11 @@ static bool platform_capture_desktop_native(
 static void platform_queue_present(
     int x, int y, int width, int height)
 {
-    crazypod_present_queue_rect(x, y, width, height);
+    if(crazypod_desktop_hold_feedback_visible() ||
+       crazypod_system_prompts_power_hold_feedback_visible())
+        crazypod_present_queue_full();
+    else
+        crazypod_present_queue_rect(x, y, width, height);
 }
 
 static void process_deferred_route_render(void)
@@ -791,13 +818,16 @@ void crazypod_ui_run(void)
          * local actions until USB broadcasts disconnect. */
         if(crazypod_system_prompts_storage_active()) {
             do {
+                intptr_t data;
+
                 button = button_get_w_tmo(drained == 0 ? HZ : 0);
                 if(button == BUTTON_NONE)
                     break;
+                data = button_get_data();
                 if(button == SYS_USB_DISCONNECTED)
-                    handle_button(button, button_get_data());
+                    handle_button(button, data);
                 else
-                    (void)button_get_data();
+                    (void)crazypod_iap_simple_handle_event(button, data);
                 ++drained;
             } while(crazypod_system_prompts_storage_active() &&
                     drained < 64);
@@ -866,6 +896,7 @@ void crazypod_ui_run(void)
             continue;
         }
         crazypod_app_input_tick(current_tick, locked);
+        crazypod_system_prompts_tick();
         crazypod_alpha_jump_hud_tick(current_tick,
             !locked && crazypod_shell_product_active());
         crazypod_runtime_services_tick(

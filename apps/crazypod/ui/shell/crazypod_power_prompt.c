@@ -21,16 +21,19 @@
 
 #define COLOR_WHITE 0xFFFFFF
 #define COLOR_PANEL 0x1B1B22
+#define POWER_HOLD_FEEDBACK_DELAY_MS 200
 
 struct power_prompt_state {
     lv_obj_t *parent;
     lv_obj_t *root;
     lv_obj_t *panel;
+    lv_obj_t *hold_root;
     lv_obj_t *rows[2];
     lv_obj_t *markers[2];
     struct crazypod_hold_feedback hold_feedback;
     int selected;
     bool play_holding;
+    bool hold_teardown_pending;
     bool teardown_pending;
     long play_hold_start;
     struct crazypod_power_prompt_callbacks callbacks;
@@ -54,9 +57,36 @@ static lv_obj_t *make_label(
         parent, text, font, color, opacity);
 }
 
+static void hold_teardown_refresh_ready(lv_event_t *event)
+{
+    lv_display_t *display = lv_event_get_target(event);
+
+    lv_display_remove_event_cb_with_user_data(
+        display, hold_teardown_refresh_ready, NULL);
+    if(!prompt.hold_teardown_pending)
+        return;
+    prompt.hold_teardown_pending = false;
+    if(prompt.callbacks.dismissed != NULL)
+        prompt.callbacks.dismissed();
+}
+
 static void clear_hold_feedback(void)
 {
+    lv_obj_t *root = prompt.hold_root;
+    lv_display_t *display;
+
     crazypod_hold_feedback_dismiss(&prompt.hold_feedback);
+    if(root == NULL)
+        return;
+    prompt.hold_root = NULL;
+    prompt.hold_teardown_pending = true;
+    display = lv_obj_get_display(root);
+    lv_display_remove_event_cb_with_user_data(
+        display, hold_teardown_refresh_ready, NULL);
+    lv_display_add_event_cb(
+        display, hold_teardown_refresh_ready,
+        LV_EVENT_REFR_READY, NULL);
+    lv_obj_delete(root);
 }
 
 void crazypod_power_prompt_configure(
@@ -71,6 +101,12 @@ void crazypod_power_prompt_configure(
 bool crazypod_power_prompt_visible(void)
 {
     return prompt.root != NULL || prompt.teardown_pending;
+}
+
+bool crazypod_power_prompt_hold_feedback_visible(void)
+{
+    return prompt.hold_root != NULL ||
+        prompt.hold_teardown_pending;
 }
 
 static void refresh_prompt(void)
@@ -349,6 +385,17 @@ bool crazypod_power_prompt_handle_button(
     return true;
 }
 
+static void complete_play_hold(void)
+{
+    prompt.play_holding = false;
+    if(prompt.hold_root != NULL)
+        crazypod_desktop_native_preserve_modal_underlay();
+    clear_hold_feedback();
+    if(prompt.callbacks.before_hold_show != NULL)
+        prompt.callbacks.before_hold_show();
+    crazypod_power_prompt_show();
+}
+
 bool crazypod_power_prompt_handle_play_hold(
     long button, long now, long hold_ticks)
 {
@@ -358,7 +405,7 @@ bool crazypod_power_prompt_handle_play_hold(
     if((button & SYS_EVENT) != 0)
         return false;
     base = button & BUTTON_MAIN;
-    if(base != BUTTON_PLAY) {
+    if((base & BUTTON_PLAY) == 0) {
         if(prompt.play_holding) {
             prompt.play_holding = false;
             clear_hold_feedback();
@@ -375,10 +422,6 @@ bool crazypod_power_prompt_handle_play_hold(
         clear_hold_feedback();
         prompt.play_holding = true;
         prompt.play_hold_start = now;
-        crazypod_hold_feedback_begin(
-            &prompt.hold_feedback, prompt.parent,
-            LV_SYMBOL_POWER,
-            (int)(hold_ticks * 1000 / HZ));
         return false;
     }
     if(!prompt.play_holding) {
@@ -389,12 +432,50 @@ bool crazypod_power_prompt_handle_play_hold(
     if((long)(now - (prompt.play_hold_start + hold_ticks)) < 0)
         return true;
 
-    prompt.play_holding = false;
-    clear_hold_feedback();
-    if(prompt.callbacks.before_hold_show != NULL)
-        prompt.callbacks.before_hold_show();
-    crazypod_power_prompt_show();
+    complete_play_hold();
     return true;
+}
+
+void crazypod_power_prompt_begin_play_hold(long start_tick)
+{
+    clear_hold_feedback();
+    prompt.play_holding = true;
+    prompt.play_hold_start = start_tick;
+}
+
+void crazypod_power_prompt_tick(long now, long hold_ticks)
+{
+    const long delay_ticks =
+        MAX(1, HZ * POWER_HOLD_FEEDBACK_DELAY_MS / 1000);
+    long remaining_ticks;
+
+    if(!prompt.play_holding)
+        return;
+    if((long)(now - (prompt.play_hold_start + hold_ticks)) >= 0) {
+        complete_play_hold();
+        return;
+    }
+    if(crazypod_power_prompt_hold_feedback_visible() ||
+       (long)(now - (prompt.play_hold_start + delay_ticks)) < 0)
+        return;
+    remaining_ticks = prompt.play_hold_start + hold_ticks - now;
+    if(remaining_ticks < 1)
+        remaining_ticks = 1;
+    if(prompt.parent == NULL || !lv_obj_is_valid(prompt.parent))
+        return;
+    prompt.hold_root = make_box(
+        prompt.parent, 0, 0, LCD_WIDTH, LCD_HEIGHT,
+        0, 0x000000, LV_OPA_TRANSP);
+    lv_obj_remove_flag(prompt.hold_root, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_move_foreground(prompt.hold_root);
+    (void)crazypod_desktop_native_create_modal_underlay(
+        prompt.hold_root);
+    crazypod_hold_feedback_begin(
+        &prompt.hold_feedback, prompt.hold_root,
+        LV_SYMBOL_POWER,
+        (int)(remaining_ticks * 1000 / HZ));
+    if(prompt.hold_feedback.root == NULL)
+        clear_hold_feedback();
 }
 
 #endif

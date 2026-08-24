@@ -33,7 +33,6 @@
 #include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../navigation/crazypod_route_query.h"
-#include "../presentation/crazypod_hold_feedback.h"
 #include "../shell/crazypod_desktop.h"
 #include "../shell/crazypod_headphone_popup.h"
 #include "../shell/crazypod_lock_screen.h"
@@ -42,8 +41,6 @@
 #include "crazypod_app_input.h"
 #include "crazypod_choice_coordinator.h"
 #include "crazypod_simulator_snapshot.h"
-
-static struct crazypod_hold_feedback snapshot_hold_feedback;
 
 long crazypod_simulator_snapshot_settle_ticks(void)
 {
@@ -395,7 +392,7 @@ static bool open_now_playing_theme_from_home_hold(void)
         return false;
 
     crazypod_app_input_handle(BUTTON_MENU, 0, current_tick);
-    crazypod_app_input_tick(current_tick + HZ / 2, false);
+    crazypod_app_input_tick(current_tick + HZ, false);
     route = crazypod_ui_routes_current();
     if(route == NULL || route->route != MUSIC_ROUTE_NOW_PLAYING ||
        !crazypod_now_playing_theme_open())
@@ -781,6 +778,30 @@ static bool open_now_playing_default_actions(
         CRAZYPOD_NOW_OVERLAY_ACTIONS;
 }
 
+static bool open_now_playing_default_mode(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    if(!open_now_playing_default_media(host))
+        return false;
+    crazypod_now_playing_overlay_show_actions();
+    crazypod_now_playing_overlay_move(2);
+    crazypod_now_playing_overlay_activate();
+    return crazypod_now_playing_overlay_kind() ==
+        CRAZYPOD_NOW_OVERLAY_PLAYBACK;
+}
+
+static bool open_now_playing_default_progress(
+    const struct crazypod_simulator_snapshot_host *host)
+{
+    if(!open_now_playing_default_media(host))
+        return false;
+    crazypod_now_playing_overlay_show_actions();
+    crazypod_now_playing_overlay_move(4);
+    crazypod_now_playing_overlay_activate();
+    return crazypod_now_playing_overlay_kind() ==
+        CRAZYPOD_NOW_OVERLAY_PROGRESS;
+}
+
 static bool show_miniapp_exit_prompt(
     const struct crazypod_simulator_snapshot_host *host)
 {
@@ -1001,9 +1022,8 @@ bool crazypod_simulator_snapshot_prepare(
     if(screen == NULL || strcmp(screen, "home") == 0)
         return true;
     if(strcmp(screen, "hold-feedback") == 0) {
-        crazypod_hold_feedback_begin(
-            &snapshot_hold_feedback,
-            crazypod_desktop_screen(), LV_SYMBOL_AUDIO, 900);
+        crazypod_desktop_hold_feedback_begin(
+            LV_SYMBOL_AUDIO, 900);
         return true;
     }
     if(strcmp(screen, "headphone-wired") == 0 ||
@@ -1258,6 +1278,10 @@ bool crazypod_simulator_snapshot_prepare(
         return open_now_playing_default_media(host);
     else if(strcmp(screen, "now-playing-default-actions") == 0)
         return open_now_playing_default_actions(host);
+    else if(strcmp(screen, "now-playing-default-mode") == 0)
+        return open_now_playing_default_mode(host);
+    else if(strcmp(screen, "now-playing-default-progress") == 0)
+        return open_now_playing_default_progress(host);
     else if(strcmp(screen, "now-playing-default-lyrics") == 0)
         return open_now_playing_default_lyrics(host);
     else if(strcmp(screen, "now-playing-default") == 0)

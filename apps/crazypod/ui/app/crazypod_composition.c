@@ -36,7 +36,7 @@ static struct crazypod_composition_host host;
 
 static void move_photo(int direction);
 static void activate_photo(void);
-static void notify_photo_action(
+static void notify_feature_action(
     const char *message, bool success);
 
 static bool route_available(void)
@@ -118,6 +118,7 @@ static void configure_now_playing(void)
             now_overlay_preserve_underlay,
         .create_modal_underlay = now_overlay_underlay,
         .create_panel = now_overlay_panel,
+        .notify = notify_feature_action,
         .render = now_overlay_render,
     };
     crazypod_now_playing_overlay_configure(&overlay);
@@ -172,6 +173,7 @@ static void books_foreground(void)
 
 static void books_push_reader(int index)
 {
+    crazypod_books_feature_enter_reader(host.now());
     crazypod_route_actions_push_selected(
         BOOKS_ROUTE_READER, index, 0);
 }
@@ -293,7 +295,7 @@ void crazypod_composition_configure(
         .pop = crazypod_route_actions_pop,
         .appearance_changed =
             crazypod_desktop_refresh_appearance,
-        .notify = notify_photo_action,
+        .notify = notify_feature_action,
     };
 
     crazypod_preview_motion_configure(&preview);
@@ -323,7 +325,7 @@ static void activate_photo(void)
     crazypod_route_actions_activate(host.now());
 }
 
-static void notify_photo_action(
+static void notify_feature_action(
     const char *message, bool success)
 {
     crazypod_notification_show(

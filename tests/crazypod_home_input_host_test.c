@@ -53,6 +53,29 @@ int main(void)
 {
     struct crazypod_home_wheel_filter filter;
 
+    assert(crazypod_input_button_is_remote(BUTTON_RC_MENU));
+    assert(crazypod_input_translate_remote(BUTTON_RC_VOL_UP) ==
+           BUTTON_MENU);
+    assert(crazypod_input_translate_remote(BUTTON_RC_UP) ==
+           BUTTON_MENU);
+    assert(crazypod_input_translate_remote(BUTTON_RC_VOL_DOWN) ==
+           BUTTON_NONE);
+    assert(crazypod_input_translate_remote(BUTTON_RC_DOWN) ==
+           BUTTON_NONE);
+    assert(crazypod_input_translate_remote(BUTTON_RC_RIGHT) ==
+           BUTTON_SCROLL_FWD);
+    assert(crazypod_input_translate_remote(BUTTON_RC_LEFT) ==
+           BUTTON_SCROLL_BACK);
+    assert(crazypod_input_translate_remote(BUTTON_RC_SELECT) ==
+           BUTTON_SELECT);
+    assert(crazypod_input_translate_remote(
+               BUTTON_RC_MENU | BUTTON_REL) ==
+           (BUTTON_MENU | BUTTON_REL));
+    assert(crazypod_input_translate_remote(BUTTON_RC_PLAY) ==
+           BUTTON_SELECT);
+    assert(crazypod_input_translate_remote(BUTTON_RC_STOP) ==
+           BUTTON_NONE);
+
     crazypod_home_wheel_filter_reset(&filter);
     assert(crazypod_home_wheel_filter_apply(&filter, 1) == 0);
     assert(crazypod_home_wheel_filter_apply(&filter, -1) == 0);

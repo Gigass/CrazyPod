@@ -1071,6 +1071,9 @@ void crazypod_coverflow_set_input_suspended(bool suspended)
 int crazypod_coverflow_step(int direction)
 {
     int count = crazypod_music_album_count();
+#ifdef HAVE_WHEEL_POSITION
+    int target_album;
+#else
     int magnitude;
     int speed;
     int direction_sign;
@@ -1078,9 +1081,44 @@ int crazypod_coverflow_step(int direction)
     int64_t boosted_velocity_q16;
     bool new_gesture;
     bool direction_changed;
+#endif
 
     if(count <= 0 || direction == 0)
         return selected_album;
+#ifdef HAVE_WHEEL_POSITION
+    /* Queued steps on this target come from discrete buttons. The physical
+     * click wheel is sampled separately by sample_wheel_position(). Keeping
+     * both sources in the wheel accumulator makes a remote impulse snap back
+     * to the unchanged physical-wheel anchor on release. */
+    target_album = metadata_album + direction;
+    if(target_album < 0)
+        target_album = 0;
+    if(target_album >= count)
+        target_album = count - 1;
+    if(target_album == metadata_album)
+        return selected_album;
+
+    wheel_tracking = false;
+    wheel_position = -1;
+    wheel_anchor_album = target_album;
+    wheel_step_accumulator = 0;
+    wheel_feedback_direction = 0;
+    selected_album = target_album;
+    metadata_album = target_album;
+    gesture_min_album = target_album;
+    target_position_q16 = target_album * FLOW_POSITION_ONE;
+    velocity_q16 = 0;
+    input_velocity_q16 = 0;
+    input_active = false;
+    flow_direction = direction < 0 ? -1 : 1;
+    last_input = current_tick - FLOW_RELEASE_GRACE_TICKS;
+    last_physics_usec = crazypod_monotonic_usec();
+    flow_dirty = true;
+    prefetch_pending = true;
+    prefetch_deep_pending = true;
+    last_prefetch = 0;
+    return selected_album;
+#else
     direction_sign = direction < 0 ? -1 : 1;
     magnitude = direction < 0 ? -direction : direction;
     center = crazypod_coverflow_center_album();
@@ -1125,6 +1163,7 @@ int crazypod_coverflow_step(int direction)
     prefetch_pending = true;
     last_prefetch = 0;
     return selected_album;
+#endif
 }
 
 int crazypod_coverflow_center_album(void)

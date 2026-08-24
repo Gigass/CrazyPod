@@ -988,11 +988,6 @@
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:319"
       ]
     },
-    "Center cycles mode  %s": {
-      "locations": [
-        "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:306"
-      ]
-    },
     "Center inserts · Left/Right moves cursor.": {
       "locations": [
         "apps/crazypod/ui/app/crazypod_menu_preview.c:202"
@@ -1265,11 +1260,6 @@
     "Could not save wallpaper setting": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_wallpaper_crop_screen.c:84"
-      ]
-    },
-    "Could not update My Favorites": {
-      "locations": [
-        "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:295"
       ]
     },
     "Could not write calendar.bin": {
@@ -2125,6 +2115,11 @@
     "Jump to the saved page": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_preview.c:491"
+      ]
+    },
+    "Jumped to %s": {
+      "locations": [
+        "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:1700"
       ]
     },
     "June": {
@@ -3676,9 +3671,10 @@
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:288"
       ]
     },
-    "Scroll seeks 5s  Menu exits": {
+    "Scroll previews  Center applies  Menu cancels": {
       "locations": [
-        "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:683"
+        "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:831",
+        "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:1335"
       ]
     },
     "Search": {

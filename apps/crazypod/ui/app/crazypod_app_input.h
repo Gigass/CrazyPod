@@ -19,14 +19,21 @@ struct crazypod_app_input_host {
     bool (*handle_headphone_prompt)(
         long base, bool repeated, intptr_t data);
     bool (*handle_power_hold)(long button);
+    void (*begin_power_hold)(long start_tick);
     bool (*handle_lock)(long button, intptr_t data);
+    bool (*locked)(void);
+    bool (*lock_media_controls_ready)(void);
     void (*close_product)(void);
     void (*render)(bool transition);
     bool (*handle_confirmation)(
         const struct route_state *state);
     void (*previous_track)(void);
     void (*toggle_playback)(void);
+    void (*previous_track_async)(void);
+    void (*toggle_playback_async)(void);
+    void (*next_track_async)(void);
     void (*open_now_playing)(void);
+    void (*dock_connected)(void);
     void (*show_home_queue)(void);
     void (*begin_music_scan)(void);
 };

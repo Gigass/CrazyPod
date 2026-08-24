@@ -35,7 +35,7 @@
 #include "crazypod_menu_preview.h"
 #include "crazypod_playback.h"
 
-#define PREVIOUS_RESTART_THRESHOLD_MS 3000
+#define PREVIOUS_RESTART_THRESHOLD_MS 5000
 #define SEEK_MAX_STEP_PERCENT 3
 #define SEEK_MIN_STEP_MS 500u
 #define PLAYBACK_COMMAND_STACK_SIZE (DEFAULT_STACK_SIZE + 0x1000)
@@ -65,6 +65,7 @@ struct crazypod_lock_playback_cache {
     int requested_queue_index;
     int requested_playing;
     bool valid;
+    bool elapsed_advancing;
 };
 
 static struct mutex lock_playback_mutex;
@@ -201,11 +202,15 @@ static void lock_playback_track_event(
     const struct track_event *event = event_data;
     const struct mp3entry *id3;
     char path[MAX_PATH];
+    bool playing;
 
     (void)id;
     if(event == NULL || event->id3 == NULL)
         return;
     id3 = event->id3;
+    playing =
+        (audio_status() & (AUDIO_STATUS_PLAY | AUDIO_STATUS_PAUSE)) ==
+            AUDIO_STATUS_PLAY;
     mutex_lock(&lock_playback_mutex);
     copy_lock_playback_text(
         lock_playback.path, sizeof(lock_playback.path), id3->path);
@@ -221,6 +226,7 @@ static void lock_playback_track_event(
         ? (uint32_t)id3->length : 0;
     lock_playback.captured_tick = current_tick;
     lock_playback.valid = true;
+    lock_playback.elapsed_advancing = playing;
     lock_playback.warmed_path[0] = '\0';
     copy_lock_playback_text(path, sizeof(path), lock_playback.path);
     if(lock_playback.requested_queue_index >= 0) {
@@ -582,12 +588,17 @@ static uint32_t cached_lock_elapsed(const char *path, bool playing)
     if(lock_playback.valid && path != NULL &&
        strcmp(lock_playback.path, path) == 0) {
         elapsed = lock_playback.elapsed_ms;
-        if(playing &&
+        if(lock_playback.elapsed_advancing &&
            TIME_AFTER(current_tick, lock_playback.captured_tick)) {
             uint64_t delta = (uint64_t)
                 (current_tick - lock_playback.captured_tick) * 1000;
 
             elapsed += (uint32_t)(delta / HZ);
+        }
+        if(lock_playback.elapsed_advancing != playing) {
+            lock_playback.elapsed_ms = elapsed;
+            lock_playback.captured_tick = current_tick;
+            lock_playback.elapsed_advancing = playing;
         }
     }
     mutex_unlock(&lock_playback_mutex);

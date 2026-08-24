@@ -21,9 +21,16 @@
 #include "power.h"
 #include "powermgmt.h"
 #include "rtc.h"
+#ifdef HAVE_SERIAL
+#include "serial.h"
+#endif
 #include "storage.h"
 #include "system.h"
 #include "usb.h"
+
+#ifdef IPOD_ACCESSORY_PROTOCOL
+#include "iap.h"
+#endif
 
 #include "dsp_core.h"
 #include "playlist.h"
@@ -163,7 +170,16 @@ static void crazypod_platform_init(void)
 #endif
     backlight_on();
     button_init();
+#ifdef IPOD_ACCESSORY_PROTOCOL
+    iap_setup(0);
+#endif
+#ifdef HAVE_SERIAL
+    serial_setup();
+#endif
     powermgmt_init();
+#ifdef HAVE_ACCESSORY_SUPPLY
+    accessory_supply_set(true);
+#endif
 #ifdef HAVE_HARDWARE_CLICK
     piezo_init();
 #endif

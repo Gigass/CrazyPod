@@ -63,6 +63,9 @@ static void start_shuffle(void)
         return;
     crazypod_state_forget_resume();
     crazypod_state_mark_dirty();
+    /* Shuffle is launched from Home, so Now Playing must be the root route.
+     * Otherwise Menu reveals the transient Music loading route. */
+    crazypod_ui_routes_clear();
     host.request_now_playing();
 }
 

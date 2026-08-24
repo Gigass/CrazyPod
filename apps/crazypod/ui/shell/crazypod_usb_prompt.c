@@ -13,6 +13,7 @@
 
 #include "lvgl.h"
 
+#include "../../accessory/crazypod_iap_simple.h"
 #include "../../crazypod_frameclock.h"
 #include "../../crazypod_state.h"
 #include "../presentation/crazypod_popup_layout.h"
@@ -37,6 +38,7 @@ struct usb_prompt_state {
     volatile bool registered;
     volatile bool ui_ready;
     volatile bool waiting;
+    volatile bool response_sent;
     volatile unsigned request_id;
     volatile int result;
     bool data_blocking;
@@ -192,8 +194,10 @@ void crazypod_usb_prompt_show(unsigned request)
 
     if(prompt.parent == NULL || prompt.callbacks.create_panel == NULL) {
         prompt.result = USB_MODE_CHARGE;
-        if(prompt.waiting)
+        if(prompt.waiting && !prompt.response_sent) {
+            prompt.response_sent = true;
             semaphore_release(&prompt.response);
+        }
         return;
     }
     if(crazypod_usb_prompt_visible())
@@ -376,19 +380,21 @@ static void show_data_blocker(void)
 
 void crazypod_usb_prompt_finish(int mode)
 {
-    unsigned request = prompt.request;
-
-    if(prompt.root == NULL)
+    if(prompt.root == NULL && !prompt.waiting)
         return;
     if(mode == USB_MODE_CHARGE)
         apply_charge_mode();
     prompt.result = mode;
-    if(mode == USB_MODE_MASS_STORAGE)
-        show_data_blocker();
-    else
-        crazypod_usb_prompt_dismiss();
-    if(prompt.waiting && request == prompt.request_id)
+    if(prompt.root != NULL) {
+        if(mode == USB_MODE_MASS_STORAGE)
+            show_data_blocker();
+        else
+            crazypod_usb_prompt_dismiss();
+    }
+    if(prompt.waiting && !prompt.response_sent) {
+        prompt.response_sent = true;
         semaphore_release(&prompt.response);
+    }
 }
 
 static void move_selection(int direction)
@@ -439,6 +445,11 @@ static void inserted_event(unsigned short id, void *data)
     (void)id;
     if(mode == NULL)
         return;
+    if(crazypod_iap_simple_accessory_present()) {
+        apply_charge_mode();
+        *mode = USB_MODE_CHARGE;
+        return;
+    }
     if(!prompt.registered || !prompt.ui_ready) {
         *mode = USB_MODE_CHARGE;
         return;
@@ -448,6 +459,7 @@ static void inserted_event(unsigned short id, void *data)
     }
     prompt.result = USB_MODE_CHARGE;
     prompt.waiting = true;
+    prompt.response_sent = false;
     ++prompt.request_id;
     button_queue_post(CRAZYPOD_USB_PROMPT_REQUEST, prompt.request_id);
     if(semaphore_wait(&prompt.response, USB_PROMPT_TIMEOUT) !=
@@ -457,6 +469,7 @@ static void inserted_event(unsigned short id, void *data)
         apply_charge_mode();
     *mode = prompt.result;
     prompt.waiting = false;
+    prompt.response_sent = false;
     button_queue_post(CRAZYPOD_USB_PROMPT_DONE, prompt.request_id);
 }
 
