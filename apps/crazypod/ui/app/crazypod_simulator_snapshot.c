@@ -33,12 +33,17 @@
 #include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../navigation/crazypod_route_query.h"
+#include "../presentation/crazypod_hold_feedback.h"
+#include "../shell/crazypod_desktop.h"
 #include "../shell/crazypod_headphone_popup.h"
 #include "../shell/crazypod_lock_screen.h"
 #include "../shell/crazypod_notification.h"
 #include "../shell/crazypod_shell.h"
 #include "crazypod_app_input.h"
+#include "crazypod_choice_coordinator.h"
 #include "crazypod_simulator_snapshot.h"
+
+static struct crazypod_hold_feedback snapshot_hold_feedback;
 
 long crazypod_simulator_snapshot_settle_ticks(void)
 {
@@ -995,6 +1000,12 @@ bool crazypod_simulator_snapshot_prepare(
     }
     if(screen == NULL || strcmp(screen, "home") == 0)
         return true;
+    if(strcmp(screen, "hold-feedback") == 0) {
+        crazypod_hold_feedback_begin(
+            &snapshot_hold_feedback,
+            crazypod_desktop_screen(), LV_SYMBOL_AUDIO, 900);
+        return true;
+    }
     if(strcmp(screen, "headphone-wired") == 0 ||
        strcmp(screen, "headphone-over-ear") == 0 ||
        strcmp(screen, "headphone-airpods") == 0) {
@@ -1276,6 +1287,12 @@ bool crazypod_simulator_snapshot_prepare(
         host->open_app(CRAZYPOD_APP_BOOKS);
         if(crazypod_books_count() > 0)
             crazypod_books_feature_begin_reader(0, 0);
+    }
+    else if(strcmp(screen, "book-reader-actions") == 0) {
+        host->open_app(CRAZYPOD_APP_BOOKS);
+        if(crazypod_books_count() > 0)
+            crazypod_books_feature_begin_reader(0, 0);
+        crazypod_choice_coordinator_show_book_reader_actions();
     }
     else if(strcmp(screen, "book-reader-next") == 0) {
         host->open_app(CRAZYPOD_APP_BOOKS);

@@ -21,6 +21,7 @@
 #include "../navigation/crazypod_alpha_jump.h"
 #include "../navigation/crazypod_input_event.h"
 #include "../navigation/crazypod_ui_routes.h"
+#include "../presentation/crazypod_hold_feedback.h"
 #include "../shell/crazypod_desktop.h"
 #include "../shell/crazypod_home_input.h"
 #include "../shell/crazypod_shell.h"
@@ -41,10 +42,15 @@ static long now_playing_direction_button;
 static bool now_playing_direction_held;
 static bool capture_chord_pending;
 static bool capture_chord_recording_toggled;
+static struct crazypod_hold_feedback home_hold_feedback;
+static struct crazypod_hold_feedback capture_hold_feedback;
 static struct crazypod_alpha_jump_state alpha_jump;
 
+#define HOME_NOW_PLAYING_HOLD_MS 900
 #define HOME_NOW_PLAYING_HOLD_TICKS \
-    ((HZ / 2) > 0 ? (HZ / 2) : 1)
+    ((HZ * HOME_NOW_PLAYING_HOLD_MS / 1000) > 0 \
+        ? (HZ * HOME_NOW_PLAYING_HOLD_MS / 1000) : 1)
+#define CAPTURE_HOLD_MS 500
 #define ALPHA_JUMP_WINDOW_TICKS \
     ((HZ * 320 / 1000) > 0 ? (HZ * 320 / 1000) : 1)
 #define ALPHA_JUMP_STEP_THRESHOLD 7
@@ -180,10 +186,22 @@ static bool handle_capture_chord(long button, long now)
     if(!capture_chord_pending &&
        base != (BUTTON_LEFT | BUTTON_RIGHT))
         return false;
+    if(capture_chord_pending &&
+       base != (BUTTON_LEFT | BUTTON_RIGHT)) {
+        capture_chord_pending = false;
+        capture_chord_recording_toggled = false;
+        crazypod_hold_feedback_dismiss(
+            &capture_hold_feedback);
+        return false;
+    }
     if(!capture_chord_pending) {
         capture_chord_pending = true;
         capture_chord_recording_toggled = false;
         backlight_on();
+        crazypod_hold_feedback_begin(
+            &capture_hold_feedback,
+            crazypod_desktop_screen(), LV_SYMBOL_IMAGE,
+            CAPTURE_HOLD_MS);
         return true;
     }
     if((button & BUTTON_REPEAT) != 0 &&
@@ -193,6 +211,8 @@ static bool handle_capture_chord(long button, long now)
             crazypod_screen_recording_toggle(now);
 
         capture_chord_recording_toggled = true;
+        crazypod_hold_feedback_dismiss(
+            &capture_hold_feedback);
         crazypod_screenshot_feedback_show_recording(result);
         return true;
     }
@@ -205,6 +225,8 @@ static bool handle_capture_chord(long button, long now)
         }
         capture_chord_pending = false;
         capture_chord_recording_toggled = false;
+        crazypod_hold_feedback_dismiss(
+            &capture_hold_feedback);
         return true;
     }
     return base == (BUTTON_LEFT | BUTTON_RIGHT);
@@ -278,6 +300,8 @@ void crazypod_app_input_configure(
         now_playing_direction_held = false;
         capture_chord_pending = false;
         capture_chord_recording_toggled = false;
+        crazypod_hold_feedback_dismiss(&home_hold_feedback);
+        crazypod_hold_feedback_dismiss(&capture_hold_feedback);
         crazypod_alpha_jump_reset(&alpha_jump);
     }
 }
@@ -299,6 +323,7 @@ int crazypod_app_input_wait_ticks(long now)
 
 void crazypod_app_input_tick(long now, bool locked)
 {
+    const struct route_state *confirmation;
     bool home_active =
         !locked && !crazypod_shell_product_active() &&
         !crazypod_now_playing_overlay_visible() &&
@@ -306,7 +331,11 @@ void crazypod_app_input_tick(long now, bool locked)
         !host.headphone_prompt_visible();
     int feedback;
 
-    crazypod_choice_coordinator_tick(now);
+    confirmation = crazypod_choice_coordinator_tick(now);
+    if(confirmation != NULL &&
+       (host.handle_confirmation == NULL ||
+        !host.handle_confirmation(confirmation)))
+        (void)crazypod_choice_coordinator_cancel_select_hold();
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
     home_active = home_active && !host.usb_prompt_visible();
 #endif
@@ -329,12 +358,14 @@ void crazypod_app_input_tick(long now, bool locked)
 #endif
        ) {
         home_hold_pending = false;
+        crazypod_hold_feedback_dismiss(&home_hold_feedback);
         return;
     }
     if((long)(now - home_hold_deadline) < 0)
         return;
 
     home_hold_pending = false;
+    crazypod_hold_feedback_dismiss(&home_hold_feedback);
     backlight_on();
     home_menu_gesture_owned = true;
     host.open_now_playing();
@@ -355,13 +386,18 @@ void crazypod_app_input_handle(
     if(crazypod_system_event_handle(
            button, data, &host.system_events))
         return;
+    base = button_base(button);
+    if(home_hold_pending && base != BUTTON_MENU) {
+        home_hold_pending = false;
+        crazypod_hold_feedback_dismiss(&home_hold_feedback);
+    }
     if(handle_capture_chord(button, now))
         return;
-    base = button_base(button);
     if(base == BUTTON_MENU &&
        (button & BUTTON_REL) != 0) {
         home_menu_short_release = home_hold_pending;
         home_hold_pending = false;
+        crazypod_hold_feedback_dismiss(&home_hold_feedback);
     }
     if(host.power_prompt_visible()) {
         if(button_base(button) == BUTTON_PLAY)
@@ -451,7 +487,7 @@ void crazypod_app_input_handle(
         return;
     if((button & BUTTON_REL) != 0 &&
        base == BUTTON_SELECT &&
-       crazypod_choice_coordinator_cancel_book_reader_hold())
+       crazypod_choice_coordinator_cancel_select_hold())
         return;
     if(button & BUTTON_REL) {
         if(home_menu_short_release) {
@@ -495,7 +531,7 @@ void crazypod_app_input_handle(
     if(crazypod_shell_product_active() &&
        crazypod_ui_routes_depth() > 0 &&
        base == BUTTON_SELECT && repeated) {
-        if(crazypod_choice_coordinator_handle_book_reader_repeat())
+        if(crazypod_choice_coordinator_handle_select_repeat())
             return;
         if(host.handle_confirmation(
                crazypod_choice_coordinator_confirmation_visible()
@@ -520,6 +556,10 @@ void crazypod_app_input_handle(
                 home_hold_pending = true;
                 home_hold_deadline =
                     now + HOME_NOW_PLAYING_HOLD_TICKS;
+                crazypod_hold_feedback_begin(
+                    &home_hold_feedback,
+                    crazypod_desktop_screen(), LV_SYMBOL_AUDIO,
+                    HOME_NOW_PLAYING_HOLD_MS);
             }
             return;
         }

@@ -18,6 +18,7 @@
 #define COLOR_FAILURE 0xFF4D59
 #define POPUP_MIN_WIDTH 156
 #define POPUP_MAX_WIDTH (LCD_WIDTH - 32)
+#define POPUP_ROW_LABEL_CHROME_WIDTH 72
 #define POPUP_ROW_HEIGHT 28
 #define POPUP_ACTION_ROW_Y 38
 #define POPUP_CHOICE_ROW_Y 50
@@ -134,8 +135,8 @@ static struct crazypod_popup_geometry calculate_geometry(void)
             longest_item = item_width;
     }
     content_width = title_width + 28;
-    if(longest_item + 68 > content_width)
-        content_width = longest_item + 68;
+    if(longest_item + POPUP_ROW_LABEL_CHROME_WIDTH > content_width)
+        content_width = longest_item + POPUP_ROW_LABEL_CHROME_WIDTH;
     width = crazypod_popup_clamp_width(
         content_width, 0,
         POPUP_MIN_WIDTH, POPUP_MAX_WIDTH);

@@ -620,6 +620,7 @@
   "Reflowing Text": "テキストを再配置中",
   "Release MENU to Cancel": "MENUを離すとキャンセル",
   "Release PLAY to Reset": "PLAYを離すとリセット",
+  "Hold PLAY to Reset": "PLAY長押しでリセット",
   "Remove Favorite": "お気に入りから削除",
   "Removed from Favorites": "お気に入りから削除しました",
   "Rename": "名前を変更",

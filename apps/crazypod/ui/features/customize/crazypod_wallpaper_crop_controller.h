@@ -28,6 +28,7 @@ struct crazypod_wallpaper_crop_model {
     bool play_holding;
     bool play_armed;
     long play_hold_start;
+    int hold_percent;
     bool select_armed;
     int load_progress_seen;
     int apply_progress;

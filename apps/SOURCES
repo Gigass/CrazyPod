@@ -204,6 +204,7 @@ crazypod/ui/presentation/crazypod_corner_masks.c
 crazypod/ui/presentation/crazypod_glass_sampler.c
 crazypod/ui/presentation/crazypod_glass_slots.c
 crazypod/ui/presentation/crazypod_glass_panel.c
+crazypod/ui/presentation/crazypod_hold_feedback.c
 crazypod/ui/presentation/crazypod_empty_state.c
 crazypod/ui/features/photos/crazypod_photos_preview.c
 crazypod/ui/shell/crazypod_extras_preview.c

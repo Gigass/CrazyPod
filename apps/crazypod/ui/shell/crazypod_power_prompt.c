@@ -8,10 +8,12 @@
 
 #include "button.h"
 #include "events.h"
+#include "kernel.h"
 #include "queue.h"
 
 #include "lvgl.h"
 
+#include "../presentation/crazypod_hold_feedback.h"
 #include "../presentation/crazypod_popup_layout.h"
 #include "../presentation/crazypod_ui_widgets.h"
 #include "crazypod_desktop_native.h"
@@ -26,6 +28,7 @@ struct power_prompt_state {
     lv_obj_t *panel;
     lv_obj_t *rows[2];
     lv_obj_t *markers[2];
+    struct crazypod_hold_feedback hold_feedback;
     int selected;
     bool play_holding;
     bool teardown_pending;
@@ -49,6 +52,11 @@ static lv_obj_t *make_label(
 {
     return crazypod_ui_widget_label(
         parent, text, font, color, opacity);
+}
+
+static void clear_hold_feedback(void)
+{
+    crazypod_hold_feedback_dismiss(&prompt.hold_feedback);
 }
 
 void crazypod_power_prompt_configure(
@@ -113,6 +121,7 @@ void crazypod_power_prompt_dismiss(void)
     bool had_prompt = root != NULL;
     lv_display_t *display;
 
+    clear_hold_feedback();
     if(!had_prompt)
         return;
 
@@ -158,6 +167,7 @@ void crazypod_power_prompt_show(void)
     int maximum_label_width;
     int index;
 
+    clear_hold_feedback();
     if(prompt.parent == NULL || crazypod_power_prompt_visible() ||
        prompt.callbacks.create_panel == NULL)
         return;
@@ -348,16 +358,27 @@ bool crazypod_power_prompt_handle_play_hold(
     if((button & SYS_EVENT) != 0)
         return false;
     base = button & BUTTON_MAIN;
-    if(base != BUTTON_PLAY)
+    if(base != BUTTON_PLAY) {
+        if(prompt.play_holding) {
+            prompt.play_holding = false;
+            clear_hold_feedback();
+        }
         return false;
+    }
     if((button & BUTTON_REL) != 0) {
         prompt.play_holding = false;
+        clear_hold_feedback();
         return false;
     }
     repeated = (button & BUTTON_REPEAT) != 0;
     if(!repeated) {
+        clear_hold_feedback();
         prompt.play_holding = true;
         prompt.play_hold_start = now;
+        crazypod_hold_feedback_begin(
+            &prompt.hold_feedback, prompt.parent,
+            LV_SYMBOL_POWER,
+            (int)(hold_ticks * 1000 / HZ));
         return false;
     }
     if(!prompt.play_holding) {
@@ -369,6 +390,7 @@ bool crazypod_power_prompt_handle_play_hold(
         return true;
 
     prompt.play_holding = false;
+    clear_hold_feedback();
     if(prompt.callbacks.before_hold_show != NULL)
         prompt.callbacks.before_hold_show();
     crazypod_power_prompt_show();

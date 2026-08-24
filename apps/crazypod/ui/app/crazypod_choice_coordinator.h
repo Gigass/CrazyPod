@@ -51,8 +51,8 @@ bool crazypod_choice_coordinator_visible(void);
 void crazypod_choice_coordinator_show(
     enum crazypod_choice_kind kind, int id, int selected);
 void crazypod_choice_coordinator_show_book_reader_actions(void);
-bool crazypod_choice_coordinator_handle_book_reader_repeat(void);
-bool crazypod_choice_coordinator_cancel_book_reader_hold(void);
+bool crazypod_choice_coordinator_handle_select_repeat(void);
+bool crazypod_choice_coordinator_cancel_select_hold(void);
 void crazypod_choice_coordinator_show_route(
     enum crazypod_route route, int group, int selected);
 void crazypod_choice_coordinator_show_receipt(
@@ -62,7 +62,8 @@ void crazypod_choice_coordinator_dismiss(bool refresh_route);
 bool crazypod_choice_coordinator_back(void);
 void crazypod_choice_coordinator_move(int direction);
 void crazypod_choice_coordinator_activate(long now);
-void crazypod_choice_coordinator_tick(long now);
+const struct route_state *
+crazypod_choice_coordinator_tick(long now);
 int crazypod_choice_coordinator_wait_ticks(long now);
 bool crazypod_choice_coordinator_route_should_overlay(
     enum crazypod_route route);

@@ -29,6 +29,7 @@ void crazypod_wallpaper_crop_controller_start(
     model.play_holding = false;
     model.play_armed = false;
     model.play_hold_start = 0;
+    model.hold_percent = -1;
     model.select_armed = false;
     model.load_progress_seen = -2;
     model.apply_progress = 0;
@@ -220,6 +221,8 @@ void crazypod_wallpaper_crop_controller_press_menu(long now)
     model.menu_holding = true;
     model.menu_armed = false;
     model.menu_hold_start = now;
+    model.hold_percent = 0;
+    render_requested = true;
 }
 
 bool crazypod_wallpaper_crop_controller_release_menu(void)
@@ -228,6 +231,8 @@ bool crazypod_wallpaper_crop_controller_release_menu(void)
 
     model.menu_holding = false;
     model.menu_armed = false;
+    model.hold_percent = -1;
+    render_requested = true;
     return armed;
 }
 
@@ -236,6 +241,8 @@ void crazypod_wallpaper_crop_controller_press_play(long now)
     model.play_holding = true;
     model.play_armed = false;
     model.play_hold_start = now;
+    model.hold_percent = 0;
+    render_requested = true;
 }
 
 bool crazypod_wallpaper_crop_controller_release_play(void)
@@ -244,6 +251,8 @@ bool crazypod_wallpaper_crop_controller_release_play(void)
 
     model.play_holding = false;
     model.play_armed = false;
+    model.hold_percent = -1;
+    render_requested = true;
     return armed;
 }
 
@@ -262,17 +271,44 @@ bool crazypod_wallpaper_crop_controller_release_select(void)
 
 void crazypod_wallpaper_crop_controller_clear_holds(void)
 {
+    bool changed = model.menu_holding || model.menu_armed ||
+        model.play_holding || model.play_armed ||
+        model.hold_percent >= 0 || model.select_armed;
+
     model.menu_holding = false;
     model.menu_armed = false;
     model.play_holding = false;
     model.play_armed = false;
+    model.hold_percent = -1;
     model.select_armed = false;
+    if(changed)
+        render_requested = true;
 }
 
 bool crazypod_wallpaper_crop_controller_update_holds(
     long now, long threshold)
 {
     bool changed = false;
+    long elapsed = 0;
+    int percent = -1;
+
+    if(threshold < 1)
+        threshold = 1;
+    if(model.menu_holding)
+        elapsed = now - model.menu_hold_start;
+    else if(model.play_holding)
+        elapsed = now - model.play_hold_start;
+    if(model.menu_holding || model.play_holding) {
+        if(elapsed < 0)
+            elapsed = 0;
+        percent = elapsed >= threshold
+            ? 100 : (int)(elapsed * 100 / threshold);
+        percent = percent / 10 * 10;
+    }
+    if(percent != model.hold_percent) {
+        model.hold_percent = percent;
+        changed = true;
+    }
 
     if(model.menu_holding && !model.menu_armed &&
        deadline_reached(now, model.menu_hold_start + threshold)) {

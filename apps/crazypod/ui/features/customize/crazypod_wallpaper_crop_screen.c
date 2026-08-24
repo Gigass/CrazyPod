@@ -80,6 +80,11 @@ static const char *instruction_text(
             return CP_TR("Could not apply wallpaper");
         }
     }
+    if(model->menu_holding && !model->menu_armed)
+        return CP_TR("SELECT Apply  \xe2\x80\xa2  Wheel Zoom  "
+                     "\xe2\x80\xa2  Hold MENU Cancel");
+    if(model->play_holding && !model->play_armed)
+        return CP_TR("Hold PLAY to Reset");
     if(model->menu_armed)
         return CP_TR("Release MENU to Cancel");
     if(model->play_armed)
@@ -223,6 +228,10 @@ void crazypod_wallpaper_crop_screen_render(
                  CP_FMT("Applying wallpaper  %d%%"),
                  model->apply_progress);
         instruction = status_text;
+    }
+    else if(model->hold_percent >= 0) {
+        progress = model->hold_percent;
+        show_progress = true;
     }
     footer = make_footer(viewport);
     label = crazypod_ui_widget_label(

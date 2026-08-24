@@ -19,6 +19,8 @@
 #include "crazypod_miniapp_screen.h"
 #include "crazypod_miniapps_feature.h"
 
+#define MINIAPP_MENU_HOLD_MS 900
+
 int crazypod_miniapps_feature_item_count(
     const struct route_state *state)
 {
@@ -145,6 +147,8 @@ bool crazypod_miniapps_feature_handle_input(
     const struct crazypod_input_event *event,
     const struct crazypod_feature_input_context *context)
 {
+    bool was_holding = crazypod_miniapp_input_motion_active();
+    bool handled;
     const struct crazypod_miniapp_input_actions actions = {
         .wake_display = context->wake_display,
         .keep_boosted = context->boost,
@@ -152,10 +156,18 @@ bool crazypod_miniapps_feature_handle_input(
     };
 
     (void)state;
-    return crazypod_miniapp_input_handle(
-        event, context->now, context->ticks_per_second / 2,
+    handled = crazypod_miniapp_input_handle(
+        event, context->now,
+        context->ticks_per_second * MINIAPP_MENU_HOLD_MS / 1000,
         context->ticks_per_second / 10,
         &actions);
+    if(!was_holding && crazypod_miniapp_input_motion_active())
+        crazypod_miniapp_screen_begin_menu_hold(
+            MINIAPP_MENU_HOLD_MS);
+    else if(was_holding &&
+            !crazypod_miniapp_input_motion_active())
+        crazypod_miniapp_screen_cancel_menu_hold();
+    return handled;
 }
 
 int crazypod_miniapps_feature_service(
@@ -163,8 +175,12 @@ int crazypod_miniapps_feature_service(
     long ticks_per_second)
 {
     int events = CRAZYPOD_MINIAPPS_SERVICE_NONE;
+    bool was_holding = crazypod_miniapp_input_motion_active();
 
     crazypod_miniapp_input_service(active, now);
+    if(was_holding &&
+       !crazypod_miniapp_input_motion_active())
+        crazypod_miniapp_screen_cancel_menu_hold();
     if(crazypod_miniapp_runtime_service(
            active, frame_due, now, ticks_per_second))
         events |= CRAZYPOD_MINIAPPS_SERVICE_CLOSE;
@@ -192,6 +208,7 @@ void crazypod_miniapps_feature_close(void)
 
 void crazypod_miniapps_feature_reset_input(void)
 {
+    crazypod_miniapp_screen_cancel_menu_hold();
     crazypod_miniapp_runtime_reset_input();
     crazypod_miniapp_input_reset_state();
 }
@@ -277,6 +294,8 @@ static void simulator_keep_boosted(int ticks)
 bool crazypod_miniapps_feature_simulate_long_menu(
     long now, long ticks_per_second)
 {
+    long hold_ticks =
+        ticks_per_second * MINIAPP_MENU_HOLD_MS / 1000;
     const struct crazypod_miniapp_input_actions actions = {
         .wake_display = simulator_input_noop,
         .keep_boosted = simulator_keep_boosted,
@@ -286,12 +305,14 @@ bool crazypod_miniapps_feature_simulate_long_menu(
         .base = BUTTON_MENU,
     };
 
+    if(hold_ticks < 1)
+        hold_ticks = 1;
     if(!crazypod_miniapp_input_handle(
-           &event, now, ticks_per_second / 2,
+           &event, now, hold_ticks,
            ticks_per_second / 10, &actions))
         return false;
     crazypod_miniapp_input_service(
-        true, now + ticks_per_second / 2);
+        true, now + hold_ticks);
     return crazypod_miniapp_input_exit_prompt_visible();
 }
 #endif

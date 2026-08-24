@@ -5,6 +5,7 @@
 #ifdef IPOD_6G
 
 #include "../../../crazypod_miniapps.h"
+#include "../../presentation/crazypod_hold_feedback.h"
 #include "../../presentation/crazypod_popup_layout.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_miniapp_input.h"
@@ -17,6 +18,7 @@
 
 static lv_obj_t *screen_parent;
 static lv_obj_t *overlay_parent;
+static struct crazypod_hold_feedback menu_hold_feedback;
 
 static void render_text_prompt(void)
 {
@@ -209,11 +211,24 @@ static void render_error(void)
 
 void crazypod_miniapp_screen_reset(void)
 {
+    crazypod_hold_feedback_dismiss(&menu_hold_feedback);
     if(overlay_parent != NULL && lv_obj_is_valid(overlay_parent))
         lv_obj_delete(overlay_parent);
     overlay_parent = NULL;
     screen_parent = NULL;
     crazypod_miniapp_scene_reset();
+}
+
+void crazypod_miniapp_screen_begin_menu_hold(int duration_ms)
+{
+    crazypod_hold_feedback_begin(
+        &menu_hold_feedback, screen_parent,
+        LV_SYMBOL_CLOSE, duration_ms);
+}
+
+void crazypod_miniapp_screen_cancel_menu_hold(void)
+{
+    crazypod_hold_feedback_dismiss(&menu_hold_feedback);
 }
 
 bool crazypod_miniapp_screen_attached(lv_obj_t *parent)

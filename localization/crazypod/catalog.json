@@ -3331,6 +3331,11 @@
         "apps/crazypod/ui/features/customize/crazypod_wallpaper_crop_screen.c:94"
       ]
     },
+    "Hold PLAY to Reset": {
+      "locations": [
+        "apps/crazypod/ui/features/customize/crazypod_wallpaper_crop_screen.c:94"
+      ]
+    },
     "Remove Favorite": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:153"

@@ -19,7 +19,8 @@
 #include "crazypod_wallpaper_crop_input.h"
 #include "crazypod_wallpaper_crop_screen.h"
 
-#define CROP_HOLD_TICKS ((HZ / 2) > 0 ? (HZ / 2) : 1)
+#define CROP_HOLD_TICKS \
+    ((HZ * 900 / 1000) > 0 ? (HZ * 900 / 1000) : 1)
 #define CROP_SUCCESS_TICKS \
     ((HZ * 2 / 5) > 0 ? (HZ * 2 / 5) : 1)
 

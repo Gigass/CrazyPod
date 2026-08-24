@@ -9,5 +9,7 @@
 void crazypod_miniapp_screen_reset(void);
 bool crazypod_miniapp_screen_attached(lv_obj_t *parent);
 void crazypod_miniapp_screen_render(lv_obj_t *parent, uint32_t accent);
+void crazypod_miniapp_screen_begin_menu_hold(int duration_ms);
+void crazypod_miniapp_screen_cancel_menu_hold(void);
 
 #endif
