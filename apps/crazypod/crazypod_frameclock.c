@@ -173,9 +173,14 @@ static void queue_present_rect(
     x2 = x + width - 1;
     y2 = y + height - 1;
 
-    /* A complete framebuffer supersedes every older partial request. */
+    /* A synchronized moving band owns the next panel frame. Even a complete
+       ordinary framebuffer must wait instead of discarding that request. */
     if(x == 0 && y == 0 && x2 == LCD_WIDTH - 1 &&
        y2 == LCD_HEIGHT - 1) {
+        if(present_pending && present_sync != PRESENT_SYNC_NONE) {
+            merge_deferred_present_rect(x, y, x2, y2);
+            return;
+        }
         if(present_pending || deferred_present_pending)
             ++present_diagnostics.coalesced_requests;
         set_present_rect(x, y, x2, y2, PRESENT_SYNC_NONE);
@@ -189,6 +194,12 @@ static void queue_present_rect(
     if(present_x1 == 0 && present_y1 == 0 &&
        present_x2 == LCD_WIDTH - 1 &&
        present_y2 == LCD_HEIGHT - 1) {
+        if(sync != PRESENT_SYNC_NONE) {
+            merge_deferred_present_rect(
+                present_x1, present_y1, present_x2, present_y2);
+            set_present_rect(x, y, x2, y2, sync);
+            return;
+        }
         ++present_diagnostics.coalesced_requests;
         return;
     }
@@ -259,6 +270,7 @@ void crazypod_present_now(void)
     uint32_t duration_us;
     uint32_t started_us;
     bool full;
+    bool submitted = true;
 
     if(!present_pending)
         return;
@@ -267,21 +279,32 @@ void crazypod_present_now(void)
     started_us = crazypod_monotonic_usec();
 #ifndef SIMULATOR
     if(present_sync == PRESENT_SYNC_HOME && !full)
-        lcd_update_rect_frame_sync(
+        submitted = lcd_update_rect_frame_sync(
             present_x1, present_y1,
             present_x2 - present_x1 + 1,
             present_y2 - present_y1 + 1);
     else if(present_sync == PRESENT_SYNC_MUSIC && !full)
-        lcd_update_rect_music_sync(
+        submitted = lcd_update_rect_music_sync(
             present_x1, present_y1,
             present_x2 - present_x1 + 1,
             present_y2 - present_y1 + 1);
+    else if(full)
+        submitted = lcd_update_full_sync();
     else
 #endif
         lcd_update_rect(present_x1, present_y1,
                         present_x2 - present_x1 + 1,
                         present_y2 - present_y1 + 1);
     duration_us = crazypod_monotonic_usec() - started_us;
+    if(!submitted) {
+        ++present_diagnostics.sync_submit_failures;
+        present_diagnostics.last_present_us = duration_us;
+        if(duration_us > present_diagnostics.max_present_us)
+            present_diagnostics.max_present_us = duration_us;
+        if(duration_us > CRAZYPOD_FRAME_BUDGET_US)
+            ++present_diagnostics.present_timeouts;
+        return;
+    }
     present_pending = false;
     present_sync = PRESENT_SYNC_NONE;
     ++present_sequence;

@@ -659,11 +659,7 @@ static bool platform_capture_desktop_native(
 static void platform_queue_present(
     int x, int y, int width, int height)
 {
-    if(crazypod_desktop_hold_feedback_visible() ||
-       crazypod_system_prompts_power_hold_feedback_visible())
-        crazypod_present_queue_full();
-    else
-        crazypod_present_queue_rect(x, y, width, height);
+    crazypod_present_queue_rect(x, y, width, height);
 }
 
 static void process_deferred_route_render(void)

@@ -21,6 +21,7 @@
 #ifndef __LCD_S5L8702_H__
 #define __LCD_S5L8702_H__
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "config.h"
@@ -183,8 +184,9 @@ struct lcd_frame_sync_diagnostics {
 
 void lcd_get_frame_sync_diagnostics(
     struct lcd_frame_sync_diagnostics *diagnostics);
-void lcd_update_rect_frame_sync(int x, int y, int width, int height);
-void lcd_update_rect_music_sync(int x, int y, int width, int height);
+bool lcd_update_rect_frame_sync(int x, int y, int width, int height);
+bool lcd_update_rect_music_sync(int x, int y, int width, int height);
+bool lcd_update_full_sync(void);
 #endif
 
 void lcd_awake(void);

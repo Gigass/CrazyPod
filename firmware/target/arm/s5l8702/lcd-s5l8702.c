@@ -472,7 +472,9 @@ static void displaylcd_wait_dma(void)
 #define LCD_TE_MAX_PERIOD_SPREAD_US           500
 #define LCD_TE_HOME_GUARD_LINES                 12
 #define LCD_TE_MUSIC_GUARD_LINES                 2
-#define LCD_TE_PHASE_RELOCK_FRAMES             128
+#define LCD_TE_EDGE_TIMEOUT_US \
+    (LCD_TE_MAX_PERIOD_US * 3)
+#define LCD_TE_PHASE_RELOCK_FRAMES              32
 
 static enum lcd_frame_sync_method lcd_frame_sync_method;
 static bool lcd_frame_marker_idle_high;
@@ -785,7 +787,7 @@ static bool displaylcd_gpio_te_active(void)
 
 static bool displaylcd_wait_gpio_te(void)
 {
-    unsigned deadline = USEC_TIMER + LCD_FRAME_SYNC_TIMEOUT_US;
+    unsigned deadline = USEC_TIMER + LCD_TE_EDGE_TIMEOUT_US;
 
     /* Finish any pulse already active, then wait for a fresh frame edge. */
     while (TIME_BEFORE(USEC_TIMER, deadline))
@@ -817,7 +819,7 @@ static void displaylcd_note_wait_duration(uint32_t started)
             lcd_frame_sync_diagnostics.last_wait_us;
 }
 
-static void displaylcd_wait_te_phase(
+static bool displaylcd_wait_te_phase(
     int y, int height, unsigned guard_lines)
 {
     uint32_t started = USEC_TIMER;
@@ -833,7 +835,7 @@ static void displaylcd_wait_te_phase(
         lcd_te_period_us == 0)
     {
         displaylcd_note_wait_duration(started);
-        return;
+        return true;
     }
 
     if (!lcd_te_phase_locked ||
@@ -842,9 +844,10 @@ static void displaylcd_wait_te_phase(
         if (!displaylcd_wait_gpio_te())
         {
             ++lcd_frame_sync_diagnostics.timeouts;
-            lcd_frame_sync_method = LCD_FRAME_SYNC_UNAVAILABLE;
+            lcd_te_phase_locked = false;
+            lcd_te_phase_frames = 0;
             displaylcd_note_wait_duration(started);
-            return;
+            return false;
         }
         ++lcd_frame_sync_diagnostics.te_phase_relocks;
     }
@@ -884,6 +887,7 @@ static void displaylcd_wait_te_phase(
     ++lcd_frame_sync_diagnostics.te_phase_waits;
     ++lcd_te_phase_frames;
     displaylcd_note_wait_duration(started);
+    return true;
 }
 
 static void displaylcd_note_frame_edge(void)
@@ -1179,7 +1183,7 @@ static bool displaylcd_wait_scanline(bool probe)
     return false;
 }
 
-static void displaylcd_wait_frame_start(void)
+static bool displaylcd_wait_frame_start(void)
 {
     unsigned started = USEC_TIMER;
     bool scanline_probe = false;
@@ -1194,7 +1198,8 @@ static void displaylcd_wait_frame_start(void)
         else
         {
             ++lcd_frame_sync_diagnostics.timeouts;
-            lcd_frame_sync_method = LCD_FRAME_SYNC_UNAVAILABLE;
+            lcd_te_phase_locked = false;
+            lcd_te_phase_frames = 0;
         }
     }
     if (lcd_frame_sync_method == LCD_FRAME_SYNC_PROBING)
@@ -1248,6 +1253,7 @@ static void displaylcd_wait_frame_start(void)
         lcd_frame_sync_diagnostics.max_wait_us)
         lcd_frame_sync_diagnostics.max_wait_us =
             lcd_frame_sync_diagnostics.last_wait_us;
+    return synced;
 }
 
 void lcd_get_frame_sync_diagnostics(
@@ -1270,13 +1276,14 @@ void lcd_get_frame_sync_diagnostics(
 }
 #endif
 
-static void displaylcd_update_rect(
+static bool displaylcd_update_rect(
     int, int, int, int, int) ICODE_ATTR;
-static void displaylcd_update_rect(
+static bool displaylcd_update_rect(
     int x, int y, int width, int height, int phase_guard_lines)
 {
     int pixels = width * height;
     bool frame_sync = phase_guard_lines >= 0;
+    bool submitted = false;
     fb_data* p = FBADDR(x,y);
     uint16_t* out = lcd_dblbuf[0];
 
@@ -1310,8 +1317,9 @@ static void displaylcd_update_rect(
 #ifdef IPOD_6G
         if (!frame_sync && lcd_info->seq_frame_sync != NULL &&
             x == 0 && y == 0 &&
-            width == LCD_WIDTH && height == LCD_HEIGHT)
-            displaylcd_wait_frame_start();
+            width == LCD_WIDTH && height == LCD_HEIGHT &&
+            !displaylcd_wait_frame_start())
+            goto unlock;
 #endif
 
         displaylcd_setup(x, y, width, height);
@@ -1319,34 +1327,47 @@ static void displaylcd_update_rect(
         if (frame_sync)
         {
             displaylcd_prepare_dma();
-            displaylcd_wait_te_phase(
-                y, height, (unsigned)phase_guard_lines);
-            displaylcd_start_dma(pixels);
+            if (displaylcd_wait_te_phase(
+                    y, height, (unsigned)phase_guard_lines))
+            {
+                displaylcd_start_dma(pixels);
+                submitted = true;
+            }
         }
         else
 #endif
+        {
             displaylcd_dma(pixels);
+            submitted = true;
+        }
     }
+unlock:
     mutex_unlock(&lcd_mutex);
+    return submitted;
 }
 
 /* Update a fraction of the display. */
 void lcd_update_rect(int x, int y, int width, int height)
 {
-    displaylcd_update_rect(x, y, width, height, -1);
+    (void)displaylcd_update_rect(x, y, width, height, -1);
 }
 
 #ifdef IPOD_6G
-void lcd_update_rect_frame_sync(int x, int y, int width, int height)
+bool lcd_update_rect_frame_sync(int x, int y, int width, int height)
 {
-    displaylcd_update_rect(x, y, width, height,
+    return displaylcd_update_rect(x, y, width, height,
         lcd_info->seq_frame_sync != NULL ? LCD_TE_HOME_GUARD_LINES : -1);
 }
 
-void lcd_update_rect_music_sync(int x, int y, int width, int height)
+bool lcd_update_rect_music_sync(int x, int y, int width, int height)
 {
-    displaylcd_update_rect(x, y, width, height,
+    return displaylcd_update_rect(x, y, width, height,
         lcd_info->seq_frame_sync != NULL ? LCD_TE_MUSIC_GUARD_LINES : -1);
+}
+
+bool lcd_update_full_sync(void)
+{
+    return displaylcd_update_rect(0, 0, LCD_WIDTH, LCD_HEIGHT, -1);
 }
 #endif
 

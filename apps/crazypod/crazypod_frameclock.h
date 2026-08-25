@@ -27,6 +27,7 @@ struct crazypod_present_diagnostics {
     uint32_t deadline_misses;
     uint32_t max_late_ticks;
     uint32_t present_timeouts;
+    uint32_t sync_submit_failures;
     uint32_t last_present_us;
     uint32_t max_present_us;
     uint32_t home_renders;

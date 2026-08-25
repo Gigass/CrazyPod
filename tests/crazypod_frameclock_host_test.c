@@ -13,6 +13,7 @@ static int lcd_y;
 static int lcd_width;
 static int lcd_height;
 static int lcd_sync_mode;
+static bool lcd_sync_submit_succeeds;
 
 static void record_lcd_update(
     int x, int y, int width, int height, int sync_mode)
@@ -31,16 +32,24 @@ void lcd_update_rect(int x, int y, int width, int height)
     record_lcd_update(x, y, width, height, 0);
 }
 
-void lcd_update_rect_frame_sync(
+bool lcd_update_rect_frame_sync(
     int x, int y, int width, int height)
 {
     record_lcd_update(x, y, width, height, 1);
+    return lcd_sync_submit_succeeds;
 }
 
-void lcd_update_rect_music_sync(
+bool lcd_update_rect_music_sync(
     int x, int y, int width, int height)
 {
     record_lcd_update(x, y, width, height, 2);
+    return lcd_sync_submit_succeeds;
+}
+
+bool lcd_update_full_sync(void)
+{
+    record_lcd_update(0, 0, LCD_WIDTH, LCD_HEIGHT, 0);
+    return lcd_sync_submit_succeeds;
 }
 
 static void reset_lcd(void)
@@ -52,6 +61,7 @@ static void reset_lcd(void)
     lcd_width = 0;
     lcd_height = 0;
     lcd_sync_mode = 0;
+    lcd_sync_submit_succeeds = true;
     test_current_tick = 0;
     test_usec_timer = 0;
 }
@@ -201,6 +211,93 @@ static void test_home_motion_keeps_priority_over_deferred_lvgl(void)
     assert(lcd_y == 186);
 }
 
+static void test_full_frame_cannot_discard_home_sync(void)
+{
+    reset_lcd();
+    crazypod_present_init(0);
+
+    crazypod_present_queue_home_rect(0, 40, LCD_WIDTH, 103);
+    crazypod_present_queue_full();
+    crazypod_present_now();
+    assert(lcd_calls == 1);
+    assert(lcd_sync_mode == 1);
+
+    crazypod_present_now();
+    assert(lcd_calls == 2);
+    assert(lcd_sync_mode == 0);
+    assert(lcd_width == LCD_WIDTH);
+    assert(lcd_height == LCD_HEIGHT);
+
+    reset_lcd();
+    crazypod_present_init(0);
+    crazypod_present_queue_full();
+    crazypod_present_queue_home_rect(0, 40, LCD_WIDTH, 103);
+    crazypod_present_now();
+    assert(lcd_calls == 1);
+    assert(lcd_sync_mode == 1);
+    crazypod_present_now();
+    assert(lcd_calls == 2);
+    assert(lcd_sync_mode == 0);
+}
+
+static void test_failed_home_sync_retries_without_consuming_frame(void)
+{
+    struct crazypod_present_diagnostics diagnostics;
+    uint32_t sequence;
+
+    reset_lcd();
+    crazypod_present_init(0);
+    sequence = crazypod_present_sequence();
+    lcd_sync_submit_succeeds = false;
+    crazypod_present_queue_home_rect(0, 40, LCD_WIDTH, 103);
+    crazypod_present_tick();
+
+    assert(lcd_calls == 1);
+    assert(crazypod_present_sequence() == sequence);
+    crazypod_present_get_diagnostics(&diagnostics);
+    assert(diagnostics.presents == 0);
+    assert(diagnostics.sync_submit_failures == 1);
+
+    lcd_sync_submit_succeeds = true;
+    test_current_tick = 1;
+    crazypod_present_tick();
+    assert(lcd_calls == 2);
+    assert(lcd_sync_mode == 1);
+    assert(crazypod_present_sequence() == sequence + 1);
+    crazypod_present_get_diagnostics(&diagnostics);
+    assert(diagnostics.presents == 1);
+    assert(diagnostics.sync_submit_failures == 1);
+}
+
+static void test_failed_full_sync_retries_without_consuming_frame(void)
+{
+    struct crazypod_present_diagnostics diagnostics;
+    uint32_t sequence;
+
+    reset_lcd();
+    crazypod_present_init(0);
+    sequence = crazypod_present_sequence();
+    lcd_sync_submit_succeeds = false;
+    crazypod_present_queue_full();
+    crazypod_present_tick();
+
+    assert(lcd_calls == 1);
+    assert(crazypod_present_sequence() == sequence);
+    crazypod_present_get_diagnostics(&diagnostics);
+    assert(diagnostics.presents == 0);
+    assert(diagnostics.sync_submit_failures == 1);
+
+    lcd_sync_submit_succeeds = true;
+    test_current_tick = 1;
+    crazypod_present_tick();
+    assert(lcd_calls == 2);
+    assert(crazypod_present_sequence() == sequence + 1);
+    crazypod_present_get_diagnostics(&diagnostics);
+    assert(diagnostics.presents == 1);
+    assert(diagnostics.full_presents == 1);
+    assert(diagnostics.sync_submit_failures == 1);
+}
+
 static void test_home_touch_defers_ordinary_lvgl_until_release(void)
 {
     reset_lcd();
@@ -239,6 +336,9 @@ int main(void)
     test_partial_sync_routes();
     test_home_sync_does_not_merge_playback_capsule();
     test_home_motion_keeps_priority_over_deferred_lvgl();
+    test_full_frame_cannot_discard_home_sync();
+    test_failed_home_sync_retries_without_consuming_frame();
+    test_failed_full_sync_retries_without_consuming_frame();
     test_home_touch_defers_ordinary_lvgl_until_release();
     return 0;
 }

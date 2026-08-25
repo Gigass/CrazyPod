@@ -326,7 +326,7 @@ void crazypod_screen_recording_init(void)
     id = create_thread(
         recording_thread, recording.stack, sizeof(recording.stack), 0,
         "crazypod screen recorder"
-        IF_PRIO(, PRIORITY_USER_INTERFACE)
+        IF_PRIO(, PRIORITY_BACKGROUND)
         IF_COP(, CPU));
     recording.thread_started = id != 0;
     recording.initialized = true;

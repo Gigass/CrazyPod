@@ -77,6 +77,11 @@ target_phase = te_period × min(y + height + guard_lines, LCD_HEIGHT)
 Home 使用 12 行保护区，Music CoverFlow 使用 2 行保护区。两个值来自各自区域大小和
 实机结果，不能在不了解传输时长与区域几何的情况下合并成一个常量。
 
+TE 相位每 32 个同步帧重新锁定，降低使用启动期平均周期长期外推产生的相位漂移。
+重锁会覆盖至少三个最慢合法 TE 周期。若这次仍未捕获边沿，驱动不会把同步永久降级，
+也不会发送未同步 DMA；当前请求保留到下一提交时隙重新锁定。一次窄脉冲漏采只能造成
+丢帧，不能让本次启动后的所有 Home/Music 帧退化为未同步提交。
+
 实现位于
 [`firmware/target/arm/s5l8702/lcd-s5l8702.c`](../firmware/target/arm/s5l8702/lcd-s5l8702.c)：
 
@@ -101,6 +106,10 @@ LVGL 会把同一轮刷新中的脏区合并。若把 Home 运动带和底部音
 
 同步请求拥有下一帧。普通脏区进入独立的 deferred 槽，不能与同步矩形合并。同步帧完成
 后，调度器才提升延迟区域。
+
+全屏普通请求同样不能覆盖已经排队的 Home/Music 同步请求。全屏请求先进入 deferred
+槽；同步请求成功提交后才有资格提升。同步失败时不增加 present sequence，也不消费
+当前请求。
 
 Home 原生区域由
 [`apps/crazypod/ui/shell/crazypod_desktop_native.c`](../apps/crazypod/ui/shell/crazypod_desktop_native.c)
@@ -169,6 +178,8 @@ Home 只用 `wheel_status()` 计算旋转增量，只用 `wheel_touch_status()` 
 9. TE 探测失败或超时时必须暴露诊断结果；不能静默声称局部同步仍然有效。
 10. 音频负载会放大时序问题，但不能把 CPU 降频、动画降帧或音频缓冲调整当作
     撕裂修复。
+11. Home 覆盖层和 Hold Feedback 必须提交实际 LVGL 脏区，禁止把每次动画刷新强制
+    放大成全屏 DMA。
 
 ## 验证要求
 
@@ -191,6 +202,8 @@ git diff --check
 - 连续 Home 帧优先于 deferred LVGL 区域；
 - 手指接触时普通局部更新不提交；
 - Home TE 帧在接触期间仍可提交；
+- TE 提交失败时请求不被消费，下一时隙成功重试；
+- 全屏普通请求不能覆盖已排队的 Home 同步帧；
 - 松手后 deferred 区域恢复提交。
 
 ### 实机矩阵
