@@ -28,6 +28,8 @@ crazypod/ui/app/crazypod_choice_coordinator.c
 crazypod/ui/app/crazypod_menu_preview.c
 crazypod/ui/app/crazypod_menu_rows.c
 crazypod/ui/app/crazypod_route_renderer.c
+crazypod/ui/app/crazypod_scene_transition.c
+crazypod/ui/app/crazypod_scene_transition_demo.c
 crazypod/ui/app/crazypod_screen_off_policy.c
 crazypod/ui/app/crazypod_runtime_services.c
 crazypod/ui/app/crazypod_app_launcher.c
@@ -123,6 +125,7 @@ crazypod/ui/presentation/crazypod_artwork_widget.c
 crazypod/ui/presentation/crazypod_choice_overlay.c
 crazypod/ui/presentation/crazypod_popup_layout.c
 crazypod/ui/presentation/crazypod_popup_motion.c
+crazypod/ui/presentation/crazypod_scene_motion.c
 crazypod/ui/presentation/crazypod_preview_motion.c
 crazypod/ui/presentation/crazypod_overlay_glass.c
 crazypod/ui/presentation/crazypod_screen_corners.c

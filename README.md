@@ -61,8 +61,10 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
 
 ### Music and media
 
-- Recursively scans `/Music` and `/iPod_Control/Music` for formats supported by
-  the bundled Rockbox codecs.
+- Recursively scans `/Music` and, when Settings → Playback → Original iPod
+  Music is enabled, `/iPod_Control/Music` for formats supported by the bundled
+  Rockbox codecs. Fresh installs enable this setting; upgrades from V1.0 keep
+  the previous disabled behavior until the user enables it.
 - Builds artist, album, song, M3U/M3U8 playlist, and persistent `My Favorites`
   views from local metadata.
 - Sorts Latin and CJK metadata through one collation key. Fast wheel movement
@@ -474,7 +476,7 @@ storage. Create them manually when installing without the archive:
 | Content | Location |
 | --- | --- |
 | Music and playlists | `/Music` |
-| iTunes-managed music | `/iPod_Control/Music` |
+| iTunes-managed music | `/iPod_Control/Music` when enabled in Playback settings |
 | Podcasts | `/Podcasts` |
 | Books | `/Books` |
 | Photos and wallpapers | `/Pictures` |

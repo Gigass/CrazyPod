@@ -706,12 +706,12 @@ void crazypod_playback_refresh_lock_screen(void)
     mutex_lock(&lock_playback_mutex);
     cached = lock_playback;
     mutex_unlock(&lock_playback_mutex);
-    have_track = copy_track_at_queue_index(
-        cached.requested_queue_index >= 0
-            ? cached.requested_queue_index
-            : crazypod_queue_index(), &track);
-    track_path = have_track ? track.path :
-        cached.valid ? cached.path : NULL;
+    have_track = cached.valid
+        ? copy_track_at_path(cached.path, &track)
+        : copy_track_at_queue_index(
+            crazypod_queue_index(), &track);
+    track_path = cached.valid ? cached.path :
+        have_track ? track.path : NULL;
     request_lock_metadata_warm(track_path);
     active = track_path != NULL && track_path[0] != '\0' &&
         (status & AUDIO_STATUS_PLAY) != 0;

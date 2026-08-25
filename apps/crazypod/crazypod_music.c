@@ -22,6 +22,7 @@
 #include "crazypod_music.h"
 #include "crazypod_music_storage.h"
 #include "crazypod_playlist.h"
+#include "crazypod_state.h"
 
 #define CRAZYPOD_SCAN_DEPTH 16
 #define CRAZYPOD_PLAYLIST_PATHS 64
@@ -1292,6 +1293,8 @@ void crazypod_music_scan(void)
 {
     uint32_t candidate_count = 0;
     unsigned build_epoch;
+    bool include_ipod_music =
+        crazypod_state_read_ipod_music();
     bool published = false;
 
     scanning = true;
@@ -1314,6 +1317,9 @@ void crazypod_music_scan(void)
     mutex_unlock(&catalog_mutex);
 
     if(!count_directory_tracks("/Music", 0, &candidate_count) ||
+       (!scan_abort_requested && include_ipod_music &&
+        !count_directory_tracks(
+            "/iPod_Control/Music", 0, &candidate_count)) ||
        (!scan_abort_requested &&
         !count_directory_tracks("/Podcasts", 0, &candidate_count))) {
         if(!scan_abort_requested &&
@@ -1329,6 +1335,9 @@ void crazypod_music_scan(void)
     if(!scan_abort_requested &&
        scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
         scan_directory("/Music", 0, true);
+    if(!scan_abort_requested && include_ipod_music &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
+        scan_directory("/iPod_Control/Music", 0, true);
     if(!scan_abort_requested &&
        scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
         scan_directory("/Podcasts", 0, true);
@@ -1419,6 +1428,8 @@ static void validation_thread(void)
     struct music_source_fingerprint fingerprint;
     struct music_source_fingerprint expected_fingerprint;
     unsigned expected_epoch;
+    bool include_ipod_music =
+        crazypod_state_read_ipod_music();
     bool complete;
 
     mutex_lock(&catalog_mutex);
@@ -1428,6 +1439,8 @@ static void validation_thread(void)
     memset(&fingerprint, 0, sizeof(fingerprint));
     complete = validate_directory(
         "/Music", 0, &fingerprint, true) &&
+        (!include_ipod_music || validate_directory(
+            "/iPod_Control/Music", 0, &fingerprint, true)) &&
         validate_directory(
             "/Podcasts", 0, &fingerprint, true) &&
         validate_directory(

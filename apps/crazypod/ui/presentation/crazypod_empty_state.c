@@ -46,7 +46,7 @@ void crazypod_empty_state_render(
         8 + message_height + 16);
     root = crazypod_ui_widget_box(
         parent, 0, 0, LCD_WIDTH, LCD_HEIGHT,
-        0, 0x000000, 36);
+        0, 0x000000, LV_OPA_TRANSP);
     lv_obj_remove_flag(root, LV_OBJ_FLAG_CLICKABLE);
     crazypod_overlay_glass_prepare(true);
     panel = crazypod_overlay_glass_panel(

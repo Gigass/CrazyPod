@@ -38,6 +38,7 @@
 static struct crazypod_app_input_host host;
 static bool play_short_press_pending;
 static bool home_hold_pending;
+static bool home_menu_tap_pending;
 static bool home_menu_gesture_owned;
 static bool home_menu_release_seen;
 static long home_hold_deadline;
@@ -65,6 +66,10 @@ static bool remote_home_select_held;
 #define HOME_HOLD_FEEDBACK_DELAY_TICKS \
     ((HZ * HOME_HOLD_FEEDBACK_DELAY_MS / 1000) > 0 \
         ? (HZ * HOME_HOLD_FEEDBACK_DELAY_MS / 1000) : 1)
+#define HOME_HOLD_FEEDBACK_COMPLETION_LEAD_MS 40
+#define HOME_HOLD_FEEDBACK_COMPLETION_LEAD_TICKS \
+    ((HZ * HOME_HOLD_FEEDBACK_COMPLETION_LEAD_MS / 1000) > 0 \
+        ? (HZ * HOME_HOLD_FEEDBACK_COMPLETION_LEAD_MS / 1000) : 1)
 /* iAP remote state is leased for 300 ms. Keep gesture ownership through
  * that lease plus one scheduler margin so a delayed duplicate state cannot
  * become a fresh Menu press on the newly opened route. */
@@ -250,6 +255,7 @@ static long remote_down_multitap_window_ticks(void)
 
 static void confirm_remote_down_hold(long now)
 {
+#ifdef IPOD_ACCESSORY_PROTOCOL
     if(!remote_down_hold_active ||
        remote_down_hold_confirmed ||
        (long)(now - (remote_down_hold_start +
@@ -261,6 +267,9 @@ static void confirm_remote_down_hold(long now)
         BUTTON_RC_DOWN | BUTTON_REPEAT,
         now, remote_down_multitap_window_ticks());
     host.begin_power_hold(remote_down_hold_start);
+#else
+    (void)now;
+#endif
 }
 
 static void home_open_selected_app(void)
@@ -519,26 +528,31 @@ void crazypod_app_input_configure(
 {
     if(new_host != NULL) {
         host = *new_host;
-        home_hold_pending = false;
-        home_menu_gesture_owned = false;
-        home_menu_release_seen = false;
-        home_menu_release_deadline = 0;
-        now_playing_direction_button = BUTTON_NONE;
-        now_playing_direction_held = false;
-        capture_chord_pending = false;
-        capture_chord_recording_toggled = false;
-        crazypod_desktop_hold_feedback_dismiss(false);
-        crazypod_hold_feedback_dismiss(&capture_hold_feedback);
-        crazypod_alpha_jump_reset(&alpha_jump);
-        crazypod_remote_multitap_reset(&remote_down_multitap);
-        crazypod_remote_multitap_reset(&now_select_multitap);
-        crazypod_remote_multitap_reset(&lock_select_multitap);
-        remote_down_hold_active = false;
-        remote_down_hold_confirmed = false;
-        remote_down_hold_start = 0;
-        remote_home_select_pending = false;
-        remote_home_select_held = false;
+        crazypod_app_input_cancel_pending();
     }
+}
+
+void crazypod_app_input_cancel_pending(void)
+{
+    play_short_press_pending = false;
+    home_hold_pending = false;
+    home_menu_tap_pending = false;
+    home_menu_gesture_owned = false;
+    home_menu_release_seen = false;
+    home_hold_deadline = 0;
+    home_menu_release_deadline = 0;
+    finish_now_playing_direction_gesture();
+    capture_chord_pending = false;
+    capture_chord_recording_toggled = false;
+    crazypod_desktop_hold_feedback_dismiss(false);
+    crazypod_hold_feedback_dismiss(&capture_hold_feedback);
+    crazypod_alpha_jump_reset(&alpha_jump);
+    crazypod_remote_multitap_reset(&remote_down_multitap);
+    crazypod_remote_multitap_reset(&now_select_multitap);
+    crazypod_remote_multitap_reset(&lock_select_multitap);
+    clear_remote_down_hold(false);
+    remote_home_select_pending = false;
+    remote_home_select_held = false;
 }
 
 int crazypod_app_input_wait_ticks(long now)
@@ -651,6 +665,7 @@ void crazypod_app_input_tick(long now, bool locked)
 #endif
        ) {
         home_hold_pending = false;
+        home_menu_tap_pending = false;
         crazypod_desktop_hold_feedback_dismiss(false);
         return;
     }
@@ -662,15 +677,21 @@ void crazypod_app_input_tick(long now, bool locked)
         if(!crazypod_desktop_hold_feedback_visible() &&
            (long)(now - feedback_deadline) >= 0) {
             long remaining_ticks = home_hold_deadline - now;
+            long animation_ticks = MAX(
+                1,
+                remaining_ticks -
+                    HOME_HOLD_FEEDBACK_COMPLETION_LEAD_TICKS);
 
+            home_menu_tap_pending = false;
             crazypod_desktop_hold_feedback_begin(
                 LV_SYMBOL_AUDIO,
-                (int)(remaining_ticks * 1000 / HZ));
+                (int)(animation_ticks * 1000 / HZ));
         }
         return;
     }
 
     home_hold_pending = false;
+    home_menu_tap_pending = false;
     crazypod_desktop_hold_feedback_dismiss(false);
     backlight_on();
     home_menu_gesture_owned = true;
@@ -747,14 +768,22 @@ void crazypod_app_input_handle(
     }
     if(home_hold_pending && base != BUTTON_MENU) {
         home_hold_pending = false;
+        home_menu_tap_pending = false;
         crazypod_desktop_hold_feedback_dismiss(false);
     }
     if(handle_capture_chord(button, now))
         return;
     if(base == BUTTON_MENU &&
        (button & BUTTON_REL) != 0) {
-        home_menu_short_release = home_hold_pending;
+        long tap_deadline = home_hold_deadline -
+            HOME_NOW_PLAYING_HOLD_TICKS +
+            HOME_HOLD_FEEDBACK_DELAY_TICKS;
+
+        home_menu_short_release =
+            home_hold_pending && home_menu_tap_pending &&
+            (long)(now - tap_deadline) < 0;
         home_hold_pending = false;
+        home_menu_tap_pending = false;
         crazypod_desktop_hold_feedback_dismiss(
             home_menu_short_release);
     }
@@ -944,8 +973,12 @@ void crazypod_app_input_handle(
         };
 
         if(base == BUTTON_MENU) {
-            if(!repeated) {
+            if(repeated) {
+                home_menu_tap_pending = false;
+            }
+            else if(!home_hold_pending) {
                 home_hold_pending = true;
+                home_menu_tap_pending = true;
                 home_hold_deadline =
                     now + HOME_NOW_PLAYING_HOLD_TICKS;
             }

@@ -331,9 +331,6 @@ void crazypod_choice_overlay_show(
     if(callbacks->create_underlay != NULL)
         (void)callbacks->create_underlay(
             view.root, callbacks->context);
-    (void)crazypod_ui_widget_box(
-        view.root, 0, 0, LCD_WIDTH, LCD_HEIGHT,
-        0, 0x000000, 30);
     view.panel = callbacks->create_panel(
         view.root, view.geometry.x, view.geometry.y,
         view.geometry.width, view.geometry.height,

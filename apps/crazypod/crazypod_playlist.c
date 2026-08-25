@@ -14,6 +14,7 @@
 #include "settings.h"
 
 #include "crazypod_playlist.h"
+#include "crazypod_state.h"
 
 static int queue_storage_handle;
 static int queue_capacity;
@@ -118,12 +119,12 @@ static void copy_path(char *destination, const char *source)
     snprintf(destination, MAX_PATH, "%s", source);
 }
 
-static bool path_is_excluded_ipod_music(const char *path)
+static bool path_is_disabled_ipod_music(const char *path)
 {
     static const char directory[] = "/iPod_Control/Music";
     size_t length = sizeof(directory) - 1;
 
-    return path != NULL &&
+    return !crazypod_state_read_ipod_music() && path != NULL &&
         strncmp(path, directory, length) == 0 &&
         (path[length] == '\0' || path[length] == '/');
 }
@@ -183,7 +184,7 @@ int playlist_insert_track(struct playlist_info *playlist, const char *filename,
     (void)sync;
 
     queue_lock();
-    if(filename == NULL || path_is_excluded_ipod_music(filename) ||
+    if(filename == NULL || path_is_disabled_ipod_music(filename) ||
        queue_length == INT_MAX ||
        !queue_storage_reserve(queue_length + 1)) {
         queue_unlock();
@@ -516,7 +517,7 @@ bool crazypod_queue_restore_add(const char *path)
 
     queue_lock();
     if(path == NULL || path[0] != '/' ||
-       path_is_excluded_ipod_music(path) ||
+       path_is_disabled_ipod_music(path) ||
        queue_length == INT_MAX ||
        !queue_storage_reserve(queue_length + 1)) {
         queue_unlock();

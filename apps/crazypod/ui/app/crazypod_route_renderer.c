@@ -354,6 +354,11 @@ void crazypod_route_renderer_render(
 
     reset_feature_surfaces();
     lv_obj_clean(content);
+    if(state->route == MUSIC_ROUTE_NOW_PLAYING &&
+       crazypod_now_playing_theme_enabled() &&
+       !crazypod_now_playing_theme_open() &&
+       !crazypod_miniapps_feature_is_open())
+        crazypod_runtime_asset_fonts_reset();
     lv_obj_set_pos(content, 0, 0);
     lv_obj_set_style_bg_color(
         content,

@@ -12,6 +12,10 @@
 #define HOLD_FEEDBACK_WIDTH 200
 #define HOLD_FEEDBACK_HEIGHT 34
 #define HOLD_FEEDBACK_INSET 3
+#define HOLD_FEEDBACK_TOPBAR_WIDTH 112
+#define HOLD_FEEDBACK_TOPBAR_HEIGHT 20
+#define HOLD_FEEDBACK_TOPBAR_INSET 2
+#define HOLD_FEEDBACK_TOPBAR_Y 6
 
 static void fill_width_anim(void *target, int32_t value)
 {
@@ -39,12 +43,17 @@ void crazypod_hold_feedback_dismiss(
     crazypod_hold_feedback_reset(feedback);
 }
 
-void crazypod_hold_feedback_begin(
+static void begin_hold_feedback(
     struct crazypod_hold_feedback *feedback,
-    lv_obj_t *parent, const char *symbol, int duration_ms)
+    lv_obj_t *parent, const char *symbol, int duration_ms,
+    int width, int height, int inset, int radius,
+    const lv_font_t *font, bool topbar)
 {
-    const int inner_width =
-        HOLD_FEEDBACK_WIDTH - 2 * HOLD_FEEDBACK_INSET;
+    const int inner_width = width - 2 * inset;
+    const int max_fill_width =
+        inner_width - (topbar ? 2 : 0);
+    const int fill_height =
+        height - 2 * inset - (topbar ? 2 : 0);
     lv_obj_t *label;
     lv_anim_t animation;
     int label_height;
@@ -57,9 +66,11 @@ void crazypod_hold_feedback_begin(
         duration_ms = 1;
     feedback->root = crazypod_ui_widget_box(
         parent, 0, 0,
-        HOLD_FEEDBACK_WIDTH, HOLD_FEEDBACK_HEIGHT,
-        12, 0x111118, 226);
-    lv_obj_align(feedback->root, LV_ALIGN_CENTER, 0, 0);
+        width, height, radius, 0x111118, 226);
+    lv_obj_align(
+        feedback->root,
+        topbar ? LV_ALIGN_TOP_MID : LV_ALIGN_CENTER,
+        0, topbar ? HOLD_FEEDBACK_TOPBAR_Y : 0);
     lv_obj_remove_flag(feedback->root, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_border_width(feedback->root, 1, 0);
     lv_obj_set_style_border_color(
@@ -67,30 +78,52 @@ void crazypod_hold_feedback_begin(
     lv_obj_set_style_border_opa(feedback->root, 45, 0);
     feedback->fill = crazypod_ui_widget_box(
         feedback->root,
-        HOLD_FEEDBACK_INSET, HOLD_FEEDBACK_INSET,
-        1, HOLD_FEEDBACK_HEIGHT - 2 * HOLD_FEEDBACK_INSET,
-        9, COLOR_PROGRESS, 78);
+        inset, inset,
+        1, fill_height,
+        radius - inset,
+        topbar ? COLOR_WHITE : COLOR_PROGRESS, 78);
     label = crazypod_ui_widget_label(
         feedback->root,
         symbol != NULL ? symbol : LV_SYMBOL_BULLET,
-        &lv_font_montserrat_12,
+        font,
         COLOR_WHITE, LV_OPA_COVER);
-    label_height = lv_font_get_line_height(
-        &lv_font_montserrat_12);
+    label_height = lv_font_get_line_height(font);
     lv_obj_set_size(label, inner_width, label_height);
     lv_obj_set_pos(
-        label, HOLD_FEEDBACK_INSET,
-        (HOLD_FEEDBACK_HEIGHT - label_height) / 2);
+        label, inset, (height - label_height) / 2);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_move_foreground(feedback->root);
 
     lv_anim_init(&animation);
     lv_anim_set_var(&animation, feedback->fill);
     lv_anim_set_exec_cb(&animation, fill_width_anim);
-    lv_anim_set_values(&animation, 1, inner_width);
+    lv_anim_set_values(&animation, 1, max_fill_width);
     lv_anim_set_duration(&animation, duration_ms);
     lv_anim_set_path_cb(&animation, lv_anim_path_linear);
     lv_anim_start(&animation);
+}
+
+void crazypod_hold_feedback_begin(
+    struct crazypod_hold_feedback *feedback,
+    lv_obj_t *parent, const char *symbol, int duration_ms)
+{
+    begin_hold_feedback(
+        feedback, parent, symbol, duration_ms,
+        HOLD_FEEDBACK_WIDTH, HOLD_FEEDBACK_HEIGHT,
+        HOLD_FEEDBACK_INSET, 12,
+        &lv_font_montserrat_12, false);
+}
+
+void crazypod_hold_feedback_begin_topbar(
+    struct crazypod_hold_feedback *feedback,
+    lv_obj_t *parent, const char *symbol, int duration_ms)
+{
+    begin_hold_feedback(
+        feedback, parent, symbol, duration_ms,
+        HOLD_FEEDBACK_TOPBAR_WIDTH,
+        HOLD_FEEDBACK_TOPBAR_HEIGHT,
+        HOLD_FEEDBACK_TOPBAR_INSET, 8,
+        &lv_font_montserrat_10, true);
 }
 
 #endif

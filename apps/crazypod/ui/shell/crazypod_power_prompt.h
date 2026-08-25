@@ -7,6 +7,7 @@
 #include "lvgl.h"
 
 struct crazypod_power_prompt_callbacks {
+    bool compact_hold_feedback;
     void (*before_hold_show)(void);
     void (*before_show)(void);
     lv_obj_t *(*create_panel)(

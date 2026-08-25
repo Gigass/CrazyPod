@@ -364,7 +364,8 @@ bool crazypod_miniapp_scene_now_playing_artwork_refresh_node(
         }
         else {
             crop_height = crop_width * height / width;
-            crop_y = (descriptor->header.h - crop_height) / 2;
+            if(width != LCD_WIDTH || height != LCD_HEIGHT)
+                crop_y = (descriptor->header.h - crop_height) / 2;
         }
         if(crop_width <= 0 || crop_height <= 0 ||
            byte_count == 0 || byte_count > UINT32_MAX ||

@@ -18,7 +18,8 @@
 
 #define CRAZYPOD_FONT_MIN_SIZE 6
 #define CRAZYPOD_FONT_MAX_SIZE 48
-#define CRAZYPOD_RUNTIME_FONT_MAX 11
+/* Shell faces and a certified theme's faces/line-height variants coexist. */
+#define CRAZYPOD_RUNTIME_FONT_MAX 24
 #define CRAZYPOD_ASSET_FONT_MAX 4
 #define CRAZYPOD_FONT_COVERAGE_BYTES 8192
 #define CRAZYPOD_FONT_HEADER_SIZE 36
@@ -28,7 +29,7 @@ struct crazypod_asset_font_slot {
     char key[32];
     char path[MAX_PATH];
     int font_id;
-    uint8_t coverage[CRAZYPOD_FONT_COVERAGE_BYTES];
+    uint8_t *coverage;
     lv_font_t lv_font;
     unsigned requested_line_height;
     bool semantic;
@@ -41,6 +42,8 @@ static struct crazypod_asset_font_slot runtime_fonts[
     CRAZYPOD_RUNTIME_FONT_MAX];
 static struct crazypod_asset_font_slot asset_fonts[
     CRAZYPOD_ASSET_FONT_MAX];
+static uint8_t asset_font_coverage[
+    CRAZYPOD_ASSET_FONT_MAX][CRAZYPOD_FONT_COVERAGE_BYTES];
 static bool initialized;
 static char last_error[MAX_PATH + 64];
 
@@ -51,6 +54,8 @@ static const void *asset_get_glyph_bitmap(
     lv_font_glyph_dsc_t *glyph, lv_draw_buf_t *draw_buffer);
 static bool asset_ensure_loaded(
     struct crazypod_asset_font_slot *slot);
+static bool semantic_slot_use_path(
+    struct crazypod_asset_font_slot *slot, const char *path);
 static const lv_font_t *semantic_font_resolve(
     enum crazypod_font_family family, unsigned size, unsigned weight,
     enum crazypod_font_style style, unsigned line_height, bool persistent);
@@ -177,7 +182,7 @@ void crazypod_runtime_font_prewarm_text(
     if(lv_font == NULL)
         return;
     slot = (struct crazypod_asset_font_slot *)lv_font->dsc;
-    if(slot == NULL || !asset_ensure_loaded(slot))
+    if(slot == NULL)
         return;
     cursor = (const unsigned char *)text;
     while(*cursor != '\0') {
@@ -185,6 +190,10 @@ void crazypod_runtime_font_prewarm_text(
         if(character == 0)
             break;
         mutex_lock(&slot->glyph_mutex);
+        if(!asset_ensure_loaded(slot)) {
+            mutex_unlock(&slot->glyph_mutex);
+            return;
+        }
         font_lock(slot->font_id, true);
         font = font_get(slot->font_id);
         if(font != NULL)
@@ -395,6 +404,23 @@ static bool asset_ensure_loaded(struct crazypod_asset_font_slot *slot)
     return true;
 }
 
+static bool semantic_slot_use_path(
+    struct crazypod_asset_font_slot *slot, const char *path)
+{
+    bool loaded;
+
+    mutex_lock(&slot->glyph_mutex);
+    if(strcmp(slot->path, path) != 0) {
+        if(slot->font_id >= 0)
+            font_unload(slot->font_id);
+        slot->font_id = -1;
+        strlcpy(slot->path, path, sizeof(slot->path));
+    }
+    loaded = asset_ensure_loaded(slot);
+    mutex_unlock(&slot->glyph_mutex);
+    return loaded;
+}
+
 static const lv_font_t *semantic_font_resolve(
     enum crazypod_font_family family, unsigned size, unsigned weight,
     enum crazypod_font_style style, unsigned line_height, bool persistent)
@@ -417,9 +443,14 @@ static const lv_font_t *semantic_font_resolve(
         return NULL;
     }
     count = snprintf(
-        key, sizeof(key), "%s-%s-%u-%u-%u",
-        locale, family_value, weight, size, line_height);
+        key, sizeof(key), "%s-%u-%u-%u",
+        family_value, weight, size, line_height);
     if(count < 0 || (size_t)count >= sizeof(key))
+        return NULL;
+    count = snprintf(
+        path, sizeof(path), FONT_DIR "/crazypod-aot/%s-%s-%u-%u.fnt",
+        locale, family_value, weight, size);
+    if(count < 0 || (size_t)count >= sizeof(path))
         return NULL;
     for(index = 0; index < CRAZYPOD_RUNTIME_FONT_MAX; ++index) {
         struct crazypod_asset_font_slot *slot = &runtime_fonts[index];
@@ -427,6 +458,15 @@ static const lv_font_t *semantic_font_resolve(
         if(slot->used && strcmp(slot->key, key) == 0) {
             if(persistent)
                 slot->persistent = true;
+            /* Regional faces have identical metrics. Reload the slot in
+             * place so existing LVGL font pointers remain valid while a
+             * language change reuses the same semantic cache entry. */
+            if(!semantic_slot_use_path(slot, path)) {
+                record_error(
+                    "font load failed", family_value, size,
+                    weight, line_height, path);
+                return NULL;
+            }
             return &slot->lv_font;
         }
         if(!slot->used && available == NULL)
@@ -438,17 +478,9 @@ static const lv_font_t *semantic_font_resolve(
             weight, line_height, NULL);
         return NULL;
     }
-    count = snprintf(
-        path, sizeof(path), FONT_DIR "/crazypod-aot/%s-%s-%u-%u.fnt",
-        locale, family_value, weight, size);
-    if(count < 0 || (size_t)count >= sizeof(path))
-        return NULL;
     font_slot_initialize(
         available, key, path, line_height, true, persistent);
-    /* Semantic Noto CJK artifacts already contain the phase-one script set,
-     * so glyph lookup never falls through to an outline font. */
-    memset(available->coverage, 0xff, sizeof(available->coverage));
-    if(!asset_ensure_loaded(available)) {
+    if(!semantic_slot_use_path(available, path)) {
         record_error(
             "font load failed", family_value, size,
             weight, line_height, path);
@@ -470,10 +502,14 @@ static bool asset_get_glyph_dsc(
 
     (void)letter_next;
     if(slot == NULL || letter > UINT16_MAX ||
-       (slot->coverage[letter >> 3] & (1u << (letter & 7))) == 0 ||
-       !asset_ensure_loaded(slot))
+       (slot->coverage != NULL &&
+        (slot->coverage[letter >> 3] & (1u << (letter & 7))) == 0))
         return false;
     mutex_lock(&slot->glyph_mutex);
+    if(!asset_ensure_loaded(slot)) {
+        mutex_unlock(&slot->glyph_mutex);
+        return false;
+    }
     font_lock(slot->font_id, true);
     rockbox_font = font_get(slot->font_id);
     if(rockbox_font == NULL || letter < rockbox_font->firstchar ||
@@ -511,9 +547,13 @@ static const void *asset_get_glyph_bitmap(
         return NULL;
     slot = (struct crazypod_asset_font_slot *)
         glyph->resolved_font->dsc;
-    if(slot == NULL || !asset_ensure_loaded(slot))
+    if(slot == NULL)
         return NULL;
     mutex_lock(&slot->glyph_mutex);
+    if(!asset_ensure_loaded(slot)) {
+        mutex_unlock(&slot->glyph_mutex);
+        return NULL;
+    }
     font_lock(slot->font_id, true);
     font = font_get(slot->font_id);
     source = font != NULL ? font_get_bits(font, glyph->gid.index) : NULL;
@@ -578,9 +618,10 @@ const lv_font_t *crazypod_runtime_asset_font(
 
         if(slot->used)
             continue;
-        if(!load_font_coverage(path, slot->coverage))
+        if(!load_font_coverage(path, asset_font_coverage[index]))
             return NULL;
         font_slot_initialize(slot, key, path, 0, false, false);
+        slot->coverage = asset_font_coverage[index];
         if(!asset_ensure_loaded(slot)) {
             memset(slot, 0, sizeof(*slot));
             return NULL;

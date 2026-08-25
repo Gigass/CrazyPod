@@ -16,6 +16,7 @@
 
 #include "../../../crazypod_audio_shims.h"
 #include "../../../crazypod_l10n.h"
+#include "../../../crazypod_music.h"
 #include "../../../crazypod_playlist.h"
 #include "../../../crazypod_state.h"
 #include "crazypod_settings_model.h"
@@ -101,6 +102,8 @@ const char *crazypod_ui_settings_item_title(int item)
     case SETTINGS_ITEM_TIME_SECOND: return CP_TR("Second");
     case SETTINGS_ITEM_SHUFFLE: return CP_TR("Shuffle");
     case SETTINGS_ITEM_REPEAT: return CP_TR("Repeat");
+    case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
+        return CP_TR("Original iPod Music");
     case SETTINGS_ITEM_IDLE_POWEROFF: return CP_TR("Idle Power Off");
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION: return CP_TR("Sleep Timer");
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP: return CP_TR("Timer on Boot");
@@ -149,6 +152,8 @@ const char *crazypod_ui_settings_item_symbol(int item)
         return LV_SYMBOL_SHUFFLE;
     case SETTINGS_ITEM_REPEAT:
         return LV_SYMBOL_LOOP;
+    case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
+        return LV_SYMBOL_AUDIO;
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
@@ -327,6 +332,8 @@ static int settings_item_current_value(int item)
         return global_settings.playlist_shuffle ? 1 : 0;
     case SETTINGS_ITEM_REPEAT:
         return crazypod_queue_repeat();
+    case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
+        return crazypod_state_read_ipod_music() ? 1 : 0;
     case SETTINGS_ITEM_IDLE_POWEROFF:
         return global_settings.poweroff;
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:
@@ -366,6 +373,7 @@ int crazypod_ui_settings_choice_count(int item)
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
+    case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
 #ifdef HAVE_HARDWARE_CLICK
@@ -449,6 +457,7 @@ static int settings_choice_value(int item, int index)
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
+    case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
 #ifdef HAVE_HARDWARE_CLICK
@@ -546,6 +555,7 @@ int crazypod_ui_settings_choice_index(int item)
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
+    case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
 #ifdef HAVE_HARDWARE_CLICK
@@ -700,6 +710,7 @@ const char *crazypod_ui_settings_choice_title(int item, int index)
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
+    case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
     case SETTINGS_ITEM_SLEEP_TIMER_KEYPRESS:
 #ifdef HAVE_HARDWARE_CLICK
@@ -862,6 +873,12 @@ bool crazypod_ui_settings_apply_choice(int item, int index)
     case SETTINGS_ITEM_REPEAT:
         crazypod_queue_set_repeat(value);
         crazypod_state_mark_dirty();
+        break;
+    case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
+        if(crazypod_state_read_ipod_music() != (value != 0)) {
+            crazypod_state_set_read_ipod_music(value != 0);
+            crazypod_music_invalidate_catalog();
+        }
         break;
     case SETTINGS_ITEM_IDLE_POWEROFF:
         global_settings.poweroff = value;

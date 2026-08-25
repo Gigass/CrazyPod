@@ -185,7 +185,6 @@ void crazypod_power_prompt_show(void)
     };
     lv_obj_t *title;
     lv_obj_t *detail;
-    lv_obj_t *dimmer;
     struct crazypod_popup_geometry geometry;
     int content_width;
     int symbol_column_width = 0;
@@ -217,10 +216,6 @@ void crazypod_power_prompt_show(void)
     lv_obj_move_foreground(prompt.root);
     (void)crazypod_desktop_native_create_modal_underlay(
         prompt.root);
-    dimmer = make_box(
-        prompt.root, 0, 0, LCD_WIDTH, LCD_HEIGHT,
-        0, 0x000000, 86);
-    lv_obj_remove_flag(dimmer, LV_OBJ_FLAG_CLICKABLE);
     content_width = crazypod_popup_text_width(
         CP_TR("Choose Action"), &lv_font_montserrat_12) +
         2 * option_inset;
@@ -470,10 +465,16 @@ void crazypod_power_prompt_tick(long now, long hold_ticks)
     lv_obj_move_foreground(prompt.hold_root);
     (void)crazypod_desktop_native_create_modal_underlay(
         prompt.hold_root);
-    crazypod_hold_feedback_begin(
-        &prompt.hold_feedback, prompt.hold_root,
-        LV_SYMBOL_POWER,
-        (int)(remaining_ticks * 1000 / HZ));
+    if(prompt.callbacks.compact_hold_feedback)
+        crazypod_hold_feedback_begin_topbar(
+            &prompt.hold_feedback, prompt.hold_root,
+            LV_SYMBOL_POWER,
+            (int)(remaining_ticks * 1000 / HZ));
+    else
+        crazypod_hold_feedback_begin(
+            &prompt.hold_feedback, prompt.hold_root,
+            LV_SYMBOL_POWER,
+            (int)(remaining_ticks * 1000 / HZ));
     if(prompt.hold_feedback.root == NULL)
         clear_hold_feedback();
 }

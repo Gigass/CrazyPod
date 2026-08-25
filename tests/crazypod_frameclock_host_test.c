@@ -240,6 +240,27 @@ static void test_full_frame_cannot_discard_home_sync(void)
     assert(lcd_sync_mode == 0);
 }
 
+static void test_fullscreen_owner_discards_stale_partial_requests(void)
+{
+    reset_lcd();
+    crazypod_present_init(0);
+
+    crazypod_present_queue_rect(261, 186, 42, 42);
+    crazypod_present_queue_home_rect(0, 40, LCD_WIDTH, 103);
+    crazypod_present_take_fullscreen_ownership();
+    crazypod_present_queue_full();
+    crazypod_present_now();
+
+    assert(lcd_calls == 1);
+    assert(lcd_sync_mode == 0);
+    assert(lcd_x == 0);
+    assert(lcd_y == 0);
+    assert(lcd_width == LCD_WIDTH);
+    assert(lcd_height == LCD_HEIGHT);
+    crazypod_present_now();
+    assert(lcd_calls == 1);
+}
+
 static void test_failed_home_sync_retries_without_consuming_frame(void)
 {
     struct crazypod_present_diagnostics diagnostics;
@@ -337,6 +358,7 @@ int main(void)
     test_home_sync_does_not_merge_playback_capsule();
     test_home_motion_keeps_priority_over_deferred_lvgl();
     test_full_frame_cannot_discard_home_sync();
+    test_fullscreen_owner_discards_stale_partial_requests();
     test_failed_home_sync_retries_without_consuming_frame();
     test_failed_full_sync_retries_without_consuming_frame();
     test_home_touch_defers_ordinary_lvgl_until_release();

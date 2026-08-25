@@ -56,8 +56,9 @@ struct headphone_popup_state {
     struct crazypod_headphone_popup_callbacks callbacks;
     enum crazypod_headphone_popup_style style;
     int timeline_ms;
-    int exit_origin_y;
-    int exit_origin_opacity;
+    int exit_title_opacity;
+    int exit_surface_opacity;
+    int exit_status_opacity;
     bool ui_ready;
     bool inserted;
     bool connected_copy;
@@ -743,13 +744,21 @@ static void exit_anim(void *target, int32_t value)
     (void)target;
     if(popup.panel == NULL)
         return;
-    lv_obj_set_y(
-        popup.panel,
-        popup.exit_origin_y + 12 * progress / 1024);
-    lv_obj_set_style_opa(
-        popup.panel,
-        (lv_opa_t)(popup.exit_origin_opacity *
-            (1024 - progress) / 1024), 0);
+    if(popup.title != NULL)
+        lv_obj_set_style_opa(
+            popup.title,
+            (lv_opa_t)(popup.exit_title_opacity *
+                (1024 - progress) / 1024), 0);
+    if(popup.surface != NULL)
+        lv_obj_set_style_opa(
+            popup.surface,
+            (lv_opa_t)(popup.exit_surface_opacity *
+                (1024 - progress) / 1024), 0);
+    if(popup.status != NULL)
+        lv_obj_set_style_opa(
+            popup.status,
+            (lv_opa_t)(popup.exit_status_opacity *
+                (1024 - progress) / 1024), 0);
 }
 
 static void exit_completed(lv_anim_t *animation)
@@ -778,9 +787,12 @@ void crazypod_headphone_popup_dismiss(bool animated)
         popup.hide_timer = NULL;
     }
     lv_anim_delete(popup.panel, NULL);
-    popup.exit_origin_y = lv_obj_get_y(popup.panel);
-    popup.exit_origin_opacity =
-        lv_obj_get_style_opa(popup.panel, 0);
+    popup.exit_title_opacity =
+        lv_obj_get_style_opa(popup.title, 0);
+    popup.exit_surface_opacity =
+        lv_obj_get_style_opa(popup.surface, 0);
+    popup.exit_status_opacity =
+        lv_obj_get_style_opa(popup.status, 0);
     lv_anim_init(&animation);
     lv_anim_set_var(&animation, popup.panel);
     lv_anim_set_exec_cb(&animation, exit_anim);

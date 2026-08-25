@@ -85,6 +85,18 @@ if "enum crazypod_font_style style" not in header:
     raise SystemExit("runtime font resolver lacks style")
 if 'FONT_DIR "/crazypod-aot/' not in source:
     raise SystemExit("runtime resolver does not use the shared AOT font store")
+if re.search(r'key, sizeof\(key\), "%s-%s-', source):
+    raise SystemExit("runtime semantic font keys must not retain old locales")
+if "semantic_slot_use_path(slot, path)" not in source:
+    raise SystemExit("runtime semantic fonts do not reload regional faces")
+slot_match = re.search(r"#define CRAZYPOD_RUNTIME_FONT_MAX (\d+)", source)
+if slot_match is None or int(slot_match.group(1)) < 24:
+    raise SystemExit("runtime font pool cannot hold shell and certified theme fonts")
+if re.search(
+        r"struct crazypod_asset_font_slot\s*\{[^}]*"
+        r"uint8_t coverage\[CRAZYPOD_FONT_COVERAGE_BYTES\]",
+        source, re.DOTALL):
+    raise SystemExit("semantic font slots must not embed private-font coverage")
 if "lv_tiny_ttf" in source:
     raise SystemExit("runtime resolver must not rasterize outlines on-device")
 for reason in (

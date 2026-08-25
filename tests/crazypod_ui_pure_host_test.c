@@ -5,6 +5,7 @@
 #include "crazypod_collation.h"
 #include "features/organizer/crazypod_calendar_model.h"
 #include "presentation/crazypod_ui_menu_layout.h"
+#include "presentation/crazypod_scene_motion.h"
 #include "presentation/crazypod_ui_text.h"
 #include "features/crazypod_feature.h"
 #include "navigation/crazypod_feature_dispatcher.h"
@@ -207,6 +208,49 @@ static void test_navigation_commands(void)
     assert(crazypod_navigation_none().kind == CRAZYPOD_NAVIGATION_NONE);
 }
 
+static void test_scene_motion(void)
+{
+    struct crazypod_scene_motion_layout start;
+    struct crazypod_scene_motion_layout middle;
+    struct crazypod_scene_motion_layout end;
+
+    crazypod_scene_motion_layout(
+        CRAZYPOD_SCENE_MOTION_PUSH, 0, 240, &start);
+    crazypod_scene_motion_layout(
+        CRAZYPOD_SCENE_MOTION_PUSH, 512, 240, &middle);
+    crazypod_scene_motion_layout(
+        CRAZYPOD_SCENE_MOTION_PUSH, 1024, 240, &end);
+    assert(start.from_x == 0);
+    assert(start.from_y == 0);
+    assert(start.to_y == 240);
+    assert(end.to_y == 0);
+    assert(end.from_y == 0);
+    assert(middle.to_y < 120);
+    assert(start.edge_shadow_opacity > end.edge_shadow_opacity);
+
+    crazypod_scene_motion_layout(
+        CRAZYPOD_SCENE_MOTION_POP, 0, 240, &start);
+    crazypod_scene_motion_layout(
+        CRAZYPOD_SCENE_MOTION_POP, 1024, 240, &end);
+    assert(start.from_x == 0);
+    assert(start.from_y == 0);
+    assert(start.to_y == 0);
+    assert(end.from_y == 240);
+    assert(end.to_y == 0);
+
+    crazypod_scene_motion_layout(
+        CRAZYPOD_SCENE_MOTION_REPLACE, 0, 240, &start);
+    crazypod_scene_motion_layout(
+        CRAZYPOD_SCENE_MOTION_REPLACE, 1024, 240, &end);
+    assert(start.from_x == 0);
+    assert(start.from_y == 0);
+    assert(start.to_y == 240);
+    assert(end.from_y == 0);
+    assert(end.to_y == 0);
+    assert(crazypod_scene_motion_duration_ms(
+               CRAZYPOD_SCENE_MOTION_PUSH) == 340);
+}
+
 static bool test_music_input_handler(
     const struct route_state *state,
     const struct crazypod_input_event *event,
@@ -287,6 +331,7 @@ int main(void)
     test_alpha_jump_burst();
     test_route_registry();
     test_navigation_commands();
+    test_scene_motion();
     test_feature_input_dispatcher();
     return 0;
 }

@@ -35,6 +35,7 @@
 #include "crazypod_headphone_popup.h"
 #include "crazypod_lock_screen.h"
 #include "crazypod_power_prompt.h"
+#include "crazypod_shell.h"
 #include "crazypod_system_prompts.h"
 #include "crazypod_usb_prompt.h"
 
@@ -50,6 +51,7 @@ static void dismissed(void);
 
 static void before_show(void)
 {
+    crazypod_desktop_native_prepare_modal();
     crazypod_coverflow_set_compositing_suspended(true);
     if(crazypod_headphone_popup_visible() ||
        crazypod_choice_coordinator_visible() ||
@@ -78,6 +80,7 @@ static bool headphone_can_show(void)
 
 static void headphone_before_show(void)
 {
+    crazypod_desktop_native_prepare_modal();
     crazypod_coverflow_set_compositing_suspended(true);
     backlight_on();
     crazypod_overlay_glass_prepare(false);
@@ -99,7 +102,7 @@ static void configure_headphone(void)
 
 static void dismissed(void)
 {
-    crazypod_desktop_native_invalidate(true);
+    crazypod_desktop_native_restore_after_modal();
 }
 
 static void execute(enum shutdown_type type)
@@ -122,6 +125,10 @@ static void power_execute(int selected)
 static void configure_power(void)
 {
     const struct crazypod_power_prompt_callbacks callbacks = {
+        .compact_hold_feedback =
+            !crazypod_shell_product_active() &&
+            !crazypod_lock_screen_is_locked() &&
+            !crazypod_now_playing_overlay_visible(),
         .before_hold_show =
             crazypod_customize_feature_clear_input_holds,
         .before_show = before_show,

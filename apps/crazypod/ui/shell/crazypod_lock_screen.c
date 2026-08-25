@@ -33,11 +33,6 @@
 #define COLOR_WHITE 0xFFFFFF
 #define COLOR_CYAN 0x26CFF5
 #define UNLOCK_HOLD_TICKS ((HZ / 2) > 0 ? (HZ / 2) : 1)
-#define UNLOCK_FEEDBACK_DELAY_TICKS \
-    ((HZ / 5) > 0 ? (HZ / 5) : 1)
-#define UNLOCK_PROGRESS_TICKS \
-    ((UNLOCK_HOLD_TICKS - UNLOCK_FEEDBACK_DELAY_TICKS) > 0 \
-        ? (UNLOCK_HOLD_TICKS - UNLOCK_FEEDBACK_DELAY_TICKS) : 1)
 #define UNLOCK_OPEN_TICKS \
     ((HZ * 13 / 50) > 0 ? (HZ * 13 / 50) : 1)
 #define MEDIA_PANEL_SIDE_MARGIN 12
@@ -68,13 +63,16 @@
 #define LOCK_DATE_GAP 6
 #define LOCK_DATE_MARGIN 8
 #define LOCK_ROW_OPTICAL_Y (-5)
-#define LOCK_PROGRESS_RADIUS 13
 #define LOCK_ICON_X 6
 #define LOCK_ICON_Y 6
 #define LOCK_ICON_WIDTH 16
 #define LOCK_ICON_HEIGHT 16
 #define LOCK_SHACKLE_X 4
 #define LOCK_SHACKLE_Y 1
+#define UNLOCK_FEEDBACK_WIDTH 112
+#define UNLOCK_FEEDBACK_HEIGHT 20
+#define UNLOCK_FEEDBACK_INSET 2
+#define UNLOCK_FEEDBACK_RADIUS 8
 #define MEDIA_ARTWORK_BANKS 2
 
 static fb_data media_artwork_pixels[
@@ -102,6 +100,8 @@ struct lock_screen_state {
     lv_obj_t *media_progress_fill;
     lv_obj_t *media_elapsed;
     lv_obj_t *media_remaining;
+    lv_obj_t *hint_progress;
+    lv_obj_t *hint_progress_fill;
     lv_obj_t *hint_label;
     lv_obj_t *progress_surface;
     lv_obj_t *icon;
@@ -386,9 +386,11 @@ static void apply_media_layout(bool media_active)
         lv_obj_set_width(lock_state.date_label, LCD_WIDTH);
         lock_state.date_y = LOCK_MEDIA_DATE_Y;
         lv_obj_set_pos(lock_state.date_label, 0, lock_state.date_y);
-        lv_obj_set_width(lock_state.hint_label, LCD_WIDTH);
         lv_obj_set_pos(
-            lock_state.hint_label, 0, LOCK_MEDIA_HINT_Y);
+            lock_state.hint_progress,
+            (LCD_WIDTH - UNLOCK_FEEDBACK_WIDTH) / 2,
+            LOCK_MEDIA_HINT_Y -
+                lv_obj_get_y(lock_state.hint_label));
     }
     else {
         lv_obj_set_style_text_font(
@@ -406,8 +408,10 @@ static void apply_media_layout(bool media_active)
         lv_obj_set_width(lock_state.date_label, LCD_WIDTH);
         lock_state.date_y = 124;
         lv_obj_set_pos(lock_state.date_label, 0, lock_state.date_y);
-        lv_obj_set_width(lock_state.hint_label, LCD_WIDTH);
-        lv_obj_set_pos(lock_state.hint_label, 0, 153);
+        lv_obj_set_pos(
+            lock_state.hint_progress,
+            (LCD_WIDTH - UNLOCK_FEEDBACK_WIDTH) / 2,
+            153 - lv_obj_get_y(lock_state.hint_label));
     }
     layout_lock_row();
 }
@@ -461,6 +465,13 @@ static void update_media_artwork(
     const lv_image_dsc_t *prepared;
     bool has_artwork;
 
+    /* A NULL source means the confirmed track's artwork is still pending.
+     * Keep the copied image until the replacement can be committed. */
+    if(snapshot->artwork == NULL) {
+        set_hidden(lock_state.media_artwork_image,
+                   !lock_state.media_has_artwork);
+        return;
+    }
     if(snapshot->artwork == lock_state.media_artwork_descriptor &&
        snapshot->artwork_generation ==
            lock_state.media_artwork_generation &&
@@ -505,6 +516,7 @@ void crazypod_lock_screen_update_media(
         lock_state.media_artwork_descriptor = NULL;
         lock_state.media_artwork_generation = 0;
         lock_state.media_has_artwork = false;
+        set_hidden(lock_state.media_artwork_image, true);
         apply_media_layout(false);
         return;
     }
@@ -638,86 +650,24 @@ void crazypod_lock_screen_refresh_appearance(void)
     lv_obj_invalidate(lock_state.root);
 }
 
-static void draw_progress_event(lv_event_t *event)
-{
-    lv_obj_t *surface;
-    lv_layer_t *layer;
-    lv_area_t area;
-    lv_area_t end_cap_area;
-    lv_draw_arc_dsc_t arc;
-    lv_draw_rect_dsc_t end_cap;
-    int center_x;
-    int center_y;
-    int active_width;
-    int end_angle;
-    int end_radius;
-    int end_x;
-    int end_y;
-    int progress;
-
-    if(lv_event_get_code(event) != LV_EVENT_DRAW_MAIN)
-        return;
-    surface = lv_event_get_target(event);
-    layer = lv_event_get_layer(event);
-    lv_obj_get_coords(surface, &area);
-    progress = lock_state.progress_percent;
-    if(progress < 0)
-        progress = 0;
-    if(progress > 100)
-        progress = 100;
-    center_x = area.x1 + lv_area_get_width(&area) / 2;
-    center_y = area.y1 + lv_area_get_height(&area) / 2;
-
-    if(progress <= 0)
-        return;
-    lv_draw_arc_dsc_init(&arc);
-    arc.base.layer = layer;
-    arc.center.x = center_x;
-    arc.center.y = center_y;
-    arc.radius = LOCK_PROGRESS_RADIUS;
-    arc.width = 1;
-    arc.rounded = 0;
-    arc.color = lv_color_hex(COLOR_WHITE);
-    arc.opa = 66;
-    arc.start_angle = 0;
-    arc.end_angle = 360;
-    lv_draw_arc(layer, &arc);
-    if(progress <= 0)
-        return;
-
-    active_width = 1;
-    end_angle = 270 + progress * 360 / 100;
-    arc.width = active_width;
-    arc.opa = LV_OPA_COVER;
-    arc.start_angle = 270;
-    arc.end_angle = end_angle;
-    lv_draw_arc(layer, &arc);
-
-    /* Keep the fixed start flat: LVGL's rounded arc draws a permanent cap at
-     * 12 o'clock, which rasterizes as the stray horizontal line. Only the
-     * moving end gets a round cap. */
-    end_radius = LOCK_PROGRESS_RADIUS - active_width / 2;
-    end_x = center_x +
-        ((end_radius * lv_trigo_cos(end_angle)) >> LV_TRIGO_SHIFT);
-    end_y = center_y +
-        ((end_radius * lv_trigo_sin(end_angle)) >> LV_TRIGO_SHIFT);
-    end_cap_area.x1 = end_x - active_width / 2;
-    end_cap_area.y1 = end_y - active_width / 2;
-    end_cap_area.x2 = end_cap_area.x1 + active_width - 1;
-    end_cap_area.y2 = end_cap_area.y1 + active_width - 1;
-    lv_draw_rect_dsc_init(&end_cap);
-    end_cap.base.layer = layer;
-    end_cap.radius = LV_RADIUS_CIRCLE;
-    end_cap.bg_color = lv_color_hex(COLOR_WHITE);
-    end_cap.bg_opa = LV_OPA_COVER;
-    lv_draw_rect(layer, &end_cap, &end_cap_area);
-}
-
 static void refresh_progress(void)
 {
     bool active = lock_state.opening ||
         lock_state.progress_percent > 0;
+    int max_fill_width =
+        UNLOCK_FEEDBACK_WIDTH - 2 * UNLOCK_FEEDBACK_INSET - 2;
+    int fill_width = 1 +
+        (max_fill_width - 1) *
+        lock_state.progress_percent / 100;
 
+    lv_obj_set_style_bg_opa(
+        lock_state.hint_progress,
+        active ? 226 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_opa(
+        lock_state.hint_progress,
+        active ? 45 : LV_OPA_TRANSP, 0);
+    set_hidden(lock_state.hint_progress_fill, !active);
+    lv_obj_set_width(lock_state.hint_progress_fill, fill_width);
     if(lock_state.progress_surface != NULL) {
         set_hidden(lock_state.progress_surface, false);
         if(active)
@@ -726,12 +676,7 @@ static void refresh_progress(void)
     }
     if(lock_state.hint_label == NULL)
         return;
-    set_hidden(lock_state.hint_label, active);
-    if(lock_state.opening)
-        CP_LV_LABEL_SET_TEXT(lock_state.hint_label, CP_TR("UNLOCKED"));
-    else
-        CP_LV_LABEL_SET_TEXT(
-            lock_state.hint_label, CP_TR("Hold Center to Unlock"));
+    set_hidden(lock_state.hint_label, false);
     if(!lock_state.opening && lock_state.icon_shackle != NULL) {
         lv_obj_set_pos(
             lock_state.icon_shackle,
@@ -753,15 +698,7 @@ void crazypod_lock_screen_simulator_set_progress(int progress)
     if(progress > 100)
         progress = 100;
     lock_state.progress_percent = progress;
-    set_hidden(lock_state.hint_label, progress > 0);
-    set_hidden(lock_state.progress_surface, false);
-    if(progress > 0)
-        lv_obj_move_foreground(lock_state.progress_surface);
-    if(lock_state.icon != NULL)
-        lv_obj_set_style_transform_scale(
-            lock_state.icon, 256 - progress * 12 / 100, 0);
-    if(lock_state.progress_surface != NULL)
-        lv_obj_invalidate(lock_state.progress_surface);
+    refresh_progress();
 }
 #endif
 
@@ -817,8 +754,12 @@ void crazypod_lock_screen_show(bool turn_display_off)
         backlight_off();
 }
 
-static void finish_unlock(void)
+static void finish_unlock(bool animate_transition)
 {
+    bool transition_started = animate_transition &&
+        lock_state.callbacks.begin_unlock_transition != NULL &&
+        lock_state.callbacks.begin_unlock_transition();
+
     lock_state.locked = false;
 #ifdef HAVE_WHEEL_POSITION
     wheel_set_backlight_on_touch(true);
@@ -834,7 +775,7 @@ static void finish_unlock(void)
     lv_obj_add_flag(lock_state.root, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_background(lock_state.root);
     if(lock_state.callbacks.unlocked != NULL)
-        lock_state.callbacks.unlocked();
+        lock_state.callbacks.unlocked(transition_started);
 }
 
 void crazypod_lock_screen_process(void)
@@ -880,7 +821,6 @@ void crazypod_lock_screen_process(void)
 
     if(lock_state.unlock_pressed && !lock_state.opening) {
         long elapsed = current_tick - lock_state.unlock_press_start;
-        long feedback_elapsed;
         int progress;
 
         if(!lock_state.unlock_button_down) {
@@ -889,16 +829,11 @@ void crazypod_lock_screen_process(void)
         }
         if(elapsed < 0)
             elapsed = 0;
-        /* Ignore the first 0.2 s so an ordinary tap produces no animation.
-         * The remaining hold interval still completes at the original 0.5 s. */
-        feedback_elapsed = elapsed - UNLOCK_FEEDBACK_DELAY_TICKS;
-        if(feedback_elapsed <= 0)
-            progress = 0;
-        else if(elapsed >= UNLOCK_HOLD_TICKS)
+        if(elapsed >= UNLOCK_HOLD_TICKS)
             progress = 100;
         else
-            progress = (int)(feedback_elapsed * 100 /
-                UNLOCK_PROGRESS_TICKS);
+            progress = 1 +
+                (int)(elapsed * 99 / UNLOCK_HOLD_TICKS);
         if(progress != lock_state.progress_percent) {
             lock_state.progress_percent = progress;
             refresh_progress();
@@ -923,7 +858,7 @@ void crazypod_lock_screen_process(void)
         if(elapsed < 0)
             elapsed = 0;
         if(crazypod_state_reduce_motion()) {
-            finish_unlock();
+            finish_unlock(false);
             return;
         }
         raw = clamp_progress(
@@ -949,7 +884,7 @@ void crazypod_lock_screen_process(void)
                 lock_state.progress_surface,
                 (lv_opa_t)(255 - 255 * fade / 1024), 0);
         if(elapsed >= UNLOCK_OPEN_TICKS)
-            finish_unlock();
+            finish_unlock(true);
     }
 }
 
@@ -1023,7 +958,7 @@ bool crazypod_lock_screen_handle_button(long button, intptr_t data)
     if(!lock_state.unlock_pressed) {
         lock_state.unlock_pressed = true;
         lock_state.unlock_press_start = current_tick;
-        lock_state.progress_percent = 0;
+        lock_state.progress_percent = 1;
         refresh_progress();
     }
     return true;
@@ -1221,9 +1156,6 @@ lv_obj_t *crazypod_lock_screen_create(
         LOCK_SURFACE_SIZE, LOCK_SURFACE_SIZE);
     lv_obj_remove_flag(
         lock_state.progress_surface, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(
-        lock_state.progress_surface, draw_progress_event,
-        LV_EVENT_DRAW_MAIN, NULL);
     icon = lv_obj_create(lock_state.progress_surface);
     lock_state.icon = icon;
     crazypod_ui_widget_make_plain(icon);
@@ -1254,14 +1186,46 @@ lv_obj_t *crazypod_lock_screen_create(
     make_box(
         body, 6, 2, 2, 4,
         LV_RADIUS_CIRCLE, 0x0A1620, LV_OPA_COVER);
+    lock_state.hint_progress = make_box(
+        lock_state.root, 0, 0,
+        UNLOCK_FEEDBACK_WIDTH, UNLOCK_FEEDBACK_HEIGHT,
+        UNLOCK_FEEDBACK_RADIUS, 0x111118, 226);
+    lv_obj_remove_flag(
+        lock_state.hint_progress, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_border_width(
+        lock_state.hint_progress, 1, 0);
+    lv_obj_set_style_border_color(
+        lock_state.hint_progress, lv_color_hex(COLOR_WHITE), 0);
+    lv_obj_set_style_border_opa(
+        lock_state.hint_progress, 45, 0);
+    lock_state.hint_progress_fill = make_box(
+        lock_state.hint_progress,
+        UNLOCK_FEEDBACK_INSET, UNLOCK_FEEDBACK_INSET,
+        1,
+        UNLOCK_FEEDBACK_HEIGHT - 2 * UNLOCK_FEEDBACK_INSET - 2,
+        UNLOCK_FEEDBACK_RADIUS - UNLOCK_FEEDBACK_INSET,
+        COLOR_WHITE, 78);
+    lv_obj_remove_flag(
+        lock_state.hint_progress_fill, LV_OBJ_FLAG_CLICKABLE);
     lock_state.hint_label = make_label(
-        lock_state.root, CP_TR("Hold Center to Unlock"),
+        lock_state.hint_progress, "",
         crazypod_runtime_font_at_size_weight(8, 700),
         COLOR_WHITE, 220);
-    lv_obj_set_width(lock_state.hint_label, LCD_WIDTH);
+    lv_label_set_text(
+        lock_state.hint_label, "Hold Center to Unlock");
+    lv_obj_set_size(
+        lock_state.hint_label,
+        UNLOCK_FEEDBACK_WIDTH - 2 * UNLOCK_FEEDBACK_INSET,
+        lv_font_get_line_height(
+            crazypod_runtime_font_at_size_weight(8, 700)));
     lv_obj_set_style_text_align(
         lock_state.hint_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(lock_state.hint_label, 0, 179);
+    lv_obj_set_pos(
+        lock_state.hint_label,
+        UNLOCK_FEEDBACK_INSET,
+        (UNLOCK_FEEDBACK_HEIGHT -
+            lv_font_get_line_height(
+                crazypod_runtime_font_at_size_weight(8, 700))) / 2);
     lv_obj_set_style_text_letter_space(lock_state.hint_label, 1, 0);
     add_text_outline(lock_state.hint_label, 190);
 

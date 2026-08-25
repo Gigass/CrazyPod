@@ -2897,6 +2897,11 @@
         "apps/crazypod/ui/features/books/crazypod_books_workflow.c:273"
       ]
     },
+    "Original iPod Music": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c:106"
+      ]
+    },
     "P": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_customize_feature.c:26",

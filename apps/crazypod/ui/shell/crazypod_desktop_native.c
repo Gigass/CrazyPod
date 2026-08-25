@@ -41,6 +41,7 @@ static bool scaled_valid[CRAZYPOD_ICON_COUNT];
 static int scaled_size;
 static bool preserve_modal_underlay;
 static bool rendered_bounds_valid;
+static bool modal_restore_full_present;
 static int rendered_left;
 static int rendered_top;
 static int rendered_width;
@@ -115,6 +116,7 @@ void crazypod_desktop_native_reset(void)
 {
     dirty = true;
     backdrop_ready = false;
+    modal_restore_full_present = false;
     scaled_size = 0;
     rendered_bounds_valid = false;
     invalidate_scaled_icons();
@@ -134,6 +136,18 @@ void crazypod_desktop_native_invalidate_icons(void)
     scaled_size = 0;
     invalidate_scaled_icons();
     dirty = true;
+}
+
+void crazypod_desktop_native_prepare_modal(void)
+{
+    crazypod_present_take_fullscreen_ownership();
+    crazypod_present_queue_full();
+}
+
+void crazypod_desktop_native_restore_after_modal(void)
+{
+    dirty = true;
+    modal_restore_full_present = true;
 }
 
 lv_obj_t *crazypod_desktop_native_create_modal_underlay(
@@ -423,9 +437,9 @@ static void draw_desktop_icon(int app_index, int center_x, int center_y,
     }
 }
 
-bool crazypod_desktop_native_render(
+static bool render_desktop(
     const int *app_indices, const int *centers_x, int icon_count,
-    int icon_size, bool blocked)
+    int icon_size, bool blocked, bool queue_present)
 {
     fb_data *framebuffer =
         (fb_data *)crazypod_platform_display_framebuffer();
@@ -514,12 +528,43 @@ bool crazypod_desktop_native_render(
     rendered_top = dirty_top;
     rendered_width = dirty_right - dirty_left;
     rendered_height = dirty_bottom - dirty_top;
-    crazypod_present_queue_home_rect(
-        dirty_left, dirty_top,
-        dirty_right - dirty_left,
-        dirty_bottom - dirty_top);
+    if(queue_present) {
+        if(modal_restore_full_present) {
+            crazypod_present_take_fullscreen_ownership();
+            crazypod_present_queue_full();
+            modal_restore_full_present = false;
+        }
+        else {
+            crazypod_present_queue_home_rect(
+                dirty_left, dirty_top,
+                dirty_right - dirty_left,
+                dirty_bottom - dirty_top);
+        }
+    }
     dirty = false;
     return true;
+}
+
+bool crazypod_desktop_native_render(
+    const int *app_indices, const int *centers_x, int icon_count,
+    int icon_size, bool blocked)
+{
+    return render_desktop(
+        app_indices, centers_x, icon_count,
+        icon_size, blocked, true);
+}
+
+bool crazypod_desktop_native_render_snapshot(
+    const int *app_indices, const int *centers_x, int icon_count,
+    int icon_size)
+{
+    bool rendered = render_desktop(
+        app_indices, centers_x, icon_count,
+        icon_size, false, false);
+
+    if(rendered)
+        dirty = true;
+    return rendered;
 }
 
 #endif

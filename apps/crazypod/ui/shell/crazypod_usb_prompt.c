@@ -174,7 +174,6 @@ void crazypod_usb_prompt_show(unsigned request)
     };
     lv_obj_t *title;
     lv_obj_t *detail;
-    lv_obj_t *dimmer;
     struct crazypod_popup_geometry geometry;
     int content_width;
     int symbol_column_width = 0;
@@ -215,10 +214,6 @@ void crazypod_usb_prompt_show(unsigned request)
     lv_obj_move_foreground(prompt.root);
     (void)crazypod_desktop_native_create_modal_underlay(
         prompt.root);
-    dimmer = make_box(
-        prompt.root, 0, 0, LCD_WIDTH, LCD_HEIGHT,
-        0, 0x000000, 86);
-    lv_obj_remove_flag(dimmer, LV_OBJ_FLAG_CLICKABLE);
     content_width = crazypod_popup_text_width(
         CP_TR("Choose Mode"), &lv_font_montserrat_12) +
         2 * option_inset;

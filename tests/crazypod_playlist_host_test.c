@@ -12,6 +12,7 @@ struct user_settings global_settings;
 struct system_status global_status;
 
 static int play_count;
+static bool read_ipod_music;
 
 #define LARGE_QUEUE_LENGTH 2501
 
@@ -31,6 +32,11 @@ void audio_play(unsigned long elapsed, unsigned long offset)
 
 void audio_resume(void)
 {
+}
+
+bool crazypod_state_read_ipod_music(void)
+{
+    return read_ipod_music;
 }
 
 static const char *current_path(void)
@@ -86,6 +92,17 @@ int main(void)
         NULL, "/iPod_Control/Music/F00/blocked.mp3", 0,
         false, false) == -1);
     assert(crazypod_queue_count() == 0);
+
+    read_ipod_music = true;
+    assert(crazypod_queue_restore_add(
+        "/iPod_Control/Music/F00/allowed.mp3"));
+    playlist_init();
+    assert(playlist_insert_track(
+        NULL, "/iPod_Control/Music/F00/allowed.mp3", 0,
+        false, false) == 0);
+    assert(crazypod_queue_count() == 1);
+    read_ipod_music = false;
+    playlist_init();
 
     {
         int index;

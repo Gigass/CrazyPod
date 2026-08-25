@@ -59,6 +59,8 @@ void crazypod_present_queue_home_rect(
 void crazypod_present_queue_music_rect(
     int x, int y, int width, int height);
 void crazypod_present_queue_full(void);
+/* A full-screen compositor supersedes every queued partial framebuffer. */
+void crazypod_present_take_fullscreen_ownership(void);
 /* Commit an already-rendered queued frame before a synchronous operation. */
 void crazypod_present_now(void);
 void crazypod_present_tick(void);

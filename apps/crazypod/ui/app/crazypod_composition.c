@@ -75,6 +75,8 @@ static void now_overlay_prepare(
     (void)context;
     if(coverflow_active)
         crazypod_coverflow_set_compositing_suspended(true);
+    if(!crazypod_shell_product_active())
+        crazypod_desktop_native_prepare_modal();
     crazypod_overlay_glass_prepare(
         refresh && !coverflow_active);
 }
@@ -109,6 +111,13 @@ static void now_overlay_render(void *context)
         host.render(false);
 }
 
+static void now_overlay_teardown_complete(void *context)
+{
+    (void)context;
+    if(!crazypod_shell_product_active())
+        crazypod_desktop_native_restore_after_modal();
+}
+
 static void configure_now_playing(void)
 {
     const struct crazypod_now_playing_overlay_host overlay = {
@@ -119,6 +128,7 @@ static void configure_now_playing(void)
         .create_modal_underlay = now_overlay_underlay,
         .create_panel = now_overlay_panel,
         .notify = notify_feature_action,
+        .teardown_complete = now_overlay_teardown_complete,
         .render = now_overlay_render,
     };
     crazypod_now_playing_overlay_configure(&overlay);

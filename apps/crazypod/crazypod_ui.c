@@ -65,6 +65,8 @@
 #include "ui/app/crazypod_menu_preview.h"
 #include "ui/app/crazypod_menu_rows.h"
 #include "ui/app/crazypod_route_renderer.h"
+#include "ui/app/crazypod_scene_transition.h"
+#include "ui/app/crazypod_scene_transition_demo.h"
 #include "ui/app/crazypod_app_launcher.h"
 #include "ui/app/crazypod_route_actions.h"
 #include "ui/app/crazypod_runtime_services.h"
@@ -126,6 +128,9 @@
 static bool cpu_is_boosted;
 static long boost_until;
 static struct crazypod_frameclock lvgl_clock;
+static int rendered_route_depth;
+static enum crazypod_route rendered_route;
+static bool rendered_route_valid;
 static int appearance_tile_size(void);
 static struct route_state *current_route(void);
 static const char *route_item_title(
@@ -158,7 +163,8 @@ static bool modal_prompt_visible(void)
 static bool coverflow_overlay_visible(bool locked)
 {
     return locked || modal_prompt_visible() ||
-        crazypod_choice_coordinator_visible();
+        crazypod_choice_coordinator_visible() ||
+        crazypod_scene_transition_active();
 }
 static void set_cpu_boost(bool enabled)
 {
@@ -263,18 +269,38 @@ static lv_obj_t *create_boot_screen(void)
     return screen;
 }
 
-static void lock_screen_unlocked(void)
+static bool lock_screen_begin_unlock_transition(void)
+{
+    bool captured;
+
+    lv_refr_now(NULL);
+    captured = crazypod_scene_transition_begin(
+        CRAZYPOD_SCENE_MOTION_POP);
+    if(captured)
+        crazypod_app_input_cancel_pending();
+    return captured;
+}
+
+static void lock_screen_unlocked(bool transition_started)
 {
     bool product_active = crazypod_shell_product_active();
-    bool animate_capsule =
-        !product_active && !modal_prompt_visible();
+    lv_obj_t *target = product_active
+        ? crazypod_shell_product_screen()
+        : crazypod_desktop_screen();
 
     crazypod_playback_request_refresh_after_unlock(
-        crazypod_present_sequence(), animate_capsule);
-    if(product_active)
-        lv_obj_invalidate(crazypod_shell_product_screen());
-    else
-        lv_obj_invalidate(crazypod_desktop_screen());
+        crazypod_present_sequence(), false);
+    if(!product_active)
+        crazypod_desktop_native_invalidate(true);
+    lv_obj_invalidate(target);
+    if(!transition_started)
+        return;
+    lv_refr_now(NULL);
+    if(!product_active)
+        crazypod_desktop_render_icon_snapshot(
+            appearance_tile_size());
+    (void)crazypod_scene_transition_commit(
+        crazypod_desktop_screen());
 }
 
 static void create_lock_screen(void)
@@ -286,6 +312,8 @@ static void create_lock_screen(void)
         .toggle_playback = crazypod_playback_toggle_async,
         .next_track = crazypod_playback_next_async,
         .refresh_media = crazypod_playback_refresh_lock_screen,
+        .begin_unlock_transition =
+            lock_screen_begin_unlock_transition,
         .unlocked = lock_screen_unlocked,
         .lock_inhibited =
             crazypod_music_library_preparing_artwork,
@@ -330,9 +358,35 @@ static bool route_item_is_current(const struct route_state *state, int index)
 
 static void render_current_route(bool transition)
 {
+    struct route_state *state = current_route();
+    enum crazypod_scene_motion_kind motion =
+        CRAZYPOD_SCENE_MOTION_NONE;
+    int depth = crazypod_ui_routes_depth();
+    bool captured = false;
+
     crazypod_render_scheduler_reset();
+    if(transition) {
+        if(depth > rendered_route_depth)
+            motion = CRAZYPOD_SCENE_MOTION_PUSH;
+        else if(depth < rendered_route_depth)
+            motion = CRAZYPOD_SCENE_MOTION_POP;
+        else if(rendered_route_valid && state != NULL &&
+                state->route != rendered_route)
+            motion = CRAZYPOD_SCENE_MOTION_REPLACE;
+        captured = crazypod_scene_transition_begin(motion);
+        if(captured)
+            crazypod_app_input_cancel_pending();
+    }
     crazypod_route_renderer_render(
-        current_route(), current_tick, transition);
+        state, current_tick, false);
+    rendered_route_depth = depth;
+    if(state != NULL) {
+        rendered_route = state->route;
+        rendered_route_valid = true;
+    }
+    if(captured)
+        (void)crazypod_scene_transition_commit(
+            crazypod_desktop_screen());
 }
 
  static void begin_music_scan(void)
@@ -349,8 +403,14 @@ static void begin_note_composer(uint32_t id, bool resume_draft)
 
 static void close_product(void)
 {
+    bool captured;
+
     if(!crazypod_shell_product_active())
         return;
+    captured = crazypod_scene_transition_begin(
+        CRAZYPOD_SCENE_MOTION_POP);
+    if(captured)
+        crazypod_app_input_cancel_pending();
     if(crazypod_coverflow_active())
         crazypod_coverflow_leave();
     crazypod_app_launcher_cancel_pending();
@@ -365,11 +425,21 @@ static void close_product(void)
     crazypod_now_playing_overlay_dismiss(false);
     crazypod_shell_close_product();
     crazypod_ui_routes_clear();
+    rendered_route_depth = 0;
+    rendered_route_valid = false;
     lv_obj_invalidate(crazypod_desktop_screen());
     crazypod_desktop_native_invalidate(true);
     crazypod_desktop_set_selected(
         crazypod_desktop_selected(), false);
-    lv_refr_now(NULL);
+    if(captured) {
+        lv_refr_now(NULL);
+        crazypod_desktop_render_icon_snapshot(
+            appearance_tile_size());
+        (void)crazypod_scene_transition_commit(
+            crazypod_desktop_screen());
+    }
+    else
+        lv_refr_now(NULL);
 }
 
 #ifdef SIMULATOR
@@ -640,6 +710,9 @@ static void configure_app_input(void)
 
 static void handle_button(long button, intptr_t data)
 {
+    if(crazypod_scene_transition_active() &&
+       (button & (SYS_EVENT | BUTTON_REL)) == 0)
+        return;
     crazypod_app_input_handle(button, data, current_tick);
 }
 static uint32_t rockbox_tick_ms(void)
@@ -652,6 +725,7 @@ static bool platform_capture_desktop_native(
 {
     return !crazypod_lock_screen_is_locked() &&
         !crazypod_shell_product_active() && !modal_prompt_visible() &&
+        !crazypod_scene_transition_owns_framebuffer() &&
         area->y1 < CRAZYPOD_DESKTOP_NATIVE_BOTTOM &&
         area->y2 >= CRAZYPOD_DESKTOP_NATIVE_TOP;
 }
@@ -659,7 +733,10 @@ static bool platform_capture_desktop_native(
 static void platform_queue_present(
     int x, int y, int width, int height)
 {
-    crazypod_present_queue_rect(x, y, width, height);
+    if(crazypod_scene_transition_owns_framebuffer())
+        crazypod_present_queue_full();
+    else
+        crazypod_present_queue_rect(x, y, width, height);
 }
 
 static void process_deferred_route_render(void)
@@ -708,6 +785,9 @@ void crazypod_ui_run(void)
     button_set_sw_poweroff_state(false);
 #endif
     crazypod_present_init(current_tick);
+    crazypod_scene_transition_reset();
+    rendered_route_depth = 0;
+    rendered_route_valid = false;
     crazypod_frameclock_reset(&lvgl_clock, current_tick);
     crazypod_now_capsule_reset_motion(current_tick);
     crazypod_image_init();
@@ -774,6 +854,7 @@ void crazypod_ui_run(void)
     crazypod_photos_feature_initialize_media();
     crazypod_customize_feature_initialize_media();
 #ifdef SIMULATOR
+    crazypod_scene_transition_demo_init();
     simulator_snapshot_pending =
         getenv("CRAZYPOD_SIM_DUMP") != NULL;
     if(simulator_snapshot_pending) {
@@ -932,7 +1013,9 @@ void crazypod_ui_run(void)
                 keep_cpu_boosted(HZ / 10 > 0 ? HZ / 10 : 1);
             crazypod_desktop_render_icon(
                 appearance_tile_size(),
-                crazypod_shell_product_active() || modal_prompt_visible());
+                crazypod_shell_product_active() ||
+                modal_prompt_visible() ||
+                crazypod_scene_transition_owns_framebuffer());
             crazypod_coverflow_tick();
             coverflow_feedback =
                 crazypod_coverflow_take_wheel_feedback();
@@ -944,6 +1027,7 @@ void crazypod_ui_run(void)
             crazypod_playback_sync_album_flow();
         }
         crazypod_present_tick();
+        crazypod_scene_transition_service();
         {
             enum crazypod_screen_recording_event recording_event =
                 crazypod_screen_recording_service(current_tick);
@@ -951,9 +1035,12 @@ void crazypod_ui_run(void)
 #ifdef SIMULATOR
             if(simulator_recording_pending &&
                recording_event ==
-                   CRAZYPOD_SCREEN_RECORDING_EVENT_STARTED)
+                   CRAZYPOD_SCREEN_RECORDING_EVENT_STARTED) {
                 simulator_recording_due = current_tick +
                     simulator_recording_seconds * HZ;
+            }
+            crazypod_scene_transition_demo_service(
+                recording_event, current_tick);
 #endif
             crazypod_screenshot_feedback_show_recording_event(
                 recording_event);

@@ -20,5 +20,8 @@ void crazypod_app_launcher_open_root(enum crazypod_route route);
 void crazypod_app_launcher_open_books(void);
 void crazypod_app_launcher_process_pending(void);
 void crazypod_app_launcher_cancel_pending(void);
+#ifdef SIMULATOR
+void crazypod_app_launcher_simulate_shuffle_ready(void);
+#endif
 
 #endif

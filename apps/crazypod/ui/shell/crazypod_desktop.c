@@ -66,7 +66,7 @@ static void hold_feedback_teardown_ready(lv_event_t *event)
     if(!hold_feedback_teardown_pending)
         return;
     hold_feedback_teardown_pending = false;
-    crazypod_desktop_native_invalidate(true);
+    crazypod_desktop_native_restore_after_modal();
 }
 
 static const struct crazypod_app_descriptor *visible_app(int index)
@@ -464,6 +464,7 @@ void crazypod_desktop_hold_feedback_begin(
        screen == NULL || !lv_obj_is_valid(screen) ||
        crazypod_desktop_hold_feedback_visible())
         return;
+    crazypod_desktop_native_prepare_modal();
     hold_feedback_root = crazypod_ui_widget_box(
         screen, 0, 0, LCD_WIDTH, LCD_HEIGHT,
         0, 0x000000, LV_OPA_TRANSP);
@@ -472,7 +473,7 @@ void crazypod_desktop_hold_feedback_begin(
     lv_obj_move_foreground(hold_feedback_root);
     (void)crazypod_desktop_native_create_modal_underlay(
         hold_feedback_root);
-    crazypod_hold_feedback_begin(
+    crazypod_hold_feedback_begin_topbar(
         &hold_feedback, hold_feedback_root,
         symbol, duration_ms);
     if(hold_feedback.root == NULL)
@@ -518,8 +519,8 @@ void crazypod_desktop_refresh_appearance(void)
     lv_obj_invalidate(screen);
 }
 
-void crazypod_desktop_render_icon(
-    int tile_size, bool blocked)
+static void render_desktop_icons(
+    int tile_size, bool blocked, bool snapshot)
 {
     bool rendered;
     uint32_t render_started_us;
@@ -552,13 +553,29 @@ void crazypod_desktop_render_icon(
         ++visible;
     }
     render_started_us = crazypod_monotonic_usec();
-    rendered = crazypod_desktop_native_render(
-        app_indices, centers_x, visible, tile_size, false);
+    rendered = snapshot
+        ? crazypod_desktop_native_render_snapshot(
+            app_indices, centers_x, visible, tile_size)
+        : crazypod_desktop_native_render(
+            app_indices, centers_x, visible, tile_size, false);
     if(!rendered)
+        return;
+    if(snapshot)
         return;
     crazypod_present_note_render(
         CRAZYPOD_RENDER_HOME,
         crazypod_monotonic_usec() - render_started_us);
+}
+
+void crazypod_desktop_render_icon(
+    int tile_size, bool blocked)
+{
+    render_desktop_icons(tile_size, blocked, false);
+}
+
+void crazypod_desktop_render_icon_snapshot(int tile_size)
+{
+    render_desktop_icons(tile_size, false, true);
 }
 
 #endif

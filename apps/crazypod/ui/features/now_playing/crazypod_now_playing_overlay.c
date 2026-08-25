@@ -29,8 +29,9 @@
 #define NOW_ACTION_CELL_COUNT 4
 #define NOW_PLAYBACK_MODE_COUNT 4
 #define NOW_PLAYBACK_ROW_HEIGHT 31
-#define NOW_QUEUE_HEADER_HEIGHT 58
+#define NOW_QUEUE_HEADER_HEIGHT 34
 #define NOW_QUEUE_ROW_HEIGHT 28
+#define NOW_QUEUE_POPUP_WIDTH 200
 #define NOW_PROGRESS_STEP_MS 5000
 #define NOW_VOLUME_HUD_X 0
 #define NOW_VOLUME_HUD_WIDTH 18
@@ -392,10 +393,6 @@ static void begin_now_overlay(enum crazypod_now_playing_overlay overlay)
     if(overlay_host.create_modal_underlay != NULL)
         (void)overlay_host.create_modal_underlay(
             now_overlay_root, overlay_host.context);
-    (void)crazypod_ui_widget_box(
-        now_overlay_root, 0, 0,
-        LCD_WIDTH, LCD_HEIGHT, 0,
-        0x000000, 18);
 }
 
 static const char *now_playback_mode_label_for(
@@ -1071,48 +1068,6 @@ static void refresh_now_queue_popup(void)
     now_queue_generation_seen = crazypod_queue_generation();
 }
 
-static int now_queue_popup_width(void)
-{
-    int count = crazypod_queue_count();
-    int start = now_queue_start(count);
-    int width;
-    int row;
-
-    width = crazypod_popup_text_width(
-        CP_TR("Local Queue"), &lv_font_montserrat_8) + 68;
-    retain_larger(
-        &width,
-        crazypod_popup_text_width(
-            CP_TR("No Queue"), CRAZYPOD_METADATA_FONT) + 28);
-    retain_larger(
-        &width,
-        crazypod_popup_text_width(
-            now_playback_mode_label(),
-            &lv_font_montserrat_10) + 104);
-    for(row = 0; row < 3; ++row) {
-        int index = start + row;
-        char path[MAX_PATH];
-        struct crazypod_track track;
-        bool have_track;
-
-        if(index < 0 || index >= count)
-            continue;
-        have_track = crazypod_queue_copy_path(
-                index, path, sizeof(path)) &&
-            crazypod_music_copy_track(
-                crazypod_music_find_track(path), &track);
-
-        retain_larger(
-            &width,
-            crazypod_popup_text_width(
-                have_track
-                    ? track.title : CP_TR("Unavailable"),
-                NOW_QUEUE_TITLE_FONT) + 69);
-    }
-    return crazypod_popup_clamp_width(
-        width, 0, 176, LCD_WIDTH - 32);
-}
-
 static int now_queue_visible_rows(int count)
 {
     if(count <= 0)
@@ -1122,7 +1077,6 @@ static int now_queue_visible_rows(int count)
 
 static void show_now_queue_popup(void)
 {
-    lv_obj_t *source_title;
     struct crazypod_popup_geometry geometry;
     int count;
     int visible_rows;
@@ -1145,7 +1099,7 @@ static void show_now_queue_popup(void)
     visible_rows = now_queue_visible_rows(count);
     empty_height = lv_font_get_line_height(CRAZYPOD_METADATA_FONT);
     geometry = crazypod_popup_centered_geometry(
-        now_queue_popup_width(),
+        NOW_QUEUE_POPUP_WIDTH,
         visible_rows > 0
             ? NOW_QUEUE_HEADER_HEIGHT +
                 visible_rows * NOW_QUEUE_ROW_HEIGHT + 8
@@ -1177,17 +1131,6 @@ static void show_now_queue_popup(void)
         now_queue_view.count,
         geometry.width - 68, 14);
 
-    crazypod_ui_widget_icon(
-        now_overlay_panel, 12, 32,
-        CRAZYPOD_UI_ICON_AUDIO, COLOR_WHITE, 225);
-    source_title = crazypod_ui_widget_label(now_overlay_panel, CP_TR("Local Queue"),
-                              &lv_font_montserrat_8,
-                              COLOR_WHITE, 220);
-    lv_obj_set_pos(source_title, 34, 36);
-    lv_obj_set_width(
-        source_title, geometry.width - 68);
-    lv_obj_set_style_text_align(
-        source_title, LV_TEXT_ALIGN_CENTER, 0);
     now_queue_view.empty = crazypod_ui_widget_label(
         now_overlay_panel, CP_TR("No Queue"),
         CRAZYPOD_METADATA_FONT,
@@ -1428,8 +1371,22 @@ static void restore_now_overlay(enum crazypod_now_playing_overlay overlay)
 
 static void dismiss_now_overlay(bool refresh_now_playing)
 {
-    destroy_now_overlay_objects();
+    lv_obj_t *root = now_overlay_root;
+    lv_display_t *display = NULL;
+
+    if(root != NULL && lv_obj_is_valid(root)) {
+        display = lv_obj_get_display(root);
+        if(now_overlay_panel != NULL &&
+           lv_obj_is_valid(now_overlay_panel))
+            lv_anim_delete(now_overlay_panel, NULL);
+        lv_obj_delete(root);
+    }
+    clear_now_overlay_objects();
     now_overlay = CRAZYPOD_NOW_OVERLAY_NONE;
+    if(display != NULL)
+        lv_refr_now(display);
+    if(overlay_host.teardown_complete != NULL)
+        overlay_host.teardown_complete(overlay_host.context);
     if(refresh_now_playing && overlay_host.render != NULL)
         overlay_host.render(overlay_host.context);
 }

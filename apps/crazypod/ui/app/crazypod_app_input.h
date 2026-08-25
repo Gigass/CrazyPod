@@ -42,6 +42,7 @@ void crazypod_app_input_configure(
     const struct crazypod_app_input_host *host);
 void crazypod_app_input_handle(
     long button, intptr_t data, long now);
+void crazypod_app_input_cancel_pending(void);
 int crazypod_app_input_wait_ticks(long now);
 void crazypod_app_input_tick(long now, bool locked);
 

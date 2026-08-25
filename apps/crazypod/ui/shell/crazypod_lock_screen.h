@@ -12,7 +12,8 @@ struct crazypod_lock_screen_callbacks {
     void (*toggle_playback)(void);
     void (*next_track)(void);
     void (*refresh_media)(void);
-    void (*unlocked)(void);
+    bool (*begin_unlock_transition)(void);
+    void (*unlocked)(bool transition_started);
     bool (*lock_inhibited)(void);
 };
 

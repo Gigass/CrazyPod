@@ -258,6 +258,15 @@ void crazypod_present_queue_full(void)
     crazypod_present_queue_rect(0, 0, LCD_WIDTH, LCD_HEIGHT);
 }
 
+void crazypod_present_take_fullscreen_ownership(void)
+{
+    if(!present_initialized)
+        crazypod_present_init(current_tick);
+    present_pending = false;
+    present_sync = PRESENT_SYNC_NONE;
+    deferred_present_pending = false;
+}
+
 static bool crazypod_present_is_full(void)
 {
     return present_x1 == 0 && present_y1 == 0 &&

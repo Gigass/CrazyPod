@@ -32,7 +32,7 @@
 #define QUEUE_PATH STATE_DIRECTORY "/queue.m3u8"
 #define QUEUE_TEMP_PATH STATE_DIRECTORY "/queue.tmp"
 #define STATE_MAGIC 0x43505354u
-#define STATE_VERSION 15u
+#define STATE_VERSION 16u
 #define STATE_SAVE_INTERVAL (30 * HZ)
 #define STATE_SAVE_RETRY_INTERVAL (30 * HZ)
 #define STATE_SAVE_MAX_RETRY_SHIFT 3
@@ -443,7 +443,7 @@ struct crazypod_state_disk_v12 {
     uint32_t checksum;
 };
 
-struct crazypod_state_disk {
+struct crazypod_state_disk_v15 {
     uint32_t magic;
     uint32_t version;
     uint32_t size;
@@ -484,6 +484,48 @@ struct crazypod_state_disk {
     uint32_t checksum;
 };
 
+struct crazypod_state_disk {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t usb_charging;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t menu_count;
+    uint32_t menu_enabled_mask;
+    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    int32_t reduce_motion;
+    int32_t storage_mode;
+    int32_t language;
+    int32_t poweroff;
+    int32_t headphone_popup_style;
+    int32_t lyrics_mode;
+    int32_t read_ipod_music;
+    uint32_t checksum;
+};
+
 static unsigned long resume_elapsed;
 static unsigned long last_saved_elapsed;
 static long last_save_tick;
@@ -496,6 +538,7 @@ static unsigned state_save_failures;
 static bool state_dirty;
 static bool reduce_motion;
 static bool lyrics_mode = true;
+static bool read_ipod_music = true;
 static enum crazypod_headphone_popup_style headphone_popup_style;
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
@@ -531,6 +574,14 @@ static uint32_t state_checksum(const struct crazypod_state_disk *state)
     return crazypod_checksum_with_zeroed_u32(
         state, sizeof(*state),
         offsetof(struct crazypod_state_disk, checksum));
+}
+
+static uint32_t state_v15_checksum(
+    const struct crazypod_state_disk_v15 *state)
+{
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v15, checksum));
 }
 
 static uint32_t state_v1_checksum(const struct crazypod_state_disk_v1 *state)
@@ -701,6 +752,21 @@ static bool load_header(
        header[2] == sizeof(*state)) {
         valid = read_exact(fd, state, sizeof(*state)) &&
                 state->checksum == state_checksum(state);
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 15u &&
+            header[2] == sizeof(struct crazypod_state_disk_v15)) {
+        struct crazypod_state_disk_v15 state_v15;
+
+        valid = read_exact(fd, &state_v15, sizeof(state_v15)) &&
+                state_v15.checksum == state_v15_checksum(&state_v15);
+        if(valid) {
+            memcpy(state, &state_v15,
+                   offsetof(struct crazypod_state_disk_v15, checksum));
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+        }
     }
     else if(header[0] == STATE_MAGIC &&
             (header[1] == 12u || header[1] == 13u ||
@@ -1010,6 +1076,8 @@ static bool load_header(
                 CRAZYPOD_HEADPHONE_POPUP_WIRED_EARBUDS;
         if(header[1] < 15u)
             state->lyrics_mode = 1;
+        if(header[1] < 16u)
+            state->read_ipod_music = 0;
         *migrated = true;
     }
     close(fd);
@@ -1150,6 +1218,7 @@ void crazypod_state_load(void)
     state_dirty = false;
     reduce_motion = false;
     lyrics_mode = true;
+    read_ipod_music = true;
     headphone_popup_style =
         CRAZYPOD_HEADPHONE_POPUP_WIRED_EARBUDS;
     crazypod_language_set(CRAZYPOD_LANGUAGE_ENGLISH);
@@ -1165,6 +1234,7 @@ void crazypod_state_load(void)
 
     reduce_motion = state.reduce_motion != 0;
     lyrics_mode = state.lyrics_mode != 0;
+    read_ipod_music = state.read_ipod_music != 0;
     if(state.headphone_popup_style >= 0 &&
        state.headphone_popup_style <
            CRAZYPOD_HEADPHONE_POPUP_STYLE_COUNT) {
@@ -1246,6 +1316,19 @@ void crazypod_state_set_lyrics_mode(bool enabled)
     if(lyrics_mode == enabled)
         return;
     lyrics_mode = enabled;
+    state_dirty = true;
+}
+
+bool crazypod_state_read_ipod_music(void)
+{
+    return read_ipod_music;
+}
+
+void crazypod_state_set_read_ipod_music(bool enabled)
+{
+    if(read_ipod_music == enabled)
+        return;
+    read_ipod_music = enabled;
     state_dirty = true;
 }
 
@@ -1412,6 +1495,7 @@ void crazypod_state_save(bool force)
     state.poweroff = global_settings.poweroff;
     state.headphone_popup_style = headphone_popup_style;
     state.lyrics_mode = lyrics_mode ? 1 : 0;
+    state.read_ipod_music = read_ipod_music ? 1 : 0;
     state.checksum = state_checksum(&state);
 
     fd = open(STATE_TEMP_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);

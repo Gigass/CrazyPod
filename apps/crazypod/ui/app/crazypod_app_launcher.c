@@ -20,6 +20,7 @@
 #include "../navigation/crazypod_ui_routes.h"
 #include "../shell/crazypod_shell.h"
 #include "crazypod_app_launcher.h"
+#include "crazypod_scene_transition.h"
 
 static struct crazypod_app_launcher_host host;
 static bool shuffle_pending;
@@ -57,16 +58,31 @@ void crazypod_app_launcher_open_now_playing(void)
     host.request_now_playing();
 }
 
+static void open_shuffle_screen(void)
+{
+    crazypod_shell_open_product();
+    host.boost(true);
+    /* Shuffle is launched from Home, so Now Playing must be the root route.
+     * Otherwise Menu reveals the transient Music loading route. */
+    crazypod_ui_routes_clear();
+    host.request_now_playing();
+}
+
 static void start_shuffle(void)
 {
     if(!crazypod_music_shuffle_all((unsigned int)current_tick))
         return;
     crazypod_state_forget_resume();
     crazypod_state_mark_dirty();
-    /* Shuffle is launched from Home, so Now Playing must be the root route.
-     * Otherwise Menu reveals the transient Music loading route. */
-    crazypod_ui_routes_clear();
-    host.request_now_playing();
+}
+
+static void request_shuffle(void)
+{
+    shuffle_pending = true;
+    open_shuffle_screen();
+    (void)crazypod_music_validate_catalog_async();
+    if(!crazypod_music_library_loaded())
+        host.begin_music_scan();
 }
 
 static void open_route(enum crazypod_route route)
@@ -98,15 +114,15 @@ void crazypod_app_launcher_open_books(void)
 
 void crazypod_app_launcher_open(enum crazypod_app_id id)
 {
+    if(id != CRAZYPOD_APP_SHUFFLE)
+        shuffle_pending = false;
     switch(id) {
     case CRAZYPOD_APP_MUSIC:
         shuffle_pending = false;
         open_music();
         break;
     case CRAZYPOD_APP_SHUFFLE:
-        shuffle_pending = true;
-        open_music();
-        crazypod_app_launcher_process_pending();
+        request_shuffle();
         break;
     case CRAZYPOD_APP_LOCK:
         host.show_lock(true);
@@ -176,7 +192,7 @@ void crazypod_app_launcher_process_pending(void)
 {
     enum crazypod_music_catalog_validation validation;
 
-    if(!shuffle_pending ||
+    if(!shuffle_pending || crazypod_scene_transition_active() ||
        crazypod_music_is_scanning() ||
        !crazypod_music_library_loaded())
         return;
@@ -194,5 +210,13 @@ void crazypod_app_launcher_cancel_pending(void)
 {
     shuffle_pending = false;
 }
+
+#ifdef SIMULATOR
+void crazypod_app_launcher_simulate_shuffle_ready(void)
+{
+    shuffle_pending = false;
+    open_shuffle_screen();
+}
+#endif
 
 #endif

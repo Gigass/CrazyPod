@@ -551,6 +551,7 @@ static const struct crazypod_l10n_entry crazypod_l10n_entries[] = {
     { "Open the saved bookmark", { "打开已存书签", "開啟已存書签", "保存したブックマークを開く", "저장한 책갈피 열기", "Gespeichertes Lesezeichen öffnen", "Ouvrir le signet enregistré", "Abrir el marcador guardado", "Abrir o marcador salvo" } },
     { "Opening EPUB package", { "正在打开 EPUB 包", "正在開啟 EPUB 包", "EPUBパッケージを開いています", "EPUB 패키지 여는 중", "EPUB-Paket wird geöffnet", "Ouverture du paquet EPUB", "Abriendo paquete EPUB", "Abrindo pacote EPUB" } },
     { "Opening reader", { "正在打开阅读器", "正在開啟阅讀器", "リーダーを開いています", "리더 여는 중", "Reader wird geöffnet", "Ouverture du lecteur", "Abriendo lector", "Abrindo leitor" } },
+    { "Original iPod Music", { "原系统音乐", "原系統音樂", "純正iPodの音楽", "기본 iPod 음악", "Original-iPod-Musik", "Musique de l’iPod d’origine", "Música original del iPod", "Música original do iPod" } },
     { "Over-Ear", { "头戴式", "頭戴式", "オーバーイヤー", "오버이어", "Over-Ear", "Circum-aural", "Circumaural", "Circum-aural" } },
     { "Over-Ear Headphones", { "头戴式耳机", "頭戴式耳機", "オーバーイヤーヘッドホン", "오버이어 헤드폰", "Over-Ear-Kopfhörer", "Casque circum-aural", "Auriculares circumaurales", "Fones circum-aurais" } },
     { "P", { "P", "P", "P", "P", "P", "P", "P", "P" } },

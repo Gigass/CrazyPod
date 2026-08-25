@@ -42,9 +42,6 @@ static void render_text_prompt(void)
     int choice_height = 38;
     int instruction_y;
 
-    crazypod_ui_widget_box(
-        overlay_parent, 0, 0, LCD_WIDTH, LCD_HEIGHT,
-        0, 0x000000, 150);
     measured_width = crazypod_popup_text_width(
         instruction, &lv_font_montserrat_8);
     content_width = crazypod_popup_text_width(
@@ -137,9 +134,6 @@ static void render_exit_prompt(void)
 
     if(!crazypod_miniapp_input_exit_prompt_visible())
         return;
-    crazypod_ui_widget_box(
-        overlay_parent, 0, 0, LCD_WIDTH, LCD_HEIGHT,
-        0, 0x000000, 120);
     cancel_width = crazypod_popup_text_width(
         CP_TR("Cancel"),
         &lv_font_source_han_sans_sc_14_cjk);

@@ -171,6 +171,8 @@ static enum crazypod_menu_icon settings_item_icon(int item)
         return CRAZYPOD_MENU_ICON_SHUFFLE;
     case SETTINGS_ITEM_REPEAT:
         return CRAZYPOD_MENU_ICON_REPEAT;
+    case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
+        return CRAZYPOD_MENU_ICON_MUSIC_LIBRARY;
     case SETTINGS_ITEM_IDLE_POWEROFF:
         return CRAZYPOD_MENU_ICON_POWER_TIMER;
     case SETTINGS_ITEM_SLEEP_TIMER_DURATION:

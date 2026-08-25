@@ -384,7 +384,7 @@ void crazypod_now_screen_render(
             crazypod_marquee_configure(title, true);
             lv_obj_set_pos(
                 title, CRAZYPOD_NOW_COVER_X + 6,
-                CRAZYPOD_NOW_COVER_CAPTION_Y);
+                CRAZYPOD_NOW_COVER_CAPTION_Y + 3);
             artist = make_label(
                 context->parent,
                 track != NULL ? track->artist : CP_TR("Local Music"),

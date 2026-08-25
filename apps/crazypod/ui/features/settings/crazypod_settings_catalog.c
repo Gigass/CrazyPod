@@ -44,6 +44,7 @@ static const int display_items[] = {
 static const int playback_items[] = {
     SETTINGS_ITEM_SHUFFLE,
     SETTINGS_ITEM_REPEAT,
+    SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC,
 };
 
 static const int date_time_items[] = {

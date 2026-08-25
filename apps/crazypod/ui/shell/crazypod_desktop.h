@@ -31,5 +31,6 @@ bool crazypod_desktop_hold_feedback_visible(void);
 void crazypod_desktop_refresh_appearance(void);
 void crazypod_desktop_render_icon(
     int tile_size, bool blocked);
+void crazypod_desktop_render_icon_snapshot(int tile_size);
 
 #endif

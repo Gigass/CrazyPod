@@ -44,7 +44,9 @@ WPS、皮肤引擎、主题系统、插件界面、录音流程、USB Audio、HI
 
 ### 音乐与媒体
 
-- 扫描 `/Music` 和 `/iPod_Control/Music`，支持 Rockbox 内置编解码器可播放的格式。
+- 扫描 `/Music`；启用“设置 → 播放设置 → 原系统音乐”后，同时扫描
+  `/iPod_Control/Music`。新安装默认启用；从 V1.0 升级的设备保持原来的关闭状态，
+  直到用户手动启用。
 - 提供艺术家、专辑、歌曲、M3U/M3U8 播放列表、收藏、搜索、动态队列、随机播放、
   循环、断点续播、本地 LRC 歌词和 Cover Flow。
 - 支持播客、照片浏览、图片收藏、缩放和平移。
@@ -120,7 +122,7 @@ cd build-sim
 
 ## 设备内容
 
-- 音乐：`/Music` 或 `/iPod_Control/Music`
+- 音乐：`/Music`；启用“原系统音乐”后读取 `/iPod_Control/Music`
 - 播客：`/Podcasts`
 - 图片：`/Pictures`
 - 视频：`/Videos`
