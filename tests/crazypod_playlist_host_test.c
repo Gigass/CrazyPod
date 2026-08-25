@@ -35,7 +35,10 @@ void audio_resume(void)
 
 static const char *current_path(void)
 {
-    return crazypod_queue_path(crazypod_queue_index());
+    static char path[MAX_PATH];
+
+    return crazypod_queue_copy_path(
+        crazypod_queue_index(), path, sizeof(path)) ? path : NULL;
 }
 
 int main(void)
@@ -56,6 +59,15 @@ int main(void)
     assert(play_count == 1);
 
     playlist_init();
+    assert(crazypod_queue_replace(paths, 4, 2));
+    {
+        char copied_path[MAX_PATH];
+
+        assert(crazypod_queue_copy_path(2, copied_path,
+                                        sizeof(copied_path)));
+        assert(crazypod_queue_replace(paths, 2, 0));
+        assert(strcmp(copied_path, paths[2]) == 0);
+    }
     assert(crazypod_queue_replace(paths, 4, 2));
     crazypod_queue_set_shuffle(true);
     assert(strcmp(current_path(), paths[2]) == 0);
@@ -87,8 +99,14 @@ int main(void)
             large_path_pointers, LARGE_QUEUE_LENGTH, 2200));
         assert(crazypod_queue_count() == LARGE_QUEUE_LENGTH);
         assert(crazypod_queue_index() == 2200);
-        assert(strcmp(crazypod_queue_path(LARGE_QUEUE_LENGTH - 1),
-                      large_paths[LARGE_QUEUE_LENGTH - 1]) == 0);
+        {
+            char path[MAX_PATH];
+
+            assert(crazypod_queue_copy_path(
+                LARGE_QUEUE_LENGTH - 1, path, sizeof(path)));
+            assert(strcmp(path,
+                          large_paths[LARGE_QUEUE_LENGTH - 1]) == 0);
+        }
         assert(test_core_alloc_active_handles() == 1);
         assert(test_core_alloc_pin_count() == 1);
     }

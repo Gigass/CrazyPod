@@ -100,13 +100,13 @@ static uint32_t fallback_color(
         (54 * red + 183 * green + 19 * blue) >> 8);
 }
 
-static const struct crazypod_track *current_track(void)
+static bool copy_current_track(struct crazypod_track *track)
 {
-    const char *path =
-        crazypod_queue_path(crazypod_queue_index());
+    char path[MAX_PATH];
 
-    return crazypod_music_track(
-        crazypod_music_find_track(path));
+    return crazypod_queue_copy_path(
+            crazypod_queue_index(), path, sizeof(path)) &&
+        crazypod_music_copy_track(crazypod_music_find_track(path), track);
 }
 
 static void refresh_wave_palette(
@@ -164,7 +164,8 @@ static void draw_wave(lv_event_t *event)
 void crazypod_now_playing_feature_render(
     const struct crazypod_now_playing_render_context *context)
 {
-    const struct crazypod_track *track = current_track();
+    struct crazypod_track track;
+    bool have_track = copy_current_track(&track);
     const char *visual_track_path;
     unsigned visual_generation;
     const lv_image_dsc_t *visual_artwork;
@@ -177,7 +178,7 @@ void crazypod_now_playing_feature_render(
     {
         const struct crazypod_now_screen_context screen = {
             .parent = context->parent,
-            .track = track,
+            .track = have_track ? &track : NULL,
             .lyrics_mode = crazypod_now_playing_lyrics_mode(),
             .metadata_font = context->metadata_font,
             .lyrics_context_font = crazypod_runtime_font_resolve(

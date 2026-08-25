@@ -43,6 +43,9 @@
 #include "lcd.h"
 #include "storage.h"
 #include "screendump.h"
+#if defined(IPOD_6G) && !defined(BOOTLOADER)
+#include "audio.h"
+#endif
 
 #ifdef HAVE_REMOTE_LCD
 #include "lcd-remote.h"
@@ -510,7 +513,12 @@ static inline void do_backlight_off(void)
 #endif
     /* Accelerate SSD sleep when backlight turns off — the deep sleep
      * timer in the storage driver uses backlight state as a gate. */
-    if (storage_get_ssd_mode())
+    if (storage_get_ssd_mode()
+#if defined(IPOD_6G) && !defined(BOOTLOADER)
+        && !((audio_status() & AUDIO_STATUS_PLAY) != 0 &&
+             (audio_status() & AUDIO_STATUS_PAUSE) == 0)
+#endif
+       )
         storage_sleep();
 }
 

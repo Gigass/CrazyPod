@@ -21,6 +21,16 @@ static inline void mutex_init(struct mutex *mutex)
     mutex->unused = 0;
 }
 
+static inline void mutex_lock(struct mutex *mutex)
+{
+    (void)mutex;
+}
+
+static inline void mutex_unlock(struct mutex *mutex)
+{
+    (void)mutex;
+}
+
 struct playlist_info {
     int fd;
     int control_fd;

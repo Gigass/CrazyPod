@@ -154,6 +154,7 @@ struct crazypod_video_plugin_api {
 
     void (*codec_thread_do_callback)(
         void (*callback)(void), unsigned int *audio_thread_id);
+    bool (*codec_thread_is_borrowed)(void);
     void *(*plugin_get_audio_buffer)(size_t *size);
 };
 

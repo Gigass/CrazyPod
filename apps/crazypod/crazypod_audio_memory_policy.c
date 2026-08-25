@@ -1,6 +1,5 @@
 #include "crazypod_audio_memory_policy.h"
 
-#define CRAZYPOD_AUDIO_BUFFER_FLOOR (4u * 1024u * 1024u)
 #define CRAZYPOD_RUNTIME_HEADROOM_MAX (16u * 1024u * 1024u)
 
 size_t crazypod_audio_runtime_headroom(size_t allocatable)
@@ -15,7 +14,14 @@ size_t crazypod_audio_runtime_headroom(size_t allocatable)
     return headroom;
 }
 
-bool crazypod_audio_buffer_may_shrink(bool playback_running)
+bool crazypod_audio_buffer_may_shrink(bool playback_active,
+                                      size_t resulting_size)
 {
-    return !playback_running;
+    return !playback_active &&
+        crazypod_audio_buffer_meets_floor(resulting_size);
+}
+
+bool crazypod_audio_buffer_meets_floor(size_t size)
+{
+    return size >= CRAZYPOD_AUDIO_BUFFER_FLOOR;
 }

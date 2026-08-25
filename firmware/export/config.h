@@ -1408,9 +1408,12 @@ Lyre prototype 1 */
 #undef USB_ENABLE_HID
 #undef USB_ENABLE_IAP_HID
 #undef TARGET_EXTRA_THREADS
-#ifdef HAVE_PCM_CODEC_IDLE
-#define TARGET_EXTRA_THREADS 1 /* deferred codec power; iAP uses the UI queue */
-#endif
+/* CrazyPod has seven long-lived product workers beyond Rockbox's base
+ * allowance. MPEG playback then needs three transient slots (manager, video
+ * and disk buffering), while library validation may use one more. Keep 24
+ * total slots on click-wheel builds instead of running at the allocator's
+ * edge. Thread creation failures are still handled transactionally. */
+#define TARGET_EXTRA_THREADS 7
 #undef HAVE_DIRCACHE
 #endif
 

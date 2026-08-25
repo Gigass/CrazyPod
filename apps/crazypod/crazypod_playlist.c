@@ -26,6 +26,17 @@ static bool queue_shuffle;
 static uint32_t shuffle_state = 0x43505f36;
 static unsigned queue_generation;
 static struct playlist_info queue_info;
+static void queue_set_shuffle_locked(bool enabled);
+
+static void queue_lock(void)
+{
+    mutex_lock(&queue_info.mutex);
+}
+
+static void queue_unlock(void)
+{
+    mutex_unlock(&queue_info.mutex);
+}
 
 static bool queue_storage_reserve(int required)
 {
@@ -149,6 +160,7 @@ int playlist_create(const char *dir, const char *file)
     (void)dir;
     (void)file;
     audio_stop();
+    queue_lock();
     queue_length = 0;
     queue_index = 0;
     queue_started = false;
@@ -156,6 +168,7 @@ int playlist_create(const char *dir, const char *file)
     queue_info.index = 0;
     queue_info.started = false;
     ++queue_generation;
+    queue_unlock();
     return 0;
 }
 
@@ -169,10 +182,13 @@ int playlist_insert_track(struct playlist_info *playlist, const char *filename,
     (void)queued;
     (void)sync;
 
+    queue_lock();
     if(filename == NULL || path_is_excluded_ipod_music(filename) ||
        queue_length == INT_MAX ||
-       !queue_storage_reserve(queue_length + 1))
+       !queue_storage_reserve(queue_length + 1)) {
+        queue_unlock();
         return -1;
+    }
 
     if(position == PLAYLIST_PREPEND || position == PLAYLIST_INSERT_FIRST)
         insert_at = 0;
@@ -191,45 +207,64 @@ int playlist_insert_track(struct playlist_info *playlist, const char *filename,
     ++queue_length;
     queue_info.amount = queue_length;
     ++queue_generation;
+    queue_unlock();
     return insert_at;
 }
 
 const char *playlist_peek(int steps, char *buffer, size_t buffer_size)
 {
-    int index = normalize_index(queue_index + steps, true);
+    int index;
     const char *path;
 
-    if(index < 0)
+    queue_lock();
+    index = normalize_index(queue_index + steps, true);
+    if(index < 0) {
+        queue_unlock();
         return NULL;
+    }
 
     path = queue_paths[index];
     if(buffer != NULL && buffer_size > 0) {
         snprintf(buffer, buffer_size, "%s", path);
+        queue_unlock();
         return buffer;
     }
 
-    return path;
+    /* In this build all no-buffer callers only test existence. Returning a
+     * queue pointer after releasing the mutex would reintroduce a lifetime
+     * race with shuffle/reallocation. */
+    queue_unlock();
+    return (const char *)1;
 }
 
 bool playlist_check(int steps)
 {
-    return normalize_index(queue_index + steps, false) >= 0;
+    bool valid;
+
+    queue_lock();
+    valid = normalize_index(queue_index + steps, false) >= 0;
+    queue_unlock();
+    return valid;
 }
 
 int playlist_next(int steps)
 {
     int next;
 
+    queue_lock();
     if(global_settings.repeat_mode == REPEAT_ONE && steps != 0)
         next = queue_index;
     else
         next = normalize_index(queue_index + steps, true);
 
-    if(next < 0)
+    if(next < 0) {
+        queue_unlock();
         return -1;
+    }
 
     queue_index = next;
     queue_info.index = next;
+    queue_unlock();
     return next;
 }
 
@@ -241,12 +276,16 @@ bool playlist_next_dir(int direction)
 
 void playlist_skip_entry(struct playlist_info *playlist, int steps)
 {
-    int index = normalize_index(queue_index + steps, false);
+    int index;
     int i;
 
     (void)playlist;
-    if(index < 0)
+    queue_lock();
+    index = normalize_index(queue_index + steps, false);
+    if(index < 0) {
+        queue_unlock();
         return;
+    }
 
     for(i = index; i + 1 < queue_length; ++i) {
         copy_path(queue_paths[i], queue_paths[i + 1]);
@@ -261,42 +300,60 @@ void playlist_skip_entry(struct playlist_info *playlist, int steps)
     queue_info.amount = queue_length;
     queue_info.index = queue_index;
     ++queue_generation;
+    queue_unlock();
 }
 
 int playlist_update_resume_info(const struct mp3entry *id3)
 {
+    queue_lock();
     global_status.resume_index = queue_index;
     if(id3 != NULL) {
         global_status.resume_elapsed = id3->elapsed;
         global_status.resume_offset = id3->offset;
     }
+    queue_unlock();
     return 0;
 }
 
 void playlist_start(int start_index, unsigned long elapsed,
                     unsigned long offset)
 {
-    int index = normalize_index(start_index, false);
+    int index;
 
-    if(index < 0)
+    queue_lock();
+    index = normalize_index(start_index, false);
+    if(index < 0) {
+        queue_unlock();
         return;
+    }
 
     queue_index = index;
     queue_started = true;
     queue_info.index = index;
     queue_info.started = true;
+    queue_unlock();
     audio_play(elapsed, offset);
     audio_resume();
 }
 
 int playlist_amount(void)
 {
-    return queue_length;
+    int amount;
+
+    queue_lock();
+    amount = queue_length;
+    queue_unlock();
+    return amount;
 }
 
 int playlist_get_display_index(void)
 {
-    return queue_length > 0 ? queue_index + 1 : 0;
+    int index;
+
+    queue_lock();
+    index = queue_length > 0 ? queue_index + 1 : 0;
+    queue_unlock();
+    return index;
 }
 
 int playlist_get_track_info(
@@ -304,12 +361,18 @@ int playlist_get_track_info(
     struct playlist_track_info *info)
 {
     (void)playlist;
-    if(info == NULL || index < 0 || index >= queue_length)
+    if(info == NULL)
         return -1;
+    queue_lock();
+    if(index < 0 || index >= queue_length) {
+        queue_unlock();
+        return -1;
+    }
     memset(info, 0, sizeof(*info));
     copy_path(info->filename, queue_paths[index]);
     info->index = index;
     info->display_index = index + 1;
+    queue_unlock();
     return 0;
 }
 
@@ -326,9 +389,14 @@ bool playlist_allow_dirplay(const struct playlist_info *playlist)
 
 int playlist_get_resume_info(int *resume_index)
 {
+    int result;
+
+    queue_lock();
     if(resume_index != NULL)
         *resume_index = queue_index;
-    return queue_started ? 0 : -1;
+    result = queue_started ? 0 : -1;
+    queue_unlock();
+    return result;
 }
 
 void playlist_resume_track(int start_index, unsigned int crc,
@@ -339,16 +407,36 @@ void playlist_resume_track(int start_index, unsigned int crc,
 }
 
 static bool queue_replace(const char *const *paths, int count,
-                          int start_index, bool preserve_selected)
+                          int start_index, bool preserve_selected,
+                          bool force_shuffle, unsigned int seed)
 {
     char selected[MAX_PATH];
+    bool previous_shuffle;
+    uint32_t previous_shuffle_state;
+    bool start_playback;
     int i;
 
     if(count < 0 || (count > 0 && paths == NULL))
         return false;
     audio_stop();
-    if(count > 0 && !queue_storage_reserve(count))
+    queue_lock();
+    previous_shuffle = queue_shuffle;
+    previous_shuffle_state = shuffle_state;
+    if(force_shuffle) {
+        shuffle_state ^= (uint32_t)seed + 0x9e3779b9u +
+            (shuffle_state << 6) + (shuffle_state >> 2);
+        queue_shuffle = true;
+        global_settings.playlist_shuffle = true;
+    }
+    if(count > 0 && !queue_storage_reserve(count)) {
+        if(force_shuffle) {
+            shuffle_state = previous_shuffle_state;
+            queue_shuffle = previous_shuffle;
+            global_settings.playlist_shuffle = previous_shuffle;
+        }
+        queue_unlock();
         return false;
+    }
     queue_length = 0;
     queue_index = 0;
     queue_started = false;
@@ -371,7 +459,7 @@ static bool queue_replace(const char *const *paths, int count,
         selected[0] = '\0';
 
     if(queue_shuffle)
-        crazypod_queue_set_shuffle(true);
+        queue_set_shuffle_locked(true);
 
     if(queue_shuffle && preserve_selected) {
         for(i = 0; i < queue_length; ++i) {
@@ -382,36 +470,36 @@ static bool queue_replace(const char *const *paths, int count,
         }
     }
     ++queue_generation;
-    playlist_start(start_index, 0, 0);
+    start_playback = queue_length > 0;
+    if(start_playback) {
+        queue_index = start_index;
+        queue_started = true;
+        queue_info.index = start_index;
+        queue_info.started = true;
+    }
+    queue_unlock();
+    if(start_playback) {
+        audio_play(0, 0);
+        audio_resume();
+    }
     return true;
 }
 
 bool crazypod_queue_replace(const char *const *paths, int count,
                             int start_index)
 {
-    return queue_replace(paths, count, start_index, true);
+    return queue_replace(paths, count, start_index, true, false, 0);
 }
 
 bool crazypod_queue_replace_shuffled(const char *const *paths, int count,
                                      unsigned int seed)
 {
-    bool previous_shuffle = queue_shuffle;
-    uint32_t previous_shuffle_state = shuffle_state;
-
-    shuffle_state ^= (uint32_t)seed + 0x9e3779b9u +
-        (shuffle_state << 6) + (shuffle_state >> 2);
-    queue_shuffle = true;
-    global_settings.playlist_shuffle = true;
-    if(queue_replace(paths, count, 0, false))
-        return true;
-    shuffle_state = previous_shuffle_state;
-    queue_shuffle = previous_shuffle;
-    global_settings.playlist_shuffle = previous_shuffle;
-    return false;
+    return queue_replace(paths, count, 0, false, true, seed);
 }
 
 void crazypod_queue_restore_begin(void)
 {
+    queue_lock();
     queue_length = 0;
     queue_index = 0;
     queue_started = false;
@@ -419,24 +507,33 @@ void crazypod_queue_restore_begin(void)
     queue_info.amount = 0;
     queue_info.index = 0;
     queue_info.started = false;
+    queue_unlock();
 }
 
 bool crazypod_queue_restore_add(const char *path)
 {
+    bool added = false;
+
+    queue_lock();
     if(path == NULL || path[0] != '/' ||
        path_is_excluded_ipod_music(path) ||
        queue_length == INT_MAX ||
-       !queue_storage_reserve(queue_length + 1))
+       !queue_storage_reserve(queue_length + 1)) {
+        queue_unlock();
         return false;
+    }
     copy_path(queue_paths[queue_length], path);
     copy_path(original_paths[queue_length], path);
     ++queue_length;
     queue_info.amount = queue_length;
-    return true;
+    added = true;
+    queue_unlock();
+    return added;
 }
 
 void crazypod_queue_restore_finish(int selected_index, bool shuffled)
 {
+    queue_lock();
     if(selected_index < 0 || selected_index >= queue_length)
         selected_index = 0;
     queue_index = selected_index;
@@ -444,24 +541,42 @@ void crazypod_queue_restore_finish(int selected_index, bool shuffled)
     queue_info.index = selected_index;
     global_settings.playlist_shuffle = shuffled;
     ++queue_generation;
+    queue_unlock();
 }
 
 int crazypod_queue_count(void)
 {
-    return queue_length;
+    return playlist_amount();
 }
 
 int crazypod_queue_index(void)
 {
-    return queue_index;
+    int index;
+
+    queue_lock();
+    index = queue_index;
+    queue_unlock();
+    return index;
 }
 
-const char *crazypod_queue_path(int index)
+bool crazypod_queue_copy_path(int index, char *buffer,
+                              size_t buffer_size)
 {
-    return index >= 0 && index < queue_length ? queue_paths[index] : NULL;
+    bool copied = false;
+
+    if(buffer == NULL || buffer_size == 0)
+        return false;
+    buffer[0] = '\0';
+    queue_lock();
+    if(index >= 0 && index < queue_length) {
+        snprintf(buffer, buffer_size, "%s", queue_paths[index]);
+        copied = true;
+    }
+    queue_unlock();
+    return copied;
 }
 
-void crazypod_queue_set_shuffle(bool enabled)
+static void queue_set_shuffle_locked(bool enabled)
 {
     char current[MAX_PATH];
     int i;
@@ -501,27 +616,51 @@ void crazypod_queue_set_shuffle(bool enabled)
     ++queue_generation;
 }
 
+void crazypod_queue_set_shuffle(bool enabled)
+{
+    queue_lock();
+    queue_set_shuffle_locked(enabled);
+    queue_unlock();
+}
+
 bool crazypod_queue_shuffle(void)
 {
-    return queue_shuffle;
+    bool shuffled;
+
+    queue_lock();
+    shuffled = queue_shuffle;
+    queue_unlock();
+    return shuffled;
 }
 
 void crazypod_queue_set_repeat(int repeat_mode)
 {
     if(repeat_mode < REPEAT_OFF || repeat_mode > REPEAT_ONE)
         repeat_mode = REPEAT_OFF;
+    queue_lock();
     global_settings.repeat_mode = repeat_mode;
     ++queue_generation;
+    queue_unlock();
 }
 
 int crazypod_queue_repeat(void)
 {
-    return global_settings.repeat_mode;
+    int repeat_mode;
+
+    queue_lock();
+    repeat_mode = global_settings.repeat_mode;
+    queue_unlock();
+    return repeat_mode;
 }
 
 unsigned crazypod_queue_generation(void)
 {
-    return queue_generation;
+    unsigned generation;
+
+    queue_lock();
+    generation = queue_generation;
+    queue_unlock();
+    return generation;
 }
 
 #endif

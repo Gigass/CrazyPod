@@ -58,8 +58,9 @@ bool crazypod_music_library_preparing_artwork(void);
 bool crazypod_music_feature_activate(
     const struct route_state *state,
     const struct crazypod_music_activation_host *host);
-const struct crazypod_track *crazypod_music_feature_route_track(
-    const struct route_state *state, int index);
+bool crazypod_music_feature_copy_route_track(
+    const struct route_state *state, int index,
+    struct crazypod_track *track);
 void crazypod_music_feature_render_album_flow(
     lv_obj_t *parent, const struct route_state *state,
     const lv_font_t *metadata_font);

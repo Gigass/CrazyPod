@@ -18,6 +18,7 @@
 #include "kernel.h"
 #include "metadata.h"
 #include "misc.h"
+#include "panic.h"
 #include "powermgmt.h"
 #include "string-extra.h"
 
@@ -1126,28 +1127,27 @@ static void end_disk_work(void)
 static bool album_request(
     int album_index, struct artwork_decode_request *request)
 {
-    const struct crazypod_track *track;
+    struct crazypod_track track;
 
     memset(request, 0, sizeof(*request));
-    track = crazypod_music_album_track(album_index, 0);
-    if(track == NULL)
+    if(!crazypod_music_copy_album_track(album_index, 0, &track))
         return false;
     request->target_size = CRAZYPOD_ARTWORK_CACHE_SIZE;
-    request->offset = track->artwork_offset;
-    request->size = track->artwork_size;
-    request->source_size = track->source_size;
-    request->source_mtime = track->source_mtime;
-    request->type = track->artwork_type;
-    request->embedded = track->artwork_embedded;
+    request->offset = track.artwork_offset;
+    request->size = track.artwork_size;
+    request->source_size = track.source_size;
+    request->source_mtime = track.source_mtime;
+    request->type = track.artwork_type;
+    request->embedded = track.artwork_embedded;
     request->cache_only = false;
     snprintf(request->track_path, sizeof(request->track_path),
-             "%s", track->path);
+             "%s", track.path);
     snprintf(request->album, sizeof(request->album),
-             "%s", track->album);
+             "%s", track.album);
     snprintf(request->album_artist, sizeof(request->album_artist),
-             "%s", track->album_artist);
+             "%s", track.album_artist);
     snprintf(request->artist, sizeof(request->artist),
-             "%s", track->artist);
+             "%s", track.artist);
     return true;
 }
 
@@ -1156,16 +1156,18 @@ static int compare_prime_album_paths(const void *left_ptr,
 {
     int left_index = (int)*(const uint32_t *)left_ptr;
     int right_index = (int)*(const uint32_t *)right_ptr;
-    const struct crazypod_track *left =
-        crazypod_music_album_track(left_index, 0);
-    const struct crazypod_track *right =
-        crazypod_music_album_track(right_index, 0);
+    struct crazypod_track left;
+    struct crazypod_track right;
+    bool have_left = crazypod_music_copy_album_track(
+        left_index, 0, &left);
+    bool have_right = crazypod_music_copy_album_track(
+        right_index, 0, &right);
 
-    if(left == NULL)
-        return right == NULL ? 0 : 1;
-    if(right == NULL)
+    if(!have_left)
+        return !have_right ? 0 : 1;
+    if(!have_right)
         return -1;
-    return strcmp(left->path, right->path);
+    return strcmp(left.path, right.path);
 }
 
 static void artwork_prime_order_release(void)
@@ -1186,31 +1188,30 @@ static uint32_t artwork_library_key(void)
 
     hash = hash_bytes(hash, &count, sizeof(count));
     for(album_index = 0; album_index < count; ++album_index) {
-        const struct crazypod_track *track =
-            crazypod_music_album_track(album_index, 0);
-        const struct crazypod_album *album =
-            crazypod_music_album(album_index);
+        struct crazypod_track track;
+        struct crazypod_album album;
 
-        if(track == NULL || album == NULL)
+        if(!crazypod_music_copy_album_track(album_index, 0, &track) ||
+           !crazypod_music_copy_album(album_index, &album))
             continue;
-        hash = hash_bytes(hash, album->title,
-                          strlen(album->title) + 1);
-        hash = hash_bytes(hash, album->artist,
-                          strlen(album->artist) + 1);
-        hash = hash_bytes(hash, track->path,
-                          strlen(track->path) + 1);
-        hash = hash_bytes(hash, &track->source_size,
-                          sizeof(track->source_size));
-        hash = hash_bytes(hash, &track->source_mtime,
-                          sizeof(track->source_mtime));
-        hash = hash_bytes(hash, &track->artwork_offset,
-                          sizeof(track->artwork_offset));
-        hash = hash_bytes(hash, &track->artwork_size,
-                          sizeof(track->artwork_size));
-        hash = hash_bytes(hash, &track->artwork_type,
-                          sizeof(track->artwork_type));
-        hash = hash_bytes(hash, &track->artwork_embedded,
-                          sizeof(track->artwork_embedded));
+        hash = hash_bytes(hash, album.title,
+                          strlen(album.title) + 1);
+        hash = hash_bytes(hash, album.artist,
+                          strlen(album.artist) + 1);
+        hash = hash_bytes(hash, track.path,
+                          strlen(track.path) + 1);
+        hash = hash_bytes(hash, &track.source_size,
+                          sizeof(track.source_size));
+        hash = hash_bytes(hash, &track.source_mtime,
+                          sizeof(track.source_mtime));
+        hash = hash_bytes(hash, &track.artwork_offset,
+                          sizeof(track.artwork_offset));
+        hash = hash_bytes(hash, &track.artwork_size,
+                          sizeof(track.artwork_size));
+        hash = hash_bytes(hash, &track.artwork_type,
+                          sizeof(track.artwork_type));
+        hash = hash_bytes(hash, &track.artwork_embedded,
+                          sizeof(track.artwork_embedded));
     }
     return hash;
 }
@@ -1708,10 +1709,11 @@ void crazypod_artwork_init(void)
     /* Touch-wheel input can keep the UI thread continuously runnable. Keep
        demand artwork at the same priority so visible CoverFlow requests are
        decoded before release; the library-prime path lowers itself above. */
-    create_thread(artwork_thread, artwork_stack, sizeof(artwork_stack), 0,
-                  "crazypod art"
-                  IF_PRIO(, PRIORITY_USER_INTERFACE)
-                  IF_COP(, CPU));
+    if(create_thread(artwork_thread, artwork_stack, sizeof(artwork_stack), 0,
+                     "crazypod art"
+                     IF_PRIO(, PRIORITY_USER_INTERFACE)
+                     IF_COP(, CPU)) == 0)
+        panicf("artwork thread");
 }
 
 void crazypod_artwork_prime_library(void)

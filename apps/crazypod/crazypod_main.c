@@ -21,6 +21,7 @@
 #include "power.h"
 #include "powermgmt.h"
 #include "rtc.h"
+#include "settings.h"
 #ifdef HAVE_SERIAL
 #include "serial.h"
 #endif
@@ -45,6 +46,7 @@
 #endif
 
 #include "crazypod_audio_shims.h"
+#include "crazypod_audio_reserve.h"
 #include "crazypod_appearance.h"
 #include "crazypod_books.h"
 #include "crazypod_lcd.h"
@@ -92,6 +94,12 @@ static void crazypod_platform_init(void)
     crazypod_audio_settings_init();
     playlist_init();
     audio_init();
+#ifdef HAVE_LINEOUT_POWEROFF
+    global_settings.lineout_active = true;
+    lineout_set(true);
+#endif
+    if(!crazypod_audio_reserve_acquire())
+        panicf("audio reserve");
     crazypod_state_load();
     crazypod_appearance_load();
     crazypod_presets_load();
@@ -197,6 +205,12 @@ static void crazypod_platform_init(void)
     crazypod_audio_settings_init();
     playlist_init();
     audio_init();
+#ifdef HAVE_LINEOUT_POWEROFF
+    global_settings.lineout_active = true;
+    lineout_set(true);
+#endif
+    if(!crazypod_audio_reserve_acquire())
+        panicf("audio reserve");
     crazypod_state_load();
     crazypod_appearance_load();
     crazypod_presets_load();

@@ -14,7 +14,7 @@ bool crazypod_queue_restore_add(const char *path);
 void crazypod_queue_restore_finish(int selected_index, bool shuffled);
 int crazypod_queue_count(void);
 int crazypod_queue_index(void);
-const char *crazypod_queue_path(int index);
+bool crazypod_queue_copy_path(int index, char *buffer, size_t buffer_size);
 void crazypod_queue_set_shuffle(bool enabled);
 bool crazypod_queue_shuffle(void);
 void crazypod_queue_set_repeat(int repeat_mode);

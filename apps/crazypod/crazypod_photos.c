@@ -15,6 +15,7 @@
 #include "jpeg_load.h"
 #include "kernel.h"
 #include "lcd.h"
+#include "panic.h"
 #include "resize.h"
 #include "string-extra.h"
 #include "system.h"
@@ -398,10 +399,11 @@ void crazypod_photos_init(void)
     photo_wake_queued = false;
     mutex_init(&photo_mutex);
     queue_init(&photo_queue, false);
-    create_thread(photo_thread, photo_stack, sizeof(photo_stack), 0,
-                  "crazypod photos"
-                  IF_PRIO(, PRIORITY_BACKGROUND)
-                  IF_COP(, CPU));
+    if(create_thread(photo_thread, photo_stack, sizeof(photo_stack), 0,
+                     "crazypod photos"
+                     IF_PRIO(, PRIORITY_BACKGROUND)
+                     IF_COP(, CPU)) == 0)
+        panicf("photo thread");
     catalog_loaded = crazypod_photo_catalog_init();
     photo_refresh_pending = !catalog_loaded;
 }

@@ -10,6 +10,7 @@
 #include "core_alloc.h"
 #include "file.h"
 #include "kernel.h"
+#include "panic.h"
 
 #include "../crazypod_image.h"
 #include "../crazypod_videos.h"
@@ -161,10 +162,11 @@ void crazypod_video_poster_init(void)
     slot.decoded_index = -1;
     mutex_init(&poster_mutex);
     queue_init(&poster_queue, false);
-    create_thread(poster_thread, poster_stack, sizeof(poster_stack), 0,
-                  "crazypod video posters"
-                  IF_PRIO(, PRIORITY_USER_INTERFACE)
-                  IF_COP(, CPU));
+    if(create_thread(poster_thread, poster_stack, sizeof(poster_stack), 0,
+                     "crazypod video posters"
+                     IF_PRIO(, PRIORITY_USER_INTERFACE)
+                     IF_COP(, CPU)) == 0)
+        panicf("video poster thread");
 }
 
 void crazypod_video_poster_reset(void)

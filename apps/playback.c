@@ -51,6 +51,7 @@
 
 #ifdef IPOD_6G
 #include "crazypod/crazypod_audio_memory_policy.h"
+#include "crazypod/crazypod_audio_reserve.h"
 #endif
 
 #ifdef HAVE_TAGCACHE
@@ -975,25 +976,23 @@ static int shrink_callback(int handle, unsigned hints, void* start, size_t old_s
 
     bool give_up = false;
 
-#ifdef IPOD_6G
-    bool playback_running =
-        (audio_status() & (AUDIO_STATUS_PLAY | AUDIO_STATUS_PAUSE)) ==
-            AUDIO_STATUS_PLAY;
-
-    /* CrazyPod keeps playback continuous. Late UI, font and media-cache
-     * allocations use the runtime headroom left by audio_reset_buffer().
-     * Once that headroom is exhausted, fail the allocation instead of
-     * stopping and restarting the codec to shrink a live audio buffer. */
-    if (!crazypod_audio_buffer_may_shrink(playback_running))
-        return BUFLIB_CB_CANNOT_SHRINK;
-#endif
-
     /* filebuflen is, at this point, the buffering.c buffer size,
      * i.e. the audiobuf except voice, scratch mem, pcm, ... */
     ssize_t extradata_size = old_size - filebuflen;
     /* check what buflib requests */
     size_t wanted_size = (hints & BUFLIB_SHRINK_SIZE_MASK);
     ssize_t size = (ssize_t)old_size - wanted_size;
+
+#ifdef IPOD_6G
+    bool playback_active = (audio_status() & AUDIO_STATUS_PLAY) != 0;
+
+    /* PLAY includes the paused state. Preserve the whole arena whenever a
+     * track can resume, and preserve the hard floor even while stopped. Video
+     * performs an explicit audio_hard_stop() before taking ownership. */
+    if (size < 0 || !crazypod_audio_buffer_may_shrink(
+                        playback_active, (size_t)size))
+        return BUFLIB_CB_CANNOT_SHRINK;
+#endif
 
     if ((size - extradata_size) < AUDIO_BUFFER_RESERVE)
     {
@@ -1094,6 +1093,10 @@ static void audio_reset_buffer(void)
     unsigned int runtime_handle_count = 0;
 #endif
 
+#ifdef IPOD_6G
+    crazypod_audio_reserve_release();
+#endif
+
     if (audiobuf_handle > 0)
     {
         core_free(audiobuf_handle);
@@ -1123,13 +1126,29 @@ static void audio_reset_buffer(void)
 #endif
     audiobuf_handle = core_alloc_maximum(&filebuflen, &ops);
 #ifdef IPOD_6G
+    if (audiobuf_handle > 0 &&
+        !crazypod_audio_buffer_meets_floor(filebuflen))
+    {
+        audiobuf_handle = core_free(audiobuf_handle);
+        if (runtime_reserve_handle > 0)
+        {
+            core_free(runtime_reserve_handle);
+            runtime_reserve_handle = -1;
+        }
+        filebuflen = CRAZYPOD_AUDIO_BUFFER_FLOOR;
+        audiobuf_handle = core_alloc_ex(filebuflen, &ops);
+    }
     if (runtime_reserve_handle > 0)
         core_free(runtime_reserve_handle);
     while (runtime_handle_count > 0)
         core_free(runtime_handle_reserve[--runtime_handle_count]);
 #endif
 
-    if (audiobuf_handle > 0)
+    if (audiobuf_handle > 0
+#ifdef IPOD_6G
+        && crazypod_audio_buffer_meets_floor(filebuflen)
+#endif
+       )
         audio_reset_buffer_noalloc(core_get_data(audiobuf_handle));
     else
     /* someone is abusing core_alloc_maximum(). Fix this evil guy instead of

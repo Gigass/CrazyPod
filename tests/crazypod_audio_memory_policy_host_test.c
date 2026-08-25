@@ -15,8 +15,14 @@ int main(void)
     assert(crazypod_audio_runtime_headroom(12u * MIB) == 8u * MIB);
     assert(crazypod_audio_runtime_headroom(4u * MIB) == 0);
     assert(crazypod_audio_runtime_headroom(4u * MIB + 4096u) == 4096u);
-    assert(!crazypod_audio_buffer_may_shrink(true));
-    assert(crazypod_audio_buffer_may_shrink(false));
+    assert(!crazypod_audio_buffer_may_shrink(
+        true, CRAZYPOD_AUDIO_BUFFER_FLOOR));
+    assert(!crazypod_audio_buffer_may_shrink(
+        false, CRAZYPOD_AUDIO_BUFFER_FLOOR - 1));
+    assert(crazypod_audio_buffer_may_shrink(
+        false, CRAZYPOD_AUDIO_BUFFER_FLOOR));
+    assert(crazypod_audio_buffer_meets_floor(
+        CRAZYPOD_AUDIO_BUFFER_FLOOR));
     puts("crazypod audio memory policy host tests passed");
     return 0;
 }

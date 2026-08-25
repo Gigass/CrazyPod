@@ -29,9 +29,10 @@ static int item_total(
     case CP_MEDIA_LIBRARY_ALBUM_TRACKS:
         return crazypod_music_album_track_count(request->group_index);
     case CP_MEDIA_LIBRARY_PLAYLIST_TRACKS: {
-        const struct crazypod_playlist *playlist =
-            crazypod_music_playlist(request->group_index);
-        return playlist != NULL ? (int)playlist->track_count : -1;
+        struct crazypod_playlist playlist;
+        return crazypod_music_copy_playlist(
+                request->group_index, &playlist)
+            ? (int)playlist.track_count : -1;
     }
     case CP_MEDIA_LIBRARY_SEARCH_TRACKS:
         return request->query[0] != '\0'
@@ -41,22 +42,27 @@ static int item_total(
     }
 }
 
-static const struct crazypod_track *track_at(
-    const struct cp_media_library_page_request *request, int index)
+static bool copy_track_at(
+    const struct cp_media_library_page_request *request, int index,
+    struct crazypod_track *track)
 {
     switch(request->kind) {
     case CP_MEDIA_LIBRARY_TRACKS:
-        return crazypod_music_track(index);
+        return crazypod_music_copy_track(index, track);
     case CP_MEDIA_LIBRARY_ARTIST_TRACKS:
-        return crazypod_music_artist_track(request->group_index, index);
+        return crazypod_music_copy_artist_track(
+            request->group_index, index, track);
     case CP_MEDIA_LIBRARY_ALBUM_TRACKS:
-        return crazypod_music_album_track(request->group_index, index);
+        return crazypod_music_copy_album_track(
+            request->group_index, index, track);
     case CP_MEDIA_LIBRARY_PLAYLIST_TRACKS:
-        return crazypod_music_playlist_track(request->group_index, index);
+        return crazypod_music_copy_playlist_track(
+            request->group_index, index, track);
     case CP_MEDIA_LIBRARY_SEARCH_TRACKS:
-        return crazypod_music_search_track(request->query, index);
+        return crazypod_music_copy_search_track(
+            request->query, index, track);
     default:
-        return NULL;
+        return false;
     }
 }
 
@@ -64,29 +70,28 @@ static bool fill_group_item(
     uint32_t kind, int index, struct cp_media_library_item *item)
 {
     if(kind == CP_MEDIA_LIBRARY_ARTISTS) {
-        const char *artist = crazypod_music_artist(index);
-        if(artist == NULL)
+        char artist[72];
+        if(!crazypod_music_copy_artist(index, artist, sizeof(artist)))
             return false;
         strlcpy(item->primary, artist, sizeof(item->primary));
         item->value = crazypod_music_artist_track_count(index);
         return item->value >= 0;
     }
     if(kind == CP_MEDIA_LIBRARY_ALBUMS) {
-        const struct crazypod_album *album = crazypod_music_album(index);
-        if(album == NULL)
+        struct crazypod_album album;
+        if(!crazypod_music_copy_album(index, &album))
             return false;
-        strlcpy(item->primary, album->title, sizeof(item->primary));
-        strlcpy(item->secondary, album->artist, sizeof(item->secondary));
-        item->value = (int32_t)album->track_count;
+        strlcpy(item->primary, album.title, sizeof(item->primary));
+        strlcpy(item->secondary, album.artist, sizeof(item->secondary));
+        item->value = (int32_t)album.track_count;
         return true;
     }
     if(kind == CP_MEDIA_LIBRARY_PLAYLISTS) {
-        const struct crazypod_playlist *playlist =
-            crazypod_music_playlist(index);
-        if(playlist == NULL)
+        struct crazypod_playlist playlist;
+        if(!crazypod_music_copy_playlist(index, &playlist))
             return false;
-        strlcpy(item->primary, playlist->name, sizeof(item->primary));
-        item->value = (int32_t)playlist->track_count;
+        strlcpy(item->primary, playlist.name, sizeof(item->primary));
+        item->value = (int32_t)playlist.track_count;
         return true;
     }
     return false;
@@ -96,7 +101,7 @@ static bool fill_item(
     const struct cp_media_library_page_request *request,
     int index, struct cp_media_library_item *item)
 {
-    const struct crazypod_track *track;
+    struct crazypod_track track;
 
     memset(item, 0, sizeof(*item));
     item->struct_size = sizeof(*item);
@@ -105,16 +110,15 @@ static bool fill_item(
        request->kind == CP_MEDIA_LIBRARY_ALBUMS ||
        request->kind == CP_MEDIA_LIBRARY_PLAYLISTS)
         return fill_group_item(request->kind, index, item);
-    track = track_at(request, index);
-    if(track == NULL)
+    if(!copy_track_at(request, index, &track))
         return false;
-    item->index = crazypod_music_find_track(track->path);
-    item->value = (int32_t)track->duration_ms;
-    item->auxiliary = ((int32_t)track->disc_number << 16) |
-        track->track_number;
-    strlcpy(item->primary, track->title, sizeof(item->primary));
-    strlcpy(item->secondary, track->artist, sizeof(item->secondary));
-    strlcpy(item->tertiary, track->album, sizeof(item->tertiary));
+    item->index = crazypod_music_find_track(track.path);
+    item->value = (int32_t)track.duration_ms;
+    item->auxiliary = ((int32_t)track.disc_number << 16) |
+        track.track_number;
+    strlcpy(item->primary, track.title, sizeof(item->primary));
+    strlcpy(item->secondary, track.artist, sizeof(item->secondary));
+    strlcpy(item->tertiary, track.album, sizeof(item->tertiary));
     return item->index >= 0;
 }
 

@@ -81,27 +81,28 @@ void crazypod_music_invalidate_catalog(void);
 void crazypod_music_set_scan_suspended(bool suspended);
 
 int crazypod_music_track_count(void);
-const struct crazypod_track *crazypod_music_track(int index);
+bool crazypod_music_copy_track(int index, struct crazypod_track *track);
 int crazypod_music_find_track(const char *path);
 int crazypod_music_artist_count(void);
-const char *crazypod_music_artist(int index);
+bool crazypod_music_copy_artist(int index, char *artist, size_t size);
 int crazypod_music_artist_track_count(int artist_index);
-const struct crazypod_track *crazypod_music_artist_track(int artist_index,
-                                                          int track_index);
+bool crazypod_music_copy_artist_track(int artist_index, int track_index,
+                                      struct crazypod_track *track);
 int crazypod_music_album_count(void);
-const struct crazypod_album *crazypod_music_album(int index);
+bool crazypod_music_copy_album(int index, struct crazypod_album *album);
 int crazypod_music_album_track_count(int album_index);
-const struct crazypod_track *crazypod_music_album_track(int album_index,
-                                                         int track_index);
+bool crazypod_music_copy_album_track(int album_index, int track_index,
+                                     struct crazypod_track *track);
 int crazypod_music_playlist_count(void);
-const struct crazypod_playlist *crazypod_music_playlist(int index);
-const struct crazypod_track *crazypod_music_playlist_track(int playlist_index,
-                                                            int track_index);
+bool crazypod_music_copy_playlist(int index,
+                                  struct crazypod_playlist *playlist);
+bool crazypod_music_copy_playlist_track(int playlist_index, int track_index,
+                                        struct crazypod_track *track);
 bool crazypod_music_track_is_favorite(const char *path);
 bool crazypod_music_toggle_favorite(const char *path);
 int crazypod_music_search_count(const char *query);
-const struct crazypod_track *crazypod_music_search_track(const char *query,
-                                                          int result_index);
+bool crazypod_music_copy_search_track(const char *query, int result_index,
+                                      struct crazypod_track *track);
 
 bool crazypod_music_play(enum crazypod_music_scope scope, int group_index,
                          int selected_index);

@@ -57,13 +57,13 @@ static lv_obj_t *preview_parent(void)
     return crazypod_preview_motion_parent(preview.host.parent);
 }
 
-static const struct crazypod_track *current_track(void)
+static bool copy_current_track(struct crazypod_track *track)
 {
-    const char *path =
-        crazypod_queue_path(crazypod_queue_index());
+    char path[MAX_PATH];
 
-    return crazypod_music_track(
-        crazypod_music_find_track(path));
+    return crazypod_queue_copy_path(
+            crazypod_queue_index(), path, sizeof(path)) &&
+        crazypod_music_copy_track(crazypod_music_find_track(path), track);
 }
 
 bool crazypod_menu_preview_is_music_route(
@@ -159,6 +159,8 @@ void crazypod_menu_preview_reset(void)
 void crazypod_menu_preview_render(
     const struct route_state *state, bool animated)
 {
+    struct crazypod_track track;
+    bool have_track;
     bool animate = animated && preview.motion_ready &&
         crazypod_menu_preview_is_skeuomorphic_route(
             state->route);
@@ -263,10 +265,10 @@ void crazypod_menu_preview_render(
             crazypod_customize_feature_preset_editor_value());
     }
     else {
+        have_track = crazypod_music_feature_copy_route_track(
+            state, state->selected, &track);
         crazypod_music_feature_render_item_preview(
-            preview_parent(), state,
-            crazypod_music_feature_route_track(
-                state, state->selected),
+            preview_parent(), state, have_track ? &track : NULL,
             preview.host.metadata_font);
     }
     preview.defer_media = false;
@@ -278,7 +280,8 @@ void crazypod_menu_preview_render(
 void crazypod_menu_preview_prefetch(
     const struct route_state *state)
 {
-    const struct crazypod_track *track = NULL;
+    struct crazypod_track track;
+    bool have_track = false;
     int i;
     int count;
 
@@ -291,46 +294,46 @@ void crazypod_menu_preview_prefetch(
     }
     if(state->route == MUSIC_ROUTE_MENU) {
         if(state->selected == 0) {
-            track = current_track();
-            if(track != NULL)
+            have_track = copy_current_track(&track);
+            if(have_track)
                 (void)crazypod_artwork_load_priority(
-                    CRAZYPOD_PREVIEW_ARTWORK_SLOT, track,
+                    CRAZYPOD_PREVIEW_ARTWORK_SLOT, &track,
                     NOW_ARTWORK_SIZE, ARTWORK_PRIORITY);
         }
         else if(state->selected == 1) {
             count = crazypod_music_album_count();
             for(i = 0; i < 3 && i < count; ++i) {
-                track = crazypod_music_album_track(i, 0);
-                if(track != NULL)
+                have_track = crazypod_music_copy_album_track(i, 0, &track);
+                if(have_track)
                     (void)crazypod_artwork_load_priority(
                         CRAZYPOD_MENU_PREVIEW_FLOW_SLOT_BASE + i,
-                        track, FLOW_ARTWORK_SIZE,
+                        &track, FLOW_ARTWORK_SIZE,
                         ARTWORK_PRIORITY);
             }
         }
         else if(state->selected == 5 &&
                 crazypod_music_album_count() > 0) {
-            track = crazypod_music_album_track(0, 0);
-            if(track != NULL)
+            have_track = crazypod_music_copy_album_track(0, 0, &track);
+            if(have_track)
                 (void)crazypod_artwork_load_priority(
-                    CRAZYPOD_PREVIEW_ARTWORK_SLOT, track,
+                    CRAZYPOD_PREVIEW_ARTWORK_SLOT, &track,
                     ALBUM_ARTWORK_SIZE, ARTWORK_PRIORITY);
         }
         return;
     }
     if(state->route == MUSIC_ROUTE_ALBUMS)
-        track = crazypod_music_album_track(
-            state->selected, 0);
+        have_track = crazypod_music_copy_album_track(
+            state->selected, 0, &track);
     else if(state->route == MUSIC_ROUTE_ARTISTS ||
             state->route == MUSIC_ROUTE_PLAYLISTS)
         return;
     else if(crazypod_menu_preview_is_music_route(
                 state->route))
-        track = crazypod_music_feature_route_track(
-            state, state->selected);
-    if(track != NULL)
+        have_track = crazypod_music_feature_copy_route_track(
+            state, state->selected, &track);
+    if(have_track)
         (void)crazypod_artwork_load_priority(
-            CRAZYPOD_PREVIEW_ARTWORK_SLOT, track,
+            CRAZYPOD_PREVIEW_ARTWORK_SLOT, &track,
             ARTWORK_CACHE_SIZE, ARTWORK_PRIORITY);
 }
 

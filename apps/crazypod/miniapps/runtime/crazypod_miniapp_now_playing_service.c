@@ -20,13 +20,13 @@
 #include "../../ui/features/now_playing/crazypod_now_playing_feature.h"
 #include "crazypod_miniapp_now_playing_service.h"
 
-const struct crazypod_track *
-crazypod_miniapp_now_playing_track(void)
+bool crazypod_miniapp_now_playing_copy_track(struct crazypod_track *track)
 {
-    const char *path =
-        crazypod_queue_path(crazypod_queue_index());
+    char path[MAX_PATH];
 
-    return crazypod_music_track(crazypod_music_find_track(path));
+    return crazypod_queue_copy_path(
+            crazypod_queue_index(), path, sizeof(path)) &&
+        crazypod_music_copy_track(crazypod_music_find_track(path), track);
 }
 
 static uint32_t track_revision(const struct crazypod_track *track)
@@ -55,8 +55,8 @@ static int snapshot_call(
 {
     static struct pcm_peaks playback_peaks;
     struct cp_now_playing_snapshot snapshot;
-    const struct crazypod_track *track =
-        crazypod_miniapp_now_playing_track();
+    struct crazypod_track track;
+    bool have_track = crazypod_miniapp_now_playing_copy_track(&track);
     const struct mp3entry *id3 = audio_current_track();
     size_t response_size;
     int audio = audio_status();
@@ -67,7 +67,7 @@ static int snapshot_call(
         return CP_NATIVE_ERROR_LIMIT;
     memset(&snapshot, 0, sizeof(snapshot));
     snapshot.struct_size = sizeof(snapshot);
-    snapshot.revision = track_revision(track);
+    snapshot.revision = track_revision(have_track ? &track : NULL);
     snapshot.elapsed_ms = id3 != NULL
         ? (uint32_t)id3->elapsed : 0;
     snapshot.length_ms = id3 != NULL
@@ -79,8 +79,8 @@ static int snapshot_call(
     snapshot.volume = global_status.volume;
     snapshot.repeat_mode = crazypod_queue_repeat();
     snapshot.shuffle = crazypod_queue_shuffle() ? 1 : 0;
-    snapshot.favorite = track != NULL &&
-        crazypod_music_track_is_favorite(track->path) ? 1 : 0;
+    snapshot.favorite = have_track &&
+        crazypod_music_track_is_favorite(track.path) ? 1 : 0;
     mixer_channel_calculate_peaks(
         PCM_MIXER_CHAN_PLAYBACK, &playback_peaks);
     snapshot.level_left = playback_peaks.left >= 32767u
@@ -88,11 +88,11 @@ static int snapshot_call(
     snapshot.level_right = playback_peaks.right >= 32767u
         ? 1000u : playback_peaks.right * 1000u / 32767u;
     copy_text(snapshot.title, sizeof(snapshot.title),
-              track != NULL ? track->title : "");
+              have_track ? track.title : "");
     copy_text(snapshot.artist, sizeof(snapshot.artist),
-              track != NULL ? track->artist : "");
+              have_track ? track.artist : "");
     copy_text(snapshot.album, sizeof(snapshot.album),
-              track != NULL ? track->album : "");
+              have_track ? track.album : "");
     response_size = response_capacity < sizeof(snapshot)
         ? response_capacity : sizeof(snapshot);
     memcpy(response, &snapshot, response_size);
@@ -124,8 +124,8 @@ static int queue_item_call(
 {
     const struct cp_now_playing_queue_item_request *item_request = request;
     struct cp_now_playing_queue_item item;
-    const struct crazypod_track *track;
-    const char *path;
+    struct crazypod_track track;
+    char path[MAX_PATH];
 
     if(item_request == NULL ||
        request_size != sizeof(*item_request) ||
@@ -137,18 +137,19 @@ static int queue_item_call(
     if(item_request->index < 0 ||
        item_request->index >= crazypod_queue_count())
         return CP_NATIVE_ERROR_ARGUMENT;
-    path = crazypod_queue_path(item_request->index);
-    track = crazypod_music_track(crazypod_music_find_track(path));
-    if(track == NULL)
+    if(!crazypod_queue_copy_path(
+           item_request->index, path, sizeof(path)))
+        return CP_NATIVE_ERROR_STATE;
+    if(!crazypod_music_copy_track(crazypod_music_find_track(path), &track))
         return CP_NATIVE_ERROR_STATE;
     memset(&item, 0, sizeof(item));
     item.struct_size = sizeof(item);
     item.generation = crazypod_queue_generation();
     item.index = item_request->index;
     item.current = item.index == crazypod_queue_index() ? 1 : 0;
-    copy_text(item.title, sizeof(item.title), track->title);
-    copy_text(item.artist, sizeof(item.artist), track->artist);
-    copy_text(item.album, sizeof(item.album), track->album);
+    copy_text(item.title, sizeof(item.title), track.title);
+    copy_text(item.artist, sizeof(item.artist), track.artist);
+    copy_text(item.album, sizeof(item.album), track.album);
     memcpy(response, &item, sizeof(item));
     return sizeof(item);
 }
@@ -159,8 +160,8 @@ static int lyrics_window_call(
 {
     const struct cp_now_playing_lyrics_request *lyrics_request = request;
     struct cp_now_playing_lyrics_window window;
-    const struct crazypod_track *track =
-        crazypod_miniapp_now_playing_track();
+    struct crazypod_track track;
+    bool have_track = crazypod_miniapp_now_playing_copy_track(&track);
     const char *previous = "";
     const char *current = "";
     const char *next = "";
@@ -174,9 +175,9 @@ static int lyrics_window_call(
         return CP_NATIVE_ERROR_LIMIT;
     memset(&window, 0, sizeof(window));
     window.struct_size = sizeof(window);
-    window.revision = track_revision(track);
+    window.revision = track_revision(have_track ? &track : NULL);
     window.current_line = -1;
-    if(track != NULL && crazypod_lyrics_load(track->path)) {
+    if(have_track && crazypod_lyrics_load(track.path)) {
         window.available = 1;
         window.current_line =
             crazypod_lyrics_current_line(lyrics_request->elapsed_ms);
@@ -197,8 +198,8 @@ static int lyrics_context_call(
     const struct cp_now_playing_lyrics_context_request *lyrics_request =
         request;
     struct cp_now_playing_lyrics_context context;
-    const struct crazypod_track *track =
-        crazypod_miniapp_now_playing_track();
+    struct crazypod_track track;
+    bool have_track = crazypod_miniapp_now_playing_copy_track(&track);
 
     if(lyrics_request == NULL ||
        request_size != sizeof(*lyrics_request) ||
@@ -209,10 +210,10 @@ static int lyrics_context_call(
         return CP_NATIVE_ERROR_LIMIT;
     memset(&context, 0, sizeof(context));
     context.struct_size = sizeof(context);
-    context.revision = track_revision(track);
+    context.revision = track_revision(have_track ? &track : NULL);
     context.current_line = -1;
-    if(track != NULL)
-        (void)crazypod_lyrics_load(track->path);
+    if(have_track)
+        (void)crazypod_lyrics_load(track.path);
     context.status = crazypod_lyrics_get_status();
     context.available = crazypod_lyrics_available() ? 1 : 0;
     context.synchronized = crazypod_lyrics_synchronized() ? 1 : 0;
@@ -241,8 +242,8 @@ static int lyric_line_call(
 {
     const struct cp_now_playing_lyric_line_request *line_request = request;
     struct cp_now_playing_lyric_line line;
-    const struct crazypod_track *track =
-        crazypod_miniapp_now_playing_track();
+    struct crazypod_track track;
+    bool have_track = crazypod_miniapp_now_playing_copy_track(&track);
 
     if(line_request == NULL ||
        request_size != sizeof(*line_request) ||
@@ -251,11 +252,11 @@ static int lyric_line_call(
         return CP_NATIVE_ERROR_ARGUMENT;
     if(response_capacity < sizeof(line))
         return CP_NATIVE_ERROR_LIMIT;
-    if(track == NULL || !crazypod_lyrics_load(track->path))
+    if(!have_track || !crazypod_lyrics_load(track.path))
         return CP_NATIVE_ERROR_STATE;
     memset(&line, 0, sizeof(line));
     line.struct_size = sizeof(line);
-    line.revision = track_revision(track);
+    line.revision = track_revision(&track);
     line.index = line_request->index;
     if(!crazypod_lyrics_copy_display_page(
            line.index, line.text, sizeof(line.text)))
@@ -282,17 +283,16 @@ static int seek_to(int64_t target)
 
 static int set_favorite(int value)
 {
-    const struct crazypod_track *track =
-        crazypod_miniapp_now_playing_track();
+    struct crazypod_track track;
     bool favorite;
 
     if(value != 0 && value != 1)
         return CP_NATIVE_ERROR_ARGUMENT;
-    if(track == NULL)
+    if(!crazypod_miniapp_now_playing_copy_track(&track))
         return CP_NATIVE_ERROR_STATE;
-    favorite = crazypod_music_track_is_favorite(track->path);
+    favorite = crazypod_music_track_is_favorite(track.path);
     if(favorite != (value != 0) &&
-       !crazypod_music_toggle_favorite(track->path))
+       !crazypod_music_toggle_favorite(track.path))
         return CP_NATIVE_ERROR_STATE;
     return CP_NATIVE_OK;
 }
@@ -319,7 +319,7 @@ static int command_call(
     void *response, size_t response_capacity)
 {
     const struct cp_now_playing_command_request *command = request;
-    const struct crazypod_track *track;
+    struct crazypod_track track;
     const struct mp3entry *id3;
 
     if(response != NULL || response_capacity != 0 ||
@@ -342,9 +342,8 @@ static int command_call(
     case CP_NOW_PLAYING_COMMAND_SEEK:
         return seek_to(command->value);
     case CP_NOW_PLAYING_COMMAND_TOGGLE_FAVORITE:
-        track = crazypod_miniapp_now_playing_track();
-        if(track == NULL ||
-           !crazypod_music_toggle_favorite(track->path))
+        if(!crazypod_miniapp_now_playing_copy_track(&track) ||
+           !crazypod_music_toggle_favorite(track.path))
             return CP_NATIVE_ERROR_STATE;
         break;
     case CP_NOW_PLAYING_COMMAND_CYCLE_MODE:

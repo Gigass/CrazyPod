@@ -187,19 +187,19 @@ void crazypod_search_screen_render(
             ? result_count : CRAZYPOD_SEARCH_PREVIEW_ROWS;
         int i;
         for(i = 0; i < shown; ++i) {
-            const struct crazypod_track *track =
-                crazypod_music_search_track(context->query, i);
+            struct crazypod_track track;
             int y = 124 + i * 30;
-            if(track == NULL)
+            if(!crazypod_music_copy_search_track(
+                   context->query, i, &track))
                 continue;
-            label = make_label(context->parent, track->title,
+            label = make_label(context->parent, track.title,
                                &lv_font_montserrat_8,
                                COLOR_WHITE, i == 0 ? 210 : 145);
             lv_obj_set_pos(label, 182, y);
             lv_obj_set_width(label, 112);
             lv_obj_set_height(label, 15);
             lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-            label = make_label(context->parent, track->artist,
+            label = make_label(context->parent, track.artist,
                                &lv_font_montserrat_8,
                                COLOR_WHITE, 75);
             lv_obj_set_pos(label, 182, y + 15);

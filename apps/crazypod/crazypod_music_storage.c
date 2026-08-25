@@ -81,9 +81,8 @@ bool crazypod_music_storage_allocate_tracks(
     if(count == 0)
         return true;
 
-    /* Track pointers are exposed by the public music API, so this long-lived
-     * block must stay immovable. It replaces a larger static BSS allocation
-     * and is sized to the actual library. */
+    /* Scanning and queue construction address this block directly. Keep it
+     * immovable while allocated; public readers receive copied values. */
     handle = core_alloc(bytes);
     if(handle <= 0)
         return false;

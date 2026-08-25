@@ -1019,11 +1019,11 @@ bool video_thread_init(void)
         video_thread, video_stack, VIDEO_STACKSIZE, 0,
         "mpgvideo" IF_PRIO(,PRIORITY_PLAYBACK) IF_COP(, COP));
 
-    rb->queue_enable_queue_send(video_str.hdr.q, &video_str_queue_send,
-                                video_str.thread);
-
     if (video_str.thread == 0)
         return false;
+
+    rb->queue_enable_queue_send(video_str.hdr.q, &video_str_queue_send,
+                                video_str.thread);
 
     /* Wait for thread to initialize */
     rep = str_send_msg(&video_str, STREAM_NULL, 0);

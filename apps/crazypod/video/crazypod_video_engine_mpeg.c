@@ -19,8 +19,12 @@ static enum crazypod_video_engine_result mpeg_open(
     int result;
 
     (void)host;
-    if(stream_init() < STREAM_OK)
+    if(stream_init() < STREAM_OK) {
+        /* stream_init() is transactional; keep this idempotent call as a
+         * second ownership barrier if a future stage is added incorrectly. */
+        stream_exit();
         return CRAZYPOD_VIDEO_ENGINE_NO_MEMORY;
+    }
     mpeg_initialized = true;
     result = stream_open(path);
     if(result < STREAM_OK) {

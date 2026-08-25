@@ -36,6 +36,7 @@ static struct queue_sender_list stream_mgr_queue_send SHAREDBSS_ATTR;
 static uint32_t stream_mgr_thread_stack[DEFAULT_STACK_SIZE*2/sizeof(uint32_t)];
 
 struct stream_mgr stream_mgr SHAREDBSS_ATTR;
+static unsigned int stream_init_stages;
 
 /* Forward decs */
 static int stream_on_close(void);
@@ -143,6 +144,43 @@ static void stream_mgr_init_state(void)
     stream_mgr.filename = NULL;
     stream_mgr.resume_time = INVALID_TIMESTAMP;
     stream_mgr.seeked = false;
+}
+
+unsigned int stream_init_stage_mask(void)
+{
+    return stream_init_stages;
+}
+
+static void stream_release_resources(bool close_stream)
+{
+    if (close_stream &&
+        (stream_init_stages & STREAM_INIT_COMPLETE) != 0)
+        stream_close();
+
+    if (stream_init_stages & STREAM_INIT_VIDEO)
+        video_thread_exit();
+    if (stream_init_stages & STREAM_INIT_AUDIO)
+        audio_thread_exit();
+    if (stream_init_stages & STREAM_INIT_DISK)
+        disk_buf_exit();
+    if (stream_init_stages & STREAM_INIT_PCM)
+        pcm_output_exit();
+
+    if (stream_init_stages & STREAM_INIT_MANAGER)
+    {
+        stream_mgr_post_msg(STREAM_QUIT, 0);
+        rb->thread_wait(stream_mgr.thread);
+        stream_mgr.thread = 0;
+    }
+
+#ifndef HAVE_LCD_COLOR
+    if (stream_init_stages & STREAM_INIT_GREY)
+        grey_release();
+#endif
+
+    stream_mgr.status = STREAM_STOPPED;
+    stream_mgr_init_state();
+    stream_init_stages = 0;
 }
 
 /* Add a stream to the playback pool */
@@ -1060,6 +1098,10 @@ int stream_init(void)
     void *mem;
     size_t memsize;
 
+    if (stream_init_stages != 0 ||
+        rb->codec_thread_is_borrowed())
+        return STREAM_ERROR;
+
     stream_mgr.status = STREAM_STOPPED;
     stream_mgr_init_state();
 
@@ -1084,6 +1126,7 @@ int stream_init(void)
         rb->splash(HZ, "greylib init failed!");
         return STREAM_ERROR;
     }
+    stream_init_stages |= STREAM_INIT_GREY;
 
     mem += greysize;
     memsize -= greysize;
@@ -1095,14 +1138,14 @@ int stream_init(void)
         stream_mgr_thread_stack, sizeof(stream_mgr_thread_stack),
         0, "mpgstream_mgr" IF_PRIO(, PRIORITY_SYSTEM) IF_COP(, CPU));
 
-    rb->queue_enable_queue_send(stream_mgr.q, &stream_mgr_queue_send,
-                                stream_mgr.thread);
-
     if (stream_mgr.thread == 0)
     {
         rb->splash(HZ, "Could not create stream manager thread!");
-        return STREAM_ERROR;
+        goto fail;
     }
+    stream_init_stages |= STREAM_INIT_MANAGER;
+    rb->queue_enable_queue_send(stream_mgr.q, &stream_mgr_queue_send,
+                                stream_mgr.thread);
 
     /* Wait for thread to initialize */
     stream_mgr_send_msg(STREAM_NULL, 0);
@@ -1112,55 +1155,55 @@ int stream_init(void)
     {
         rb->splash(HZ, "Out of memory in stream_init");
     }
-    /* These inits use the allocator */
-    else if (!pcm_output_init())
+    else
+        stream_init_stages |= STREAM_INIT_ALLOCATOR;
+    /* These inits use the allocator. Mark each attempted threaded stage so a
+     * failure after create_thread() can still be rolled back. */
+    if (!(stream_init_stages & STREAM_INIT_ALLOCATOR))
+        goto fail;
+    if (!pcm_output_init())
     {
         rb->splash(HZ, "Could not initialize PCM!");
+        goto fail;
     }
-    else if (!audio_thread_init())
+    stream_init_stages |= STREAM_INIT_PCM;
+    stream_init_stages |= STREAM_INIT_AUDIO;
+    if (!audio_thread_init())
     {
         rb->splash(HZ, "Cannot create audio thread!");
+        goto fail;
     }
-    else if (!video_thread_init())
+    stream_init_stages |= STREAM_INIT_VIDEO;
+    if (!video_thread_init())
     {
         rb->splash(HZ, "Cannot create video thread!");
+        goto fail;
     }
     /* Disk buffer takes max allotment of what's left so it must be last */
-    else if (!disk_buf_init())
+    stream_init_stages |= STREAM_INIT_DISK;
+    if (!disk_buf_init())
     {
         rb->splash(HZ, "Cannot create buffering thread!");
+        goto fail;
     }
-    else if (!parser_init())
+    if (!parser_init())
     {
         rb->splash(HZ, "Parser init failed!");
+        goto fail;
     }
-    else
-    {
-        return STREAM_OK;
-    }
+    stream_init_stages |= STREAM_INIT_PARSER;
+    stream_init_stages |= STREAM_INIT_COMPLETE;
+    return STREAM_OK;
 
+fail:
+    DEBUGF("stream_init rollback at stage mask 0x%x\n",
+           stream_init_stages);
+    stream_release_resources(false);
     return STREAM_ERROR;
 }
 
 /* Cleans everything up */
 void stream_exit(void)
 {
-    stream_close();
-
-    /* Stop the threads and wait for them to terminate */
-    video_thread_exit();
-    audio_thread_exit();
-    disk_buf_exit();
-    pcm_output_exit();
-
-    if (stream_mgr.thread != 0)
-    {
-        stream_mgr_post_msg(STREAM_QUIT, 0);
-        rb->thread_wait(stream_mgr.thread);
-        stream_mgr.thread = 0;
-    }
-
-#ifndef HAVE_LCD_COLOR
-    grey_release();
-#endif
+    stream_release_resources(true);
 }

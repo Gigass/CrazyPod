@@ -329,7 +329,8 @@ static bool prefetch_covers(bool include_distant)
         ++candidate_number) {
         int album_index = order[candidate_number];
         struct flow_cache_entry *entry;
-        const struct crazypod_track *track;
+        struct crazypod_track track;
+        bool have_track;
         const lv_image_dsc_t *image;
         bool decode_allowed;
         int slot;
@@ -345,7 +346,8 @@ static bool prefetch_covers(bool include_distant)
             entry->image = NULL;
         }
         slot = (int)(entry - cache);
-        track = crazypod_music_album_track(album_index, 0);
+        have_track = crazypod_music_copy_album_track(
+            album_index, 0, &track);
         /*
          * Visible covers may read/decode on demand. Distant look-ahead is
          * cache-only so an idle CoverFlow never walks and decodes the whole
@@ -353,19 +355,19 @@ static bool prefetch_covers(bool include_distant)
          */
         decode_allowed = !include_distant ||
             candidate_number <= FLOW_PREFETCH_VISIBLE * 2;
-        image = track == NULL
+        image = !have_track
             ? NULL
             : decode_allowed
                 ? crazypod_artwork_load_priority(
-                      slot, track, FLOW_COVER_SIZE,
+                      slot, &track, FLOW_COVER_SIZE,
                       candidate_number)
                 : crazypod_artwork_load_cached_priority(
-                      slot, track, FLOW_COVER_SIZE,
+                      slot, &track, FLOW_COVER_SIZE,
                       candidate_number);
         if(image == NULL)
             entry->image = NULL;
-        if(track != NULL && image == NULL &&
-           crazypod_artwork_state(slot, track, FLOW_COVER_SIZE) ==
+        if(have_track && image == NULL &&
+           crazypod_artwork_state(slot, &track, FLOW_COVER_SIZE) ==
                CRAZYPOD_ARTWORK_PENDING)
             complete = false;
         if(image != NULL && entry->image != image) {

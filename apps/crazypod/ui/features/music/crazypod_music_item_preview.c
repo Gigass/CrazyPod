@@ -160,43 +160,50 @@ void crazypod_music_item_preview_render(
 {
     const char *title = "";
     const char *detail = "";
+    struct crazypod_track album_track;
+    struct crazypod_album album;
+    struct crazypod_playlist playlist;
+    char artist[72];
     char text[192];
 
     if(state->route == MUSIC_ROUTE_ARTISTS) {
-        const char *artist = crazypod_music_artist(state->selected);
+        bool have_artist = crazypod_music_copy_artist(
+            state->selected, artist, sizeof(artist));
         int count = crazypod_music_artist_track_count(state->selected);
 
         make_music_preview_icon(
             parent, CRAZYPOD_PREVIEW_ICON_ARTIST,
             crazypod_preview_centered_x(96),
             crazypod_preview_visual_y(96));
-        title = artist != NULL ? artist : "";
+        title = have_artist ? artist : "";
         snprintf(text, sizeof(text), CP_FMT("%d songs"), count);
         detail = text;
     }
     else if(state->route == MUSIC_ROUTE_ALBUMS) {
-        const struct crazypod_album *album =
-            crazypod_music_album(state->selected);
+        bool have_album = crazypod_music_copy_album(
+            state->selected, &album);
+        bool have_track = crazypod_music_copy_album_track(
+            state->selected, 0, &album_track);
 
-        track = crazypod_music_album_track(state->selected, 0);
         create_artwork(
-            parent, track, crazypod_preview_centered_x(72),
+            parent, have_track ? &album_track : NULL,
+            crazypod_preview_centered_x(72),
             crazypod_preview_visual_y(72), 72,
                        CRAZYPOD_PREVIEW_ARTWORK_SLOT);
-        title = album != NULL ? album->title : "";
-        detail = album != NULL ? album->artist : "";
+        title = have_album ? album.title : "";
+        detail = have_album ? album.artist : "";
     }
     else if(state->route == MUSIC_ROUTE_PLAYLISTS) {
-        const struct crazypod_playlist *playlist =
-            crazypod_music_playlist(state->selected);
+        bool have_playlist = crazypod_music_copy_playlist(
+            state->selected, &playlist);
 
         make_music_preview_icon(
             parent, CRAZYPOD_PREVIEW_ICON_PLAYLISTS,
             crazypod_preview_centered_x(96),
             crazypod_preview_visual_y(96));
-        title = playlist != NULL ? playlist->name : "";
+        title = have_playlist ? playlist.name : "";
         snprintf(text, sizeof(text), CP_FMT("%d songs"),
-                 playlist != NULL ? playlist->track_count : 0);
+                 have_playlist ? playlist.track_count : 0);
         detail = text;
     }
     else {

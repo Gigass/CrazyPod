@@ -75,6 +75,24 @@ void stream_generate_event(struct stream *str, long id, intptr_t data);
 /* Initialize the playback engine */
 int stream_init(void);
 
+enum stream_init_stage
+{
+    STREAM_INIT_MANAGER = 1u << 0,
+    STREAM_INIT_ALLOCATOR = 1u << 1,
+    STREAM_INIT_PCM = 1u << 2,
+    STREAM_INIT_AUDIO = 1u << 3,
+    STREAM_INIT_VIDEO = 1u << 4,
+    STREAM_INIT_DISK = 1u << 5,
+    STREAM_INIT_PARSER = 1u << 6,
+    STREAM_INIT_COMPLETE = 1u << 7,
+#ifndef HAVE_LCD_COLOR
+    STREAM_INIT_GREY = 1u << 8,
+#endif
+};
+
+/* Diagnostic state for fault injection and post-failure verification. */
+unsigned int stream_init_stage_mask(void);
+
 /* Close the playback engine */
 void stream_exit(void);
 

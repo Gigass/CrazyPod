@@ -34,6 +34,7 @@ void codec_thread_init(void) INIT_ATTR;
 /* Audio MUST be stopped before requesting callback! */
 void codec_thread_do_callback(void (*fn)(void),
                               unsigned int *codec_thread_id);
+bool codec_thread_is_borrowed(void);
 
 #ifdef HAVE_PRIORITY_SCHEDULING
 int codec_thread_get_priority(void);

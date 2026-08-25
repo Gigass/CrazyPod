@@ -59,10 +59,10 @@ int crazypod_music_podcast_track_index(int position)
     int index;
 
     for(index = 0; index < crazypod_music_track_count(); ++index) {
-        const struct crazypod_track *track =
-            crazypod_music_track(index);
+        struct crazypod_track track;
 
-        if(track != NULL && is_podcast_path(track->path) &&
+        if(crazypod_music_copy_track(index, &track) &&
+           is_podcast_path(track.path) &&
            visible++ == position)
             return index;
     }

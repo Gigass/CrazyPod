@@ -41,9 +41,10 @@ static int podcast_count(void)
     int i;
 
     for(i = 0; i < crazypod_music_track_count(); ++i) {
-        const struct crazypod_track *track = crazypod_music_track(i);
+        struct crazypod_track track;
 
-        if(track != NULL && is_podcast_path(track->path))
+        if(crazypod_music_copy_track(i, &track) &&
+           is_podcast_path(track.path))
             ++count;
     }
     return count;
@@ -55,9 +56,10 @@ static int podcast_track_index(int position)
     int i;
 
     for(i = 0; i < crazypod_music_track_count(); ++i) {
-        const struct crazypod_track *track = crazypod_music_track(i);
+        struct crazypod_track track;
 
-        if(track != NULL && is_podcast_path(track->path) &&
+        if(crazypod_music_copy_track(i, &track) &&
+           is_podcast_path(track.path) &&
            visible++ == position)
             return i;
     }
@@ -96,10 +98,10 @@ int crazypod_music_feature_item_count(
     case MUSIC_ROUTE_PLAYLISTS:
         return crazypod_music_playlist_count();
     case MUSIC_ROUTE_PLAYLIST_SONGS: {
-        const struct crazypod_playlist *playlist =
-            crazypod_music_playlist(state->group);
+        struct crazypod_playlist playlist;
 
-        return playlist != NULL ? playlist->track_count : 0;
+        return crazypod_music_copy_playlist(state->group, &playlist)
+            ? playlist.track_count : 0;
     }
     case MUSIC_ROUTE_ARTISTS:
         return crazypod_music_artist_count();
@@ -117,6 +119,10 @@ int crazypod_music_feature_item_count(
 const char *crazypod_music_feature_title(
     const struct route_state *state)
 {
+    static char dynamic_title[96];
+    struct crazypod_playlist playlist;
+    struct crazypod_album album;
+
     switch(state->route) {
     case MUSIC_ROUTE_MENU:
         return CP_TR("MUSIC");
@@ -124,25 +130,29 @@ const char *crazypod_music_feature_title(
         return CP_TR("ALL MUSIC");
     case MUSIC_ROUTE_PLAYLISTS:
         return CP_TR("PLAYLISTS");
-    case MUSIC_ROUTE_PLAYLIST_SONGS: {
-        const struct crazypod_playlist *playlist =
-            crazypod_music_playlist(state->group);
-
-        return playlist != NULL ? playlist->name : CP_TR("PLAYLIST");
-    }
+    case MUSIC_ROUTE_PLAYLIST_SONGS:
+        if(crazypod_music_copy_playlist(state->group, &playlist)) {
+            snprintf(dynamic_title, sizeof(dynamic_title), "%s",
+                     playlist.name);
+            return dynamic_title;
+        }
+        return CP_TR("PLAYLIST");
     case MUSIC_ROUTE_ARTISTS:
         return CP_TR("ARTISTS");
     case MUSIC_ROUTE_ARTIST_SONGS:
-        return crazypod_music_artist(state->group);
+        return crazypod_music_copy_artist(
+                state->group, dynamic_title, sizeof(dynamic_title))
+            ? dynamic_title : CP_TR("ARTIST");
     case MUSIC_ROUTE_ALBUMS:
     case MUSIC_ROUTE_ALBUM_FLOW:
         return CP_TR("ALBUMS");
-    case MUSIC_ROUTE_ALBUM_SONGS: {
-        const struct crazypod_album *album =
-            crazypod_music_album(state->group);
-
-        return album != NULL ? album->title : CP_TR("ALBUM");
-    }
+    case MUSIC_ROUTE_ALBUM_SONGS:
+        if(crazypod_music_copy_album(state->group, &album)) {
+            snprintf(dynamic_title, sizeof(dynamic_title), "%s",
+                     album.title);
+            return dynamic_title;
+        }
+        return CP_TR("ALBUM");
     case MUSIC_ROUTE_SONGS:
         return CP_TR("SONGS");
     case MUSIC_ROUTE_SEARCH:
@@ -160,7 +170,9 @@ bool crazypod_music_feature_item_title(
     const struct route_state *state, int index,
     const char *search_query, const char **title)
 {
-    const struct crazypod_track *track = NULL;
+    static char item_title[148];
+    struct crazypod_track track;
+    bool have_track = false;
 
     switch(state->route) {
     case MUSIC_ROUTE_MENU: {
@@ -176,67 +188,80 @@ bool crazypod_music_feature_item_title(
         *title = editor_title(index);
         return true;
     case MUSIC_ROUTE_PLAYLISTS: {
-        const struct crazypod_playlist *playlist =
-            crazypod_music_playlist(index);
+        struct crazypod_playlist playlist;
 
-        *title = playlist != NULL ? playlist->name : "";
+        if(crazypod_music_copy_playlist(index, &playlist))
+            snprintf(item_title, sizeof(item_title), "%s", playlist.name);
+        else
+            item_title[0] = '\0';
+        *title = item_title;
         return true;
     }
     case MUSIC_ROUTE_ARTISTS:
-        *title = crazypod_music_artist(index);
+        if(!crazypod_music_copy_artist(index, item_title,
+                                       sizeof(item_title)))
+            item_title[0] = '\0';
+        *title = item_title;
         return true;
     case MUSIC_ROUTE_ALBUMS:
     case MUSIC_ROUTE_ALBUM_FLOW: {
         static char album_label[148];
-        const struct crazypod_album *album =
-            crazypod_music_album(index);
+        struct crazypod_album album;
         bool duplicate_title = false;
         int i;
 
-        if(album == NULL) {
+        if(!crazypod_music_copy_album(index, &album)) {
             *title = "";
             return true;
         }
         for(i = 0; i < crazypod_music_album_count(); ++i) {
-            const struct crazypod_album *other =
-                crazypod_music_album(i);
+            struct crazypod_album other;
 
-            if(i != index && other != NULL &&
-               strcmp(other->title, album->title) == 0) {
+            if(i != index && crazypod_music_copy_album(i, &other) &&
+               strcmp(other.title, album.title) == 0) {
                 duplicate_title = true;
                 break;
             }
         }
         snprintf(album_label, sizeof(album_label),
                  duplicate_title ? CP_FMT("%s · %s") : "%s",
-                 duplicate_title ? album->artist : album->title,
-                 album->title);
+                 duplicate_title ? album.artist : album.title,
+                 album.title);
         *title = album_label;
         return true;
     }
     case MUSIC_ROUTE_ALL:
     case MUSIC_ROUTE_SONGS:
-        track = crazypod_music_track(index);
+        have_track = crazypod_music_copy_track(index, &track);
         break;
     case MUSIC_ROUTE_SEARCH_RESULTS:
-        track = crazypod_music_search_track(search_query, index);
+        have_track = crazypod_music_copy_search_track(
+            search_query, index, &track);
         break;
     case MUSIC_ROUTE_PLAYLIST_SONGS:
-        track = crazypod_music_playlist_track(state->group, index);
+        have_track = crazypod_music_copy_playlist_track(
+            state->group, index, &track);
         break;
     case MUSIC_ROUTE_ARTIST_SONGS:
-        track = crazypod_music_artist_track(state->group, index);
+        have_track = crazypod_music_copy_artist_track(
+            state->group, index, &track);
         break;
     case MUSIC_ROUTE_ALBUM_SONGS:
-        track = crazypod_music_album_track(state->group, index);
+        have_track = crazypod_music_copy_album_track(
+            state->group, index, &track);
         break;
     case PODCASTS_ROUTE_MENU:
-        track = crazypod_music_track(podcast_track_index(index));
+        have_track = crazypod_music_copy_track(
+            podcast_track_index(index), &track);
         break;
     default:
         return false;
     }
-    *title = track != NULL ? track->title : "";
+    if(have_track)
+        snprintf(item_title, sizeof(item_title), "%s", track.title);
+    else
+        item_title[0] = '\0';
+    *title = item_title;
     return true;
 }
 
@@ -363,36 +388,38 @@ bool crazypod_music_feature_activate(
     return true;
 }
 
-const struct crazypod_track *crazypod_music_feature_route_track(
-    const struct route_state *state, int index)
+bool crazypod_music_feature_copy_route_track(
+    const struct route_state *state, int index,
+    struct crazypod_track *track)
 {
     switch(state->route) {
     case MUSIC_ROUTE_ALL:
     case MUSIC_ROUTE_SONGS:
-        return crazypod_music_track(index);
+        return crazypod_music_copy_track(index, track);
     case MUSIC_ROUTE_SEARCH_RESULTS:
-        return crazypod_music_search_track(
-            crazypod_music_search_query(), index);
+        return crazypod_music_copy_search_track(
+            crazypod_music_search_query(), index, track);
     case MUSIC_ROUTE_PLAYLIST_SONGS:
-        return crazypod_music_playlist_track(
-            state->group, index);
+        return crazypod_music_copy_playlist_track(
+            state->group, index, track);
     case MUSIC_ROUTE_ARTIST_SONGS:
-        return crazypod_music_artist_track(
-            state->group, index);
+        return crazypod_music_copy_artist_track(
+            state->group, index, track);
     case MUSIC_ROUTE_ALBUM_SONGS:
-        return crazypod_music_album_track(
-            state->group, index);
+        return crazypod_music_copy_album_track(
+            state->group, index, track);
     case MUSIC_ROUTE_QUEUE: {
-        const char *path = crazypod_queue_path(index);
+        char path[MAX_PATH];
 
-        return crazypod_music_track(
-            crazypod_music_find_track(path));
+        return crazypod_queue_copy_path(index, path, sizeof(path)) &&
+            crazypod_music_copy_track(
+                crazypod_music_find_track(path), track);
     }
     case PODCASTS_ROUTE_MENU:
-        return crazypod_music_track(
-            crazypod_music_podcast_track_index(index));
+        return crazypod_music_copy_track(
+            crazypod_music_podcast_track_index(index), track);
     default:
-        return NULL;
+        return false;
     }
 }
 

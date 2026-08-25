@@ -44,7 +44,7 @@ static int audio_shrink(
     (void)start;
     (void)size;
     ++shrink_requests;
-    return crazypod_audio_buffer_may_shrink(playback_running)
+    return crazypod_audio_buffer_may_shrink(playback_running, size)
         ? BUFLIB_CB_OK : BUFLIB_CB_CANNOT_SHRINK;
 }
 

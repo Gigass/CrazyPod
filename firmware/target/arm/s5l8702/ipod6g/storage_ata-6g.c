@@ -972,7 +972,7 @@ static int ata_rw_chunk(uint64_t sector, uint32_t cnt, void* buffer, bool write)
 static int ata_transfer_sectors(uint64_t sector, int count, void* buffer, int write)
 {
     if (!ata_powered)
-        ata_power_up();
+        PASS_RC(ata_power_up(), 1, 0);
     if (sector + count > total_sectors)
         RET_ERR(0);
     /* Successful foreground I/O is a new opportunity to retry a previously
@@ -1177,6 +1177,15 @@ void ata_sleepnow(void)
     bool flush_succeeded;
 
     mutex_lock(&ata_mutex);
+
+    /* Continuous playback owns the storage wake state. Do not even clock-gate
+     * the controller: the file buffer absorbs normal latency, but it cannot
+     * make a failed wake or adapter-specific reinitialization harmless. */
+    if(ata_deep_poweroff_inhibited()) {
+        ata_set_active();
+        mutex_unlock(&ata_mutex);
+        return;
+    }
 
     if (!ata_powered) {
         mutex_unlock(&ata_mutex);

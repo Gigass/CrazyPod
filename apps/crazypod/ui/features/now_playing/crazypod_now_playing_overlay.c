@@ -120,10 +120,13 @@ static bool now_progress_dirty;
 static char now_progress_track_path[MAX_PATH];
 static bool now_volume_fading;
 
-static const struct crazypod_track *current_track(void)
+static bool copy_current_track(struct crazypod_track *track)
 {
-    const char *path = crazypod_queue_path(crazypod_queue_index());
-    return crazypod_music_track(crazypod_music_find_track(path));
+    char path[MAX_PATH];
+
+    return crazypod_queue_copy_path(
+            crazypod_queue_index(), path, sizeof(path)) &&
+        crazypod_music_copy_track(crazypod_music_find_track(path), track);
 }
 
 static void prepare_now_overlay_glass(bool refresh)
@@ -566,10 +569,10 @@ static int now_actions_detail_height(int width)
 
 static bool current_track_is_favorite(void)
 {
-    const struct crazypod_track *track = current_track();
+    struct crazypod_track track;
 
-    return track != NULL &&
-        crazypod_music_track_is_favorite(track->path);
+    return copy_current_track(&track) &&
+        crazypod_music_track_is_favorite(track.path);
 }
 
 static void refresh_now_favorite_icon(bool selected, bool favorite)
@@ -652,9 +655,9 @@ static void refresh_now_actions_popup(void)
                  CP_FMT("Scroll browse  Center play  Menu exits"));
     }
     else if(now_action_selected == NOW_ACTION_FAVORITE) {
-        const struct crazypod_track *track = current_track();
+        struct crazypod_track track;
 
-        if(track == NULL)
+        if(!copy_current_track(&track))
             snprintf(detail, sizeof(detail),
                      CP_FMT("No track available"));
         else
@@ -668,9 +671,9 @@ static void refresh_now_actions_popup(void)
                  CP_FMT("Play Mode"), now_playback_mode_label());
     }
     else if(now_action_selected == NOW_ACTION_LYRICS) {
-        const struct crazypod_track *track = current_track();
-        bool available = track != NULL &&
-                         crazypod_lyrics_load(track->path);
+        struct crazypod_track track;
+        bool available = copy_current_track(&track) &&
+                         crazypod_lyrics_load(track.path);
         snprintf(detail, sizeof(detail), "%s  %s",
                  crazypod_state_lyrics_mode()
                      ? CP_FMT("Lyrics visible") : CP_FMT("Lyrics hidden"),
@@ -1026,8 +1029,9 @@ static void refresh_now_queue_popup(void)
         int index = start + row;
         bool selected = index == now_queue_selected;
         bool current_row = index == current;
-        const char *path;
-        const struct crazypod_track *track;
+        char path[MAX_PATH];
+        struct crazypod_track track;
+        bool have_track;
 
         if(index < 0 || index >= count) {
             crazypod_marquee_configure(
@@ -1038,11 +1042,13 @@ static void refresh_now_queue_popup(void)
         }
         lv_obj_remove_flag(now_queue_view.rows[row],
                            LV_OBJ_FLAG_HIDDEN);
-        path = crazypod_queue_path(index);
-        track = crazypod_music_track(crazypod_music_find_track(path));
+        have_track = crazypod_queue_copy_path(
+                index, path, sizeof(path)) &&
+            crazypod_music_copy_track(
+                crazypod_music_find_track(path), &track);
         crazypod_marquee_set_text(
             now_queue_view.titles[row],
-            track != NULL ? track->title : CP_TR("Unavailable"),
+            have_track ? track.title : CP_TR("Unavailable"),
             selected);
         CP_LV_LABEL_SET_TEXT(
             now_queue_view.icons[row],
@@ -1085,19 +1091,22 @@ static int now_queue_popup_width(void)
             &lv_font_montserrat_10) + 104);
     for(row = 0; row < 3; ++row) {
         int index = start + row;
-        const char *path;
-        const struct crazypod_track *track;
+        char path[MAX_PATH];
+        struct crazypod_track track;
+        bool have_track;
 
         if(index < 0 || index >= count)
             continue;
-        path = crazypod_queue_path(index);
-        track = crazypod_music_track(crazypod_music_find_track(path));
+        have_track = crazypod_queue_copy_path(
+                index, path, sizeof(path)) &&
+            crazypod_music_copy_track(
+                crazypod_music_find_track(path), &track);
 
         retain_larger(
             &width,
             crazypod_popup_text_width(
-                track != NULL
-                    ? track->title : CP_TR("Unavailable"),
+                have_track
+                    ? track.title : CP_TR("Unavailable"),
                 NOW_QUEUE_TITLE_FONT) + 69);
     }
     return crazypod_popup_clamp_width(
@@ -1256,21 +1265,18 @@ static void sync_now_progress_from_playback(void)
 
 static void remember_now_progress_track(void)
 {
-    const char *path =
-        crazypod_queue_path(crazypod_queue_index());
-
-    snprintf(
-        now_progress_track_path,
-        sizeof(now_progress_track_path),
-        "%s", path != NULL ? path : "");
+    if(!crazypod_queue_copy_path(
+           crazypod_queue_index(), now_progress_track_path,
+           sizeof(now_progress_track_path)))
+        now_progress_track_path[0] = '\0';
 }
 
 static bool now_progress_track_matches(void)
 {
-    const char *path =
-        crazypod_queue_path(crazypod_queue_index());
+    char path[MAX_PATH];
 
-    return path != NULL &&
+    return crazypod_queue_copy_path(
+               crazypod_queue_index(), path, sizeof(path)) &&
         strcmp(now_progress_track_path, path) == 0;
 }
 
@@ -1575,16 +1581,16 @@ void crazypod_now_playing_overlay_activate(void)
             show_now_queue_popup();
         }
         else if(now_action_selected == NOW_ACTION_FAVORITE) {
-            const struct crazypod_track *track = current_track();
+            struct crazypod_track track;
             bool favorite;
 
-            if(track == NULL) {
+            if(!copy_current_track(&track)) {
                 dismiss_now_overlay_with_notice(
                     CP_TR("No track available"), false, true);
                 return;
             }
             favorite = current_track_is_favorite();
-            if(!crazypod_music_toggle_favorite(track->path)) {
+            if(!crazypod_music_toggle_favorite(track.path)) {
                 dismiss_now_overlay_with_notice(
                     CP_TR("Favorite Save Failed"), false, true);
                 return;

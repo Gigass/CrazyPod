@@ -1287,6 +1287,7 @@ static bool save_queue(uint32_t *hash_out, uint32_t *count_out)
     int fd;
     int i;
     bool success = true;
+    char path[MAX_PATH];
 
     mkdir(STATE_DIRECTORY);
     fd = open(QUEUE_TEMP_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0666);
@@ -1294,9 +1295,9 @@ static bool save_queue(uint32_t *hash_out, uint32_t *count_out)
         return false;
 
     for(i = 0; i < crazypod_queue_count(); ++i) {
-        const char *path = crazypod_queue_path(i);
         size_t length;
-        if(path == NULL || path[0] != '/')
+        if(!crazypod_queue_copy_path(i, path, sizeof(path)) ||
+           path[0] != '/')
             continue;
         length = strlen(path);
         if(!write_exact(fd, path, length) ||

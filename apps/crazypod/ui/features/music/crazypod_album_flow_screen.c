@@ -31,14 +31,14 @@ static lv_obj_t *make_label(
 
 static void set_metadata(int album_index)
 {
-    const struct crazypod_album *album =
-        crazypod_music_album(album_index);
+    struct crazypod_album album;
+    bool have_album = crazypod_music_copy_album(album_index, &album);
     char position[32];
 
     CP_LV_LABEL_SET_TEXT(
-        album_title, album != NULL ? album->title : "");
+        album_title, have_album ? album.title : "");
     CP_LV_LABEL_SET_TEXT(
-        album_artist, album != NULL ? album->artist : "");
+        album_artist, have_album ? album.artist : "");
     snprintf(position, sizeof(position), CP_FMT("%d / %d"),
              album_index + 1, crazypod_music_album_count());
     CP_LV_LABEL_SET_TEXT(album_position, position);

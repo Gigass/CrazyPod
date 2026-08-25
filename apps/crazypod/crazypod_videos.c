@@ -25,6 +25,7 @@
 #include "kernel.h"
 #include "lcd.h"
 #include "pathfuncs.h"
+#include "panic.h"
 #include "pcm_mixer.h"
 #include "pcmbuf.h"
 #include "powermgmt.h"
@@ -47,6 +48,7 @@
 #endif
 
 #include "crazypod_image.h"
+#include "crazypod_audio_reserve.h"
 #include "crazypod_lcd.h"
 #include "crazypod_screenshot.h"
 #include "crazypod_state.h"
@@ -66,6 +68,7 @@ struct mpeg_settings settings = {
 #define CRAZYPOD_VIDEO_RESUME_END_SECONDS 5u
 #define CRAZYPOD_VIDEO_CLOCK_CHECK_SECONDS 2u
 #define CRAZYPOD_VIDEO_CONTROLS_TIMEOUT (5 * HZ)
+#define CRAZYPOD_VIDEO_REQUIRED_THREAD_SLOTS 3u
 
 static enum crazypod_video_result last_video_result = CRAZYPOD_VIDEO_OK;
 static int video_audio_buffer_handle;
@@ -131,7 +134,6 @@ static void video_engine_storage_spin(void)
 static void *video_engine_audio_buffer(size_t *size)
 {
     if(video_audio_buffer_handle <= 0) {
-        audio_stop();
         video_audio_buffer_handle = core_alloc_maximum(
             &video_audio_buffer_size, &buflib_ops_locked);
         if(video_audio_buffer_handle <= 0)
@@ -254,6 +256,7 @@ static const struct crazypod_video_plugin_api video_engine_api = {
     .mixer_get_frequency = mixer_get_frequency,
     .pcmbuf_fade = pcmbuf_fade,
     .codec_thread_do_callback = codec_thread_do_callback,
+    .codec_thread_is_borrowed = codec_thread_is_borrowed,
     .plugin_get_audio_buffer = video_engine_audio_buffer,
 };
 
@@ -542,6 +545,11 @@ enum crazypod_video_result crazypod_video_play(int index)
     uint32_t clock_check_time = 0;
     long clock_check_tick = 0;
     bool engine_opened = false;
+    bool engine_started = false;
+    bool resume_audio = false;
+    bool resume_paused = false;
+    unsigned long resume_elapsed = 0;
+    unsigned long resume_offset = 0;
     bool paused = false;
     bool clock_checked = false;
     bool clock_stalled = false;
@@ -582,10 +590,29 @@ enum crazypod_video_result crazypod_video_play(int index)
         return last_video_result;
     }
 
+    if(thread_get_free_count() < CRAZYPOD_VIDEO_REQUIRED_THREAD_SLOTS ||
+       codec_thread_is_borrowed()) {
+        last_video_result = CRAZYPOD_VIDEO_NO_MEMORY;
+        return last_video_result;
+    }
+
+    {
+        int audio_state = audio_status();
+        struct mp3entry *id3 = audio_current_track();
+
+        resume_audio = (audio_state & AUDIO_STATUS_PLAY) != 0;
+        resume_paused = (audio_state & AUDIO_STATUS_PAUSE) != 0;
+        if(resume_audio && id3 != NULL) {
+            resume_elapsed = id3->elapsed;
+            resume_offset = id3->offset;
+        }
+    }
+
     crazypod_video_poster_suspend();
     video_engine_message[0] = '\0';
     video_buffer_allocation_failed = false;
-    audio_stop();
+    audio_hard_stop();
+    crazypod_audio_reserve_release();
     cpu_boost(true);
     lcd_clear_display();
     lcd_update();
@@ -610,6 +637,7 @@ enum crazypod_video_result crazypod_video_play(int index)
     result = map_engine_result(crazypod_video_engine_play());
     if(result != CRAZYPOD_VIDEO_OK)
         goto cleanup;
+    engine_started = true;
     clock_check_time = crazypod_video_engine_position_ms();
     clock_check_tick =
         current_tick + CRAZYPOD_VIDEO_CLOCK_CHECK_SECONDS * HZ;
@@ -794,6 +822,13 @@ cleanup:
     else
         crazypod_video_engine_close();
     video_engine_release_audio_buffer();
+    if(!crazypod_audio_reserve_acquire())
+        panicf("audio reserve after video");
+    if(!engine_started && resume_audio) {
+        audio_play(resume_elapsed, resume_offset);
+        if(resume_paused)
+            audio_pause();
+    }
     cpu_boost(false);
     button_clear_queue();
     if(repost_system_event)

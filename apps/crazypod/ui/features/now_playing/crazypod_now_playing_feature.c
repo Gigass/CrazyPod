@@ -47,13 +47,13 @@ static struct {
     int source_size;
 } navigation;
 
-static const struct crazypod_track *current_track(void)
+static bool copy_current_track(struct crazypod_track *track)
 {
-    const char *path =
-        crazypod_queue_path(crazypod_queue_index());
+    char path[MAX_PATH];
 
-    return crazypod_music_track(
-        crazypod_music_find_track(path));
+    return crazypod_queue_copy_path(
+            crazypod_queue_index(), path, sizeof(path)) &&
+        crazypod_music_copy_track(crazypod_music_find_track(path), track);
 }
 
 static void prepare_placeholder(void)
@@ -115,30 +115,30 @@ static int slot_index_for_path(const char *path)
     return -1;
 }
 
-static const struct crazypod_track *queue_track(int index)
+static bool copy_queue_track(int index, struct crazypod_track *track)
 {
-    const char *path = crazypod_queue_path(index);
+    char path[MAX_PATH];
 
-    if(path == NULL)
-        return NULL;
-    return crazypod_music_track(crazypod_music_find_track(path));
+    if(!crazypod_queue_copy_path(index, path, sizeof(path)))
+        return false;
+    return crazypod_music_copy_track(crazypod_music_find_track(path), track);
 }
 
-static const struct crazypod_track *next_track(int steps)
+static bool copy_next_track(int steps, struct crazypod_track *track)
 {
     int count = crazypod_queue_count();
     int index;
 
     if(count <= 0 || steps <= 0 ||
        crazypod_queue_repeat() == REPEAT_ONE)
-        return NULL;
+        return false;
     index = crazypod_queue_index() + steps;
     if(index >= count) {
         if(crazypod_queue_repeat() != REPEAT_ALL)
-            return NULL;
+            return false;
         index %= count;
     }
-    return queue_track(index);
+    return copy_queue_track(index, track);
 }
 
 static void commit_placeholder(const char *path)
@@ -249,8 +249,10 @@ bool crazypod_now_playing_feature_item_title(
     const struct route_state *state, int index,
     const char **title)
 {
-    const char *path;
-    const struct crazypod_track *track;
+    static char queue_title[96];
+    char path[MAX_PATH];
+    struct crazypod_track track;
+    bool have_track;
 
     if(state->route == MUSIC_ROUTE_NOW_PLAYING) {
         *title = CP_TR("Now Playing");
@@ -258,9 +260,11 @@ bool crazypod_now_playing_feature_item_title(
     }
     if(state->route != MUSIC_ROUTE_QUEUE)
         return false;
-    path = crazypod_queue_path(index);
-    track = crazypod_music_track(crazypod_music_find_track(path));
-    *title = track != NULL ? track->title : "";
+    have_track = crazypod_queue_copy_path(index, path, sizeof(path)) &&
+        crazypod_music_copy_track(crazypod_music_find_track(path), &track);
+    snprintf(queue_title, sizeof(queue_title), "%s",
+             have_track ? track.title : "");
+    *title = queue_title;
     return true;
 }
 
@@ -311,28 +315,31 @@ int crazypod_now_playing_artwork_slot(
 
 void crazypod_now_playing_artwork_sync(void)
 {
-    const struct crazypod_track *track = current_track();
-    const struct crazypod_track *first;
-    const struct crazypod_track *second;
+    struct crazypod_track track;
+    struct crazypod_track first;
+    struct crazypod_track second;
+    bool have_track = copy_current_track(&track);
+    bool have_first;
+    bool have_second;
     const lv_image_dsc_t *descriptor;
     enum crazypod_artwork_state state;
     bool reserved[NOW_ARTWORK_SLOT_COUNT] = { false, false, false };
     int matched;
 
-    if(track == NULL) {
+    if(!have_track) {
         navigation.target_path[0] = '\0';
         commit_placeholder("");
         return;
     }
-    if(strcmp(navigation.target_path, track->path) != 0) {
-        matched = slot_index_for_path(track->path);
+    if(strcmp(navigation.target_path, track.path) != 0) {
+        matched = slot_index_for_path(track.path);
         if(matched >= 0)
             navigation.target_slot = matched;
         snprintf(navigation.target_path,
-                 sizeof(navigation.target_path), "%s", track->path);
+                 sizeof(navigation.target_path), "%s", track.path);
         snprintf(navigation.slot_paths[navigation.target_slot],
                  sizeof(navigation.slot_paths[navigation.target_slot]),
-                 "%s", track->path);
+                 "%s", track.path);
     }
     reserved[navigation.target_slot] = true;
     if(navigation.committed_slot >= 0 &&
@@ -340,25 +347,25 @@ void crazypod_now_playing_artwork_sync(void)
         reserved[navigation.committed_slot] = true;
 
     descriptor = crazypod_artwork_load_source_priority(
-        now_artwork_slots[navigation.target_slot], track,
+        now_artwork_slots[navigation.target_slot], &track,
         navigation.source_size, 0);
     state = crazypod_artwork_state(
-        now_artwork_slots[navigation.target_slot], track,
+        now_artwork_slots[navigation.target_slot], &track,
         navigation.source_size);
     if(state == CRAZYPOD_ARTWORK_IMAGE && descriptor != NULL)
-        commit_target_artwork(track, descriptor);
+        commit_target_artwork(&track, descriptor);
     else if(state == CRAZYPOD_ARTWORK_EMPTY ||
             state == CRAZYPOD_ARTWORK_ERROR)
-        commit_placeholder(track->path);
+        commit_placeholder(track.path);
 
     if(navigation.committed_slot == navigation.target_slot)
         reserved[navigation.committed_slot] = true;
-    first = next_track(1);
-    schedule_prefetch(first, 10, reserved);
-    second = next_track(2);
-    if(second != NULL &&
-       (first == NULL || strcmp(second->path, first->path) != 0))
-        schedule_prefetch(second, 20, reserved);
+    have_first = copy_next_track(1, &first);
+    schedule_prefetch(have_first ? &first : NULL, 10, reserved);
+    have_second = copy_next_track(2, &second);
+    if(have_second &&
+       (!have_first || strcmp(second.path, first.path) != 0))
+        schedule_prefetch(&second, 20, reserved);
 }
 
 const lv_image_dsc_t *crazypod_now_playing_artwork_committed(
@@ -378,8 +385,10 @@ unsigned crazypod_now_playing_artwork_committed_generation(void)
 
 void crazypod_now_playing_request_open(void)
 {
+    struct crazypod_track track;
+
     crazypod_now_playing_artwork_sync();
-    if(current_track() != NULL && navigation.host.boost != NULL)
+    if(copy_current_track(&track) && navigation.host.boost != NULL)
         navigation.host.boost(HZ / 2);
     navigation.committed_generation_seen =
         navigation.committed_generation;

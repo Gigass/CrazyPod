@@ -69,6 +69,8 @@
 
 /* amount of data to read in one read() call */
 #define BUFFERING_DEFAULT_FILECHUNK      (1024*32)
+#define BUFFERING_READ_RETRIES           3
+#define BUFFERING_IO_FAILURE_LIMIT       3
 
 enum handle_flags
 {
@@ -86,6 +88,7 @@ struct memory_handle {
     uint8_t flags;          /* Handle property flags */
     int8_t  pinned;         /* Count of pinnings */
     int8_t  signaled;       /* Stop any attempt at waiting to get the data */
+    uint8_t io_failures;    /* Consecutive exhausted read/reopen cycles */
     int     fd;             /* File descriptor to path (-1 if closed) */
     size_t  data;           /* Start index of the handle's data buffer */
     size_t  ridx;           /* Read pointer, relative to the main buffer */
@@ -173,6 +176,7 @@ static const char buffering_thread_name[] = "buffering";
 static unsigned int buffering_thread_id = 0;
 static struct event_queue buffering_queue SHAREDBSS_ATTR;
 static struct queue_sender_list buffering_queue_sender_list SHAREDBSS_ATTR;
+static bool buffering_io_error;
 
 static void close_fd(int *fd_p)
 {
@@ -181,6 +185,63 @@ static void close_fd(int *fd_p)
         close(fd);
         *fd_p = -1;
     }
+}
+
+static bool handle_io_failure(struct memory_handle *h,
+                              const char *operation)
+{
+    (void)operation;
+    close_fd(&h->fd);
+    storage_spin();
+    buffering_io_error = true;
+    if(h->io_failures < UINT8_MAX)
+        h->io_failures++;
+    logf("buffer %s error %u: %s", operation,
+         (unsigned)h->io_failures, h->path);
+    if(h->io_failures >= BUFFERING_IO_FAILURE_LIMIT)
+        h->signaled = 1;
+    return false;
+}
+
+static bool open_handle_file(struct memory_handle *h)
+{
+    if(h->path[0] == '\0')
+        return handle_io_failure(h, "path");
+
+    h->fd = open(h->path, O_RDONLY);
+    if(h->fd < 0)
+        return handle_io_failure(h, "open");
+    if(h->end > 0 && lseek(h->fd, h->end, SEEK_SET) < 0)
+        return handle_io_failure(h, "seek");
+    return true;
+}
+
+static ssize_t read_handle_file(struct memory_handle *h, void *data,
+                                size_t size)
+{
+    ssize_t rc = -1;
+    int attempt;
+
+    for(attempt = 0; attempt < BUFFERING_READ_RETRIES; ++attempt) {
+        rc = read(h->fd, data, size);
+        if(rc >= 0) {
+            h->io_failures = 0;
+            return rc;
+        }
+
+        storage_spin();
+        if(attempt + 1 >= BUFFERING_READ_RETRIES)
+            break;
+        sleep(MAX(HZ / 10, 1));
+        if(lseek(h->fd, h->end, SEEK_SET) < 0) {
+            close_fd(&h->fd);
+            if(!open_handle_file(h))
+                return -1;
+        }
+    }
+
+    handle_io_failure(h, "read");
+    return -1;
 }
 
 /* Ring buffer helper functions */
@@ -414,6 +475,7 @@ add_handle(unsigned int flags, size_t data_size, const char *path,
     h->flags    = flags;
     h->pinned   = 0; /* Can be moved */
     h->signaled = 0; /* Data can be waited for */
+    h->io_failures = 0;
 
     /* Save the provided path */
     if (path)
@@ -635,19 +697,8 @@ static bool buffer_handle(int handle_id, size_t to_buffer)
         return true;
     }
 
-    if (h->fd < 0) { /* file closed, reopen */
-        if (h->path[0] != '\0')
-            h->fd = open(h->path, O_RDONLY);
-
-        if (h->fd < 0) {
-            /* could not open the file, truncate it where it is */
-            h->filesize = h->end;
-            return true;
-        }
-
-        if (h->start)
-            lseek(h->fd, h->start, SEEK_SET);
-    }
+    if (h->fd < 0 && !open_handle_file(h))
+        return false;
 
     trigger_cpu_boost();
 
@@ -689,20 +740,17 @@ static bool buffer_handle(int handle_id, size_t to_buffer)
             return false; /* no space for read */
 
         /* rc is the actual amount read */
-        ssize_t rc = read(h->fd, ringbuf_ptr(widx), copy_n);
+        ssize_t rc = read_handle_file(
+            h, ringbuf_ptr(widx), (size_t)copy_n);
 
-        if (rc <= 0) {
-            /* Some kind of filesystem error, maybe recoverable if not codec */
-            if (h->type == TYPE_CODEC) {
-                logf("Partial codec");
-                break;
-            }
-
+        if (rc == 0) {
             logf("File ended %lu bytes early\n",
                  (unsigned long)(h->filesize - h->end));
             h->filesize = h->end;
             break;
         }
+        if (rc < 0)
+            return false;
 
         /* Advance buffer and make data available to users */
         h->widx = ringbuf_add(widx, rc);
@@ -816,6 +864,7 @@ static struct memory_handle * shrink_handle(struct memory_handle *h)
 static bool fill_buffer(void)
 {
     logf("fill_buffer()");
+    buffering_io_error = false;
     mutex_lock(&llist_mutex);
 
     struct memory_handle *m = shrink_handle(HLIST_FIRST);
@@ -835,7 +884,8 @@ static bool fill_buffer(void)
     } else {
         /* only spin the disk down if the filling wasn't interrupted by an
            event arriving in the queue. */
-        storage_sleep();
+        if(!buffering_io_error)
+            storage_sleep();
         return false;
     }
 }
@@ -1602,6 +1652,7 @@ static void NORETURN_ATTR buffering_thread(void)
                 LOGFQUEUE("buffering < Q_START_FILL %d", (int)ev.data);
                 shrink_buffer();
                 queue_reply(&buffering_queue, 1);
+                buffering_io_error = false;
                 if (buffer_handle((int)ev.data, 0)) {
                     filling = true;
                 }
@@ -1686,6 +1737,9 @@ void INIT_ATTR buffering_init(void)
             sizeof(buffering_stack), CREATE_THREAD_FROZEN,
             buffering_thread_name IF_PRIO(, PRIORITY_BUFFERING)
             IF_COP(, CPU));
+
+    if (buffering_thread_id == 0)
+        panicf("buffering thread");
 
     queue_enable_queue_send(&buffering_queue, &buffering_queue_sender_list,
                             buffering_thread_id);

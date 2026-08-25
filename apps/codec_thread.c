@@ -32,6 +32,7 @@
 #include "buffering.h"
 #include "dsp_core.h"
 #include "metadata.h"
+#include "panic.h"
 #include "settings.h"
 
 /* Define LOGF_ENABLE to enable logf output in this file */
@@ -88,6 +89,7 @@ extern struct codec_api ci; /* from codecs.c */
 
 /* Codec thread */
 static unsigned int codec_thread_id; /* For modifying thread priority later */
+static volatile bool codec_thread_borrowed;
 static struct event_queue codec_queue SHAREDBSS_ATTR;
 static struct queue_sender_list codec_queue_sender_list SHAREDBSS_ATTR;
 
@@ -218,6 +220,11 @@ void codec_thread_do_callback(void (*fn)(void), unsigned int *id)
     /* Codec thread will signal just before entering callback */
     LOGFQUEUE("codec >| Q_CODEC_DO_CALLBACK");
     codec_queue_send(Q_CODEC_DO_CALLBACK, (intptr_t)fn);
+}
+
+bool codec_thread_is_borrowed(void)
+{
+    return codec_thread_borrowed;
 }
 
 
@@ -577,6 +584,7 @@ static void unload_codec(void)
 /* Handle Q_CODEC_DO_CALLBACK */
 static void do_callback(void (* callback)(void))
 {
+    codec_thread_borrowed = callback != NULL;
     codec_queue_ack(Q_CODEC_DO_CALLBACK);
 
     if (callback)
@@ -585,6 +593,7 @@ static void do_callback(void (* callback)(void))
         callback();
         commit_dcache();
     }
+    codec_thread_borrowed = false;
 }
 
 /* Codec thread function */
@@ -663,6 +672,8 @@ void INIT_ATTR codec_thread_init(void)
             codec_thread, codec_stack, sizeof(codec_stack), 0,
             codec_thread_name IF_PRIO(, PRIORITY_PLAYBACK)
             IF_COP(, CPU));
+    if (codec_thread_id == 0)
+        panicf("codec thread");
     queue_enable_queue_send(&codec_queue, &codec_queue_sender_list,
                             codec_thread_id);
 }

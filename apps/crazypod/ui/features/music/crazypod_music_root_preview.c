@@ -53,11 +53,13 @@ static uint32_t artwork_color(const char *text, int variant)
                    (sizeof(palette) / sizeof(palette[0]))];
 }
 
-static const struct crazypod_track *current_track(void)
+static bool copy_current_track(struct crazypod_track *track)
 {
-    const char *path = crazypod_queue_path(crazypod_queue_index());
-    int index = crazypod_music_find_track(path);
-    return crazypod_music_track(index);
+    char path[MAX_PATH];
+    int index = crazypod_queue_copy_path(
+            crazypod_queue_index(), path, sizeof(path))
+        ? crazypod_music_find_track(path) : -1;
+    return crazypod_music_copy_track(index, track);
 }
 
 static lv_obj_t *make_procedural_record_sleeve(
@@ -234,6 +236,8 @@ void crazypod_music_root_preview_render(
     lv_obj_t *title;
     lv_obj_t *stage;
     lv_obj_t *part;
+    struct crazypod_track current;
+    bool have_current = copy_current_track(&current);
     char count_text[96];
     int count = 0;
     int i;
@@ -241,7 +245,8 @@ void crazypod_music_root_preview_render(
     defer_media = defer_media_value;
     switch(selected) {
     case 0: {
-        const struct crazypod_track *track = current_track();
+        const struct crazypod_track *track =
+            have_current ? &current : NULL;
         lv_obj_t *disc = crazypod_ui_widget_box(
             parent, 242, 69, 59, 59,
             LV_RADIUS_CIRCLE, 0xC7D1D8, 235);
@@ -310,8 +315,10 @@ void crazypod_music_root_preview_render(
         crazypod_ui_widget_box(parent, 183, 139, 112, 3,
                  LV_RADIUS_CIRCLE, 0xAEB9BD, 215);
         for(i = 0; i < 3; ++i) {
+            struct crazypod_track track_value;
             const struct crazypod_track *track =
-                i < count ? crazypod_music_album_track(i, 0) : NULL;
+                i < count && crazypod_music_copy_album_track(
+                    i, 0, &track_value) ? &track_value : NULL;
             part = make_procedural_record_sleeve(
                 parent, track, positions[i],
                 i == 1 ? 55 : 69,
@@ -386,12 +393,14 @@ void crazypod_music_root_preview_render(
                  0xB9C4C8, 35);
         for(i = 0; i < 4; ++i) {
             int track_index = -1;
+            struct crazypod_track track_value;
             const struct crazypod_track *track = NULL;
 
             if(i < count) {
                 track_index = count > 4
                     ? i * (count - 1) / 3 : i;
-                track = crazypod_music_track(track_index);
+                if(crazypod_music_copy_track(track_index, &track_value))
+                    track = &track_value;
             }
             part = make_music_initial_cover(
                 stage, track, positions[i], heights[i],
@@ -518,9 +527,11 @@ void crazypod_music_root_preview_render(
         break;
     }
     case 5: {
+        struct crazypod_track track_value;
         const struct crazypod_track *track =
-            crazypod_music_album_count() > 0
-                ? crazypod_music_album_track(0, 0) : NULL;
+            crazypod_music_album_count() > 0 &&
+            crazypod_music_copy_album_track(0, 0, &track_value)
+                ? &track_value : NULL;
         count = crazypod_music_album_count();
         stage = crazypod_ui_widget_box(parent, 178, 62, 124, 83, 8,
                          0x50463B, LV_OPA_COVER);
@@ -655,9 +666,9 @@ void crazypod_music_root_preview_render(
     }
     }
 
-    if(selected == 0 && current_track() != NULL)
+    if(selected == 0 && have_current)
         snprintf(count_text, sizeof(count_text), "%s",
-                 current_track()->artist);
+                 current.artist);
     else if(selected == 7)
         snprintf(count_text, sizeof(count_text),
                  CP_FMT("%d local tracks"), count);
@@ -670,8 +681,8 @@ void crazypod_music_root_preview_render(
                  count);
     text_panel = crazypod_preview_make_caption(
         parent,
-        selected == 0 && current_track() != NULL
-            ? current_track()->title : music_menu_titles[selected],
+        selected == 0 && have_current
+            ? current.title : music_menu_titles[selected],
         &lv_font_montserrat_12,
         count_text, &lv_font_montserrat_8);
     crazypod_preview_motion_register(

@@ -968,11 +968,11 @@ bool disk_buf_init(void)
         disk_buf_thread, disk_buf_stack, sizeof(disk_buf_stack), 0,
         "mpgbuffer" IF_PRIO(, PRIORITY_BUFFERING) IF_COP(, CPU));
 
-    rb->queue_enable_queue_send(disk_buf.q, &disk_buf_queue_send,
-                                disk_buf.thread);
-
     if (disk_buf.thread == 0)
         return false;
+
+    rb->queue_enable_queue_send(disk_buf.q, &disk_buf_queue_send,
+                                disk_buf.thread);
 
     /* Wait for thread to initialize */
     disk_buf_send_msg(STREAM_NULL, 0);

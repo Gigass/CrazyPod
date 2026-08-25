@@ -10,6 +10,7 @@
 #include "backlight.h"
 #include "events.h"
 #include "kernel.h"
+#include "panic.h"
 #include "playlist.h"
 #include "settings.h"
 
@@ -122,8 +123,9 @@ static int current_track_index(void)
     if(playback.track_queue_generation != queue_generation ||
        playback.track_catalog_generation != catalog_generation ||
        playback.track_queue_index != queue_index) {
-        const char *path = crazypod_queue_path(queue_index);
-        const struct crazypod_track *track;
+        char path[MAX_PATH];
+        struct crazypod_track track;
+        bool have_track;
         int album_count;
         int i;
 
@@ -131,18 +133,18 @@ static int current_track_index(void)
         playback.track_catalog_generation = catalog_generation;
         playback.track_queue_index = queue_index;
         playback.track_library_index =
-            crazypod_music_find_track(path);
+            crazypod_queue_copy_path(queue_index, path, sizeof(path))
+                ? crazypod_music_find_track(path) : -1;
         playback.track_album_index = -1;
-        track = crazypod_music_track(
-            playback.track_library_index);
+        have_track = crazypod_music_copy_track(
+            playback.track_library_index, &track);
         album_count = crazypod_music_album_count();
-        for(i = 0; track != NULL && i < album_count; ++i) {
-            const struct crazypod_album *album =
-                crazypod_music_album(i);
+        for(i = 0; have_track && i < album_count; ++i) {
+            struct crazypod_album album;
 
-            if(album != NULL &&
-               strcmp(album->title, track->album) == 0 &&
-               strcmp(album->artist, track->album_artist) == 0) {
+            if(crazypod_music_copy_album(i, &album) &&
+               strcmp(album.title, track.album) == 0 &&
+               strcmp(album.artist, track.album_artist) == 0) {
                 playback.track_album_index = i;
                 break;
             }
@@ -151,21 +153,24 @@ static int current_track_index(void)
     return playback.track_library_index;
 }
 
-static const struct crazypod_track *current_track(void)
+static bool copy_current_track(struct crazypod_track *track)
 {
-    return crazypod_music_track(current_track_index());
+    return crazypod_music_copy_track(current_track_index(), track);
 }
 
-static const struct crazypod_track *track_at_queue_index(int queue_index)
+static bool copy_track_at_queue_index(int queue_index,
+                                      struct crazypod_track *track)
 {
-    const char *path = crazypod_queue_path(queue_index);
+    char path[MAX_PATH];
 
-    return crazypod_music_track(crazypod_music_find_track(path));
+    return crazypod_queue_copy_path(queue_index, path, sizeof(path)) &&
+        crazypod_music_copy_track(crazypod_music_find_track(path), track);
 }
 
-static const struct crazypod_track *track_at_path(const char *path)
+static bool copy_track_at_path(const char *path,
+                               struct crazypod_track *track)
 {
-    return crazypod_music_track(crazypod_music_find_track(path));
+    return crazypod_music_copy_track(crazypod_music_find_track(path), track);
 }
 
 static void copy_lock_playback_text(
@@ -230,10 +235,11 @@ static void lock_playback_track_event(
     lock_playback.warmed_path[0] = '\0';
     copy_lock_playback_text(path, sizeof(path), lock_playback.path);
     if(lock_playback.requested_queue_index >= 0) {
-        const char *requested_path = crazypod_queue_path(
-            lock_playback.requested_queue_index);
+        char requested_path[MAX_PATH];
 
-        if(requested_path != NULL &&
+        if(crazypod_queue_copy_path(
+               lock_playback.requested_queue_index,
+               requested_path, sizeof(requested_path)) &&
            strcmp(requested_path, lock_playback.path) == 0)
             lock_playback.requested_queue_index = -1;
     }
@@ -247,7 +253,8 @@ static void lock_metadata_warm_thread(void)
 
     while(true) {
         struct crazypod_lock_playback_cache cached;
-        const struct crazypod_track *track;
+        struct crazypod_track track;
+        bool have_track;
         const char *path;
         const char *title;
         const char *artist;
@@ -262,12 +269,12 @@ static void lock_metadata_warm_thread(void)
         if(cached.warming_path[0] == '\0')
             continue;
         path = cached.warming_path;
-        track = track_at_path(path);
-        title = track != NULL ? track->title :
+        have_track = copy_track_at_path(path, &track);
+        title = have_track ? track.title :
             strcmp(path, cached.path) == 0 ? cached.title : "";
-        artist = track != NULL ? track->artist :
+        artist = have_track ? track.artist :
             strcmp(path, cached.path) == 0 ? cached.artist : "";
-        album = track != NULL ? track->album :
+        album = have_track ? track.album :
             strcmp(path, cached.path) == 0 ? cached.album : "";
         crazypod_runtime_font_prewarm_text(
             LOCK_TITLE_FONT_SIZE, title);
@@ -399,6 +406,8 @@ void crazypod_playback_initialize(void)
             IF_PRIO(, PRIORITY_USER_INTERFACE)
             IF_COP(, CPU));
         playback_command_thread_started = thread_id != 0;
+        if(!playback_command_thread_started)
+            panicf("playback command thread");
     }
 }
 
@@ -433,9 +442,9 @@ void crazypod_playback_headphone_changed(bool inserted)
 
 int crazypod_playback_initial_album_index(void)
 {
-    const struct crazypod_track *track = current_track();
+    struct crazypod_track track;
 
-    if(track == NULL || playback.track_album_index < 0)
+    if(!copy_current_track(&track) || playback.track_album_index < 0)
         return 0;
     return playback.track_album_index;
 }
@@ -625,6 +634,7 @@ void crazypod_playback_toggle_async(void)
 
 void crazypod_playback_next_async(void)
 {
+    char path[MAX_PATH];
     int index;
 
     mutex_lock(&lock_playback_mutex);
@@ -639,13 +649,14 @@ void crazypod_playback_next_async(void)
         queue_post(
             &playback_command_queue,
             CRAZYPOD_PLAYBACK_COMMAND_NEXT, 0);
-    if(index >= 0)
-        request_lock_metadata_warm(crazypod_queue_path(index));
+    if(index >= 0 &&
+       crazypod_queue_copy_path(index, path, sizeof(path)))
+        request_lock_metadata_warm(path);
 }
 
 void crazypod_playback_previous_or_restart_async(void)
 {
-    const char *path;
+    char path[MAX_PATH];
     bool playing;
     int current_index;
     int requested_index;
@@ -659,8 +670,10 @@ void crazypod_playback_previous_or_restart_async(void)
         : (audio_status() & (AUDIO_STATUS_PLAY | AUDIO_STATUS_PAUSE)) ==
             AUDIO_STATUS_PLAY;
     mutex_unlock(&lock_playback_mutex);
-    path = crazypod_queue_path(current_index);
-    requested_index = cached_lock_elapsed(path, playing) >=
+    requested_index = cached_lock_elapsed(
+            crazypod_queue_copy_path(
+                current_index, path, sizeof(path)) ? path : NULL,
+            playing) >=
             PREVIOUS_RESTART_THRESHOLD_MS
         ? current_index : adjacent_queue_index(current_index, -1);
     if(requested_index < 0)
@@ -671,14 +684,16 @@ void crazypod_playback_previous_or_restart_async(void)
     queue_post(
         &playback_command_queue,
         CRAZYPOD_PLAYBACK_COMMAND_PREVIOUS, 0);
-    request_lock_metadata_warm(
-        crazypod_queue_path(requested_index));
+    if(crazypod_queue_copy_path(
+           requested_index, path, sizeof(path)))
+        request_lock_metadata_warm(path);
 }
 
 void crazypod_playback_refresh_lock_screen(void)
 {
     struct crazypod_lock_playback_cache cached;
-    const struct crazypod_track *track;
+    struct crazypod_track track;
+    bool have_track;
     const lv_image_dsc_t *artwork = NULL;
     const char *artwork_path = NULL;
     const char *track_path = NULL;
@@ -691,11 +706,11 @@ void crazypod_playback_refresh_lock_screen(void)
     mutex_lock(&lock_playback_mutex);
     cached = lock_playback;
     mutex_unlock(&lock_playback_mutex);
-    track = track_at_queue_index(
+    have_track = copy_track_at_queue_index(
         cached.requested_queue_index >= 0
             ? cached.requested_queue_index
-            : crazypod_queue_index());
-    track_path = track != NULL ? track->path :
+            : crazypod_queue_index(), &track);
+    track_path = have_track ? track.path :
         cached.valid ? cached.path : NULL;
     request_lock_metadata_warm(track_path);
     active = track_path != NULL && track_path[0] != '\0' &&
@@ -715,16 +730,16 @@ void crazypod_playback_refresh_lock_screen(void)
         snapshot.metadata_ready =
             strcmp(cached.warmed_path, track_path) == 0;
         snapshot.track_path = track_path;
-        snapshot.title = track != NULL && track->title[0] != '\0'
-            ? track->title : cached.title;
-        snapshot.artist = track != NULL && track->artist[0] != '\0'
-            ? track->artist : cached.artist;
-        snapshot.album = track != NULL && track->album[0] != '\0'
-            ? track->album : cached.album;
+        snapshot.title = have_track && track.title[0] != '\0'
+            ? track.title : cached.title;
+        snapshot.artist = have_track && track.artist[0] != '\0'
+            ? track.artist : cached.artist;
+        snapshot.album = have_track && track.album[0] != '\0'
+            ? track.album : cached.album;
         snapshot.elapsed_ms = cached_lock_elapsed(
             track_path, playing);
-        snapshot.length_ms = track != NULL
-            ? track->duration_ms : cached.length_ms;
+        snapshot.length_ms = have_track
+            ? track.duration_ms : cached.length_ms;
         if(snapshot.length_ms > 0 &&
            snapshot.elapsed_ms > snapshot.length_ms)
             snapshot.elapsed_ms = snapshot.length_ms;
@@ -736,7 +751,8 @@ void crazypod_playback_refresh_lock_screen(void)
 
 void crazypod_playback_update_timer(lv_timer_t *timer)
 {
-    const struct crazypod_track *track;
+    struct crazypod_track track;
+    bool have_track;
     struct mp3entry *id3;
 
     (void)timer;
@@ -751,11 +767,11 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
     if(crazypod_music_library_update())
         return;
     crazypod_app_launcher_process_pending();
-    track = current_track();
+    have_track = copy_current_track(&track);
     id3 = audio_current_track();
     crazypod_now_playing_artwork_sync();
     crazypod_now_capsule_update(
-        track,
+        have_track ? &track : NULL,
         id3 != NULL ? (uint32_t)id3->elapsed : 0,
         id3 != NULL ? (uint32_t)id3->length : 0);
     if(crazypod_ui_routes_depth() <= 0 ||
@@ -763,10 +779,10 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
         return;
     if(crazypod_now_playing_theme_open())
         return;
-    if(track != NULL &&
+    if(have_track &&
        strcmp(
            crazypod_now_playing_feature_rendered_track_path(),
-           track->path) != 0) {
+           track.path) != 0) {
         enum crazypod_now_playing_overlay overlay =
             crazypod_now_playing_overlay_kind();
 
@@ -774,7 +790,7 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
         crazypod_now_playing_overlay_restore(overlay);
         return;
     }
-    if(track == NULL &&
+    if(!have_track &&
        crazypod_now_playing_feature_rendered_track_path()[0] != '\0') {
         enum crazypod_now_playing_overlay overlay =
             crazypod_now_playing_overlay_kind();
@@ -810,7 +826,8 @@ bool crazypod_playback_refresh_after_unlock_pending(void)
 void crazypod_playback_service_after_unlock(
     uint32_t present_sequence)
 {
-    const struct crazypod_track *track;
+    struct crazypod_track track;
+    bool have_track;
     struct mp3entry *id3;
     bool animate_capsule;
 
@@ -823,10 +840,10 @@ void crazypod_playback_service_after_unlock(
     if(!animate_capsule)
         return;
 
-    track = current_track();
+    have_track = copy_current_track(&track);
     id3 = audio_current_track();
     crazypod_now_capsule_update(
-        track,
+        have_track ? &track : NULL,
         id3 != NULL ? (uint32_t)id3->elapsed : 0,
         id3 != NULL ? (uint32_t)id3->length : 0);
     crazypod_now_capsule_start_entry();
@@ -834,12 +851,15 @@ void crazypod_playback_service_after_unlock(
 
 void crazypod_playback_process_artwork(void)
 {
+    struct crazypod_track track;
+    bool have_track;
     unsigned generation;
 
     if(playback.unlock_refresh_pending)
         return;
     crazypod_now_playing_artwork_sync();
-    crazypod_now_capsule_poll_artwork(current_track());
+    have_track = copy_current_track(&track);
+    crazypod_now_capsule_poll_artwork(have_track ? &track : NULL);
     if(!crazypod_shell_product_active() ||
        crazypod_ui_routes_depth() <= 0 ||
        crazypod_music_library_loading() ||

@@ -144,6 +144,11 @@ unsigned int create_thread(void (*function)(void),
                            IF_PRIO(, int priority)
                            IF_COP(, unsigned int core));
 
+/* Number of scheduler slots that can be allocated at this instant. The value
+ * is a resource-admission hint; callers must still handle create_thread()
+ * failure because another creator can race the check. */
+unsigned int thread_get_free_count(void);
+
 /* Set and clear the CPU frequency boost flag for the calling thread */
 #ifdef HAVE_SCHEDULER_BOOSTCTRL
 void trigger_cpu_boost(void);
