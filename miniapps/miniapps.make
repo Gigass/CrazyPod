@@ -53,7 +53,8 @@ ifndef APP_TYPE
 $(MINIAPP_LINK_LDS): $(MINIAPP_PLUGIN_LDS) $(MINIAPP_CONFIG)
 	$(call PRINTS,PP $(@F))
 	$(SILENT)mkdir -p $(dir $@)
-	$(call preprocess2file,$<,$@,-DLOADADDRESS=$(LOADADDRESS))
+	$(SILENT)$(CC) $(PPCFLAGS) -DLOADADDRESS=$(LOADADDRESS) -E -P -x c \
+		-include config.h $< | grep -v '^\#' | grep -v "^$$" > $@
 
 $(MINIAPP_BUILD)/%/app.arm: \
 	$(MINIAPP_BUILD)/%/app.o $(MINIAPP_NATIVE_RUNTIME_OBJ) $(MINIAPP_LINK_LDS)
