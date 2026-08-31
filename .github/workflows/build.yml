@@ -23,9 +23,11 @@ jobs:
           sudo apt-get install -y \
             binutils-arm-none-eabi \
             gcc-arm-none-eabi \
+            libfreetype6-dev \
             libnewlib-arm-none-eabi \
             make \
             perl \
+            pkg-config \
             python3 \
             zip
 
@@ -35,6 +37,10 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: tools/miniapp-builder/package-lock.json
+
+      - name: Build host font converter
+        shell: bash
+        run: make -C tools convttf
 
       - name: Build iPod 6G firmware
         shell: bash
@@ -78,7 +84,7 @@ jobs:
       - name: Install simulator dependencies
         run: |
           brew untap aws/tap || true
-          HOMEBREW_NO_AUTO_UPDATE=1 brew install sdl2 ffmpeg pkg-config
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install freetype sdl2 ffmpeg pkg-config
 
       - name: Set up Node.js
         uses: actions/setup-node@v5
@@ -86,6 +92,12 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: tools/miniapp-builder/package-lock.json
+
+      - name: Build host font converter
+        shell: bash
+        run: |
+          export PKG_CONFIG_PATH="$(brew --prefix freetype)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          make -C tools convttf
 
       - name: Build simulator
         shell: bash
