@@ -442,6 +442,11 @@
         "apps/crazypod/ui/shell/crazypod_lock_screen.c:86"
       ]
     },
+    "ARTIST": {
+      "locations": [
+        "apps/crazypod/ui/features/music/crazypod_music_feature.c:145"
+      ]
+    },
     "ARTISTS": {
       "locations": [
         "apps/crazypod/ui/features/music/crazypod_music_feature.c:132"
@@ -1956,7 +1961,8 @@
     "Hold Center to Unlock": {
       "locations": [
         "apps/crazypod/ui/shell/crazypod_lock_screen.c:235",
-        "apps/crazypod/ui/shell/crazypod_lock_screen.c:555"
+        "apps/crazypod/ui/shell/crazypod_lock_screen.c:555",
+        "apps/crazypod/ui/shell/crazypod_lock_screen.c:1215"
       ]
     },
     "Hold Select on a photo to save it here.": {
@@ -2294,11 +2300,6 @@
         "apps/crazypod/ui/features/now_playing/crazypod_now_screen.c:239",
         "apps/crazypod/ui/shell/crazypod_now_capsule.c:252",
         "apps/crazypod/ui/shell/crazypod_now_capsule.c:393"
-      ]
-    },
-    "Local Queue": {
-      "locations": [
-        "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:538"
       ]
     },
     "Local Time": {
@@ -4090,11 +4091,6 @@
         "apps/crazypod/ui/features/music/crazypod_music_feature.c:25",
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:21",
         "apps/crazypod/ui/features/organizer/crazypod_organizer_feature.c:68"
-      ]
-    },
-    "UNLOCKED": {
-      "locations": [
-        "apps/crazypod/ui/shell/crazypod_lock_screen.c:210"
       ]
     },
     "UNSAVED NOTE": {

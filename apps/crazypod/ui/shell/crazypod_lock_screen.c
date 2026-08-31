@@ -1212,7 +1212,7 @@ lv_obj_t *crazypod_lock_screen_create(
         crazypod_runtime_font_at_size_weight(8, 700),
         COLOR_WHITE, 220);
     lv_label_set_text(
-        lock_state.hint_label, "Hold Center to Unlock");
+        lock_state.hint_label, CP_TR("Hold Center to Unlock"));
     lv_obj_set_size(
         lock_state.hint_label,
         UNLOCK_FEEDBACK_WIDTH - 2 * UNLOCK_FEEDBACK_INSET,

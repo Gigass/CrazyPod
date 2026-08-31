@@ -21,6 +21,31 @@ enum crazypod_screen_recording_event {
     CRAZYPOD_SCREEN_RECORDING_EVENT_FAILED,
 };
 
+static inline enum crazypod_screen_recording_event
+crazypod_screen_recording_completion_event(bool failed)
+{
+    return failed
+        ? CRAZYPOD_SCREEN_RECORDING_EVENT_FAILED
+        : CRAZYPOD_SCREEN_RECORDING_EVENT_SAVED;
+}
+
+static inline enum crazypod_screen_recording_event
+crazypod_screen_recording_limit_event(bool stop_succeeded)
+{
+    return stop_succeeded
+        ? CRAZYPOD_SCREEN_RECORDING_EVENT_SAVED
+        : CRAZYPOD_SCREEN_RECORDING_EVENT_FAILED;
+}
+
+static inline bool crazypod_screen_recording_claim_backlight_restore(
+    bool *suppressed)
+{
+    if(!suppressed || !*suppressed)
+        return false;
+    *suppressed = false;
+    return true;
+}
+
 void crazypod_screen_recording_init(void);
 enum crazypod_screen_recording_result
 crazypod_screen_recording_toggle(long now);

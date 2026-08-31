@@ -89,6 +89,10 @@ if re.search(r'key, sizeof\(key\), "%s-%s-', source):
     raise SystemExit("runtime semantic font keys must not retain old locales")
 if "semantic_slot_use_path(slot, path)" not in source:
     raise SystemExit("runtime semantic fonts do not reload regional faces")
+if "runtime_font_coverage" not in source or "load_font_coverage" not in source:
+    raise SystemExit("runtime semantic fonts lack glyph coverage metadata")
+if "fallback_font_resolve" not in source or "jp-system-400-%u.fnt" not in source:
+    raise SystemExit("Simplified Chinese fonts lack a Noto Hangul fallback")
 slot_match = re.search(r"#define CRAZYPOD_RUNTIME_FONT_MAX (\d+)", source)
 if slot_match is None or int(slot_match.group(1)) < 24:
     raise SystemExit("runtime font pool cannot hold shell and certified theme fonts")
@@ -100,7 +104,8 @@ if re.search(
 if "lv_tiny_ttf" in source:
     raise SystemExit("runtime resolver must not rasterize outlines on-device")
 for reason in (
-        "invalid font request", "font slots exhausted", "font load failed"):
+        "invalid font request", "font slots exhausted", "font load failed",
+        "font fallback load failed"):
     if reason not in source:
         raise SystemExit(f"runtime resolver does not record {reason}")
 if "return font != NULL ? font : LV_FONT_DEFAULT" in scene_renderer:
@@ -142,16 +147,21 @@ for path in sorted(font_dir.glob("*.fnt")):
     metrics.setdefault(key, set()).add((max_width, height, ascent, depth))
 
 for key, regional_metrics in metrics.items():
-    if len(regional_metrics) != 1:
+    depths = {depth for _, _, _, depth in regional_metrics}
+    heights = {height for _, height, _, _ in regional_metrics}
+    ascents = {ascent for _, _, ascent, _ in regional_metrics}
+    if len(depths) != 1 or (max(heights) - min(heights)) > 2 or \
+            (max(ascents) - min(ascents)) > 6:
         raise SystemExit(
-            f"regional fonts for {key} do not share the same line metrics: "
+            f"regional fonts for {key} have incompatible line metrics: "
             f"{sorted(regional_metrics)}"
         )
 
-# These pinned Noto faces use a 1000-unit em.  CJK ideographs/kana advance by
-# 1000 units and Hangul by 920.  A stored width below the scaled advance means
-# convttf has discarded the font's side bearings.  One extra pixel is allowed
-# where hinted ink overhangs the nominal cell and must not be clipped.
+# These pinned Noto and PingFang faces use a 1000-unit em.  CJK ideographs/kana
+# advance by 1000 units and Hangul by 920.  A stored width below the scaled
+# advance means convttf has discarded the font's side bearings.  One extra
+# pixel is allowed where hinted ink overhangs the nominal cell and must not be
+# clipped.
 for size in sorted(spec_size for family, weight, spec_size in SPECS
                    if family == "system" and weight == 400):
     for locale, sample in CJK_ADVANCE_SAMPLES.items():
@@ -174,9 +184,10 @@ for size in sorted(spec_size for family, weight, spec_size in SPECS
                 f"space={space_width}, CJK={widths}"
             )
 
-for license_name in ("OFL-Noto-CJK.txt", "SOURCE"):
+for license_name in ("OFL-Noto-CJK.txt", "SOURCE",
+                     "PingFangSC-LICENSE.txt", "PingFangSC-SOURCE"):
     if not (font_dir / license_name).is_file():
         raise SystemExit(f"missing {license_name}")
 
-print(f"Noto AOT runtime fonts: 3 semantic families, {len(SPECS)} tuples, "
-      "4 regional faces, identical regional line metrics")
+print(f"Noto/PingFang AOT runtime fonts: 3 semantic families, "
+      f"{len(SPECS)} tuples, 4 regional faces, normalized system line metrics")

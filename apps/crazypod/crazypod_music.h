@@ -57,6 +57,22 @@ enum crazypod_music_catalog_validation {
     CRAZYPOD_MUSIC_VALIDATION_FAILED,
 };
 
+static inline enum crazypod_music_catalog_validation
+crazypod_music_catalog_validation_after_mount(bool catalog_ready)
+{
+    return catalog_ready
+        ? CRAZYPOD_MUSIC_VALIDATION_UNCHECKED
+        : CRAZYPOD_MUSIC_VALIDATION_FAILED;
+}
+
+static inline bool crazypod_music_library_needs_validation(
+    bool catalog_ready,
+    enum crazypod_music_catalog_validation validation)
+{
+    return catalog_ready &&
+        validation == CRAZYPOD_MUSIC_VALIDATION_UNCHECKED;
+}
+
 enum crazypod_music_scan_failure {
     CRAZYPOD_MUSIC_SCAN_OK,
     CRAZYPOD_MUSIC_SCAN_NO_MEMORY,

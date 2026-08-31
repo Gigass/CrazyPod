@@ -3,7 +3,6 @@ import {
   mkdir,
   mkdtemp,
   readFile,
-  readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -16,8 +15,14 @@ import { convertAnimation } from "./animations.mjs";
 import { convertPngBuffer } from "./images.mjs";
 
 const sdkHeader = readFileSync(new URL(
-  "../../../miniapps/sdk/crazypod_miniapp_native.h", import.meta.url,
+  "../sdk/crazypod_miniapp_native.h", import.meta.url,
 ), "utf8");
+
+const packageToolsDirectory = path.resolve(import.meta.dirname, "../bin");
+
+async function defaultToolsDirectory() {
+  return process.env.CRAZYPOD_TOOLS_DIRECTORY ?? packageToolsDirectory;
+}
 
 function sdkConstant(name) {
   const match = sdkHeader.match(new RegExp(`^#define ${name} (\\d+)u$`, "m"));
@@ -68,11 +73,18 @@ function validateRockboxFont(data, id) {
   }
 }
 
-async function ensureTool(tool, makeTarget) {
+async function ensureTool(tool, makeTarget, toolsDirectory) {
   try {
     await access(tool);
   } catch {
-    const toolsDirectory = path.dirname(tool);
+    try {
+      await access(path.join(toolsDirectory, "Makefile"));
+    } catch {
+      throw new Error(
+        `${makeTarget} is unavailable; set CRAZYPOD_${makeTarget.toUpperCase()}` +
+        ` or install the CrazyPod tools`,
+      );
+    }
     await execFileAsync("make", ["-C", toolsDirectory, makeTarget], {
       maxBuffer: 1024 * 1024,
     });
@@ -81,8 +93,7 @@ async function ensureTool(tool, makeTarget) {
 
 async function convertFont(source, item) {
   const extension = path.extname(source).toLowerCase();
-  const repository = path.resolve(import.meta.dirname, "../../..");
-  const toolsDirectory = path.join(repository, "tools");
+  const toolsDirectory = await defaultToolsDirectory();
   const temporary = await mkdtemp(path.join(os.tmpdir(), "crazypod-font-"));
   try {
     let output;
@@ -92,7 +103,7 @@ async function convertFont(source, item) {
       }
       const converter = process.env.CRAZYPOD_CONVTTF ??
         path.join(toolsDirectory, "convttf");
-      await ensureTool(converter, "convttf");
+      await ensureTool(converter, "convttf", toolsDirectory);
       output = path.join(temporary, `${item.id}.fnt`);
       const args = [
         "-p", String(item.size), "-s", "32", "-l", "65535",
@@ -113,17 +124,14 @@ async function convertFont(source, item) {
       }
       const converter = process.env.CRAZYPOD_CONVBDF ??
         path.join(toolsDirectory, "convbdf");
-      await ensureTool(converter, "convbdf");
-      await execFileAsync(converter, ["-l", "65535", "-f", source], {
+      await ensureTool(converter, "convbdf", toolsDirectory);
+      output = path.join(temporary, `${item.id}.fnt`);
+      await execFileAsync(converter, [
+        "-l", "65535", "-f", "-o", output, source,
+      ], {
         cwd: temporary,
         maxBuffer: 4 * 1024 * 1024,
       });
-      const generated = (await readdir(temporary))
-        .filter((name) => name.endsWith(".fnt"));
-      if (generated.length !== 1) {
-        throw new Error(`${item.id} BDF conversion produced no unique font`);
-      }
-      output = path.join(temporary, generated[0]);
     } else {
       throw new Error(
         `${item.id} font source must be TTF, OTF, TTC, or BDF`,

@@ -19,7 +19,8 @@
   },
   "files": [
     "src",
-    "types"
+    "types",
+    "sdk"
   ],
   "dependencies": {
     "@lottiefiles/dotlottie-web": "0.78.2",

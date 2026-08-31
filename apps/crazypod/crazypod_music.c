@@ -1276,10 +1276,10 @@ void crazypod_music_init(void)
     memset(&scan_fingerprint, 0,
            sizeof(scan_fingerprint));
     catalog_ready = music_cache_load();
+    /* A persisted catalog is usable immediately, but its source fingerprint
+     * must be checked against the mounted media after every boot. */
     catalog_validation =
-        catalog_ready
-            ? CRAZYPOD_MUSIC_VALIDATION_UNCHECKED
-            : CRAZYPOD_MUSIC_VALIDATION_FAILED;
+        crazypod_music_catalog_validation_after_mount(catalog_ready);
     if(catalog_ready) {
         build_groups();
         load_favorites();
@@ -1524,9 +1524,8 @@ bool crazypod_music_validate_catalog_async(void)
 void crazypod_music_require_catalog_validation(void)
 {
     mutex_lock(&catalog_mutex);
-    catalog_validation = catalog_ready
-        ? CRAZYPOD_MUSIC_VALIDATION_UNCHECKED
-        : CRAZYPOD_MUSIC_VALIDATION_FAILED;
+    catalog_validation =
+        crazypod_music_catalog_validation_after_mount(catalog_ready);
     mutex_unlock(&catalog_mutex);
 }
 

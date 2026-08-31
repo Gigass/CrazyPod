@@ -13,6 +13,8 @@
 
 struct test_directory {
     int entry_index;
+    bool legacy;
+    bool user;
 };
 
 static struct test_directory test_directory;
@@ -30,20 +32,27 @@ static int verification_mark_count;
 static bool installed_same_version;
 static bool package_matches_install_record;
 static bool package_cached[3];
+static bool legacy_scan_enabled;
 static struct crazypod_miniapp_metadata catalog_metadata;
 
 DIR *test_opendir(const char *path)
 {
     if(strcmp(path, "/.rockbox/crazypod/miniapps/packages") != 0 &&
-       strcmp(path, "/MiniApps") != 0)
+       strcmp(path, "/MiniApps") != 0 &&
+       (!legacy_scan_enabled || strcmp(path, "/MiniApps/Install") != 0))
         return NULL;
     ++open_count;
     test_directory.entry_index = 0;
+    test_directory.legacy = strcmp(path, "/MiniApps/Install") == 0;
+    test_directory.user =
+        strncmp(path, "/MiniApps", strlen("/MiniApps")) == 0;
     return &test_directory;
 }
 
 struct dirent *test_readdir(DIR *directory)
 {
+    if(legacy_scan_enabled && directory->user && !directory->legacy)
+        return NULL;
     if(directory->entry_index++ != 0)
         return NULL;
     snprintf(test_entry.d_name, sizeof(test_entry.d_name), "test.cpk");
@@ -464,6 +473,17 @@ static void assert_incremental_rescan_yields_per_package(void)
     assert(registry_rebuild_count == 2);
 }
 
+static void assert_legacy_install_directory_is_scanned(void)
+{
+    assert_boot_work();
+    legacy_scan_enabled = true;
+
+    assert(crazypod_miniapps_rescan() == CRAZYPOD_MINIAPP_OK);
+    assert(open_count == 3);
+    assert(package_open_count == 2);
+    assert(publish_count == 2);
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 2);
@@ -475,6 +495,8 @@ int main(int argc, char **argv)
         assert_same_version_changed_package_republishes();
     } else if(strcmp(argv[1], "identical") == 0) {
         assert_same_package_timestamp_change_is_noop();
+    } else if(strcmp(argv[1], "legacy") == 0) {
+        assert_legacy_install_directory_is_scanned();
     } else {
         assert(strcmp(argv[1], "incremental") == 0);
         assert_incremental_rescan_yields_per_package();

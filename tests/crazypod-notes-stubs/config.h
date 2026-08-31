@@ -1,0 +1,7 @@
+#ifndef CRAZYPOD_NOTES_HOST_CONFIG_H
+#define CRAZYPOD_NOTES_HOST_CONFIG_H
+
+#define IPOD_6G 1
+#define MAX_PATH 1024
+
+#endif

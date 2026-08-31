@@ -37,5 +37,9 @@ node tools/miniapp-builder/src/cli.mjs test miniapps/apps/capability-lab
 sh tests/run-miniapp-simulator-tests.sh
 ```
 
+发布的 `create-crazypod-app` 包会自带 `sdk/`，构建 Mini App 不依赖发布包外的仓库路径。
+需要将 TTF/BDF 字体转换为设备资源时，请显式设置 `CRAZYPOD_CONVTTF`、
+`CRAZYPOD_CONVBDF`，或设置 `CRAZYPOD_TOOLS_DIRECTORY` 指向包含转换工具的目录。
+
 React Profile v1 是明确受限的源码子集，不是任意 TypeScript-to-C
 编译器。支持和拒绝项必须以开发指南和编译器测试为准。

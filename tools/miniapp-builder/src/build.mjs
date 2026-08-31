@@ -10,7 +10,7 @@ import {
 } from "./aot.mjs";
 
 const execute = promisify(execFile);
-const sdkDirectory = path.resolve(import.meta.dirname, "../../../miniapps/sdk");
+const sdkDirectory = path.resolve(import.meta.dirname, "../sdk");
 
 async function buildSimulatorBinary(project) {
   const artifactDirectory = path.join(project, ".crazypod/native");

@@ -23,6 +23,7 @@
 #define MINIAPP_ROOT "/.crazypod/miniapps"
 #define DATA_ROOT "/.crazypod/miniapp-data"
 #define USER_ROOT "/MiniApps"
+#define LEGACY_USER_ROOT USER_ROOT "/Install"
 #define SYSTEM_PACKAGES "/.rockbox/crazypod/miniapps/packages"
 #define SCAN_LIMIT 64
 #define SEMANTIC_FONT_ROOT "/.rockbox/fonts/crazypod-aot"
@@ -35,6 +36,7 @@ static struct {
     int scan_count;
     int scan_result;
     uint8_t scan_source;
+    bool scan_legacy_user;
     bool scan_publication_changed;
     bool in_progress;
     bool rescan_in_progress;
@@ -260,8 +262,9 @@ static bool cached_package_ready(
 
 static const char *scan_path(uint8_t source)
 {
-    return source == CRAZYPOD_MINIAPP_PACKAGE_SYSTEM
-        ? SYSTEM_PACKAGES : USER_ROOT;
+    if(source == CRAZYPOD_MINIAPP_PACKAGE_SYSTEM)
+        return SYSTEM_PACKAGES;
+    return installer.scan_legacy_user ? LEGACY_USER_ROOT : USER_ROOT;
 }
 
 static bool scan_one_package(void)
@@ -274,6 +277,12 @@ static bool scan_one_package(void)
             installer.scan_directory = opendir(path);
             installer.scan_count = 0;
             if(installer.scan_directory == NULL) {
+                if(installer.scan_source == CRAZYPOD_MINIAPP_PACKAGE_USER &&
+                   !installer.scan_legacy_user) {
+                    installer.scan_legacy_user = true;
+                    continue;
+                }
+                installer.scan_legacy_user = false;
                 ++installer.scan_source;
                 continue;
             }
@@ -312,6 +321,14 @@ static bool scan_one_package(void)
         }
         closedir(installer.scan_directory);
         installer.scan_directory = NULL;
+        if(installer.scan_source == CRAZYPOD_MINIAPP_PACKAGE_USER &&
+           !installer.scan_legacy_user) {
+            installer.scan_legacy_user = true;
+            installer.scan_count = 0;
+            continue;
+        }
+        installer.scan_legacy_user = false;
+        installer.scan_count = 0;
         ++installer.scan_source;
     }
     return false;
@@ -352,6 +369,7 @@ int crazypod_miniapps_rescan_begin(void)
     installer.scan_count = 0;
     installer.scan_result = CRAZYPOD_MINIAPP_OK;
     installer.scan_source = CRAZYPOD_MINIAPP_PACKAGE_SYSTEM;
+    installer.scan_legacy_user = false;
     installer.scan_publication_changed = false;
     installer.rescan_in_progress = true;
     return CRAZYPOD_MINIAPP_OK;

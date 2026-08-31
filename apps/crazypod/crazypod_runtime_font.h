@@ -19,8 +19,8 @@ enum crazypod_font_style {
 
 bool crazypod_runtime_font_init(void);
 
-/* Resolve one immutable Noto font instance. size is the requested RN ppem;
- * weight is 100..900; line_height is 0 for the font's natural line box. */
+/* Resolve one immutable semantic font instance. size is the requested RN ppem;
+ * weight is 100..900; line_height is 0 for the family's canonical line box. */
 const lv_font_t *crazypod_runtime_font_resolve(
     enum crazypod_font_family family, unsigned size, unsigned weight,
     enum crazypod_font_style style, unsigned line_height);

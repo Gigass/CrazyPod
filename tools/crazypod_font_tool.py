@@ -16,8 +16,9 @@ Typical use:
       --output lib/lvgl/src/font/lv_font_crazypod_14.c
 
 Any missing renderable character is a fatal error.  Spacing separators such as
-U+0020 SPACE are glyphs with advance width and must not be discarded.  There
-is no fallback.
+U+0020 SPACE are glyphs with advance width and must not be discarded.  A
+primary font may be followed by explicitly supplied fallback fonts when a
+family does not cover the complete manifest.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ import argparse
 import ast
 import json
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -284,6 +286,13 @@ def _range_argument(codepoints: set[int]) -> str:
     return ",".join(ranges)
 
 
+def _symbols_argument(codepoints: set[int]) -> str:
+    ordered = sorted(codepoints)
+    if not ordered:
+        raise ValueError("character manifest is empty")
+    return "".join(map(chr, ordered))
+
+
 def command_generate(args: argparse.Namespace) -> int:
     required = read_chars(args.chars)
     generated_symbol = args.output.stem
@@ -295,7 +304,16 @@ def command_generate(args: argparse.Namespace) -> int:
         )
         return 1
     available = font_codepoints(args.font, args.face)
-    missing = sorted(required - available)
+    missing = required - available
+    fallback_ranges: list[tuple[Path, set[int]]] = []
+    for fallback in args.fallback_font:
+        fallback_available = font_codepoints(fallback, args.fallback_face)
+        selected = missing & fallback_available
+        if selected:
+            fallback_ranges.append((fallback, selected))
+            missing -= selected
+
+    missing = sorted(missing)
     if missing:
         print(f"ERROR: source font lacks {len(missing)} required characters:", file=sys.stderr)
         for codepoint in missing:
@@ -303,25 +321,40 @@ def command_generate(args: argparse.Namespace) -> int:
         return 1
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    converter = args.converter
+    converter_name = Path(converter).name.lower()
+    if converter_name == "npx" and sys.platform == "win32":
+        converter = shutil.which("npx.cmd") or converter
+        converter_name = Path(converter).name.lower()
     command = [
-        args.converter,
+        converter,
         "--no-compress",
         "--no-prefilter",
         "--bpp", str(args.bpp),
         "--size", str(args.size),
         "--font", str(args.font),
-        "-r", _range_argument(required),
+        "--symbols", _symbols_argument(required),
+    ]
+    for fallback, codepoints in fallback_ranges:
+        command.extend([
+            "--font", str(fallback),
+            "--symbols", _symbols_argument(codepoints),
+        ])
+    command.extend([
         "--format", "lvgl",
         "-o", str(args.output),
         "--force-fast-kern-format",
-    ]
-    if args.converter == "npx":
+    ])
+    if converter_name in ("npx", "npx.cmd"):
         command[1:1] = ["--yes", "lv_font_conv@1.5.3"]
     subprocess.run(command, check=True)
     generated_text = args.output.read_text(encoding="utf-8")
     generated_text = generated_text.replace(
         '#include "lvgl/lvgl.h"', '#include "../../lvgl.h"'
     )
+    for source in (args.font, *args.fallback_font):
+        generated_text = generated_text.replace(str(source), source.name)
+    generated_text = generated_text.replace(str(args.output), args.output.name)
     args.output.write_text(generated_text, encoding="utf-8")
 
     generated_advances = lvgl_glyph_advances(args.output)
@@ -371,6 +404,14 @@ def parser() -> argparse.ArgumentParser:
     generate.add_argument("--chars", type=Path, required=True)
     generate.add_argument("--font", type=Path, required=True)
     generate.add_argument("--face", type=int, default=0)
+    generate.add_argument(
+        "--fallback-font", type=Path, action="append", default=[],
+        help="Font used only for characters missing from the primary font",
+    )
+    generate.add_argument(
+        "--fallback-face", type=int, default=0,
+        help="Face index used for every fallback font",
+    )
     generate.add_argument("--size", type=int, required=True)
     generate.add_argument("--bpp", type=int, default=4)
     generate.add_argument("--symbol", required=True)

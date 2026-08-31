@@ -133,9 +133,9 @@ paused/stopped inactivity. See the [power-management contract](docs/CRAZYPOD_POW
 - Settings → Language applies one of nine languages immediately and persists
   it across restarts.
 - The firmware catalog contains 839 translated UI keys.
-- Generated 8, 10, 12, 14, and 16px font subsets cover the current CJK,
-  Hangul, and accented Latin catalog. The non-LVGL LCD text path also decodes
-  UTF-8.
+- Generated 8, 10, 12, 14, and 16px font subsets use PingFang SC for the
+  Simplified Chinese system face, with Noto CJK coverage fallback for Hangul
+  and other missing characters. The non-LVGL LCD text path also decodes UTF-8.
 
 ### Mini Apps
 
@@ -526,9 +526,9 @@ the queue. The Favorite action adds or removes the current track from
 ## Known limits
 
 - Only the iPod Classic 6G target is supported.
-- The current localized font artifacts use one shared Noto Sans CJK SC subset.
-  Character coverage is complete for the catalog, but Japanese and Traditional
-  Chinese do not yet use region-specific Han glyph shapes.
+- The fixed localized font artifacts use PingFang SC as the primary Simplified
+  Chinese face and Noto CJK for uncovered characters. Runtime Japanese,
+  Traditional Chinese, and Korean system text keeps its regional Noto face.
 - 3.5mm headset remote buttons are not supported. The current target does not
   initialize the Mikey remote controller or route its events into CrazyPod.
 - Music, lyrics, books, photos, contacts, and calendars are local-only.
