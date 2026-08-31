@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install build dependencies
         run: |
@@ -30,7 +30,7 @@ jobs:
             zip
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -40,7 +40,15 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ./build-hw.sh 2>&1 | tee build-hw.log
+          if ! ./build-hw.sh 2>&1 | tee build-hw.log; then
+            {
+              echo '## Hardware build log (tail)'
+              echo '```text'
+              tail -n 120 build-hw.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
       - name: Upload hardware build log
         if: always()
@@ -65,13 +73,15 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install simulator dependencies
-        run: brew install sdl2 ffmpeg pkg-config
+        run: |
+          brew untap aws/tap || true
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install sdl2 ffmpeg pkg-config
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -81,7 +91,15 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          ./build-sim.sh 2>&1 | tee build-sim.log
+          if ! ./build-sim.sh 2>&1 | tee build-sim.log; then
+            {
+              echo '## Simulator build log (tail)'
+              echo '```text'
+              tail -n 120 build-sim.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
       - name: Upload simulator build log
         if: always()
