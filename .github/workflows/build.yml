@@ -1,0 +1,81 @@
+name: CrazyPod build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hardware:
+    name: iPod 6G firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils-arm-none-eabi \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            make \
+            perl \
+            python3 \
+            zip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/miniapp-builder/package-lock.json
+
+      - name: Build iPod 6G firmware
+        shell: bash
+        run: ./build-hw.sh
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crazypod-ipod6g-firmware
+          if-no-files-found: error
+          path: |
+            build-hw-ipod6g/rockbox.ipod
+            build-hw-ipod6g/CrazyPod-6G.zip
+            dist/miniapps/*.cpk
+
+  simulator:
+    name: macOS simulator
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install simulator dependencies
+        run: brew install sdl2 ffmpeg pkg-config
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/miniapp-builder/package-lock.json
+
+      - name: Build simulator
+        shell: bash
+        run: ./build-sim.sh
+
+      - name: Upload simulator artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crazypod-macos-simulator
+          if-no-files-found: error
+          path: |
+            build-sim/rockboxui
+            build-sim/CrazyPod Simulator.app
