@@ -38,7 +38,17 @@ jobs:
 
       - name: Build iPod 6G firmware
         shell: bash
-        run: ./build-hw.sh
+        run: |
+          set -o pipefail
+          ./build-hw.sh 2>&1 | tee build-hw.log
+
+      - name: Upload hardware build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crazypod-ipod6g-build-log
+          if-no-files-found: warn
+          path: build-hw.log
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
@@ -69,7 +79,17 @@ jobs:
 
       - name: Build simulator
         shell: bash
-        run: ./build-sim.sh
+        run: |
+          set -o pipefail
+          ./build-sim.sh 2>&1 | tee build-sim.log
+
+      - name: Upload simulator build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crazypod-macos-build-log
+          if-no-files-found: warn
+          path: build-sim.log
 
       - name: Upload simulator artifacts
         uses: actions/upload-artifact@v4
