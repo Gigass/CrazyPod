@@ -49,8 +49,10 @@
 enum crazypod_playback_command {
     CRAZYPOD_PLAYBACK_COMMAND_PAUSE = 1,
     CRAZYPOD_PLAYBACK_COMMAND_RESUME,
+    CRAZYPOD_PLAYBACK_COMMAND_STOP,
     CRAZYPOD_PLAYBACK_COMMAND_NEXT,
     CRAZYPOD_PLAYBACK_COMMAND_PREVIOUS,
+    CRAZYPOD_PLAYBACK_COMMAND_SELECT,
 };
 
 struct crazypod_lock_playback_cache {
@@ -307,17 +309,30 @@ static void playback_command_thread(void)
         case CRAZYPOD_PLAYBACK_COMMAND_RESUME:
             audio_resume();
             break;
+        case CRAZYPOD_PLAYBACK_COMMAND_STOP:
+            audio_stop();
+            crazypod_state_forget_resume();
+            crazypod_state_mark_dirty();
+            break;
         case CRAZYPOD_PLAYBACK_COMMAND_NEXT:
             crazypod_playback_next();
             break;
         case CRAZYPOD_PLAYBACK_COMMAND_PREVIOUS:
             crazypod_playback_previous_or_restart();
             break;
+        case CRAZYPOD_PLAYBACK_COMMAND_SELECT:
+            if(event.data >= 0 && event.data < crazypod_queue_count()) {
+                playlist_start((int)event.data, 0, 0);
+                crazypod_state_forget_resume();
+                crazypod_state_mark_dirty();
+            }
+            break;
         default:
             continue;
         }
         requested_playing =
-            (audio_status() & AUDIO_STATUS_PAUSE) == 0;
+            (audio_status() & (AUDIO_STATUS_PLAY | AUDIO_STATUS_PAUSE)) ==
+                AUDIO_STATUS_PLAY;
         mutex_lock(&lock_playback_mutex);
         if(lock_playback.requested_playing == requested_playing)
             lock_playback.requested_playing = -1;
@@ -409,6 +424,11 @@ void crazypod_playback_initialize(void)
         if(!playback_command_thread_started)
             panicf("playback command thread");
     }
+}
+
+bool crazypod_playback_commands_ready(void)
+{
+    return playback_command_thread_started;
 }
 
 void crazypod_playback_headphone_changed(bool inserted)
@@ -632,6 +652,16 @@ void crazypod_playback_toggle_async(void)
         0);
 }
 
+void crazypod_playback_stop_async(void)
+{
+    mutex_lock(&lock_playback_mutex);
+    lock_playback.requested_playing = false;
+    mutex_unlock(&lock_playback_mutex);
+    queue_post(
+        &playback_command_queue,
+        CRAZYPOD_PLAYBACK_COMMAND_STOP, 0);
+}
+
 void crazypod_playback_next_async(void)
 {
     char path[MAX_PATH];
@@ -687,6 +717,19 @@ void crazypod_playback_previous_or_restart_async(void)
     if(crazypod_queue_copy_path(
            requested_index, path, sizeof(path)))
         request_lock_metadata_warm(path);
+}
+
+void crazypod_playback_select_async(int queue_index)
+{
+    if(queue_index < 0 || queue_index >= crazypod_queue_count())
+        return;
+    mutex_lock(&lock_playback_mutex);
+    lock_playback.requested_queue_index = queue_index;
+    lock_playback.requested_playing = true;
+    mutex_unlock(&lock_playback_mutex);
+    queue_post(
+        &playback_command_queue,
+        CRAZYPOD_PLAYBACK_COMMAND_SELECT, queue_index);
 }
 
 void crazypod_playback_refresh_lock_screen(void)

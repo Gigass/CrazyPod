@@ -12,6 +12,7 @@
 #include "metadata.h"
 #include "playlist.h"
 #include "settings.h"
+#include "iap-usb.h"
 
 #include "crazypod_playlist.h"
 #include "crazypod_state.h"
@@ -170,12 +171,14 @@ int playlist_create(const char *dir, const char *file)
     queue_info.started = false;
     ++queue_generation;
     queue_unlock();
+    iap_on_tracks_count(0);
     return 0;
 }
 
 int playlist_insert_track(struct playlist_info *playlist, const char *filename,
                           int position, bool queued, bool sync)
 {
+    int count;
     int insert_at;
     int i;
 
@@ -206,9 +209,11 @@ int playlist_insert_track(struct playlist_info *playlist, const char *filename,
     copy_path(queue_paths[insert_at], filename);
     copy_path(original_paths[insert_at], filename);
     ++queue_length;
+    count = queue_length;
     queue_info.amount = queue_length;
     ++queue_generation;
     queue_unlock();
+    iap_on_tracks_count(count);
     return insert_at;
 }
 
@@ -277,6 +282,7 @@ bool playlist_next_dir(int direction)
 
 void playlist_skip_entry(struct playlist_info *playlist, int steps)
 {
+    int count;
     int index;
     int i;
 
@@ -301,7 +307,9 @@ void playlist_skip_entry(struct playlist_info *playlist, int steps)
     queue_info.amount = queue_length;
     queue_info.index = queue_index;
     ++queue_generation;
+    count = queue_length;
     queue_unlock();
+    iap_on_tracks_count(count);
 }
 
 int playlist_update_resume_info(const struct mp3entry *id3)
@@ -479,6 +487,8 @@ static bool queue_replace(const char *const *paths, int count,
         queue_info.started = true;
     }
     queue_unlock();
+    iap_on_tracks_count(count);
+    iap_on_shuffle_state(crazypod_queue_shuffle());
     if(start_playback) {
         audio_play(0, 0);
         audio_resume();
@@ -543,6 +553,8 @@ void crazypod_queue_restore_finish(int selected_index, bool shuffled)
     global_settings.playlist_shuffle = shuffled;
     ++queue_generation;
     queue_unlock();
+    iap_on_tracks_count(playlist_amount());
+    iap_on_shuffle_state(shuffled);
 }
 
 int crazypod_queue_count(void)
@@ -622,6 +634,7 @@ void crazypod_queue_set_shuffle(bool enabled)
     queue_lock();
     queue_set_shuffle_locked(enabled);
     queue_unlock();
+    iap_on_shuffle_state(enabled);
 }
 
 bool crazypod_queue_shuffle(void)
@@ -642,6 +655,7 @@ void crazypod_queue_set_repeat(int repeat_mode)
     global_settings.repeat_mode = repeat_mode;
     ++queue_generation;
     queue_unlock();
+    iap_on_repeat_state(repeat_mode);
 }
 
 int crazypod_queue_repeat(void)

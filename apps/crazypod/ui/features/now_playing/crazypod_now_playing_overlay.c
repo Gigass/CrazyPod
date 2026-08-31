@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "audio.h"
+#include "iap-usb.h"
 #include "settings.h"
 #include "sound.h"
 
@@ -1612,6 +1613,7 @@ void crazypod_now_playing_adjust_volume(int direction)
     if(volume != global_status.volume) {
         sound_set_volume(volume);
         global_status.volume = volume;
+        iap_on_volume(volume);
         crazypod_state_mark_dirty();
     }
     refresh_now_volume_hud(volume);

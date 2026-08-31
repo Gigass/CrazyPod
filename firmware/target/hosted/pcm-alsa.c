@@ -48,6 +48,7 @@
 #include "pcm-internal.h"
 #include "pcm_mixer.h"
 #include "pcm_sampr.h"
+#include "pcm_sink.h"
 #include "audiohw.h"
 #include "pcm-alsa.h"
 
@@ -121,7 +122,7 @@ void pcm_alsa_set_capture_device(const char *device)
 }
 #endif
 
-static int set_hwparams(snd_pcm_t *handle)
+static int set_hwparams(snd_pcm_t *handle, unsigned long sampr)
 {
     int err;
     unsigned int srate;
@@ -135,10 +136,10 @@ static int set_hwparams(snd_pcm_t *handle)
        Note these are in FRAMES, and are sized to be about 8.5ms
        for the buffer and 2.1ms for the period
      */
-    if (pcm_sampr > SAMPR_96) {
+    if (sampr > SAMPR_96) {
         buffer_size = MIX_FRAME_SAMPLES * 4 * 4;
         period_size = MIX_FRAME_SAMPLES * 4;
-    } else if (pcm_sampr > SAMPR_48) {
+    } else if (sampr > SAMPR_48) {
         buffer_size = MIX_FRAME_SAMPLES * 2 * 4;
         period_size = MIX_FRAME_SAMPLES * 2;
     } else {
@@ -175,17 +176,17 @@ static int set_hwparams(snd_pcm_t *handle)
         goto error;
     }
     /* set the stream rate */
-    srate = pcm_sampr;
+    srate = sampr;
     err = snd_pcm_hw_params_set_rate_near(handle, params, &srate, 0);
     if (err < 0)
     {
-        logf("Rate %luHz not available for playback: %s", pcm_sampr, snd_strerror(err));
+        logf("Rate %luHz not available for playback: %s", sampr, snd_strerror(err));
         goto error;
     }
     real_sample_rate = srate;
-    if (real_sample_rate != pcm_sampr)
+    if (real_sample_rate != sampr)
     {
-        logf("Rate doesn't match (requested %luHz, get %dHz)", pcm_sampr, real_sample_rate);
+        logf("Rate doesn't match (requested %luHz, get %dHz)", sampr, real_sample_rate);
         err = -EINVAL;
         goto error;
     }
@@ -626,7 +627,7 @@ static void open_hwdev(const char *device, snd_pcm_stream_t mode)
     atexit(alsadev_cleanup);
 }
 
-void pcm_play_dma_init(void)
+static void sink_dma_init(void)
 {
     logf("PCM DMA Init");
 
@@ -637,48 +638,50 @@ void pcm_play_dma_init(void)
     return;
 }
 
-void pcm_play_lock(void)
+static void sink_lock(void)
 {
     pthread_mutex_lock(&pcm_mtx);
 }
 
-void pcm_play_unlock(void)
+static void sink_unlock(void)
 {
     pthread_mutex_unlock(&pcm_mtx);
 }
 
-static void pcm_dma_apply_settings_nolock(void)
+static void sink_set_freq_nolock(uint16_t freq)
 {
-    logf("PCM DMA Settings %d %lu", last_sample_rate, pcm_sampr);
+    unsigned int sampr = hw_freq_sampr[freq];
 
-    if (last_sample_rate != pcm_sampr)
+    logf("PCM DMA Settings %d %lu", last_sample_rate, sampr);
+
+    if (last_sample_rate != sampr)
     {
-        last_sample_rate = pcm_sampr;
+        last_sample_rate = sampr;
 
 #ifdef AUDIOHW_MUTE_ON_SRATE_CHANGE
         audiohw_mute(true);
 #endif
         snd_pcm_drop(handle);
 
-        set_hwparams(handle); // FIXME: check return code?
+        set_hwparams(handle, sampr); // FIXME: check return code?
         set_swparams(handle); // FIXME: check return code?
 
 #if defined(HAVE_NWZ_LINUX_CODEC)
         /* Sony NWZ linux driver uses a nonstandard mecanism to set the sampling rate */
-        audiohw_set_frequency(pcm_sampr);
+        audiohw_set_frequency(sampr);
 #endif
         /* (Will be unmuted by pcm resuming) */
     }
 }
 
-void pcm_dma_apply_settings(void)
+static void sink_set_freq(uint16_t freq)
 {
-    pcm_play_lock();
-    pcm_dma_apply_settings_nolock();
-    pcm_play_unlock();
+    sink_lock();
+    sink_set_freq_nolock(freq);
+    sink_unlock();
 }
 
-void pcm_play_dma_stop(void)
+static void sink_dma_stop(void)
 {
     logf("PCM DMA stop (%d)", snd_pcm_state(handle));
 
@@ -691,10 +694,9 @@ void pcm_play_dma_stop(void)
 #endif
 }
 
-void pcm_play_dma_start(const void *addr, size_t size)
+static void sink_dma_start(const void *addr, size_t size)
 {
     logf("PCM DMA start (%p %d)", addr, size);
-    pcm_dma_apply_settings_nolock();
 
     pcm_data = addr;
     pcm_size = size;
@@ -780,7 +782,7 @@ void pcm_play_dma_start(const void *addr, size_t size)
     }
 }
 
-void pcm_play_dma_postinit(void)
+static void sink_dma_postinit(void)
 {
     audiohw_postinit();
 
@@ -799,15 +801,32 @@ unsigned int pcm_alsa_get_xruns(void)
     return xruns;
 }
 
+struct pcm_sink builtin_pcm_sink = {
+    .caps = {
+        .samprs       = hw_freq_sampr,
+        .num_samprs   = HW_NUM_FREQ,
+        .default_freq = HW_FREQ_DEFAULT,
+    },
+    .ops = {
+        .init     = sink_dma_init,
+        .postinit = sink_dma_postinit,
+        .set_freq = sink_set_freq,
+        .lock     = sink_lock,
+        .unlock   = sink_unlock,
+        .play     = sink_dma_start,
+        .stop     = sink_dma_stop,
+    },
+};
+
 #ifdef HAVE_RECORDING
 void pcm_rec_lock(void)
 {
-    pcm_play_lock();
+    sink_lock();
 }
 
 void pcm_rec_unlock(void)
 {
-    pcm_play_unlock();
+    sink_unlock();
 }
 
 void pcm_rec_dma_init(void)
@@ -827,7 +846,6 @@ void pcm_rec_dma_close(void)
 void pcm_rec_dma_start(void *start, size_t size)
 {
     logf("PCM REC DMA start (%p %d)", start, size);
-    pcm_dma_apply_settings_nolock();
     pcm_data_rec = start;
     pcm_size = size;
 

@@ -232,7 +232,16 @@ static inline void usb_configure_drivers(int for_state)
         usb_core_enable_driver(USB_DRIVER_AUDIO, true); /* config 2: always available, host selects */
 #endif /* USB_ENABLE_AUDIO */
 #ifdef USB_ENABLE_IAP_HID
-        usb_core_enable_driver(USB_DRIVER_IAP_HID, true);
+    usb_core_enable_driver(USB_DRIVER_IAP_HID, true);
+#endif
+#ifdef USB_ENABLE_IAP
+    /* Keep accessory configuration 2 enumerable in CrazyPod's charge mode;
+     * mass storage remains disabled until the user explicitly chooses Data. */
+#ifdef IPOD_6G
+    usb_core_enable_driver(USB_DRIVER_IAP, true);
+#else
+    usb_core_enable_driver(USB_DRIVER_IAP, false);
+#endif
 #endif
 
 #ifdef USB_ENABLE_CHARGING_ONLY
@@ -254,7 +263,10 @@ static inline void usb_configure_drivers(int for_state)
         usb_core_enable_driver(USB_DRIVER_AUDIO, true); /* config 2: always available, host selects */
 #endif /* USB_ENABLE_AUDIO */
 #ifdef USB_ENABLE_IAP_HID
-        usb_core_enable_driver(USB_DRIVER_IAP_HID, true);
+    usb_core_enable_driver(USB_DRIVER_IAP_HID, true);
+#endif
+#ifdef USB_ENABLE_IAP
+    usb_core_enable_driver(USB_DRIVER_IAP, true);
 #endif
 #ifdef USB_ENABLE_CHARGING_ONLY
         usb_core_enable_driver(USB_DRIVER_CHARGING_ONLY, false);

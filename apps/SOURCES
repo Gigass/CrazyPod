@@ -1,6 +1,7 @@
 crazypod/crazypod_main.c
 #ifdef IPOD_ACCESSORY_PROTOCOL
 crazypod/accessory/crazypod_iap_simple.c
+crazypod/accessory/crazypod_usb_iap.c
 #endif
 crazypod/crazypod_lcd.c
 crazypod/crazypod_runtime_font.c

@@ -847,9 +847,9 @@ static void usb_dw_epstart(int epnum, enum usb_dw_epdir epdir,
      * this — without it, the transfer never completes (no XFRC). */
     if (((DWC_EPCTL(epnum, epdir) >> 18) & 3) == EPTYP_ISOCHRONOUS)
     {
-        /* DSTS SOFFN bit 0 gives current frame parity.
-         * Schedule for the opposite parity (= next frame). */
-        if ((DWC_DSTS >> 8) & 1)
+        /* High-speed isochronous transfers use the even-frame PID here;
+         * full-speed transfers follow the current frame parity. */
+        if (usb_drv_port_speed() || (usb_drv_get_frame_number() & 1))
             DWC_EPCTL(epnum, epdir) |= EPENA | nak | SETD0PIDEF; /* even */
         else
             DWC_EPCTL(epnum, epdir) |= EPENA | nak | SETD1PIDOF; /* odd */
@@ -1257,7 +1257,8 @@ static void usb_dw_irq(void)
             if ((epctl & EPENA) &&
                 (((epctl >> 18) & 0x3) == EPTYP_ISOCHRONOUS))
             {
-                if ((DWC_DSTS >> 8) & 1)
+                if (usb_drv_port_speed() ||
+                    (usb_drv_get_frame_number() & 1))
                     DWC_DIEPCTL(ep) |= EPENA | CNAK | SETD0PIDEF;
                 else
                     DWC_DIEPCTL(ep) |= EPENA | CNAK | SETD1PIDOF;
@@ -1682,23 +1683,20 @@ void INT_USB_FUNC(void)
 
 int usb_drv_init_endpoint(int endpoint, int type, int max_packet_size)
 {
-    (void)max_packet_size; /* FIXME: support max packet size override */
-
     enum usb_dw_epdir epdir = (EP_DIR(endpoint) == DIR_IN) ? USB_DW_EPDIR_IN : USB_DW_EPDIR_OUT;
     struct usb_dw_ep* dw_ep = usb_dw_get_ep(EP_NUM(endpoint), epdir);
 
-    int maxpktsize;
-    if(type == EPTYP_ISOCHRONOUS)
+    if(max_packet_size < 0)
     {
-        maxpktsize = 1023;
-    }
-    else
-    {
-        maxpktsize = usb_drv_port_speed() ? 512 : 64;
+        if(type == EPTYP_ISOCHRONOUS)
+            max_packet_size = 1023;
+        else
+            max_packet_size = usb_drv_port_speed() ? 512 : 64;
     }
 
     usb_dw_target_disable_irq();
-    int res = usb_dw_configure_ep(EP_NUM(endpoint), epdir, type, maxpktsize);
+    int res = usb_dw_configure_ep(
+        EP_NUM(endpoint), epdir, type, max_packet_size);
     usb_dw_target_enable_irq();
 
     if(res >= 0)
@@ -1769,12 +1767,11 @@ void usb_drv_control_response(enum usb_control_response resp,
     usb_dw_target_enable_irq();
 }
 
-int usb_drv_get_frame_number()
+int usb_drv_get_frame_number(void)
 {
-    // SOFFN is 14 bits, the least significant 3 appear to be some sort of microframe count.
-    // The USB spec says a frame number is 11 bits. This way we get 1 frame per millisecond,
-    // just like we're supposed to!
-    return (DWC_DSTS >> 11) & 0x7FF;
+    if (usb_drv_port_speed())
+        return (DWC_DSTS >> 11) & 0x7FF;
+    return (DWC_DSTS >> 8) & 0x3FFF;
 }
 
 int usb_drv_get_iisoixfr_count(void)

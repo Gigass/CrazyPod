@@ -176,6 +176,9 @@ enum {
 #ifdef USB_ENABLE_IAP_HID
     USB_DRIVER_IAP_HID,
 #endif
+#ifdef USB_ENABLE_IAP
+    USB_DRIVER_IAP,
+#endif
     USB_NUM_DRIVERS
 };
 
