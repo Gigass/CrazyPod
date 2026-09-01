@@ -45,12 +45,14 @@ static void configure_reader_layout_for_size(
 {
     if(size == 0)
         size = 14;
-    unsigned line_height = (size * 1448u + 999u) / 1000u;
+    unsigned line_height =
+        crazypod_books_screen_reader_line_height(size);
     unsigned content_height = toolbar_visible
         ? 206u - 28u : (unsigned)LCD_HEIGHT - 28u;
     unsigned max_lines = content_height / line_height;
     unsigned max_line_units =
-        ((unsigned)LCD_WIDTH - 8u) * 2u / size;
+        ((unsigned)LCD_WIDTH -
+         CRAZYPOD_BOOKS_READER_MARGIN * 2u) * 2u / size;
 
     if(max_lines == 0)
         max_lines = 1;

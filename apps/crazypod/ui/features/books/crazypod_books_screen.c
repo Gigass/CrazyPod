@@ -15,7 +15,6 @@
 #define CRAZYPOD_BOOKS_FONT (&lv_font_source_han_sans_sc_14_cjk)
 #define CRAZYPOD_BOOKS_READER_TOP 28
 #define CRAZYPOD_BOOKS_READER_TOOLBAR_TOP 206
-#define CRAZYPOD_BOOKS_READER_MARGIN 4
 #define CRAZYPOD_BOOKS_IMAGE_MARGIN 8
 #define CRAZYPOD_BOOKS_IMAGE_MAX_HEIGHT 204
 #define CRAZYPOD_BOOKS_WHITE 0xFFFFFF
@@ -30,6 +29,19 @@ static const lv_font_t *books_text_font(unsigned size)
     return size >= 16
         ? &lv_font_source_han_sans_sc_16_cjk
         : CRAZYPOD_BOOKS_FONT;
+}
+
+unsigned crazypod_books_screen_reader_line_height(unsigned size)
+{
+    const lv_font_t *font = books_text_font(size);
+    int line_height;
+
+    /* Pagination must follow the font actually rendered.  The bundled
+     * fallback fonts have different metrics from the runtime font files. */
+    if(font == NULL)
+        return size > 0 ? size : 1;
+    line_height = lv_font_get_line_height(font);
+    return line_height > 0 ? (unsigned)line_height : 1;
 }
 
 void crazypod_books_screen_render_reader(
