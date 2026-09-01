@@ -1,0 +1,131 @@
+name: CrazyPod build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hardware:
+    name: iPod 6G firmware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils-arm-none-eabi \
+            gcc-arm-none-eabi \
+            libfreetype6-dev \
+            libnewlib-arm-none-eabi \
+            make \
+            perl \
+            pkg-config \
+            python3 \
+            zip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/miniapp-builder/package-lock.json
+
+      - name: Build host font converter
+        shell: bash
+        run: make -C tools convttf
+
+      - name: Build iPod 6G firmware
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! ./build-hw.sh 2>&1 | tee build-hw.log; then
+            {
+              echo '## Hardware build log (tail)'
+              echo '```text'
+              tail -n 120 build-hw.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Upload hardware build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crazypod-ipod6g-build-log
+          if-no-files-found: warn
+          path: build-hw.log
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crazypod-ipod6g-firmware
+          if-no-files-found: error
+          path: |
+            build-hw-ipod6g/rockbox.ipod
+            build-hw-ipod6g/CrazyPod-6G.zip
+            dist/miniapps/*.cpk
+
+  simulator:
+    name: macOS simulator
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Install simulator dependencies
+        run: |
+          brew untap aws/tap || true
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install freetype sdl2 ffmpeg pkg-config
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/miniapp-builder/package-lock.json
+
+      - name: Build host font converter
+        shell: bash
+        run: |
+          export PKG_CONFIG_PATH="$(brew --prefix freetype)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+          make -C tools convttf
+
+      - name: Build simulator
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! ./build-sim.sh 2>&1 | tee build-sim.log; then
+            {
+              echo '## Simulator build log (tail)'
+              echo '```text'
+              tail -n 120 build-sim.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Upload simulator build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crazypod-macos-build-log
+          if-no-files-found: warn
+          path: build-sim.log
+
+      - name: Upload simulator artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crazypod-macos-simulator
+          if-no-files-found: error
+          path: |
+            build-sim/rockboxui
+            build-sim/CrazyPod Simulator.app

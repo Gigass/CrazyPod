@@ -161,7 +161,9 @@ void crazypod_music_library_initialize(long now)
     library.scan_failure = CRAZYPOD_MUSIC_SCAN_OK;
     library.artwork_cache_failed = false;
     library.artwork_preparing = false;
-    library.scan_pending = !catalog_ready;
+    library.scan_pending = !catalog_ready ||
+        crazypod_music_library_needs_validation(
+            catalog_ready, crazypod_music_catalog_validation());
     library.scan_not_before = now + HZ;
 }
 

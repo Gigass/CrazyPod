@@ -43,9 +43,9 @@ void crazypod_books_screen_render_reader(
             ? page_text : CP_TR("This book could not be decoded."),
         reader_font, ink_color,
         LV_OPA_COVER);
-    lv_obj_set_pos(label, 14, 42);
-    lv_obj_set_width(label, 292);
-    lv_obj_set_height(label, 158);
+    lv_obj_set_pos(label, 10, 36);
+    lv_obj_set_width(label, 300);
+    lv_obj_set_height(label, toolbar_visible ? 164 : 196);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
     {
         static const int scales[] = { 224, 256, 256 };
@@ -57,12 +57,8 @@ void crazypod_books_screen_render_reader(
         lv_obj_set_style_transform_pivot_x(label, 0, 0);
         lv_obj_set_style_transform_pivot_y(label, 0, 0);
         if(font_size == 0) {
-            lv_obj_set_width(label, 332);
-            lv_obj_set_height(label, 174);
-        }
-        else if(font_size == 2) {
-            lv_obj_set_width(label, 258);
-            lv_obj_set_height(label, 136);
+            lv_obj_set_width(label, 343);
+            lv_obj_set_height(label, toolbar_visible ? 187 : 224);
         }
     }
 

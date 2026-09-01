@@ -115,6 +115,7 @@ Run the structural and host tests from the repository root:
 sh tests/check-crazypod-ui-architecture.sh
 sh tests/run-crazypod-ui-host-tests.sh
 sh tests/run-miniapp-host-tests.sh
+sh tests/run-gameboy-host-tests.sh
 sh tests/run-epub-host-tests.sh
 sh tests/run-crazypod-font-tests.sh
 python3 tools/check-crazypod-l10n.py --strict-bare

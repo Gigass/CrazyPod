@@ -17,10 +17,14 @@
 #define NOTES_DIRECTORY "/.crazypod/notes"
 #define NOTES_INDEX_PATH NOTES_DIRECTORY "/index.bin"
 #define NOTES_INDEX_TEMP NOTES_DIRECTORY "/index.tmp"
+#define NOTES_TRANSACTION_PATH NOTES_DIRECTORY "/transaction.bin"
+#define NOTES_TRANSACTION_TEMP NOTES_DIRECTORY "/transaction.tmp"
 #define NOTES_DRAFT_PATH NOTES_DIRECTORY "/draft.bin"
 #define NOTES_DRAFT_TEMP NOTES_DIRECTORY "/draft.tmp"
 #define NOTES_MAGIC 0x43504e54u
 #define NOTES_VERSION 1u
+#define NOTES_TRANSACTION_MAGIC 0x43505458u
+#define NOTES_TRANSACTION_VERSION 1u
 #define NOTES_DRAFT_MAGIC 0x43504452u
 #define NOTES_MAX 64
 
@@ -53,6 +57,17 @@ struct note_draft_disk {
     uint32_t checksum;
 };
 
+struct notes_transaction_disk {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    uint32_t id;
+    uint32_t old_body_exists;
+    struct notes_index_disk old_index;
+    struct notes_index_disk new_index;
+    uint32_t checksum;
+};
+
 static struct notes_index_disk index_state;
 static struct note_draft_disk draft_work;
 static char body_work[CRAZYPOD_NOTE_BODY_SIZE];
@@ -69,6 +84,14 @@ static uint32_t draft_checksum(const struct note_draft_disk *draft)
     return crazypod_checksum_with_zeroed_u32(
         draft, sizeof(*draft),
         offsetof(struct note_draft_disk, checksum));
+}
+
+static uint32_t transaction_checksum(
+    const struct notes_transaction_disk *transaction)
+{
+    return crazypod_checksum_with_zeroed_u32(
+        transaction, sizeof(*transaction),
+        offsetof(struct notes_transaction_disk, checksum));
 }
 
 static bool read_exact(int fd, void *buffer, size_t size)
@@ -116,29 +139,75 @@ static void notes_reset(void)
     index_state.next_sequence = 1;
 }
 
-static bool notes_index_save(void)
+static void notes_index_prepare(struct notes_index_disk *index)
+{
+    index->magic = NOTES_MAGIC;
+    index->version = NOTES_VERSION;
+    index->size = sizeof(*index);
+    index->checksum = index_checksum(index);
+}
+
+static bool notes_index_write_file(
+    const char *path, const struct notes_index_disk *source)
 {
     int fd;
     bool success;
+    struct notes_index_disk index = *source;
 
     mkdir("/.crazypod");
     mkdir(NOTES_DIRECTORY);
-    index_state.magic = NOTES_MAGIC;
-    index_state.version = NOTES_VERSION;
-    index_state.size = sizeof(index_state);
-    index_state.checksum = index_checksum(&index_state);
-    fd = open(NOTES_INDEX_TEMP, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    notes_index_prepare(&index);
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)
         return false;
-    success = write_exact(fd, &index_state, sizeof(index_state));
+    success = write_exact(fd, &index, sizeof(index));
     if(fsync(fd) < 0)
         success = false;
-    close(fd);
-    if(!success || rename(NOTES_INDEX_TEMP, NOTES_INDEX_PATH) < 0) {
-        remove(NOTES_INDEX_TEMP);
+    if(close(fd) < 0)
+        success = false;
+    if(!success) {
+        remove(path);
         return false;
     }
     return true;
+}
+
+static bool notes_index_write(
+    const char *temporary, const char *path,
+    const struct notes_index_disk *source)
+{
+    if(!notes_index_write_file(temporary, source) ||
+       rename(temporary, path) < 0) {
+        remove(temporary);
+        return false;
+    }
+    return true;
+}
+
+static bool notes_index_save(void)
+{
+    notes_index_prepare(&index_state);
+    return notes_index_write(
+        NOTES_INDEX_TEMP, NOTES_INDEX_PATH, &index_state);
+}
+
+static bool notes_index_read(
+    const char *path, struct notes_index_disk *index)
+{
+    int fd = open(path, O_RDONLY);
+    bool valid;
+
+    if(fd < 0)
+        return false;
+    valid = read_exact(fd, index, sizeof(*index)) &&
+        index->magic == NOTES_MAGIC &&
+        index->version == NOTES_VERSION &&
+        index->size == sizeof(*index) &&
+        index->count <= NOTES_MAX &&
+        index->checksum == index_checksum(index);
+    if(close(fd) < 0)
+        valid = false;
+    return valid;
 }
 
 static void note_path(char *path, size_t size, uint32_t id,
@@ -148,9 +217,22 @@ static void note_path(char *path, size_t size, uint32_t id,
              (unsigned long)id, suffix);
 }
 
-static bool note_body_write(uint32_t id, const char *body)
+static bool note_body_exists(uint32_t id)
 {
     char path[MAX_PATH];
+    int fd;
+
+    note_path(path, sizeof(path), id, "txt");
+    fd = open(path, O_RDONLY);
+    if(fd < 0)
+        return false;
+    if(close(fd) < 0)
+        return false;
+    return true;
+}
+
+static bool note_body_write_temp(uint32_t id, const char *body)
+{
     char temporary[MAX_PATH];
     size_t length = strlen(body != NULL ? body : "");
     int fd;
@@ -158,7 +240,6 @@ static bool note_body_write(uint32_t id, const char *body)
 
     mkdir("/.crazypod");
     mkdir(NOTES_DIRECTORY);
-    note_path(path, sizeof(path), id, "txt");
     note_path(temporary, sizeof(temporary), id, "tmp");
     fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)
@@ -166,12 +247,168 @@ static bool note_body_write(uint32_t id, const char *body)
     success = write_exact(fd, body != NULL ? body : "", length);
     if(fsync(fd) < 0)
         success = false;
-    close(fd);
-    if(!success || rename(temporary, path) < 0) {
+    if(close(fd) < 0)
+        success = false;
+    if(!success) {
         remove(temporary);
         return false;
     }
     return true;
+}
+
+static bool note_body_install(uint32_t id)
+{
+    char path[MAX_PATH];
+    char temporary[MAX_PATH];
+
+    note_path(path, sizeof(path), id, "txt");
+    note_path(temporary, sizeof(temporary), id, "tmp");
+    return rename(temporary, path) == 0;
+}
+
+static bool note_body_backup(uint32_t id, bool old_body_exists)
+{
+    char path[MAX_PATH];
+    char backup[MAX_PATH];
+
+    if(!old_body_exists)
+        return true;
+    note_path(path, sizeof(path), id, "txt");
+    note_path(backup, sizeof(backup), id, "bak");
+    remove(backup);
+    return rename(path, backup) == 0;
+}
+
+static bool note_body_restore(uint32_t id, bool old_body_exists)
+{
+    char path[MAX_PATH];
+    char backup[MAX_PATH];
+
+    note_path(path, sizeof(path), id, "txt");
+    note_path(backup, sizeof(backup), id, "bak");
+    if(!old_body_exists) {
+        remove(path);
+        return true;
+    }
+    if(!file_exists(backup))
+        return file_exists(path);
+    remove(path);
+    return rename(backup, path) == 0;
+}
+
+static void note_body_cleanup(uint32_t id)
+{
+    char temporary[MAX_PATH];
+    char backup[MAX_PATH];
+
+    note_path(temporary, sizeof(temporary), id, "tmp");
+    note_path(backup, sizeof(backup), id, "bak");
+    remove(temporary);
+    remove(backup);
+}
+
+static bool notes_transaction_write(
+    uint32_t id, bool old_body_exists,
+    const struct notes_index_disk *old_index,
+    const struct notes_index_disk *new_index)
+{
+    struct notes_transaction_disk transaction;
+    int fd;
+    bool success;
+
+    memset(&transaction, 0, sizeof(transaction));
+    transaction.magic = NOTES_TRANSACTION_MAGIC;
+    transaction.version = NOTES_TRANSACTION_VERSION;
+    transaction.size = sizeof(transaction);
+    transaction.id = id;
+    transaction.old_body_exists = old_body_exists ? 1u : 0u;
+    transaction.old_index = *old_index;
+    transaction.new_index = *new_index;
+    notes_index_prepare(&transaction.old_index);
+    notes_index_prepare(&transaction.new_index);
+    transaction.checksum = transaction_checksum(&transaction);
+    mkdir("/.crazypod");
+    mkdir(NOTES_DIRECTORY);
+    fd = open(NOTES_TRANSACTION_TEMP,
+              O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(fd < 0)
+        return false;
+    success = write_exact(fd, &transaction, sizeof(transaction));
+    if(fsync(fd) < 0)
+        success = false;
+    if(close(fd) < 0)
+        success = false;
+    if(!success || rename(NOTES_TRANSACTION_TEMP,
+                          NOTES_TRANSACTION_PATH) < 0) {
+        remove(NOTES_TRANSACTION_TEMP);
+        return false;
+    }
+    return true;
+}
+
+static bool notes_transaction_read(
+    struct notes_transaction_disk *transaction)
+{
+    int fd = open(NOTES_TRANSACTION_PATH, O_RDONLY);
+    bool valid;
+
+    if(fd < 0)
+        return false;
+    valid = read_exact(fd, transaction, sizeof(*transaction)) &&
+        transaction->magic == NOTES_TRANSACTION_MAGIC &&
+        transaction->version == NOTES_TRANSACTION_VERSION &&
+        transaction->size == sizeof(*transaction) &&
+        transaction->old_body_exists <= 1u &&
+        transaction->old_index.checksum ==
+            index_checksum(&transaction->old_index) &&
+        transaction->new_index.checksum ==
+            index_checksum(&transaction->new_index) &&
+        transaction->checksum == transaction_checksum(transaction);
+    if(close(fd) < 0)
+        valid = false;
+    return valid;
+}
+
+static bool notes_index_matches(
+    const struct notes_index_disk *expected)
+{
+    struct notes_index_disk current;
+
+    return notes_index_read(NOTES_INDEX_PATH, &current) &&
+        memcmp(&current, expected, sizeof(current)) == 0;
+}
+
+static void notes_transaction_recover(void)
+{
+    struct notes_transaction_disk transaction;
+    bool committed;
+    bool body_ready;
+
+    if(!file_exists(NOTES_TRANSACTION_PATH)) {
+        remove(NOTES_TRANSACTION_TEMP);
+        return;
+    }
+    if(!notes_transaction_read(&transaction)) {
+        remove(NOTES_TRANSACTION_TEMP);
+        remove(NOTES_TRANSACTION_PATH);
+        return;
+    }
+    committed = notes_index_matches(&transaction.new_index);
+    body_ready = note_body_exists(transaction.id);
+    if(committed && !body_ready && note_body_install(transaction.id))
+        body_ready = note_body_exists(transaction.id);
+    if(committed && body_ready) {
+        note_body_cleanup(transaction.id);
+        remove(NOTES_TRANSACTION_PATH);
+        return;
+    }
+    if(!note_body_restore(
+           transaction.id, transaction.old_body_exists != 0) ||
+       !notes_index_write(
+           NOTES_INDEX_TEMP, NOTES_INDEX_PATH, &transaction.old_index))
+        return;
+    note_body_cleanup(transaction.id);
+    remove(NOTES_TRANSACTION_PATH);
 }
 
 static int note_slot(uint32_t id)
@@ -187,29 +424,17 @@ static int note_slot(uint32_t id)
 
 void crazypod_notes_init(void)
 {
-    bool valid;
-    int fd;
+    struct notes_index_disk loaded;
 
+    notes_transaction_recover();
     notes_reset();
-    fd = open(NOTES_INDEX_PATH, O_RDONLY);
-    if(fd < 0)
+    if(!notes_index_read(NOTES_INDEX_PATH, &loaded))
         return;
-    valid =
-        read_exact(fd, &index_state, sizeof(index_state)) &&
-        index_state.magic == NOTES_MAGIC &&
-        index_state.version == NOTES_VERSION &&
-        index_state.size == sizeof(index_state) &&
-        index_state.count <= NOTES_MAX &&
-        index_state.checksum == index_checksum(&index_state);
-    close(fd);
-    if(valid) {
-        if(index_state.next_id == 0)
-            index_state.next_id = 1;
-        if(index_state.next_sequence == 0)
-            index_state.next_sequence = 1;
-    }
-    else
-        notes_reset();
+    index_state = loaded;
+    if(index_state.next_id == 0)
+        index_state.next_id = 1;
+    if(index_state.next_sequence == 0)
+        index_state.next_sequence = 1;
 }
 
 static bool note_before(const struct note_disk *left,
@@ -380,12 +605,18 @@ bool crazypod_note_read_body(uint32_t id, char *body, size_t size)
 uint32_t crazypod_note_save(uint32_t id, const char *title,
                             const char *body)
 {
-    int slot = note_slot(id);
-    bool created = false;
+    struct notes_index_disk old_index;
+    struct notes_index_disk new_index;
+    int slot;
+    bool old_body_exists;
+    bool transaction_written = false;
 
+    notes_transaction_recover();
+    slot = note_slot(id);
     if((title == NULL || title[0] == '\0') &&
        (body == NULL || body[0] == '\0'))
         return 0;
+    old_index = index_state;
     if(slot < 0) {
         if(index_state.count >= NOTES_MAX)
             return 0;
@@ -396,12 +627,6 @@ uint32_t crazypod_note_save(uint32_t id, const char *title,
         if(id == 0)
             id = index_state.next_id++;
         index_state.notes[slot].id = id;
-        created = true;
-    }
-    if(!note_body_write(id, body != NULL ? body : "")) {
-        if(created)
-            --index_state.count;
-        return 0;
     }
     if(title == NULL || title[0] == '\0') {
         char generated[CRAZYPOD_NOTE_TITLE_SIZE];
@@ -424,9 +649,43 @@ uint32_t crazypod_note_save(uint32_t id, const char *title,
     index_state.notes[slot].updated_sequence =
         index_state.next_sequence++;
     index_state.notes[slot].deleted = 0;
-    if(!notes_index_save())
-        return 0;
+    new_index = index_state;
+    notes_index_prepare(&new_index);
+    old_body_exists = note_body_exists(id);
+    if(!note_body_write_temp(id, body != NULL ? body : "") ||
+       !notes_index_write_file(NOTES_INDEX_TEMP, &new_index))
+        goto save_failed;
+    if(!notes_transaction_write(
+           id, old_body_exists, &old_index, &new_index))
+        goto save_failed;
+    transaction_written = true;
+    if(!note_body_backup(id, old_body_exists) ||
+       !note_body_install(id) ||
+       rename(NOTES_INDEX_TEMP, NOTES_INDEX_PATH) < 0)
+        goto save_failed;
+    note_body_cleanup(id);
+    remove(NOTES_TRANSACTION_PATH);
+    index_state = new_index;
     return id;
+
+save_failed:
+    remove(NOTES_INDEX_TEMP);
+    if(transaction_written) {
+        if(!note_body_restore(id, old_body_exists) ||
+           !notes_index_write(
+               NOTES_INDEX_TEMP, NOTES_INDEX_PATH, &old_index))
+            transaction_written = true;
+        else {
+            note_body_cleanup(id);
+            remove(NOTES_TRANSACTION_PATH);
+            transaction_written = false;
+        }
+    }
+    else {
+        note_body_cleanup(id);
+    }
+    index_state = old_index;
+    return 0;
 }
 
 uint32_t crazypod_note_duplicate(uint32_t id)

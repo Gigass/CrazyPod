@@ -38,7 +38,7 @@ static const char *const app_paths[CRAZYPOD_ICON_COUNT] = {
     "music", "podcasts", "mini_apps", "shuffle",
     "screen_lock", "photos", "diy", "fitness", "books", "notes",
     "clock", "contacts", "calendar", "stopwatch",
-    "extras", "settings"
+    "extras", "settings", "mini_apps"
 };
 
 static uint16_t read_le16(const uint8_t *value)

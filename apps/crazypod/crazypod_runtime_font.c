@@ -19,7 +19,7 @@
 #define CRAZYPOD_FONT_MIN_SIZE 6
 #define CRAZYPOD_FONT_MAX_SIZE 48
 /* Shell faces and a certified theme's faces/line-height variants coexist. */
-#define CRAZYPOD_RUNTIME_FONT_MAX 24
+#define CRAZYPOD_RUNTIME_FONT_MAX 48
 #define CRAZYPOD_ASSET_FONT_MAX 4
 #define CRAZYPOD_FONT_COVERAGE_BYTES 8192
 #define CRAZYPOD_FONT_HEADER_SIZE 36
@@ -42,6 +42,8 @@ static struct crazypod_asset_font_slot runtime_fonts[
     CRAZYPOD_RUNTIME_FONT_MAX];
 static struct crazypod_asset_font_slot asset_fonts[
     CRAZYPOD_ASSET_FONT_MAX];
+static uint8_t runtime_font_coverage[
+    CRAZYPOD_RUNTIME_FONT_MAX][CRAZYPOD_FONT_COVERAGE_BYTES];
 static uint8_t asset_font_coverage[
     CRAZYPOD_ASSET_FONT_MAX][CRAZYPOD_FONT_COVERAGE_BYTES];
 static bool initialized;
@@ -59,6 +61,8 @@ static bool semantic_slot_use_path(
 static const lv_font_t *semantic_font_resolve(
     enum crazypod_font_family family, unsigned size, unsigned weight,
     enum crazypod_font_style style, unsigned line_height, bool persistent);
+static const lv_font_t *fallback_font_resolve(
+    unsigned size, unsigned line_height, bool persistent);
 
 static void record_error(
     const char *reason, const char *family, unsigned size,
@@ -95,9 +99,8 @@ static const char *locale_name(void)
     case CRAZYPOD_LANGUAGE_JAPANESE:
         return "jp";
     default:
-        /* The JP collection also contains Latin, Greek, Cyrillic, Hangul and
-         * the shared CJK repertoire. Locale selection changes regional Han
-         * forms, not the requested pixel metrics. */
+        /* The JP Noto face also contains Latin, Greek, Cyrillic, Hangul and
+         * the shared CJK repertoire. */
         return "jp";
     }
 }
@@ -126,6 +129,13 @@ static const char *family_name(enum crazypod_font_family family)
     case CRAZYPOD_FONT_FAMILY_MONO: return "mono";
     default: return NULL;
     }
+}
+
+/* Keep system text layout stable when Simplified Chinese switches from
+ * Noto's native metrics to PingFang SC's native metrics. */
+static unsigned system_line_height(unsigned size)
+{
+    return (size * 1448u + 999u) / 1000u;
 }
 
 bool crazypod_runtime_font_init(void)
@@ -407,18 +417,72 @@ static bool asset_ensure_loaded(struct crazypod_asset_font_slot *slot)
 static bool semantic_slot_use_path(
     struct crazypod_asset_font_slot *slot, const char *path)
 {
+    unsigned index = (unsigned)(slot - runtime_fonts);
+    bool path_changed;
     bool loaded;
 
     mutex_lock(&slot->glyph_mutex);
-    if(strcmp(slot->path, path) != 0) {
+    path_changed = strcmp(slot->path, path) != 0;
+    if(path_changed) {
         if(slot->font_id >= 0)
             font_unload(slot->font_id);
         slot->font_id = -1;
         strlcpy(slot->path, path, sizeof(slot->path));
+        slot->coverage = NULL;
     }
+    if(slot->coverage == NULL &&
+       (index >= CRAZYPOD_RUNTIME_FONT_MAX ||
+        !load_font_coverage(slot->path, runtime_font_coverage[index]))) {
+        mutex_unlock(&slot->glyph_mutex);
+        return false;
+    }
+    slot->coverage = runtime_font_coverage[index];
     loaded = asset_ensure_loaded(slot);
     mutex_unlock(&slot->glyph_mutex);
     return loaded;
+}
+
+static const lv_font_t *fallback_font_resolve(
+    unsigned size, unsigned line_height, bool persistent)
+{
+    char key[sizeof(runtime_fonts[0].key)];
+    char path[sizeof(runtime_fonts[0].path)];
+    struct crazypod_asset_font_slot *available = NULL;
+    unsigned index;
+    int count;
+
+    count = snprintf(
+        key, sizeof(key), "fallback-system-400-%u-%u",
+        size, line_height);
+    if(count < 0 || (size_t)count >= sizeof(key))
+        return NULL;
+    count = snprintf(
+        path, sizeof(path),
+        FONT_DIR "/crazypod-aot/jp-system-400-%u.fnt", size);
+    if(count < 0 || (size_t)count >= sizeof(path))
+        return NULL;
+    for(index = 0; index < CRAZYPOD_RUNTIME_FONT_MAX; ++index) {
+        struct crazypod_asset_font_slot *slot = &runtime_fonts[index];
+
+        if(slot->used && strcmp(slot->key, key) == 0) {
+            if(persistent)
+                slot->persistent = true;
+            if(!semantic_slot_use_path(slot, path))
+                return NULL;
+            return &slot->lv_font;
+        }
+        if(!slot->used && available == NULL)
+            available = slot;
+    }
+    if(available == NULL)
+        return NULL;
+    font_slot_initialize(
+        available, key, path, line_height, true, persistent);
+    if(!semantic_slot_use_path(available, path)) {
+        memset(available, 0, sizeof(*available));
+        return NULL;
+    }
+    return &available->lv_font;
 }
 
 static const lv_font_t *semantic_font_resolve(
@@ -442,6 +506,8 @@ static const lv_font_t *semantic_font_resolve(
             weight, line_height, NULL);
         return NULL;
     }
+    if(line_height == 0 && family == CRAZYPOD_FONT_FAMILY_SYSTEM)
+        line_height = system_line_height(size);
     count = snprintf(
         key, sizeof(key), "%s-%u-%u-%u",
         family_value, weight, size, line_height);
@@ -467,6 +533,19 @@ static const lv_font_t *semantic_font_resolve(
                     weight, line_height, path);
                 return NULL;
             }
+            if(family == CRAZYPOD_FONT_FAMILY_SYSTEM &&
+               strcmp(locale, "sc") == 0) {
+                slot->lv_font.fallback = fallback_font_resolve(
+                    size, line_height, persistent);
+                if(slot->lv_font.fallback == NULL) {
+                    record_error(
+                        "font fallback load failed", family_value, size,
+                        weight, line_height, path);
+                    return NULL;
+                }
+            }
+            else
+                slot->lv_font.fallback = NULL;
             return &slot->lv_font;
         }
         if(!slot->used && available == NULL)
@@ -486,6 +565,18 @@ static const lv_font_t *semantic_font_resolve(
             weight, line_height, path);
         memset(available, 0, sizeof(*available));
         return NULL;
+    }
+    if(family == CRAZYPOD_FONT_FAMILY_SYSTEM &&
+       strcmp(locale, "sc") == 0) {
+        available->lv_font.fallback = fallback_font_resolve(
+            size, line_height, persistent);
+        if(available->lv_font.fallback == NULL) {
+            record_error(
+                "font fallback load failed", family_value, size,
+                weight, line_height, path);
+            memset(available, 0, sizeof(*available));
+            return NULL;
+        }
     }
     return &available->lv_font;
 }

@@ -26,6 +26,7 @@ crazypod/
 │       ├── settings/
 │       └── miniapps/
 ├── miniapps/            native loader, installer, storage and runtime
+├── gameboy/             Rockboy core adapter, ROM catalog and battery saves
 ├── epub/                EPUB parsing, extraction and cache infrastructure
 ├── photos/              photo catalog, cache and viewport infrastructure
 ├── video/               video catalog and poster infrastructure
@@ -37,6 +38,8 @@ crazypod/
 There are exactly nine UI feature owners. Wallpaper crop belongs to
 Customize. Home/Desktop belongs to Shell. Miniapps is an independent UI
 feature while its runtime remains outside `ui/`.
+The GB/GBC library and native game screen belong to the Miniapps UI feature;
+the emulator adapter and storage remain in `gameboy/` without UI dependencies.
 
 Global `controllers/`, `screens/`, `preview/`, `routes/`, `material/`,
 `menu/`, `media/`, `features/home/`, and `features/wallpaper/` directories

@@ -8,9 +8,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Run at the iPod 6G kernel's maximum scheduling rate. The LCD driver still
- * waits for TE/FMARK when the panel exposes a usable synchronization edge. */
-#define CRAZYPOD_TARGET_FPS HZ
+/* The iPod 6G kernel runs at 100 Hz. A 50 fps cadence maps to an exact
+ * two-tick interval, reducing LCD/CPU work while keeping wheel motion smooth.
+ * The LCD driver still waits for TE/FMARK when the panel exposes a usable
+ * synchronization edge. */
+#define CRAZYPOD_TARGET_FPS 50
 #define CRAZYPOD_FRAME_BUDGET_US \
     (1000000u / CRAZYPOD_TARGET_FPS)
 

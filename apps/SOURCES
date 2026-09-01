@@ -1,4 +1,7 @@
 crazypod/crazypod_main.c
+crazypod/gameboy/crazypod_gameboy_cartridge.c
+crazypod/gameboy/crazypod_gameboy_core.c
+crazypod/gameboy/crazypod_gameboy.c
 #ifdef IPOD_ACCESSORY_PROTOCOL
 crazypod/accessory/crazypod_iap_simple.c
 #endif
@@ -49,6 +52,7 @@ crazypod/ui/features/settings/crazypod_settings_catalog.c
 crazypod/ui/features/settings/crazypod_settings_controller.c
 crazypod/ui/features/settings/crazypod_settings_preview.c
 crazypod/ui/features/miniapps/crazypod_miniapp_screen.c
+crazypod/ui/features/miniapps/crazypod_gameboy_screen.c
 crazypod/ui/features/miniapps/crazypod_miniapp_scene.c
 crazypod/ui/features/miniapps/crazypod_miniapp_scene_renderer.c
 crazypod/ui/features/miniapps/crazypod_miniapp_runtime_controller.c

@@ -230,6 +230,7 @@ cc -std=c99 -Wall -Wextra -Werror \
 "$test_root/crazypod_miniapp_installer_lifecycle_host_test" same
 "$test_root/crazypod_miniapp_installer_lifecycle_host_test" identical
 "$test_root/crazypod_miniapp_installer_lifecycle_host_test" incremental
+"$test_root/crazypod_miniapp_installer_lifecycle_host_test" legacy
 
 cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-miniapp-input-stubs" \

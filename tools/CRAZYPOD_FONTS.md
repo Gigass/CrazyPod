@@ -10,27 +10,38 @@ outside the font.
 
 ## Source fonts
 
-Use the official open-source Source Han Sans / Noto CJK regional fonts:
+The product's Simplified Chinese system face is PingFang SC, fetched at the
+pinned commit recorded by `tools/fetch-crazypod-pingfang.sh` from
+`refinec/PingFangSC`. The six requested weights are kept in the build cache;
+the source font files are not committed to the repository. The fetcher also
+stores the upstream repository license, source revision, and SHA-256 manifest
+alongside the cache.
 
-- SC for Simplified Chinese
-- TC for Traditional Chinese
-- JP for Japanese
-- KR for Korean
+For the fixed-font workflow, set `CRAZYPOD_PINGFANG_SC` to the cached
+`PingFangSC-Regular.ttf` and `CRAZYPOD_NOTO_SC` to the cached
+`NotoSansCJKsc-Regular.otf`. The latter is fetched by
+`tools/fetch-crazypod-noto.sh` from the same pinned Noto CJK revision.
 
-The regional variants matter because shared Han code points can have different
-preferred glyph shapes. Do not generate all four localized fonts from the SC
-file. The Latin Extended characters needed by German, French, Spanish and
-Brazilian Portuguese may be included in each regional font, or generated from
-an OFL-licensed Latin font such as Montserrat.
+PingFang SC does not contain the complete Japanese/Korean catalog used by
+CrazyPod. Fixed LVGL fonts therefore merge PingFang SC first and the pinned
+Noto Sans CJK SC face only for missing code points. The resulting artifact is
+fully covered while the common Simplified Chinese glyphs use PingFang SC.
 
-The repository uses shared Noto Sans CJK SC subsets at 8, 10, 12, 14, and
-16px for fixed product copy. They cover the complete localization catalog,
-including Japanese, Traditional Chinese, and Korean strings, but they are not
-valid fonts for arbitrary media metadata.
+Runtime semantic fonts use PingFang SC for the `system`/`sc` combination.
+`system` in `jp`, `kr`, and `tc`, plus the `serif` and `mono` families, retain
+their regional Noto faces so locale-specific glyph shapes and coverage remain
+correct. The runtime resolver supplies a canonical system line box because
+PingFang SC and Noto CJK have different native vertical metrics.
+
+The Latin Extended characters needed by German, French, Spanish and Brazilian
+Portuguese remain covered by the Noto regional faces. The fixed product fonts
+are not valid fonts for arbitrary media metadata; that text continues to use
+the runtime font service.
 
 The 14 and 16px files retain their historical
-`lv_font_source_han_sans_sc_*` names. Their source font is not committed, so
-regeneration requires a separately supplied, redistributable source.
+`lv_font_source_han_sans_sc_*` names for LVGL/Kconfig compatibility. Their
+generated contents now use PingFang SC first and Noto SC as the explicit
+coverage fallback.
 
 Arbitrary song, artist, album, playlist, book, theme, and Mini App text uses
 the CrazyPod Noto font service. Devtool converts the exact semantic
@@ -68,9 +79,9 @@ same-ID replacement cannot reuse stale bytes. Each active package may load at
 most four private fonts. Missing glyphs fall through to the Noto system face
 at the asset font's pixel height.
 
-macOS system fonts (Arial Unicode, PingFang, Hiragino and Apple SD Gothic Neo)
-are useful for local coverage diagnosis, but must not be copied into the
-repository or used as distributable firmware font sources.
+The PingFang source cache is a build input, not a runtime outline-font store;
+the firmware only ships converted LVGL/RB12 bitmap data. Preserve
+`PingFangSC-LICENSE.txt` and `PingFangSC-SOURCE` in release font packages.
 
 ## Required workflow
 
@@ -103,7 +114,8 @@ Audit the selected source before conversion:
 ```sh
 python3 tools/crazypod_font_tool.py check \
   --chars build/fonts/crazypod-all.txt \
-  --font "$CRAZYPOD_SOURCE_HAN_SC"
+  --font "$CRAZYPOD_PINGFANG_SC" \
+  --font "$CRAZYPOD_NOTO_SC"
 ```
 
 Generate a size-specific LVGL font. `npx` uses the explicitly pinned
@@ -113,13 +125,19 @@ installation of the same version.
 ```sh
 python3 tools/crazypod_font_tool.py generate \
   --chars build/fonts/crazypod-all.txt \
-  --font "$CRAZYPOD_SOURCE_HAN_SC" \
+  --font "$CRAZYPOD_PINGFANG_SC" \
+  --fallback-font "$CRAZYPOD_NOTO_SC" \
   --size 14 \
   --symbol lv_font_source_han_sans_sc_14_cjk \
   --output lib/lvgl/src/font/lv_font_source_han_sans_sc_14_cjk.c
 ```
 
-Finally, audit the committed C artifact, not only the source font:
+The generator accepts one or more `--fallback-font` inputs. Each fallback is
+used only for characters absent from the preceding sources, so the first
+source wins for shared glyphs. This also keeps the command line short enough
+for Windows hosts by passing the manifest as `--symbols` internally.
+
+Finally, audit the committed C artifact, not only the source fonts:
 
 ```sh
 python3 tools/crazypod_font_tool.py check \

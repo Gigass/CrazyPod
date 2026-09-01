@@ -23,6 +23,15 @@ cc -std=c99 -Wall -Wextra -Werror \
 "$test_root/crazypod_ui_pure_host_test"
 
 cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-books-stubs" \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/apps/crazypod/crazypod_books.c" \
+    "$repo_root/tests/crazypod_books_catalog_host_test.c" \
+    -o "$test_root/crazypod_books_catalog_host_test"
+
+"$test_root/crazypod_books_catalog_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-frameclock-stubs" \
     -I"$repo_root/apps/crazypod" \
     -I"$repo_root/apps/crazypod/ui" \
@@ -41,6 +50,15 @@ cc -std=c99 -Wall -Wextra -Werror \
     -o "$test_root/crazypod_lyrics_host_test"
 
 "$test_root/crazypod_lyrics_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-notes-stubs" \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/apps/crazypod/crazypod_notes.c" \
+    "$repo_root/tests/crazypod_notes_host_test.c" \
+    -o "$test_root/crazypod_notes_host_test"
+
+"$test_root/crazypod_notes_host_test" "$test_root/notes"
 
 cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-home-input-stubs" \
@@ -91,6 +109,13 @@ cc -std=c99 -Wall -Wextra -Werror \
 
 cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/apps/crazypod" \
+    "$repo_root/tests/crazypod_screen_recording_policy_host_test.c" \
+    -o "$test_root/crazypod_screen_recording_policy_host_test"
+
+"$test_root/crazypod_screen_recording_policy_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/apps/crazypod" \
     "$repo_root/apps/crazypod/crazypod_audio_memory_policy.c" \
     "$repo_root/tests/crazypod_audio_memory_policy_host_test.c" \
     -o "$test_root/crazypod_audio_memory_policy_host_test"
@@ -136,6 +161,15 @@ cc -std=c99 -Wall -Wextra -Werror \
     -o "$test_root/crazypod_music_storage_host_test"
 
 "$test_root/crazypod_music_storage_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
+    -DMAX_PATH=1024 \
+    -I"$repo_root/tests/miniapp-host-stubs" \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/tests/crazypod_music_validation_host_test.c" \
+    -o "$test_root/crazypod_music_validation_host_test"
+
+"$test_root/crazypod_music_validation_host_test"
 
 cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-frameclock-stubs" \

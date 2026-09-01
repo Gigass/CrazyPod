@@ -23,22 +23,120 @@ static bool write_exact(int fd, const void *buffer, size_t size)
     return true;
 }
 
+struct html_text_writer {
+    int fd;
+    size_t used;
+    bool has_text;
+    bool pending_space;
+    bool failed;
+    int pending_breaks;
+    char buffer[1024];
+};
+
+static bool writer_flush(struct html_text_writer *writer)
+{
+    if(writer->failed)
+        return false;
+    if(writer->used > 0 &&
+       !write_exact(writer->fd, writer->buffer, writer->used)) {
+        writer->failed = true;
+        return false;
+    }
+    writer->used = 0;
+    return true;
+}
+
+static bool writer_raw(struct html_text_writer *writer,
+                       const char *text, size_t size)
+{
+    while(size > 0) {
+        size_t available = sizeof(writer->buffer) - writer->used;
+        size_t count = size < available ? size : available;
+
+        if(available == 0) {
+            if(!writer_flush(writer))
+                return false;
+            continue;
+        }
+        memcpy(writer->buffer + writer->used, text, count);
+        writer->used += count;
+        text += count;
+        size -= count;
+    }
+    return true;
+}
+
+static void writer_break(struct html_text_writer *writer, int count)
+{
+    if(count > writer->pending_breaks)
+        writer->pending_breaks = count;
+    writer->pending_space = false;
+}
+
+static void writer_space(struct html_text_writer *writer)
+{
+    if(writer->has_text && writer->pending_breaks == 0)
+        writer->pending_space = true;
+}
+
+static bool writer_text(struct html_text_writer *writer,
+                        const char *text, size_t size)
+{
+    int i;
+
+    if(size == 0)
+        return true;
+    if(writer->has_text) {
+        for(i = 0; i < writer->pending_breaks; ++i) {
+            if(!writer_raw(writer, "\n", 1))
+                return false;
+        }
+        if(writer->pending_breaks == 0 && writer->pending_space &&
+           !writer_raw(writer, " ", 1))
+            return false;
+    }
+    writer->pending_breaks = 0;
+    writer->pending_space = false;
+    writer->has_text = true;
+    return writer_raw(writer, text, size);
+}
+
+static const char *tag_name(const char *tag)
+{
+    return tag[0] == '/' ? tag + 1 : tag;
+}
+
+static bool tag_matches(const char *tag, const char *name)
+{
+    return strcmp(tag_name(tag), name) == 0;
+}
+
+static bool tag_ignored(const char *tag)
+{
+    return tag_matches(tag, "head") ||
+           tag_matches(tag, "script") ||
+           tag_matches(tag, "style") ||
+           tag_matches(tag, "svg") ||
+           tag_matches(tag, "math");
+}
+
 static bool tag_break(const char *tag)
 {
-    return strcmp(tag, "p") == 0 ||
-           strcmp(tag, "/p") == 0 ||
-           strcmp(tag, "div") == 0 ||
-           strcmp(tag, "/div") == 0 ||
-           strcmp(tag, "br") == 0 ||
-           strcmp(tag, "br/") == 0 ||
-           strcmp(tag, "li") == 0 ||
-           strcmp(tag, "/li") == 0 ||
-           strcmp(tag, "h1") == 0 ||
-           strcmp(tag, "/h1") == 0 ||
-           strcmp(tag, "h2") == 0 ||
-           strcmp(tag, "/h2") == 0 ||
-           strcmp(tag, "h3") == 0 ||
-           strcmp(tag, "/h3") == 0;
+    static const char *const names[] = {
+        "p", "div", "section", "article", "header", "footer",
+        "aside", "blockquote", "pre", "figure", "figcaption",
+        "ul", "ol", "dl", "dt", "dd", "li", "table", "tr",
+        "br", "br/", "hr", "hr/", "h1", "h2", "h3", "h4",
+        "h5", "h6"
+    };
+    const char *name = tag_name(tag);
+    size_t i;
+
+    for(i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+        if(strcmp(name, names[i]) == 0)
+            return true;
+    }
+    return false;
 }
 
 int crazypod_epub_html_decode_entity(const char *entity, char *output)
@@ -224,13 +322,15 @@ bool crazypod_epub_html_append_text(const char *path, int output_fd)
     char input[1024];
     char tag[24];
     char entity[16];
+    struct html_text_writer writer = {
+        .fd = output_fd,
+    };
     int tag_length = 0;
     int entity_length = 0;
+    int ignore_depth = 0;
     bool in_tag = false;
     bool tag_name_done = false;
     bool in_entity = false;
-    bool last_space = true;
-    bool ignore = false;
     int fd = open(path, O_RDONLY);
     ssize_t count;
 
@@ -243,19 +343,16 @@ bool crazypod_epub_html_append_text(const char *path, int output_fd)
             if(in_tag) {
                 if(value == '>') {
                     tag[tag_length] = '\0';
-                    if(strcmp(tag, "script") == 0 ||
-                       strcmp(tag, "style") == 0)
-                        ignore = true;
-                    else if(strcmp(tag, "/script") == 0 ||
-                            strcmp(tag, "/style") == 0)
-                        ignore = false;
-                    else if(!ignore && tag_break(tag) && !last_space) {
-                        if(!write_exact(output_fd, "\n", 1)) {
-                            close(fd);
-                            return false;
+                    if(tag_ignored(tag)) {
+                        if(tag[0] == '/') {
+                            if(ignore_depth > 0)
+                                --ignore_depth;
                         }
-                        last_space = true;
+                        else
+                            ++ignore_depth;
                     }
+                    else if(ignore_depth == 0 && tag_break(tag))
+                        writer_break(&writer, 1);
                     in_tag = false;
                     tag_length = 0;
                     tag_name_done = false;
@@ -279,7 +376,7 @@ bool crazypod_epub_html_append_text(const char *path, int output_fd)
                 tag_name_done = false;
                 continue;
             }
-            if(ignore)
+            if(ignore_depth > 0)
                 continue;
             if(in_entity) {
                 if(value == ';') {
@@ -288,11 +385,14 @@ bool crazypod_epub_html_append_text(const char *path, int output_fd)
                     entity[entity_length] = '\0';
                     decoded_size =
                         crazypod_epub_html_decode_entity(entity, decoded);
-                    if(!write_exact(output_fd, decoded, decoded_size)) {
+                    if(decoded_size == 1 && decoded[0] == ' ')
+                        writer_space(&writer);
+                    else if(!writer_text(
+                                &writer, decoded,
+                                (size_t)decoded_size)) {
                         close(fd);
                         return false;
                     }
-                    last_space = decoded[0] == ' ';
                     in_entity = false;
                     entity_length = 0;
                 }
@@ -307,24 +407,17 @@ bool crazypod_epub_html_append_text(const char *path, int output_fd)
             }
             if(value == '\r' || value == '\n' ||
                value == '\t' || value == ' ') {
-                if(!last_space) {
-                    if(!write_exact(output_fd, " ", 1)) {
-                        close(fd);
-                        return false;
-                    }
-                    last_space = true;
-                }
+                writer_space(&writer);
                 continue;
             }
-            if(!write_exact(output_fd, &value, 1)) {
+            if(!writer_text(&writer, &value, 1)) {
                 close(fd);
                 return false;
             }
-            last_space = false;
         }
     }
     close(fd);
-    return count == 0;
+    return count == 0 && writer_flush(&writer);
 }
 
 #endif

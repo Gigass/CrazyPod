@@ -136,6 +136,9 @@ static void render_photos(
 static void render_utility(
     const struct route_state *state)
 {
+    if(crazypod_miniapps_feature_render_gameboy_preview(
+           state, preview_parent()))
+        return;
     crazypod_organizer_feature_render_preview(
         preview_parent(), state,
         preview.host.item_title(state, state->selected),
@@ -230,6 +233,7 @@ void crazypod_menu_preview_render(
             preview.host.metadata_font);
     }
     else if(state->route == UTILITIES_ROUTE_MENU ||
+            state->route == GAMEBOY_ROUTE_LIBRARY ||
             state->route == CLOCK_ROUTE_MENU ||
             state->route == CLOCK_ROUTE_SLEEP_TIMER ||
             state->route == WORKOUT_ROUTE_MENU ||

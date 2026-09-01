@@ -119,8 +119,7 @@ test("crazypod install builds into the target volume", async (context) => {
   const installed = await run(
     "cli.mjs", ["install", packagePath, volume]);
   assert.equal(installed.code, 0, installed.error);
-  const packages = await readdir(
-    path.join(volume, "MiniApps", "Install"));
+  const packages = await readdir(path.join(volume, "MiniApps"));
   assert.deepEqual(packages, ["install-app.cpk"]);
 });
 

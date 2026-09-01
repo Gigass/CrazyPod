@@ -73,8 +73,9 @@ static void test_frameclock_cadence(void)
     crazypod_frameclock_reset(&clock, 0);
     assert(crazypod_frameclock_due(&clock, 0));
     crazypod_frameclock_schedule_next(&clock, 0);
-    assert(clock.next_tick == 1);
-    assert(crazypod_frameclock_due(&clock, 1));
+    assert(clock.next_tick == 2);
+    assert(!crazypod_frameclock_due(&clock, 1));
+    assert(crazypod_frameclock_due(&clock, 2));
 }
 
 static void test_present_coalesces_to_full_frame(void)
@@ -114,7 +115,7 @@ static void test_present_deadline_and_timeout_diagnostics(void)
     crazypod_present_tick();
 
     lcd_duration_us = CRAZYPOD_FRAME_BUDGET_US + 1;
-    test_current_tick = 2;
+    test_current_tick = 3;
     crazypod_present_queue_rect(0, 0, LCD_WIDTH, LCD_HEIGHT - 1);
     crazypod_present_tick();
 
@@ -280,7 +281,7 @@ static void test_failed_home_sync_retries_without_consuming_frame(void)
     assert(diagnostics.sync_submit_failures == 1);
 
     lcd_sync_submit_succeeds = true;
-    test_current_tick = 1;
+    test_current_tick = 2;
     crazypod_present_tick();
     assert(lcd_calls == 2);
     assert(lcd_sync_mode == 1);
@@ -309,7 +310,7 @@ static void test_failed_full_sync_retries_without_consuming_frame(void)
     assert(diagnostics.sync_submit_failures == 1);
 
     lcd_sync_submit_succeeds = true;
-    test_current_tick = 1;
+    test_current_tick = 2;
     crazypod_present_tick();
     assert(lcd_calls == 2);
     assert(crazypod_present_sequence() == sequence + 1);
@@ -334,7 +335,7 @@ static void test_home_touch_defers_ordinary_lvgl_until_release(void)
     assert(lcd_calls == 1);
     assert(lcd_sync_mode == 1);
 
-    test_current_tick = 1;
+    test_current_tick = 2;
     crazypod_present_tick();
     assert(lcd_calls == 1);
 

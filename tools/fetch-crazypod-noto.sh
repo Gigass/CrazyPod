@@ -17,6 +17,7 @@ done
 for weight in $serif_cjk_weights; do
     test -s "$destination/NotoSerifCJK-$weight.ttc" || complete=false
 done
+test -s "$destination/NotoSansCJKsc-Regular.otf" || complete=false
 for family in NotoSans NotoSerif NotoSansMono; do
     for weight in $core_weights; do
         test -s "$destination/$family-$weight.ttf" || complete=false
@@ -77,6 +78,9 @@ for weight in $serif_cjk_weights; do
 done
 extract_file "$cjk_repo" noto-cjk "$cjk_commit" "Sans/LICENSE" \
     "$destination/OFL-Noto-CJK.txt"
+extract_file "$cjk_repo" noto-cjk "$cjk_commit" \
+    "Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf" \
+    "$destination/NotoSansCJKsc-Regular.otf"
 
 if [ ! -d "$core_repo/.git" ]; then
     git clone --quiet --depth 1 --filter=blob:none --no-checkout \
@@ -99,4 +103,4 @@ extract_file "$core_repo" noto-fonts "$core_commit" "LICENSE" \
 } > "$destination/SOURCE"
 
 (cd "$destination" && shasum -a 256 \
-    Noto*.ttf Noto*.ttc OFL-*.txt SOURCE > SHA256SUMS)
+    Noto*.otf Noto*.ttf Noto*.ttc OFL-*.txt SOURCE > SHA256SUMS)

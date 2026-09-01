@@ -9,6 +9,9 @@
 void crazypod_lcd_show_boot_logo(void);
 const lv_image_dsc_t *crazypod_lcd_boot_logo_image(void);
 void crazypod_lcd_show_panic(const char *message);
+/* Native overlays use the same localized glyph renderer as video. */
+void crazypod_lcd_draw_text(const char *text, int x, int y,
+                            int maximum_x, uint32_t color);
 void crazypod_lcd_draw_video_frame(
     unsigned char * const source[3],
     int source_x, int source_y, int stride,

@@ -11,6 +11,27 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+process.env.CRAZYPOD_TOOLS_DIRECTORY ??= path.resolve(
+  import.meta.dirname, "../../..", "tools");
+
+test("published package carries its standalone native SDK", async () => {
+  const packageJson = JSON.parse(await readFile(
+    path.join(import.meta.dirname, "../package.json"), "utf8"));
+  const sdkHeader = path.join(
+    import.meta.dirname, "../sdk/crazypod_miniapp_native.h");
+  const packageSource = await readFile(
+    path.join(import.meta.dirname, "../src/package.mjs"), "utf8");
+  const buildSource = await readFile(
+    path.join(import.meta.dirname, "../src/build.mjs"), "utf8");
+
+  assert.ok(packageJson.files.includes("sdk"));
+  assert.ok((await readFile(sdkHeader)).length > 1000);
+  assert.match(packageSource, /\.\.\/sdk\/crazypod_miniapp_native\.h/);
+  assert.match(buildSource, /path\.resolve\(import\.meta\.dirname, "\.\.\/sdk"/);
+  assert.doesNotMatch(
+    packageSource, /miniapps[\\/]sdk[\\/]crazypod_miniapp_native\.h/);
+});
+
 import {
   buildAssets,
   deterministicZip,

@@ -18,7 +18,11 @@ void rtc_latch(byte b)
         rtc.regs[1] = rtc.m;
         rtc.regs[2] = rtc.h;
         rtc.regs[3] = rtc.d;
+#ifdef CRAZYPOD_GAMEBOY_CORE
+        rtc.regs[4] = (rtc.d>>8) | (rtc.stop<<6) | (rtc.carry<<7);
+#else
         rtc.regs[4] = (rtc.d>>9) | (rtc.stop<<6) | (rtc.carry<<7);
+#endif
         rtc.regs[5] = 0xff;
         rtc.regs[6] = 0xff;
         rtc.regs[7] = 0xff;
@@ -50,7 +54,11 @@ void rtc_write(byte b)
         break;
     case 4:
         rtc.regs[4] = b;
+#ifdef CRAZYPOD_GAMEBOY_CORE
+        rtc.d = (rtc.d & 0xff) | ((b&1)<<8);
+#else
         rtc.d = (rtc.d & 0xff) | ((b&1)<<9);
+#endif
         rtc.stop = (b>>6)&1;
         rtc.carry = (b>>7)&1;
         break;
@@ -68,7 +76,11 @@ void rtc_tick(void)
             {
                 if (++rtc.h == 24)
                 {
+#ifdef CRAZYPOD_GAMEBOY_CORE
+                    if (++rtc.d == 512)
+#else
                     if (++rtc.d == 365)
+#endif
                     {
                         rtc.d = 0;
                         rtc.carry = 1;
@@ -83,6 +95,7 @@ void rtc_tick(void)
     }
 }
 
+#ifndef CRAZYPOD_GAMEBOY_CORE
 void rtc_save_internal(int fd)
 {
     int rt = 0;
@@ -117,6 +130,7 @@ void rtc_load_internal(int fd)
     while (rt-- > 0) rtc_tick();
 
 }
+#endif /* CRAZYPOD_GAMEBOY_CORE */
 
 
 

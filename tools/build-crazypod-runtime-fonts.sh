@@ -8,13 +8,14 @@ fi
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 source_dir=${CRAZYPOD_NOTO_DIR:-"$repo_root/.cache/crazypod-noto"}
+pingfang_dir=${CRAZYPOD_PINGFANG_DIR:-"$repo_root/.cache/crazypod-pingfang"}
 cache_dir=${CRAZYPOD_AOT_FONT_CACHE:-"$repo_root/.cache/crazypod-noto-aot"}
 destination="$1/crazypod-aot"
 converter=${CRAZYPOD_CONVTTF:-"$repo_root/tools/convttf"}
 spec_file="$repo_root/tools/crazypod-runtime-font-specs.txt"
 # Bump this whenever convttf changes the meaning of stored glyph metrics.
 # Prefixing the cache entry keeps older artifacts available but unusable.
-cache_revision=advance-bearing-v1
+cache_revision=advance-bearing-v2-pingfang-system-sc
 
 if [ ! -f "$source_dir/SHA256SUMS" ]; then
     "$repo_root/tools/fetch-crazypod-noto.sh" "$source_dir"
@@ -28,6 +29,10 @@ if [ ! -f "$spec_file" ]; then
     exit 1
 fi
 (cd "$source_dir" && shasum -a 256 -c SHA256SUMS >/dev/null)
+if [ ! -f "$pingfang_dir/SHA256SUMS" ]; then
+    sh "$repo_root/tools/fetch-crazypod-pingfang.sh" "$pingfang_dir"
+fi
+(cd "$pingfang_dir" && shasum -a 256 -c SHA256SUMS >/dev/null)
 
 mkdir -p "$cache_dir" "$destination"
 
@@ -61,6 +66,19 @@ physical_weight()
     esac
 }
 
+pingfang_weight()
+{
+    case "$1:$2" in
+        system:100) echo Ultralight ;;
+        system:200) echo Thin ;;
+        system:300) echo Light ;;
+        system:400) echo Regular ;;
+        system:500) echo Medium ;;
+        system:600|system:700|system:800|system:900) echo Semibold ;;
+        *) return 1 ;;
+    esac
+}
+
 collection_name()
 {
     case "$1" in
@@ -87,6 +105,22 @@ locale_face()
     echo "$face"
 }
 
+source_path()
+{
+    locale=$1
+    family=$2
+    weight=$3
+    physical=$4
+
+    if [ "$family" = system ] && [ "$locale" = sc ]; then
+        physical=$(pingfang_weight "$family" "$weight")
+        echo "$pingfang_dir/PingFangSC-$physical.ttf"
+        return
+    fi
+    collection=$(collection_name "$family")
+    echo "$source_dir/$collection-$physical.ttc"
+}
+
 build_one()
 {
     locale=$1
@@ -94,21 +128,25 @@ build_one()
     weight=$3
     size=$4
     physical=$(physical_weight "$family" "$weight")
-    collection=$(collection_name "$family")
     face=$(locale_face "$locale" "$family")
-    source="$source_dir/$collection-$physical.ttc"
+    source=$(source_path "$locale" "$family" "$weight" "$physical")
     name="$locale-$family-$weight-$size.fnt"
     cached="$cache_dir/$cache_revision-$name"
 
     if [ ! -f "$source" ]; then
-        echo "Error: missing pinned Noto source '$source'." >&2
+        echo "Error: missing pinned font source '$source'." >&2
         exit 1
     fi
     if [ ! -f "$cached" ] ||
        [ "$(dd if="$cached" bs=4 count=1 2>/dev/null)" != RB12 ]; then
         echo "CrazyPod AOT font: $locale $family ${weight} ${size}px" >&2
-        "$converter" -p "$size" -s 32 -l 65535 \
-            -o "$cached" -t "$face" "$source" >/dev/null
+        if [ "$family" = system ] && [ "$locale" = sc ]; then
+            "$converter" -p "$size" -s 32 -l 65535 \
+                -o "$cached" "$source" >/dev/null
+        else
+            "$converter" -p "$size" -s 32 -l 65535 \
+                -o "$cached" -t "$face" "$source" >/dev/null
+        fi
     fi
     cp "$cached" "$destination/$name"
 }
@@ -130,3 +168,5 @@ done < "$spec_file"
 
 cp "$source_dir/OFL-Noto-CJK.txt" "$destination/OFL-Noto-CJK.txt"
 cp "$source_dir/SOURCE" "$destination/SOURCE"
+cp "$pingfang_dir/LICENSE" "$destination/PingFangSC-LICENSE.txt"
+cp "$pingfang_dir/SOURCE" "$destination/PingFangSC-SOURCE"

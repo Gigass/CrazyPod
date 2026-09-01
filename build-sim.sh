@@ -122,6 +122,8 @@ make -j"$(detect_jobs)"
 
 codec_dir="lib/rbcodec/codecs"
 sim_codec_dir="simdisk/.rockbox/codecs"
+mkdir -p simdisk/MiniApps/Games/GB simdisk/MiniApps/Games/GBC
+cp ../packaging/gameboy/README.txt simdisk/MiniApps/Games/README.txt
 sim_font_dir="simdisk/.rockbox/fonts"
 codepage_tool="$(cd .. && pwd)/tools/codepages"
 runtime_font_builder="$(cd .. && pwd)/tools/build-crazypod-runtime-fonts.sh"

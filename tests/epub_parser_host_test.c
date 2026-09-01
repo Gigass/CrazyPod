@@ -67,6 +67,64 @@ static bool test_remove_tree(const char *root)
         !file_exists(directory);
 }
 
+static bool test_html_layout(const char *root)
+{
+    static const char source[] =
+        "<html><head><title>Hidden title</title>"
+        "<style>hidden css</style></head><body>"
+        "<h1>Chapter &amp; One</h1>"
+        "<p> First   paragraph. </p>"
+        "<script>hidden script</script>"
+        "<section><p>Second<br/>line.</p>"
+        "<ul><li>Alpha</li><li>Beta</li></ul></section>"
+        "</body></html>";
+    static const char expected[] =
+        "Chapter & One\nFirst paragraph.\nSecond\nline.\nAlpha\nBeta";
+    char input_path[MAX_PATH];
+    char output_path[MAX_PATH];
+    char output[256];
+    ssize_t count;
+    int input;
+    int result;
+
+    if(snprintf(input_path, sizeof(input_path),
+                "%s/.layout-test.xhtml", root) >=
+       (int)sizeof(input_path) ||
+       snprintf(output_path, sizeof(output_path),
+                "%s/.layout-test.txt", root) >=
+       (int)sizeof(output_path))
+        return false;
+    input = open(input_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(input < 0 || !write_exact(input, source, sizeof(source) - 1)) {
+        if(input >= 0)
+            close(input);
+        return false;
+    }
+    close(input);
+    result = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(result < 0 ||
+       !crazypod_epub_html_append_text(input_path, result)) {
+        if(result >= 0)
+            close(result);
+        remove(input_path);
+        return false;
+    }
+    close(result);
+    result = open(output_path, O_RDONLY);
+    if(result < 0) {
+        remove(input_path);
+        return false;
+    }
+    count = read(result, output, sizeof(output) - 1);
+    close(result);
+    remove(input_path);
+    remove(output_path);
+    if(count < 0)
+        return false;
+    output[count] = '\0';
+    return strcmp(output, expected) == 0;
+}
+
 int main(int argc, char **argv)
 {
     char opf_path[MAX_PATH];
@@ -83,6 +141,10 @@ int main(int argc, char **argv)
     }
     if(!test_remove_tree(argv[1])) {
         fprintf(stderr, "safe temporary tree cleanup failed\n");
+        return 1;
+    }
+    if(!test_html_layout(argv[1])) {
+        fprintf(stderr, "HTML reading layout failed\n");
         return 1;
     }
     if(snprintf(output_path, sizeof(output_path),
@@ -122,6 +184,7 @@ int main(int argc, char **argv)
         char probe_author[96];
         char probe_cover[MAX_PATH];
         char cached_text[MAX_PATH];
+        char resolved_text[MAX_PATH];
         uint32_t cached_text_size = 0;
         int saw_stage = 0;
 
@@ -154,6 +217,12 @@ int main(int argc, char **argv)
            progress_last != 100 ||
            !saw_stage) {
             fprintf(stderr, "selective reading cache failed\n");
+            return 1;
+        }
+        crazypod_epub_text_path(
+            argv[2], resolved_text, sizeof(resolved_text));
+        if(strcmp(cached_text, resolved_text) != 0) {
+            fprintf(stderr, "cached text path mismatch\n");
             return 1;
         }
         progress_calls = 0;

@@ -442,6 +442,11 @@
         "apps/crazypod/ui/shell/crazypod_lock_screen.c:86"
       ]
     },
+    "ARTIST": {
+      "locations": [
+        "apps/crazypod/ui/features/music/crazypod_music_feature.c:145"
+      ]
+    },
     "ARTISTS": {
       "locations": [
         "apps/crazypod/ui/features/music/crazypod_music_feature.c:132"
@@ -1956,7 +1961,8 @@
     "Hold Center to Unlock": {
       "locations": [
         "apps/crazypod/ui/shell/crazypod_lock_screen.c:235",
-        "apps/crazypod/ui/shell/crazypod_lock_screen.c:555"
+        "apps/crazypod/ui/shell/crazypod_lock_screen.c:555",
+        "apps/crazypod/ui/shell/crazypod_lock_screen.c:1215"
       ]
     },
     "Hold Select on a photo to save it here.": {
@@ -2294,11 +2300,6 @@
         "apps/crazypod/ui/features/now_playing/crazypod_now_screen.c:239",
         "apps/crazypod/ui/shell/crazypod_now_capsule.c:252",
         "apps/crazypod/ui/shell/crazypod_now_capsule.c:393"
-      ]
-    },
-    "Local Queue": {
-      "locations": [
-        "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:538"
       ]
     },
     "Local Time": {
@@ -4092,11 +4093,6 @@
         "apps/crazypod/ui/features/organizer/crazypod_organizer_feature.c:68"
       ]
     },
-    "UNLOCKED": {
-      "locations": [
-        "apps/crazypod/ui/shell/crazypod_lock_screen.c:210"
-      ]
-    },
     "UNSAVED NOTE": {
       "locations": [
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:96"
@@ -4531,6 +4527,72 @@
     "Year": {
       "locations": [
         "apps/crazypod/ui/features/settings/crazypod_settings_model.c"
+      ]
+    },
+    "Add .gb or .gbc files to /MiniApps/Games": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Save and exit": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Game save failed": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Hold Center for game menu": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Controls: /MiniApps/Games/README.txt": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Unsupported or damaged GB/GBC ROM": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Not enough memory for this game": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Game save is damaged; original preserved": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Game emulation stopped": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Game file or save could not be written/read": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "GB / GBC": {
+      "keepEnglish": true,
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c"
       ]
     }
   }

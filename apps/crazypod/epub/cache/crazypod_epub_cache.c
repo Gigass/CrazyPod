@@ -13,7 +13,7 @@
 
 #define EPUB_CACHE_MAGIC 0x43504550u
 #define EPUB_INFO_MAGIC 0x43504549u
-#define EPUB_CACHE_VERSION 3u
+#define EPUB_CACHE_VERSION 4u
 
 struct epub_cache_disk {
     uint32_t magic;

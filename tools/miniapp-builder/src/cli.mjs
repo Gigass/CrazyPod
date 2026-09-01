@@ -110,7 +110,7 @@ async function main() {
         target: option("--target") ?? "ipod6g",
         binary: option("--binary"),
       })).output;
-    const destinationDirectory = path.join(volume, "MiniApps", "Install");
+    const destinationDirectory = path.join(volume, "MiniApps");
     await mkdir(destinationDirectory, { recursive: true });
     const destination = path.join(destinationDirectory, path.basename(source));
     await cp(source, destination);

@@ -61,7 +61,25 @@ static struct {
     bool wake_queued;
     bool failed;
     bool completion_pending;
+    bool backlight_suppressed;
 } recording;
+
+static void restore_backlight(void)
+{
+    bool restore;
+
+    mutex_lock(&recording.mutex);
+    restore = crazypod_screen_recording_claim_backlight_restore(
+        &recording.backlight_suppressed);
+    mutex_unlock(&recording.mutex);
+    if(!restore)
+        return;
+    backlight_set_timeout(global_settings.backlight_timeout);
+#ifdef HAVE_BACKLIGHT_BRIGHTNESS
+    backlight_set_timeout_plugged(
+        global_settings.backlight_timeout_plugged);
+#endif
+}
 
 static void put_le16(uint8_t *data, unsigned offset, uint16_t value)
 {
@@ -249,6 +267,7 @@ static void finish_file(void)
     recording.stop_requested = false;
     recording.completion_pending = true;
     mutex_unlock(&recording.mutex);
+    restore_backlight();
 }
 
 static void recording_thread(void)
@@ -381,6 +400,7 @@ static bool start_recording(long now)
     recording.wake_queued = false;
     recording.failed = false;
     recording.completion_pending = false;
+    recording.backlight_suppressed = true;
     mutex_unlock(&recording.mutex);
     backlight_on();
     backlight_set_timeout(0);
@@ -437,6 +457,7 @@ bool crazypod_screen_recording_stop(long now)
         else {
             failed = recording.failed;
             mutex_unlock(&recording.mutex);
+            restore_backlight();
             return !failed;
         }
     }
@@ -462,11 +483,7 @@ bool crazypod_screen_recording_stop(long now)
     mutex_lock(&recording.mutex);
     recording.completion_pending = false;
     mutex_unlock(&recording.mutex);
-    backlight_set_timeout(global_settings.backlight_timeout);
-#ifdef HAVE_BACKLIGHT_BRIGHTNESS
-    backlight_set_timeout_plugged(
-        global_settings.backlight_timeout_plugged);
-#endif
+    restore_backlight();
     return !failed;
 }
 
@@ -536,10 +553,10 @@ crazypod_screen_recording_service(long now)
     if(completion)
         recording.completion_pending = false;
     mutex_unlock(&recording.mutex);
-    if(completion)
-        return failed
-            ? CRAZYPOD_SCREEN_RECORDING_EVENT_FAILED
-            : CRAZYPOD_SCREEN_RECORDING_EVENT_SAVED;
+    if(completion) {
+        restore_backlight();
+        return crazypod_screen_recording_completion_event(failed);
+    }
     if(countdown_active) {
         long elapsed = now - countdown_started_at;
 
@@ -575,8 +592,8 @@ crazypod_screen_recording_service(long now)
     mutex_lock(&recording.mutex);
     if(recording.frames_written + recording.count >= AVI_MAX_FRAMES) {
         mutex_unlock(&recording.mutex);
-        (void)crazypod_screen_recording_stop(now);
-        return CRAZYPOD_SCREEN_RECORDING_EVENT_SAVED;
+        return crazypod_screen_recording_limit_event(
+            crazypod_screen_recording_stop(now));
     }
     if(recording.frames_scheduled >= expected_frames) {
         mutex_unlock(&recording.mutex);
