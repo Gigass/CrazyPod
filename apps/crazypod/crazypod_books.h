@@ -48,6 +48,8 @@ int crazypod_books_favorite_at(int position);
 bool crazypod_book_read_page(int index, uint32_t offset,
                              char *text, size_t size,
                              uint32_t *next_offset);
+bool crazypod_book_page_image(int index, uint32_t offset,
+                              char *path, size_t path_size);
 bool crazypod_book_set_progress(int index, uint32_t offset);
 bool crazypod_book_toggle_bookmark(int index, uint32_t offset);
 bool crazypod_book_toggle_favorite(int index);
@@ -64,5 +66,8 @@ int crazypod_books_font_size(void);
 int crazypod_books_theme(void);
 bool crazypod_books_set_font_size(int value);
 bool crazypod_books_set_theme(int value);
+/* Keep pagination in sync with the reader's currently visible viewport. */
+void crazypod_books_set_reader_layout(
+    unsigned max_lines, unsigned max_line_units);
 
 #endif

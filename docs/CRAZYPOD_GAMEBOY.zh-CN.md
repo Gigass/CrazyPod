@@ -1,13 +1,13 @@
-# GB / GBC 游戏
+# Game Boy 游戏
 
-CrazyPod 的入口为桌面上的独立 **GB / GBC** 图标。游戏模拟功能独立于
+CrazyPod 的入口为桌面上的独立 **Game Boy** 图标。游戏模拟功能独立于
 Mini App 原生包加载器，不需要安装 `.cpk`。
 
 ## 放置游戏
 
 将合法获取的 `.gb`、`.gbc` ROM 放入设备的 `/MiniApps/Games` 文件夹，
 也可以放在 `/MiniApps/Games/GB`、`/MiniApps/Games/GBC` 中。
-重新进入 GB / GBC 列表即会扫描。
+重新进入 Game Boy 列表即会扫描。
 最多列出 128 个文件；不递归扫描其他目录，不解压 ZIP，不支持 GBA。
 固件和测试均不附带商业游戏或 Nintendo 启动 ROM。
 

@@ -485,7 +485,7 @@ struct crazypod_state_disk_v15 {
 };
 
 /* Version 16 used a 16-entry application menu. Keep its exact layout so
- * devices upgrading to the independent GB / GBC app can migrate settings. */
+ * devices upgrading to the independent Game Boy app can migrate settings. */
 struct crazypod_state_disk_v16 {
     uint32_t magic;
     uint32_t version;

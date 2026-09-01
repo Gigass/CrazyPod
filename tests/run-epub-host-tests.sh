@@ -22,6 +22,7 @@ cc -std=c11 -Wall -Wextra -Werror \
     -Ifirmware/include \
     tests/epub_parser_host_test.c \
     apps/crazypod/epub/crazypod_epub_html.c \
+    apps/crazypod/epub/crazypod_epub_layout.c \
     apps/crazypod/epub/crazypod_epub_navigation.c \
     apps/crazypod/epub/crazypod_epub_parser.c \
     apps/crazypod/epub/cache/crazypod_epub_cache.c \

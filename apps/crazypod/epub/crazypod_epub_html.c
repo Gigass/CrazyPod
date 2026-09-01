@@ -8,6 +8,7 @@
 #include "file.h"
 
 #include "crazypod_epub_html.h"
+#include "crazypod_epub_parser.h"
 
 static bool write_exact(int fd, const void *buffer, size_t size)
 {
@@ -26,6 +27,7 @@ static bool write_exact(int fd, const void *buffer, size_t size)
 struct html_text_writer {
     int fd;
     size_t used;
+    uint32_t total;
     bool has_text;
     bool pending_space;
     bool failed;
@@ -60,6 +62,7 @@ static bool writer_raw(struct html_text_writer *writer,
         }
         memcpy(writer->buffer + writer->used, text, count);
         writer->used += count;
+        writer->total += (uint32_t)count;
         text += count;
         size -= count;
     }
@@ -101,23 +104,57 @@ static bool writer_text(struct html_text_writer *writer,
     return writer_raw(writer, text, size);
 }
 
-static const char *tag_name(const char *tag)
-{
-    return tag[0] == '/' ? tag + 1 : tag;
-}
-
 static bool tag_matches(const char *tag, const char *name)
 {
-    return strcmp(tag_name(tag), name) == 0;
+    const char *cursor = tag;
+    size_t length;
+
+    if(*cursor == '/')
+        ++cursor;
+    while(*cursor == ' ' || *cursor == '\t' ||
+          *cursor == '\r' || *cursor == '\n')
+        ++cursor;
+    length = 0;
+    while(cursor[length] != '\0' && cursor[length] != ' ' &&
+          cursor[length] != '\t' && cursor[length] != '\r' &&
+          cursor[length] != '\n' && cursor[length] != '/')
+        ++length;
+    if(length != strlen(name))
+        return false;
+    while(length > 0) {
+        if(crazypod_epub_ascii_lower((unsigned char)*cursor++) !=
+           crazypod_epub_ascii_lower((unsigned char)*name++))
+            return false;
+        --length;
+    }
+    return true;
+}
+
+static bool tag_self_closing(const char *tag)
+{
+    size_t length = strlen(tag);
+
+    while(length > 0 && (tag[length - 1] == ' ' ||
+                         tag[length - 1] == '\t' ||
+                         tag[length - 1] == '\r' ||
+                         tag[length - 1] == '\n'))
+        --length;
+    return length > 0 && tag[length - 1] == '/';
 }
 
 static bool tag_ignored(const char *tag)
 {
     return tag_matches(tag, "head") ||
+           tag_matches(tag, "title") ||
+           tag_matches(tag, "meta") ||
+           tag_matches(tag, "link") ||
            tag_matches(tag, "script") ||
            tag_matches(tag, "style") ||
            tag_matches(tag, "svg") ||
-           tag_matches(tag, "math");
+           tag_matches(tag, "math") ||
+           tag_matches(tag, "nav") ||
+           tag_matches(tag, "noscript") ||
+           tag_matches(tag, "template");
 }
 
 static bool tag_break(const char *tag)
@@ -129,11 +166,10 @@ static bool tag_break(const char *tag)
         "br", "br/", "hr", "hr/", "h1", "h2", "h3", "h4",
         "h5", "h6"
     };
-    const char *name = tag_name(tag);
     size_t i;
 
     for(i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
-        if(strcmp(name, names[i]) == 0)
+        if(tag_matches(tag, names[i]))
             return true;
     }
     return false;
@@ -141,6 +177,31 @@ static bool tag_break(const char *tag)
 
 int crazypod_epub_html_decode_entity(const char *entity, char *output)
 {
+    static const struct {
+        const char *name;
+        const char *value;
+        int size;
+    } named[] = {
+        { "copy", "\xc2\xa9", 2 },
+        { "reg", "\xc2\xae", 2 },
+        { "trade", "\xe2\x84\xa2", 3 },
+        { "laquo", "\xc2\xab", 2 },
+        { "raquo", "\xc2\xbb", 2 },
+        { "lsquo", "\xe2\x80\x98", 3 },
+        { "rsquo", "\xe2\x80\x99", 3 },
+        { "ldquo", "\xe2\x80\x9c", 3 },
+        { "rdquo", "\xe2\x80\x9d", 3 },
+        { "bull", "\xe2\x80\xa2", 3 },
+        { "middot", "\xc2\xb7", 2 },
+        { "sect", "\xc2\xa7", 2 },
+        { "para", "\xc2\xb6", 2 },
+        { "thinsp", "\xe2\x80\x89", 3 },
+        { "ensp", "\xe2\x80\x82", 3 },
+        { "emsp", "\xe2\x80\x83", 3 },
+        { "shy", "\xc2\xad", 2 },
+    };
+    size_t i;
+
     if(entity[0] == '#') {
         uint32_t value = 0;
         int base = 10;
@@ -222,6 +283,12 @@ int crazypod_epub_html_decode_entity(const char *entity, char *output)
     if(strcmp(entity, "hellip") == 0) {
         memcpy(output, "\xe2\x80\xa6", 3);
         return 3;
+    }
+    for(i = 0; i < sizeof(named) / sizeof(named[0]); ++i) {
+        if(strcmp(entity, named[i].name) == 0) {
+            memcpy(output, named[i].value, (size_t)named[i].size);
+            return named[i].size;
+        }
     }
     output[0] = '?';
     return 1;
@@ -317,10 +384,12 @@ bool crazypod_epub_html_copy_markup_text(char *output, size_t size,
     return used > 0;
 }
 
-bool crazypod_epub_html_append_text(const char *path, int output_fd)
+bool crazypod_epub_html_append_text_with_images(
+    const char *path, int output_fd,
+    crazypod_epub_html_image_callback image_callback, void *context)
 {
     char input[1024];
-    char tag[24];
+    char tag[512];
     char entity[16];
     struct html_text_writer writer = {
         .fd = output_fd,
@@ -329,7 +398,6 @@ bool crazypod_epub_html_append_text(const char *path, int output_fd)
     int entity_length = 0;
     int ignore_depth = 0;
     bool in_tag = false;
-    bool tag_name_done = false;
     bool in_entity = false;
     int fd = open(path, O_RDONLY);
     ssize_t count;
@@ -348,32 +416,49 @@ bool crazypod_epub_html_append_text(const char *path, int output_fd)
                             if(ignore_depth > 0)
                                 --ignore_depth;
                         }
-                        else
+                        else if(!tag_self_closing(tag))
                             ++ignore_depth;
                     }
-                    else if(ignore_depth == 0 && tag_break(tag))
-                        writer_break(&writer, 1);
+                    else if(ignore_depth == 0) {
+                        if(tag_matches(tag, "img") &&
+                           tag[0] != '/' && image_callback != NULL) {
+                            char source[256];
+
+                            source[0] = '\0';
+                            if(crazypod_epub_extract_attribute(
+                                   tag, tag + tag_length, "src",
+                                   source, sizeof(source)) &&
+                               image_callback(
+                                   source,
+                                   (uint32_t)writer.total +
+                                   (writer.has_text
+                                        ? (uint32_t)writer.pending_breaks
+                                        : 0),
+                                   context)) {
+                                writer_break(&writer, 1);
+                                if(!writer_text(
+                                       &writer,
+                                       (char[]){ CRAZYPOD_EPUB_IMAGE_MARKER },
+                                       1)) {
+                                    close(fd);
+                                    return false;
+                                }
+                                writer_break(&writer, 1);
+                            }
+                        }
+                        else if(tag_break(tag))
+                            writer_break(&writer, 1);
+                    }
                     in_tag = false;
                     tag_length = 0;
-                    tag_name_done = false;
                 }
-                else if(!tag_name_done &&
-                        tag_length < (int)sizeof(tag) - 1) {
-                    if(value == ' ' || value == '\t' ||
-                       value == '\r' || value == '\n')
-                        tag_name_done = tag_length > 0;
-                    else if(value >= 'A' && value <= 'Z')
-                        tag[tag_length++] =
-                            (char)(value - 'A' + 'a');
-                    else
-                        tag[tag_length++] = value;
-                }
+                else if(tag_length < (int)sizeof(tag) - 1)
+                    tag[tag_length++] = value;
                 continue;
             }
             if(value == '<') {
                 in_tag = true;
                 tag_length = 0;
-                tag_name_done = false;
                 continue;
             }
             if(ignore_depth > 0)
@@ -417,7 +502,18 @@ bool crazypod_epub_html_append_text(const char *path, int output_fd)
         }
     }
     close(fd);
+    if(in_entity) {
+        if(!writer_text(&writer, "&", 1) ||
+           !writer_text(&writer, entity, (size_t)entity_length))
+            return false;
+    }
     return count == 0 && writer_flush(&writer);
+}
+
+bool crazypod_epub_html_append_text(const char *path, int output_fd)
+{
+    return crazypod_epub_html_append_text_with_images(
+        path, output_fd, NULL, NULL);
 }
 
 #endif

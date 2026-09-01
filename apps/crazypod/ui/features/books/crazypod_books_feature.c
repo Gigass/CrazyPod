@@ -5,6 +5,7 @@
 #ifdef IPOD_6G
 
 #include "kernel.h"
+#include "lcd.h"
 
 #include "../../../crazypod_books.h"
 #include "crazypod_book_session.h"
@@ -38,6 +39,42 @@ static struct {
 } reader_view;
 
 #define READER_TOOLBAR_VISIBLE_TICKS (2 * HZ)
+
+static void configure_reader_layout_for_size(
+    bool toolbar_visible, unsigned size)
+{
+    if(size == 0)
+        size = 14;
+    unsigned line_height = (size * 1448u + 999u) / 1000u;
+    unsigned content_height = toolbar_visible
+        ? 206u - 28u : (unsigned)LCD_HEIGHT - 28u;
+    unsigned max_lines = content_height / line_height;
+    unsigned max_line_units =
+        ((unsigned)LCD_WIDTH - 8u) * 2u / size;
+
+    if(max_lines == 0)
+        max_lines = 1;
+    if(max_line_units == 0)
+        max_line_units = 1;
+    crazypod_books_set_reader_layout(max_lines, max_line_units);
+}
+
+static void configure_reader_layout(bool toolbar_visible)
+{
+    unsigned size = crazypod_books_font_size() == 0 ? 12 :
+        crazypod_books_font_size() == 2 ? 16 : 14;
+
+    configure_reader_layout_for_size(toolbar_visible, size);
+}
+
+static void reload_reader_page(void)
+{
+    int index = crazypod_book_session_index();
+    uint32_t offset = crazypod_book_session_offset();
+
+    if(index >= 0 && crazypod_book_session_has_text())
+        (void)crazypod_book_session_load(index, offset);
+}
 
 int crazypod_books_feature_item_count(
     const struct route_state *state)
@@ -302,7 +339,8 @@ bool crazypod_books_feature_activate(
         host->pop();
         break;
     case CRAZYPOD_BOOKS_ACTION_BEGIN_READER:
-        crazypod_books_workflow_begin_reader(
+        crazypod_books_feature_enter_reader(0);
+        crazypod_books_feature_begin_reader(
             action.book_index, action.offset);
         break;
     case CRAZYPOD_BOOKS_ACTION_SHOW_FONT_SIZE:
@@ -348,6 +386,8 @@ void crazypod_books_feature_enter_reader(long now)
     reader_view.toolbar_visible = true;
     reader_view.toolbar_hide_tick =
         now + READER_TOOLBAR_VISIBLE_TICKS;
+    configure_reader_layout(true);
+    reload_reader_page();
 }
 
 int crazypod_books_feature_reader_wait_ticks(
@@ -375,6 +415,8 @@ bool crazypod_books_feature_service_reader(
         return false;
     reader_view.toolbar_visible = false;
     reader_view.toolbar_hide_tick = 0;
+    configure_reader_layout(false);
+    reload_reader_page();
     return true;
 }
 
@@ -488,12 +530,16 @@ void crazypod_books_feature_invalidate_metadata(void)
 
 void crazypod_books_feature_apply_font_size(int value)
 {
+    configure_reader_layout_for_size(
+        reader_view.toolbar_visible,
+        value == 0 ? 12 : value == 2 ? 16 : 14);
     crazypod_books_workflow_apply_font_size(value);
 }
 
 void crazypod_books_feature_begin_reader(
     int index, uint32_t offset)
 {
+    configure_reader_layout(true);
     crazypod_books_workflow_begin_reader(index, offset);
 }
 

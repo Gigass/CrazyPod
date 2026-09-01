@@ -13,6 +13,7 @@
 
 #include "crazypod_books.h"
 #include "crazypod_epub.h"
+#include "epub/crazypod_epub_layout.h"
 
 #define BOOKS_DIRECTORY "/Books"
 #define BOOKS_STATE_DIRECTORY "/.crazypod/books"
@@ -84,6 +85,8 @@ static struct books_state_disk persisted;
 static unsigned char page_input[BOOK_PAGE_INPUT_SIZE];
 static unsigned char page_utf8[BOOK_PAGE_INPUT_SIZE * 3 + 1];
 static unsigned char encoding_sample[BOOK_ENCODING_SAMPLE_SIZE];
+static unsigned reader_max_lines = 8;
+static unsigned reader_max_line_units = 42;
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 {
@@ -341,21 +344,6 @@ static uint32_t align_gbk_offset(int fd, uint32_t target)
     return position;
 }
 
-static size_t utf8_character_bytes(const unsigned char *data,
-                                   size_t count, size_t offset)
-{
-    unsigned char value = data[offset];
-    size_t bytes = 1;
-
-    if((value & 0xe0) == 0xc0)
-        bytes = 2;
-    else if((value & 0xf0) == 0xe0)
-        bytes = 3;
-    else if((value & 0xf8) == 0xf0)
-        bytes = 4;
-    return offset + bytes <= count ? bytes : 0;
-}
-
 static size_t complete_gbk_bytes(const unsigned char *data, size_t count)
 {
     size_t i = 0;
@@ -370,72 +358,6 @@ static size_t complete_gbk_bytes(const unsigned char *data, size_t count)
         }
     }
     return i;
-}
-
-static size_t paginate_text(const unsigned char *utf8, size_t utf8_count,
-                            const unsigned char *source, size_t source_count,
-                            bool source_is_gbk, bool markdown,
-                            char *text, size_t size,
-                            int max_lines, int max_line_units)
-{
-    size_t input = 0;
-    size_t source_input = 0;
-    size_t output = 0;
-    int visual_lines = 1;
-    int line_units = 0;
-
-    while(input < utf8_count && source_input < source_count &&
-          output + 1 < size) {
-        unsigned char value = utf8[input];
-        size_t character_bytes =
-            utf8_character_bytes(utf8, utf8_count, input);
-        size_t source_bytes = character_bytes;
-        int units;
-
-        if(character_bytes == 0)
-            break;
-        if(source_is_gbk) {
-            source_bytes = source[source_input] < 0x80 ? 1 : 2;
-            if(source_input + source_bytes > source_count)
-                break;
-        }
-        if(markdown && (value == '#' || value == '*' || value == '`')) {
-            input += character_bytes;
-            source_input += source_bytes;
-            continue;
-        }
-        if(value == '\r') {
-            input += character_bytes;
-            source_input += source_bytes;
-            continue;
-        }
-        if(value == '\n') {
-            if(visual_lines >= max_lines)
-                break;
-            text[output++] = '\n';
-            input += character_bytes;
-            source_input += source_bytes;
-            ++visual_lines;
-            line_units = 0;
-            continue;
-        }
-        if(output + character_bytes >= size)
-            break;
-        units = value < 0x80 ? 1 : 2;
-        if(line_units + units > max_line_units) {
-            if(visual_lines >= max_lines)
-                break;
-            ++visual_lines;
-            line_units = 0;
-        }
-        memcpy(text + output, utf8 + input, character_bytes);
-        output += character_bytes;
-        input += character_bytes;
-        source_input += source_bytes;
-        line_units += units;
-    }
-    text[output] = '\0';
-    return source_input;
 }
 
 static bool state_save(void)
@@ -930,16 +852,10 @@ bool crazypod_book_read_page(int index, uint32_t offset,
     size_t consumed;
     bool source_is_gbk = false;
     ssize_t count;
-    int max_lines;
-    int max_line_units;
     int fd;
 
     if(text == NULL || size == 0 || book == NULL)
         return false;
-    max_lines = crazypod_books_font_size() == 0 ? 13 :
-                crazypod_books_font_size() == 2 ? 10 : 11;
-    max_line_units = crazypod_books_font_size() == 0 ? 46 :
-                     crazypod_books_font_size() == 2 ? 37 : 41;
     source_path = book->path;
     if(book->format == CRAZYPOD_BOOK_EPUB) {
         if(book->content_size == 0) {
@@ -954,6 +870,7 @@ bool crazypod_book_read_page(int index, uint32_t offset,
         else
             crazypod_epub_text_path(
                 book->path, epub_path, sizeof(epub_path));
+        active_epub_index = index;
         source_path = epub_path;
     }
     if(offset >= book->content_size)
@@ -998,10 +915,10 @@ bool crazypod_book_read_page(int index, uint32_t offset,
     } else {
         utf8_count = source_count;
     }
-    consumed = paginate_text(
+    consumed = crazypod_epub_layout_page(
         utf8, utf8_count, page_input, source_count, source_is_gbk,
         book->format == CRAZYPOD_BOOK_MARKDOWN, text, size,
-        max_lines, max_line_units);
+        reader_max_lines, reader_max_line_units);
     if(next_offset != NULL)
         *next_offset = offset + (uint32_t)consumed;
     return true;
@@ -1075,6 +992,28 @@ static bool prepare_epub_book(int index)
     if(book->content_size != previous_content_size)
         (void)books_catalog_save();
     return true;
+}
+
+bool crazypod_book_page_image(int index, uint32_t offset,
+                              char *path, size_t path_size)
+{
+    struct crazypod_book *book =
+        index >= 0 && index < book_count ? &books[index] : NULL;
+    static char prepared_path[MAX_PATH];
+    uint32_t prepared_size;
+
+    if(path == NULL || path_size == 0 || book == NULL ||
+       book->format != CRAZYPOD_BOOK_EPUB)
+        return false;
+    if(active_epub_index != index) {
+        if(!crazypod_epub_prepare(
+               book->path, book->size, book->mtime,
+               prepared_path, sizeof(prepared_path), &prepared_size))
+            return false;
+        book->content_size = prepared_size;
+        active_epub_index = index;
+    }
+    return crazypod_epub_image_get(offset, path, path_size);
 }
 
 bool crazypod_book_probe(int index)
@@ -1221,6 +1160,17 @@ bool crazypod_book_delete(int index)
 int crazypod_books_font_size(void)
 {
     return persisted.font_size <= 2 ? (int)persisted.font_size : 1;
+}
+
+void crazypod_books_set_reader_layout(
+    unsigned max_lines, unsigned max_line_units)
+{
+    if(max_lines == 0)
+        max_lines = 1;
+    if(max_line_units == 0)
+        max_line_units = 1;
+    reader_max_lines = max_lines;
+    reader_max_line_units = max_line_units;
 }
 
 int crazypod_books_theme(void)

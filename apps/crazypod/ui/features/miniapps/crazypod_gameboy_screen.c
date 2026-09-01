@@ -104,7 +104,7 @@ static void draw_menu(int selected, bool save_failed)
     int i;
 
     memset(target, 0, LCD_WIDTH * LCD_HEIGHT * sizeof(*target));
-    crazypod_lcd_draw_text(CP_TR("GB / GBC"), 18, 16, 304, 0xffffff);
+    crazypod_lcd_draw_text(CP_TR("Game Boy"), 18, 16, 304, 0xffffff);
     for(i = 0; i < 4; ++i) {
         if(i == selected)
             crazypod_lcd_draw_text(">", 18, 54 + 28 * i, 34, 0x69bfff);
@@ -154,7 +154,7 @@ const char *crazypod_gameboy_screen_error(
     switch(result) {
     case CRAZYPOD_GAMEBOY_OK: return "";
     case CRAZYPOD_GAMEBOY_BAD_ROM:
-        return CP_TR("Unsupported or damaged GB/GBC ROM");
+        return CP_TR("Unsupported or damaged Game Boy ROM");
     case CRAZYPOD_GAMEBOY_NO_MEMORY:
         return CP_TR("Not enough memory for this game");
     case CRAZYPOD_GAMEBOY_BAD_SAVE:

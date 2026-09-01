@@ -13,7 +13,7 @@
 
 #define EPUB_CACHE_MAGIC 0x43504550u
 #define EPUB_INFO_MAGIC 0x43504549u
-#define EPUB_CACHE_VERSION 4u
+#define EPUB_CACHE_VERSION 5u
 
 struct epub_cache_disk {
     uint32_t magic;
@@ -23,11 +23,14 @@ struct epub_cache_disk {
     char source_path[MAX_PATH];
     uint32_t text_size;
     uint32_t chapter_count;
+    uint32_t image_count;
     char title[96];
     char author[96];
     char cover_path[MAX_PATH];
     struct crazypod_epub_cache_chapter
         chapters[CRAZYPOD_EPUB_CHAPTER_MAX];
+    struct crazypod_epub_cache_image
+        images[CRAZYPOD_EPUB_IMAGE_MAX];
     uint32_t checksum;
 };
 
@@ -170,8 +173,20 @@ bool crazypod_epub_cache_load_book(
         cache_disk.source_mtime == source_mtime &&
         strcmp(cache_disk.source_path, source_path) == 0 &&
         cache_disk.chapter_count <= CRAZYPOD_EPUB_CHAPTER_MAX &&
+        cache_disk.image_count <= CRAZYPOD_EPUB_IMAGE_MAX &&
         cache_disk.checksum == cache_checksum(&cache_disk) &&
         file_exists(text_path);
+    if(valid) {
+        uint32_t i;
+
+        for(i = 0; i < cache_disk.image_count; ++i) {
+            if(cache_disk.images[i].path[0] == '\0' ||
+               !file_exists(cache_disk.images[i].path)) {
+                valid = false;
+                break;
+            }
+        }
+    }
     close(fd);
     if(!valid)
         return false;
@@ -179,11 +194,13 @@ bool crazypod_epub_cache_load_book(
     memset(book, 0, sizeof(*book));
     book->text_size = cache_disk.text_size;
     book->chapter_count = cache_disk.chapter_count;
+    book->image_count = cache_disk.image_count;
     snprintf(book->title, sizeof(book->title), "%s", cache_disk.title);
     snprintf(book->author, sizeof(book->author), "%s", cache_disk.author);
     snprintf(book->cover_path, sizeof(book->cover_path),
              "%s", cache_disk.cover_path);
     memcpy(book->chapters, cache_disk.chapters, sizeof(book->chapters));
+    memcpy(book->images, cache_disk.images, sizeof(book->images));
     return true;
 }
 
@@ -194,6 +211,8 @@ bool crazypod_epub_cache_save_book(
 {
     if(book->chapter_count > CRAZYPOD_EPUB_CHAPTER_MAX)
         return false;
+    if(book->image_count > CRAZYPOD_EPUB_IMAGE_MAX)
+        return false;
     memset(&cache_disk, 0, sizeof(cache_disk));
     cache_disk.magic = EPUB_CACHE_MAGIC;
     cache_disk.version = EPUB_CACHE_VERSION;
@@ -203,11 +222,13 @@ bool crazypod_epub_cache_save_book(
              "%s", source_path);
     cache_disk.text_size = book->text_size;
     cache_disk.chapter_count = book->chapter_count;
+    cache_disk.image_count = book->image_count;
     snprintf(cache_disk.title, sizeof(cache_disk.title), "%s", book->title);
     snprintf(cache_disk.author, sizeof(cache_disk.author), "%s", book->author);
     snprintf(cache_disk.cover_path, sizeof(cache_disk.cover_path),
              "%s", book->cover_path);
     memcpy(cache_disk.chapters, book->chapters, sizeof(cache_disk.chapters));
+    memcpy(cache_disk.images, book->images, sizeof(cache_disk.images));
     cache_disk.checksum = cache_checksum(&cache_disk);
     return save_record(metadata_path, &cache_disk, sizeof(cache_disk));
 }
@@ -279,6 +300,26 @@ void crazypod_epub_cache_remove(const char *source_path)
                  EPUB_CACHE_DIRECTORY "/%08lx%s",
                  (unsigned long)hash, suffixes[i]);
         remove(path);
+    }
+    for(i = 0; i < CRAZYPOD_EPUB_IMAGE_MAX; ++i) {
+        static const char *const image_suffixes[] = {
+            ".jpg", ".jpeg", ".bmp"
+        };
+        size_t suffix;
+
+        for(suffix = 0; suffix < sizeof(image_suffixes) /
+                              sizeof(image_suffixes[0]); ++suffix) {
+            snprintf(path, sizeof(path),
+                     EPUB_CACHE_DIRECTORY "/%08lx.image%03lu%s",
+                     (unsigned long)hash, (unsigned long)i,
+                     image_suffixes[suffix]);
+            remove(path);
+            snprintf(path, sizeof(path),
+                     EPUB_CACHE_DIRECTORY "/%08lx.image%03lu%s.tmp",
+                     (unsigned long)hash, (unsigned long)i,
+                     image_suffixes[suffix]);
+            remove(path);
+        }
     }
 }
 

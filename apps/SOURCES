@@ -100,6 +100,7 @@ crazypod/crazypod_miniapp_font.c
 crazypod/crazypod_notes.c
 crazypod/crazypod_books.c
 crazypod/epub/crazypod_epub_html.c
+crazypod/epub/crazypod_epub_layout.c
 crazypod/epub/crazypod_epub_navigation.c
 crazypod/epub/crazypod_epub_parser.c
 crazypod/epub/cache/crazypod_epub_cache.c
@@ -107,6 +108,7 @@ crazypod/epub/cache/crazypod_epub_cover_store.c
 crazypod/epub/extraction/crazypod_epub_extraction.c
 crazypod/crazypod_epub.c
 crazypod/crazypod_book_cover.c
+crazypod/crazypod_book_image.c
 crazypod/crazypod_organizer.c
 crazypod/crazypod_workouts.c
 crazypod/crazypod_state.c

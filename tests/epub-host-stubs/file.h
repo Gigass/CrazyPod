@@ -7,6 +7,17 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <io.h>
+#endif
+
+#ifdef _WIN32
+static inline int host_test_fsync(int fd)
+{
+    return _commit(fd);
+}
+#define fsync host_test_fsync
+#endif
 
 static inline bool file_exists(const char *path)
 {

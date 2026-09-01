@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -9,6 +10,7 @@ const char *crazypod_l10n_text(const char *text)
 }
 
 #include "../apps/crazypod/crazypod_epub.c"
+#include "../apps/crazypod/epub/crazypod_epub_layout.h"
 
 static int progress_calls;
 static int progress_last;
@@ -75,6 +77,7 @@ static bool test_html_layout(const char *root)
         "<h1>Chapter &amp; One</h1>"
         "<p> First   paragraph. </p>"
         "<script>hidden script</script>"
+        "<nav>hidden navigation</nav>"
         "<section><p>Second<br/>line.</p>"
         "<ul><li>Alpha</li><li>Beta</li></ul></section>"
         "</body></html>";
@@ -125,6 +128,121 @@ static bool test_html_layout(const char *root)
     return strcmp(output, expected) == 0;
 }
 
+static bool test_image_callback(const char *source, uint32_t offset,
+                                void *context)
+{
+    char *seen = context;
+
+    (void)offset;
+    snprintf(seen, MAX_PATH, "%s", source);
+    return true;
+}
+
+static bool test_html_images(const char *root)
+{
+    static const char source[] =
+        "<body><p>Before</p><figure><img SRC=\"../img/pic.jpg\""
+        " alt=\"illustration\"/></figure><p>After</p></body>";
+    char input_path[MAX_PATH];
+    char output_path[MAX_PATH];
+    char output[256];
+    char image_source[MAX_PATH];
+    ssize_t count;
+    int input;
+    int result;
+
+    if(snprintf(input_path, sizeof(input_path),
+                "%s/.image-test.xhtml", root) >=
+       (int)sizeof(input_path) ||
+       snprintf(output_path, sizeof(output_path),
+                "%s/.image-test.txt", root) >=
+       (int)sizeof(output_path))
+        return false;
+    input = open(input_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(input < 0 || !write_exact(input, source, sizeof(source) - 1)) {
+        if(input >= 0)
+            close(input);
+        return false;
+    }
+    close(input);
+    result = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(result < 0 || !crazypod_epub_html_append_text_with_images(
+           input_path, result, test_image_callback, image_source)) {
+        if(result >= 0)
+            close(result);
+        remove(input_path);
+        return false;
+    }
+    close(result);
+    result = open(output_path, O_RDONLY);
+    if(result < 0) {
+        remove(input_path);
+        return false;
+    }
+    count = read(result, output, sizeof(output) - 1);
+    close(result);
+    remove(input_path);
+    remove(output_path);
+    if(count < 0)
+        return false;
+    output[count] = '\0';
+    return strcmp(image_source, "../img/pic.jpg") == 0 &&
+        strstr(output, "Before") != NULL &&
+        strstr(output, "After") != NULL &&
+        strchr(output, CRAZYPOD_EPUB_IMAGE_MARKER) != NULL;
+}
+
+static bool test_layout_pagination(void)
+{
+    static const unsigned char english[] = "hello world again";
+    static const unsigned char cjk[] =
+        "\xe4\xbd\xa0\xe5\xa5\xbd\xe4\xb8\x96\xe7\x95\x8c";
+    static const unsigned char gbk[] = "\xd6\xd0\xce\xc4";
+    static const unsigned char converted[] =
+        "\xe4\xb8\xad\xe6\x96\x87";
+    static const unsigned char image[] = {
+        CRAZYPOD_EPUB_IMAGE_MARKER, 'x'
+    };
+    char output[64];
+    size_t consumed;
+
+    consumed = crazypod_epub_layout_page(
+        english, sizeof(english) - 1,
+        english, sizeof(english) - 1, false, false,
+        output, sizeof(output), 2, 10);
+    if(strcmp(output, "hello\nworld") != 0 || consumed != 12)
+        return false;
+    consumed = crazypod_epub_layout_page(
+        cjk, sizeof(cjk) - 1,
+        cjk, sizeof(cjk) - 1, false, false,
+        output, sizeof(output), 2, 4);
+    if(strcmp(output, "你好\n世界") != 0 || consumed != 12)
+        return false;
+    consumed = crazypod_epub_layout_page(
+        converted, sizeof(converted) - 1,
+        gbk, sizeof(gbk) - 1, true, false,
+        output, sizeof(output), 1, 4);
+    if(strcmp(output, "中文") != 0 || consumed != sizeof(gbk) - 1)
+        return false;
+    consumed = crazypod_epub_layout_page(
+        image, sizeof(image), image, sizeof(image), false, false,
+        output, sizeof(output), 2, 10);
+    return output[0] == '\0' && consumed == 1;
+}
+
+static bool test_named_entities(void)
+{
+    char output[4];
+
+    return crazypod_epub_html_decode_entity("copy", output) == 2 &&
+        (unsigned char)output[0] == 0xc2 &&
+        (unsigned char)output[1] == 0xa9 &&
+        crazypod_epub_html_decode_entity("rdquo", output) == 3 &&
+        (unsigned char)output[0] == 0xe2 &&
+        (unsigned char)output[1] == 0x80 &&
+        (unsigned char)output[2] == 0x9d;
+}
+
 int main(int argc, char **argv)
 {
     char opf_path[MAX_PATH];
@@ -145,6 +263,18 @@ int main(int argc, char **argv)
     }
     if(!test_html_layout(argv[1])) {
         fprintf(stderr, "HTML reading layout failed\n");
+        return 1;
+    }
+    if(!test_html_images(argv[1])) {
+        fprintf(stderr, "HTML inline image handling failed\n");
+        return 1;
+    }
+    if(!test_layout_pagination()) {
+        fprintf(stderr, "Unicode layout pagination failed\n");
+        return 1;
+    }
+    if(!test_named_entities()) {
+        fprintf(stderr, "HTML named entity decoding failed\n");
         return 1;
     }
     if(snprintf(output_path, sizeof(output_path),

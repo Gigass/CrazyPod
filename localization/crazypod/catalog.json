@@ -4559,7 +4559,7 @@
         "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
       ]
     },
-    "Unsupported or damaged GB/GBC ROM": {
+    "Unsupported or damaged Game Boy ROM": {
       "locations": [
         "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
         "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
@@ -4589,10 +4589,12 @@
         "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
       ]
     },
-    "GB / GBC": {
+    "Game Boy": {
       "keepEnglish": true,
       "locations": [
-        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c"
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c",
+        "apps/crazypod/ui/shell/crazypod_app_catalog.c"
       ]
     }
   }
