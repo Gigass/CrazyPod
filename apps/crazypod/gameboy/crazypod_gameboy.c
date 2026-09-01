@@ -128,7 +128,7 @@ static enum crazypod_gameboy_result load_save(void)
     if(!crazypod_gameboy_core_clock_import(clock))
         return CRAZYPOD_GAMEBOY_BAD_SAVE;
     saved_at = read_u32(header + 12);
-    now = (uint32_t)time(NULL);
+    now = (uint32_t)mktime(get_time());
     if(cartridge.clock && saved_at > 0 && now > saved_at)
         crazypod_gameboy_core_clock_advance(now - saved_at);
     return CRAZYPOD_GAMEBOY_OK;
@@ -215,7 +215,7 @@ bool crazypod_gameboy_save(void)
         return false;
     memcpy(header, "CPGBSV01", 8);
     write_u32(header + 8, cartridge.ram_size);
-    write_u32(header + 12, (uint32_t)time(NULL));
+    write_u32(header + 12, (uint32_t)mktime(get_time()));
     crazypod_gameboy_core_clock_export(clock);
     for(i = 0; i < 8; ++i)
         write_u32(header + 16 + i * 4, clock[i]);
