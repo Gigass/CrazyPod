@@ -41,7 +41,7 @@
     CRAZYPOD_STATE_DIRECTORY "/favorites.tmp"
 #define CRAZYPOD_FAVORITES_NAME CP_TR("My Favorites")
 #define CRAZYPOD_MUSIC_CACHE_MAGIC 0x43504d4cu
-#define CRAZYPOD_MUSIC_CACHE_VERSION 6u
+#define CRAZYPOD_MUSIC_CACHE_VERSION 7u
 
 struct music_source_fingerprint {
     uint32_t file_count;
@@ -695,6 +695,10 @@ static void NO_INLINE add_track(const char *path, off_t source_size,
 
     memset(&metadata, 0, sizeof(metadata));
     if(!get_metadata(&metadata, fd, path)) {
+        close(fd);
+        return;
+    }
+    if(metadata.has_video) {
         close(fd);
         return;
     }

@@ -4,6 +4,7 @@ crazypod/gameboy/crazypod_gameboy_core.c
 crazypod/gameboy/crazypod_gameboy.c
 #ifdef IPOD_ACCESSORY_PROTOCOL
 crazypod/accessory/crazypod_iap_simple.c
+crazypod/accessory/crazypod_usb_iap.c
 #endif
 crazypod/crazypod_lcd.c
 crazypod/crazypod_runtime_font.c
@@ -177,6 +178,7 @@ crazypod/ui/features/customize/crazypod_wallpaper_crop_runtime.c
 crazypod/ui/features/customize/crazypod_wallpaper_crop_input.c
 crazypod/ui/shell/crazypod_app_catalog.c
 crazypod/ui/shell/crazypod_desktop_native.c
+crazypod/ui/shell/crazypod_home_actions.c
 crazypod/ui/shell/crazypod_home_input.c
 crazypod/ui/features/music/crazypod_music_activation.c
 crazypod/ui/features/music/crazypod_music_input.c

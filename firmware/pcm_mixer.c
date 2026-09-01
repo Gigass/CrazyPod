@@ -33,7 +33,6 @@
    before the last samples are sent to the codec and so things are done in
    parallel (as much as possible) with sending-out data. */
 
-static unsigned int mixer_sampr = HW_SAMPR_DEFAULT;
 static unsigned int mix_frame_size = MIX_FRAME_SAMPLES*4;
 
 /* Define this to nonzero to add a marker pulse at each frame start */
@@ -42,13 +41,13 @@ static unsigned int mix_frame_size = MIX_FRAME_SAMPLES*4;
 /* Descriptor for each channel */
 struct mixer_channel
 {
-    const void *start;               /* Buffer pointer */
-    size_t size;                     /* Bytes remaining */
-    size_t last_size;                /* Size of consumed data in prev. cycle */
-    pcm_play_callback_type get_more; /* Registered callback */
-    enum channel_status status;      /* Playback status */
-    uint32_t amplitude;              /* Amp. factor: 0x0000 = mute, 0x10000 = unity */
-    chan_buffer_hook_fn_type buffer_hook; /* Callback for new buffer */
+    const void *start;                      /* Buffer pointer */
+    size_t size;                            /* Bytes remaining */
+    size_t last_size;                       /* Size of consumed data in prev. cycle */
+    const struct mixer_play_cbs* play_cbs;  /* Registered callbacks */
+    enum channel_status status;             /* Playback status */
+    uint32_t amplitude;                     /* Amp. factor: 0x0000 = mute, 0x10000 = unity */
+    const struct mixer_buffer_cbs* buf_cbs; /* Callback for new buffer */
 };
 
 #if (defined(HW_HAVE_192) || defined(HW_HAVE_176))
@@ -75,8 +74,18 @@ static struct mixer_channel channels[PCM_MIXER_NUM_CHANNELS] IBSS_ATTR;
 static struct mixer_channel * active_channels[PCM_MIXER_NUM_CHANNELS+1] IBSS_ATTR;
 
 /* Number of silence frames to play after all data has played */
-#define MAX_IDLE_FRAMES     (mixer_sampr*3 / (mix_frame_size / 4))
 static unsigned int idle_counter = 0;
+
+#ifdef CONFIG_SAMPR_TYPES
+#define SAMPR_NUM(sampr) (sampr & ~SAMPR_TYPE_MASK)
+#else
+#define SAMPR_NUM(sampr) (sampr)
+#endif
+
+static inline unsigned int max_idle_frames(void)
+{
+    return SAMPR_NUM(pcm_get_frequency()) * 3 / (mix_frame_size / 4);
+}
 
 /** Mixing routines, CPU optmized **/
 #include "asm/pcm-mixer.c"
@@ -119,8 +128,8 @@ static void mixer_pcm_callback(const void **addr, size_t *size)
 
 static inline void chan_call_buffer_hook(struct mixer_channel *chan)
 {
-    if (UNLIKELY(chan->buffer_hook))
-        chan->buffer_hook(chan->start, chan->size);
+    if (UNLIKELY(chan->buf_cbs && chan->buf_cbs->next_buffer))
+        chan->buf_cbs->next_buffer(chan->start, chan->size);
 }
 
 /* Buffering callback - calls sub-callbacks and mixes the data for next
@@ -154,9 +163,9 @@ fill_frame:
 
         if (chan->size == 0)
         {
-            if (chan->get_more)
+            if (chan->play_cbs->get_more)
             {
-                chan->get_more(&chan->start, &chan->size);
+                chan->play_cbs->get_more(&chan->start, &chan->size);
                 ALIGN_AUDIOBUF(chan->start, chan->size);
             }
 
@@ -233,7 +242,7 @@ fill_frame:
             goto fill_frame;
         }
     }
-    else if (idle_counter++ < MAX_IDLE_FRAMES)
+    else if (idle_counter++ < max_idle_frames())
     {
         /* Pad incomplete frames with silence */
         if (idle_counter <= 3)
@@ -246,7 +255,8 @@ fill_frame:
         /* The mixer already supplied its three-second anti-churn window.
          * Tell targets with deeper codec idle not to add another one. */
 #ifdef HAVE_PCM_CODEC_IDLE
-        pcm_play_dma_mixer_idle();
+        if (pcm_current_sink() == PCM_SINK_BUILTIN)
+            pcm_play_dma_mixer_idle();
 #endif
         /* Silence period ran out - go to sleep. */
     }
@@ -274,9 +284,6 @@ static bool mixer_start_pcm(void)
         return false;
 #endif
 
-    /* Requires a shared global sample rate for all channels */
-    pcm_set_frequency(mixer_sampr);
-
     /* Prepare initial frames and set up the double buffer */
     mixer_buffer_callback(PCM_DMAST_STARTED);
 
@@ -286,8 +293,12 @@ static bool mixer_start_pcm(void)
     mixer_buffer_callback(PCM_DMAST_STARTED);
 
 #ifdef HAVE_PCM_CODEC_IDLE
-    pcm_play_data_prepared(mixer_pcm_callback, mixer_buffer_callback,
-                           start, mix_frame_size);
+    if (pcm_current_sink() == PCM_SINK_BUILTIN)
+        pcm_play_data_prepared(mixer_pcm_callback, mixer_buffer_callback,
+                               start, mix_frame_size);
+    else
+        pcm_play_data(mixer_pcm_callback, mixer_buffer_callback,
+                      start, mix_frame_size);
 #else
     pcm_play_data(mixer_pcm_callback, mixer_buffer_callback,
                   start, mix_frame_size);
@@ -295,11 +306,61 @@ static bool mixer_start_pcm(void)
     return true;
 }
 
+/* Notify users of samplerate change */
+static  void mixer_handle_sampr_change(unsigned int sampr)
+{
+    for (size_t i = 0; i < ARRAYLEN(active_channels) && active_channels[i]; i += 1)
+    {
+        struct mixer_channel* chan = active_channels[i];
+
+        /* Notify upstreams */
+        if (chan->play_cbs)
+        {
+            if (chan->play_cbs->sampr_changed)
+            {
+                chan->play_cbs->sampr_changed(sampr);
+            }
+            if (chan->play_cbs->get_more)
+            {
+                /* Remake buffer */
+                const void *start = NULL;
+                size_t size;
+                chan->play_cbs->get_more(&start, &size);
+                if (start && size) {
+                    chan->start = start;
+                    chan->size = size;
+                    chan->last_size = 0;
+                } else {
+                    channel_stopped(chan);
+                }
+            }
+        }
+        /* Notify buffer monitor */
+        if (chan->buf_cbs)
+        {
+            if (chan->buf_cbs->sampr_changed)
+            {
+                chan->buf_cbs->sampr_changed(sampr);
+            }
+        }
+    }
+
+    /* Work out how much space we really need */
+    if (sampr > SAMPR_96)
+        mix_frame_size = 4;
+    else if (sampr > SAMPR_48)
+        mix_frame_size = 2;
+    else
+        mix_frame_size = 1;
+
+    mix_frame_size *= MIX_FRAME_SAMPLES * 4;
+}
+
 /** Public interfaces **/
 
 /* Start playback on a channel */
 void mixer_channel_play_data(enum pcm_mixer_channel channel,
-                             pcm_play_callback_type get_more,
+                             const struct mixer_play_cbs* cbs,
                              const void *start, size_t size)
 {
     struct mixer_channel *chan = &channels[channel];
@@ -310,7 +371,7 @@ void mixer_channel_play_data(enum pcm_mixer_channel channel,
 
     ALIGN_AUDIOBUF(start, size);
 
-    if (!(start && size) && get_more)
+    if (!(start && size) && cbs && cbs->get_more)
     {
         /* Initial buffer not passed - call the callback now */
         pcm_play_lock();
@@ -320,12 +381,12 @@ void mixer_channel_play_data(enum pcm_mixer_channel channel,
         pcm_play_unlock(); /* Allow playback while doing callback */
 
         size = 0;
-        get_more(&start, &size);
+        cbs->get_more(&start, &size);
         ALIGN_AUDIOBUF(start, size);
     }
 
 #ifdef HAVE_PCM_CODEC_IDLE
-    if (start && size)
+    if (start && size && pcm_current_sink() == PCM_SINK_BUILTIN)
     {
         /* May wait for codec stabilization, so this must precede the
          * channel's outer pcm_play_lock(). */
@@ -343,7 +404,7 @@ void mixer_channel_play_data(enum pcm_mixer_channel channel,
         chan->start = start;
         chan->size = size;
         chan->last_size = 0;
-        chan->get_more = get_more;
+        chan->play_cbs = cbs;
 
         mixer_activate_channel(chan);
         chan_call_buffer_hook(chan);
@@ -375,7 +436,7 @@ void mixer_channel_play_pause(enum pcm_mixer_channel channel, bool play)
     bool power_prepared = false;
     bool power_consumed = false;
 
-    if (play)
+    if (play && pcm_current_sink() == PCM_SINK_BUILTIN)
     {
         /* A resume after deep idle may wait 75 ms. Do it before masking
          * the PCM DMA interrupt. Invalid/no-op resumes are cancelled below. */
@@ -422,6 +483,19 @@ void mixer_channel_stop(enum pcm_mixer_channel channel)
     pcm_play_lock();
     channel_stopped(chan);
     pcm_play_unlock();
+}
+
+/* Switch playback sink */
+bool mixer_switch_sink(enum pcm_sink_ids sink)
+{
+    if(pcm_current_sink() == sink)
+        return true;
+
+    if(!pcm_switch_sink(sink))
+        return false;
+
+    mixer_handle_sampr_change(SAMPR_NUM(pcm_get_frequency()));
+    return true;
 }
 
 /* Set channel's amplitude factor */
@@ -485,15 +559,14 @@ void mixer_adjust_channel_address(enum pcm_mixer_channel channel,
     pcm_play_unlock();
 }
 
-/* Set a hook that is called upon getting a new source buffer for a channel
-   NOTE: Called for each buffer, not each mixer chunk */
+/* Set a hook that is called upon getting a new source buffer for a channel */
 void mixer_channel_set_buffer_hook(enum pcm_mixer_channel channel,
-                                   chan_buffer_hook_fn_type fn)
+                                   const struct mixer_buffer_cbs* cbs)
 {
     struct mixer_channel *chan = &channels[channel];
 
     pcm_play_lock();
-    chan->buffer_hook = fn;
+    chan->buf_cbs = cbs;
     pcm_play_unlock();
 }
 
@@ -511,29 +584,17 @@ void mixer_reset(void)
 /* Set output samplerate */
 void mixer_set_frequency(unsigned int samplerate)
 {
-    pcm_set_frequency(samplerate);
-    samplerate = pcm_get_frequency();
-
-    if (samplerate == mixer_sampr)
+    if(pcm_get_frequency() == samplerate)
         return;
 
-    /* All data is now invalid */
-    mixer_reset();
-    mixer_sampr = samplerate;
-
-    /* Work out how much space we really need */
-    if (samplerate > SAMPR_96)
-        mix_frame_size = 4;
-    else if (samplerate > SAMPR_48)
-        mix_frame_size = 2;
-    else
-        mix_frame_size = 1;
-
-    mix_frame_size *= MIX_FRAME_SAMPLES * 4;
+    pcm_set_frequency(samplerate);
+    mixer_handle_sampr_change(SAMPR_NUM(pcm_get_frequency()));
+    if (pcm_is_initialized())
+        pcm_apply_settings();
 }
 
 /* Get output samplerate */
 unsigned int mixer_get_frequency(void)
 {
-    return mixer_sampr;
+    return pcm_get_frequency();
 }

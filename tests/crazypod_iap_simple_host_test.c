@@ -24,6 +24,7 @@ static intptr_t posted_data;
 static int posted_count;
 static unsigned char transmitted[512];
 static size_t transmitted_length;
+static int slept_ticks;
 
 int audio_status(void)
 {
@@ -56,6 +57,11 @@ void tx_writec(unsigned char value)
 void serial_bitrate(int rate)
 {
     configured_bitrate = rate;
+}
+
+void sleep(int ticks)
+{
+    slept_ticks += ticks;
 }
 
 static void reset_transport_capture(void)
@@ -147,6 +153,24 @@ int main(void)
     static const unsigned char request_lingo3_version[] = {
         0x00, 0x0f, 0x03
     };
+    static const unsigned char request_lingo5_version[] = {
+        0x00, 0x0f, 0x05
+    };
+    static const unsigned char identify_legacy_rf[] = {
+        0x00, 0x01, 0x05, 0x00, 0x02, 0x01
+    };
+    static const unsigned char identify_rf_transmitter[] = {
+        0x00, 0x13,
+        0x00, 0x00, 0x00, 0x21,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    };
+    static const unsigned char begin_transmission[] = {
+        0x05, 0x02
+    };
+    static const unsigned char end_transmission[] = {
+        0x05, 0x03
+    };
     static const unsigned char identify_display_remote[] = {
         0x00, 0x13,
         0x00, 0x00, 0x00, 0x0d,
@@ -172,6 +196,7 @@ int main(void)
         0x03, 0x0c, 0x04
     };
 
+    assert(iap_getc(0xff));
     iap_setup(0);
     assert(configured_bitrate == 0);
     assert(!crazypod_iap_simple_handle_event(123, 0));
@@ -266,6 +291,54 @@ int main(void)
                   (const unsigned char[]){
                       0x00, 0x10, 0x03, 0x01, 0x05
                   }, 5) == 0);
+
+    reset_transport_capture();
+    feed_packet(request_lingo5_version,
+                sizeof(request_lingo5_version), true);
+    handle_posted_packet();
+    assert_transmit_frame_at(
+        0, (const unsigned char[]){
+            0x00, 0x10, 0x05, 0x01, 0x01
+        }, 5);
+
+    reset_transport_capture();
+    slept_ticks = 0;
+    feed_packet(identify_legacy_rf,
+                sizeof(identify_legacy_rf), true);
+    handle_posted_packet();
+    assert(slept_ticks == HZ / 3);
+    assert_transmit_frame_at(0, begin_transmission,
+                             sizeof(begin_transmission));
+
+    reset_transport_capture();
+    feed_packet(identify_rf_transmitter,
+                sizeof(identify_rf_transmitter), true);
+    handle_posted_packet();
+    index = 0;
+    index = (int)assert_transmit_frame_at(
+        (size_t)index,
+        (const unsigned char[]){ 0x00, 0x02, 0x00, 0x13 }, 4);
+    index = (int)assert_transmit_frame_at(
+        (size_t)index,
+        (const unsigned char[]){ 0x00, 0x27, 0x00 }, 3);
+    index = (int)assert_transmit_frame_at(
+        (size_t)index, begin_transmission,
+        sizeof(begin_transmission));
+    assert((size_t)index == transmitted_length);
+
+    reset_transport_capture();
+    feed_packet(begin_transmission,
+                sizeof(begin_transmission), true);
+    handle_posted_packet();
+    assert_transmit_frame_at(0, begin_transmission,
+                             sizeof(begin_transmission));
+
+    reset_transport_capture();
+    feed_packet(end_transmission,
+                sizeof(end_transmission), true);
+    handle_posted_packet();
+    assert_transmit_frame_at(0, end_transmission,
+                             sizeof(end_transmission));
 
     reset_transport_capture();
     feed_packet(identify_display_remote,

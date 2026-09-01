@@ -22,6 +22,7 @@
 #include "core_alloc.h"
 #include "dir.h"
 #include "file.h"
+#include "iap-usb.h"
 #include "kernel.h"
 #include "lcd.h"
 #include "pathfuncs.h"
@@ -346,6 +347,7 @@ static void adjust_video_volume(int direction)
         return;
     sound_set_volume(next);
     global_status.volume = next;
+    iap_on_volume(next);
     crazypod_state_mark_dirty();
 }
 

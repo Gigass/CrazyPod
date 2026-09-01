@@ -88,6 +88,7 @@
 #include "ui/shell/crazypod_desktop.h"
 #include "ui/shell/crazypod_desktop_native.h"
 #include "ui/shell/crazypod_home_input.h"
+#include "ui/shell/crazypod_home_actions.h"
 #include "ui/presentation/crazypod_menu_list.h"
 #include "ui/features/miniapps/crazypod_miniapps_feature.h"
 #include "ui/features/music/crazypod_music_feature.h"
@@ -158,6 +159,7 @@ static bool modal_prompt_visible(void)
         crazypod_system_prompts_power_visible() ||
         crazypod_system_prompts_power_hold_feedback_visible() ||
         crazypod_system_prompts_headphone_visible() ||
+        crazypod_home_actions_visible() ||
         crazypod_now_playing_overlay_visible();
 }
 static bool coverflow_overlay_visible(bool locked)
@@ -684,6 +686,7 @@ static void configure_app_input(void)
             crazypod_system_prompts_handle_power_hold,
         .begin_power_hold =
             crazypod_system_prompts_begin_power_hold,
+        .show_lock = show_lock_screen,
         .handle_lock = handle_lock_button,
         .locked = crazypod_lock_screen_is_locked,
         .lock_media_controls_ready =
@@ -700,8 +703,6 @@ static void configure_app_input(void)
         .open_now_playing =
             crazypod_app_launcher_open_now_playing,
         .dock_connected = dock_connected,
-        .show_home_queue =
-            crazypod_now_playing_overlay_show_queue,
         .begin_music_scan = begin_music_scan,
     };
 

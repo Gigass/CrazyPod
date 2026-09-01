@@ -20,6 +20,7 @@ struct crazypod_app_input_host {
         long base, bool repeated, intptr_t data);
     bool (*handle_power_hold)(long button);
     void (*begin_power_hold)(long start_tick);
+    void (*show_lock)(bool turn_display_off);
     bool (*handle_lock)(long button, intptr_t data);
     bool (*locked)(void);
     bool (*lock_media_controls_ready)(void);
@@ -34,7 +35,6 @@ struct crazypod_app_input_host {
     void (*next_track_async)(void);
     void (*open_now_playing)(void);
     void (*dock_connected)(void);
-    void (*show_home_queue)(void);
     void (*begin_music_scan)(void);
 };
 

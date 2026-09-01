@@ -1617,9 +1617,9 @@ size_t mixer_channel_get_bytes_waiting(enum pcm_mixer_channel channel)
     \return
     \description
 
-void mixer_channel_play_data(enum pcm_mixer_channel channel, pcm_play_callback_type get_more, const void *start, size_t size)
+void mixer_channel_play_data(enum pcm_mixer_channel channel, const struct mixer_play_cbs* cbs, const void *start, size_t size)
     \param channel
-    \param get_more
+    \param cbs
     \param start
     \param size
     \description
@@ -1634,7 +1634,7 @@ void mixer_channel_set_amplitude(enum pcm_mixer_channel channel, unsigned int am
     \param amplitude
     \description
 
-void mixer_channel_set_buffer_hook(enum pcm_mixer_channel channel, chan_buffer_hook_fn_type fn)
+void mixer_channel_set_buffer_hook(enum pcm_mixer_channel channel, const struct mixer_buffer_cbs* cbs)
     \param channel
     \param fn
     \description
@@ -1797,6 +1797,10 @@ void pcm_play_stop(void)
     \description Stops the playback and empties the audio buffer.
 
 void pcm_play_unlock(void)
+    \group sound
+    \description
+
+const struct pcm_sink_caps* pcm_current_sink_caps(enum pcm_sink_ids sink)
     \group sound
     \description
 

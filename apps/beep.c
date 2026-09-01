@@ -104,9 +104,9 @@ void beep_play(unsigned int frequency, unsigned int duration,
     beep_get_more(&start, &size);
 
     mixer_channel_set_amplitude(PCM_MIXER_CHAN_BEEP, MIX_AMP_UNITY);
-    mixer_channel_play_data(PCM_MIXER_CHAN_BEEP,
-                            beep_count ? beep_get_more : NULL,
-                            start, size);
+    static struct mixer_play_cbs cbs;
+    cbs.get_more = beep_count ? beep_get_more : NULL;
+    mixer_channel_play_data(PCM_MIXER_CHAN_BEEP, &cbs, start, size);
 }
 
 static void pcm_effect_get_more(const void **start, size_t *size)
@@ -146,6 +146,7 @@ void beep_play_pcm(const int16_t *samples, size_t frame_count,
                    unsigned int sample_rate,
                    unsigned int mixer_amplitude)
 {
+    static struct mixer_play_cbs callbacks;
     const void *start = NULL;
     size_t size = 0;
     unsigned int output_rate;
@@ -169,9 +170,9 @@ void beep_play_pcm(const int16_t *samples, size_t frame_count,
     pcm_effect_get_more(&start, &size);
     mixer_channel_set_amplitude(
         PCM_MIXER_CHAN_BEEP, mixer_amplitude);
-    mixer_channel_play_data(
-        PCM_MIXER_CHAN_BEEP,
+    callbacks.get_more =
         (pcm_effect_phase >> 15) < pcm_effect_frame_count
-            ? pcm_effect_get_more : NULL,
-        start, size);
+            ? pcm_effect_get_more : NULL;
+    mixer_channel_play_data(
+        PCM_MIXER_CHAN_BEEP, &callbacks, start, size);
 }
