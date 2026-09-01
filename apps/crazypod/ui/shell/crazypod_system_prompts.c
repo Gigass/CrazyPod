@@ -33,6 +33,7 @@
 #include "crazypod_desktop.h"
 #include "crazypod_desktop_native.h"
 #include "crazypod_headphone_popup.h"
+#include "crazypod_home_actions.h"
 #include "crazypod_lock_screen.h"
 #include "crazypod_power_prompt.h"
 #include "crazypod_shell.h"
@@ -55,9 +56,12 @@ static void before_show(void)
     crazypod_coverflow_set_compositing_suspended(true);
     if(crazypod_headphone_popup_visible() ||
        crazypod_choice_coordinator_visible() ||
+       crazypod_home_actions_visible() ||
        crazypod_now_playing_overlay_visible())
         crazypod_desktop_native_preserve_modal_underlay();
     crazypod_headphone_popup_dismiss(false);
+    if(crazypod_home_actions_visible())
+        crazypod_home_actions_dismiss(false);
     if(crazypod_choice_coordinator_visible())
         crazypod_choice_coordinator_dismiss(false);
     if(crazypod_now_playing_overlay_visible())
@@ -82,6 +86,10 @@ static void headphone_before_show(void)
 {
     crazypod_desktop_native_prepare_modal();
     crazypod_coverflow_set_compositing_suspended(true);
+    if(crazypod_home_actions_visible()) {
+        crazypod_desktop_native_preserve_modal_underlay();
+        crazypod_home_actions_dismiss(false);
+    }
     backlight_on();
     crazypod_overlay_glass_prepare(false);
 }
@@ -128,6 +136,7 @@ static void configure_power(void)
         .compact_hold_feedback =
             !crazypod_shell_product_active() &&
             !crazypod_lock_screen_is_locked() &&
+            !crazypod_home_actions_visible() &&
             !crazypod_now_playing_overlay_visible(),
         .before_hold_show =
             crazypod_customize_feature_clear_input_holds,

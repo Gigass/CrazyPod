@@ -529,8 +529,6 @@ the queue. The Favorite action adds or removes the current track from
 - The current localized font artifacts use one shared Noto Sans CJK SC subset.
   Character coverage is complete for the catalog, but Japanese and Traditional
   Chinese do not yet use region-specific Han glyph shapes.
-- 3.5mm headset remote buttons are not supported. The current target does not
-  initialize the Mikey remote controller or route its events into CrazyPod.
 - Music, lyrics, books, photos, contacts, and calendars are local-only.
 - Video playback does not accept MP4/H.264/AAC directly. Convert those files
   to MPEG-1/2 first; subtitles, playlists, deletion, and on-device conversion

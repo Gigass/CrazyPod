@@ -46,6 +46,9 @@
 #include "pmu-target.h"
 #include "clocking-s5l8702.h"
 #endif
+#ifdef HAVE_MIKEY_REMOTE
+#include "mikey-target.h"
+#endif
 
 #define WHEEL_FAST_OFF_TIMEOUT   250000 /* timeout for acceleration = 250ms */
 #define WHEEL_REPEAT_TIMEOUT     250000 /* timeout for button repeat = 250ms */
@@ -458,6 +461,9 @@ void button_init_device(void)
 #endif
     s5l_clickwheel_init();
     semaphore_wait(&button_init_wakeup, HZ / 10);
+#ifdef HAVE_MIKEY_REMOTE
+    mikey_init();
+#endif
 }
 
 bool button_hold(void)
@@ -533,9 +539,13 @@ int button_read_device(void)
     }
 
     /* The int_btn variable is set in the button interrupt handler */
+    int btn = int_btn;
 #ifdef IPOD_ACCESSORY_PROTOCOL
-    return int_btn | remote_control_rx();
-#else
-    return int_btn;
+    btn |= remote_control_rx();
 #endif
+#ifdef HAVE_MIKEY_REMOTE
+    /* The inline remote remains active while Hold is enabled. */
+    btn |= mikey_button_read();
+#endif
+    return btn;
 }
