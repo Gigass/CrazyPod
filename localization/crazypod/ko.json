@@ -844,5 +844,15 @@
   "Hour": "시",
   "Minute": "분",
   "Second": "초",
-  "Year": "년"
+  "Year": "년",
+  "Add .gb or .gbc files to /MiniApps/Games": "/MiniApps/Games에 .gb 또는 .gbc 파일 추가",
+  "Save and exit": "저장 후 종료",
+  "Game save failed": "게임 저장 실패",
+  "Hold Center for game menu": "중앙 길게 눌러 게임 메뉴",
+  "Controls: /MiniApps/Games/README.txt": "조작: /MiniApps/Games/README.txt",
+  "Unsupported or damaged GB/GBC ROM": "지원하지 않거나 손상된 GB/GBC ROM",
+  "Not enough memory for this game": "게임 실행 메모리 부족",
+  "Game save is damaged; original preserved": "게임 저장 손상, 원본 파일 유지",
+  "Game emulation stopped": "게임 실행 중지됨",
+  "Game file or save could not be written/read": "게임 또는 저장 파일 읽기/쓰기 실패"
 }

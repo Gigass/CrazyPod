@@ -1,0 +1,7 @@
+#ifndef CRAZYPOD_BOOKS_TEST_CONFIG_H
+#define CRAZYPOD_BOOKS_TEST_CONFIG_H
+
+#define IPOD_6G 1
+#define MAX_PATH 260
+
+#endif

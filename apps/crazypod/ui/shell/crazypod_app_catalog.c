@@ -41,6 +41,8 @@ static const struct crazypod_app_descriptor catalog[CRAZYPOD_APP_COUNT] = {
       CRAZYPOD_MENU_ICON_MORE, 0x64D2FF },
     { CRAZYPOD_APP_SETTINGS, CP_TR("Settings"), LV_SYMBOL_SETTINGS,
       CRAZYPOD_MENU_ICON_SETTINGS, 0x8E8E93 },
+    { CRAZYPOD_APP_GAMEBOY, "GB / GBC", LV_SYMBOL_PLAY,
+      CRAZYPOD_MENU_ICON_APPS, 0x8FA663 },
 };
 
 const struct crazypod_app_descriptor *crazypod_app_catalog_at(int index)

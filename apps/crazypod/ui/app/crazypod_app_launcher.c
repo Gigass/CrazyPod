@@ -164,6 +164,11 @@ void crazypod_app_launcher_open(enum crazypod_app_id id)
         (void)crazypod_miniapps_feature_prepare();
         open_route(UTILITIES_ROUTE_MENU);
         break;
+    case CRAZYPOD_APP_GAMEBOY:
+        host.boost(true);
+        crazypod_miniapps_feature_open_gameboy();
+        open_route(GAMEBOY_ROUTE_LIBRARY);
+        break;
     case CRAZYPOD_APP_CLOCK:
         open_route(CLOCK_ROUTE_MENU);
         break;

@@ -22,6 +22,9 @@ bool crazypod_epub_prepare(const char *epub_path,
                            char *text_path,
                            size_t text_path_size,
                            uint32_t *text_size);
+void crazypod_epub_text_path(const char *epub_path,
+                             char *text_path,
+                             size_t text_path_size);
 int crazypod_epub_chapter_count(void);
 bool crazypod_epub_chapter_get(int index, char *title,
                                size_t title_size, uint32_t *offset);

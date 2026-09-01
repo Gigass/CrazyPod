@@ -4528,6 +4528,72 @@
       "locations": [
         "apps/crazypod/ui/features/settings/crazypod_settings_model.c"
       ]
+    },
+    "Add .gb or .gbc files to /MiniApps/Games": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Save and exit": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Game save failed": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Hold Center for game menu": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Controls: /MiniApps/Games/README.txt": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Unsupported or damaged GB/GBC ROM": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Not enough memory for this game": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Game save is damaged; original preserved": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Game emulation stopped": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "Game file or save could not be written/read": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
+      ]
+    },
+    "GB / GBC": {
+      "keepEnglish": true,
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c"
+      ]
     }
   }
 }

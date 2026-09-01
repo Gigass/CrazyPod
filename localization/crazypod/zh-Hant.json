@@ -844,5 +844,15 @@
   "Hour": "小時",
   "Minute": "分鐘",
   "Second": "秒",
-  "Year": "年"
+  "Year": "年",
+  "Add .gb or .gbc files to /MiniApps/Games": "將 .gb 或 .gbc 檔案放入 /MiniApps/Games",
+  "Save and exit": "儲存並結束",
+  "Game save failed": "儲存失敗",
+  "Hold Center for game menu": "長按中鍵開啟選單",
+  "Controls: /MiniApps/Games/README.txt": "操作：/MiniApps/Games/README.txt",
+  "Unsupported or damaged GB/GBC ROM": "GB/GBC 遊戲檔案損壞或不受支援",
+  "Not enough memory for this game": "記憶體不足，無法執行遊戲",
+  "Game save is damaged; original preserved": "遊戲存檔損壞，已保留原檔案",
+  "Game emulation stopped": "遊戲執行已停止",
+  "Game file or save could not be written/read": "遊戲或存檔檔案讀寫失敗"
 }

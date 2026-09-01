@@ -135,41 +135,21 @@ static void update_progress(
     workflow_host.present();
 }
 
-static void load_metadata(int start_percent, int end_percent)
-{
-    int count = crazypod_books_count();
-    int span = end_percent - start_percent;
-    int i;
-
-    if(span < 0)
-        span = 0;
-    if(count <= 0) {
-        update_progress(end_percent, CP_TR("Library is empty"), NULL);
-        return;
-    }
-    for(i = 0; i < count; ++i) {
-        update_progress(
-            start_percent + span * i / count,
-            CP_TR("Reading book titles and covers"), NULL);
-        crazypod_book_probe(i);
-    }
-    update_progress(end_percent, CP_TR("Finalizing library"), NULL);
-}
-
 void crazypod_books_workflow_ensure_metadata(void)
 {
     bool scan_needed = crazypod_books_scan_needed();
 
     if(metadata_ready && !scan_needed)
         return;
+    if(!scan_needed) {
+        metadata_ready = true;
+        return;
+    }
     render_loading(
         NULL, CP_TR("Loading Library"),
-        CP_TR("Reading final book titles and covers"));
-    if(scan_needed) {
-        update_progress(6, CP_TR("Scanning Books folder"), NULL);
-        crazypod_books_scan();
-    }
-    load_metadata(16, 96);
+        CP_TR("Scanning Books folder"));
+    update_progress(12, CP_TR("Scanning Books folder"), NULL);
+    crazypod_books_scan();
     metadata_ready = true;
     update_progress(100, CP_TR("Library ready"), NULL);
 }

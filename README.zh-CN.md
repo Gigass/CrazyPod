@@ -128,6 +128,10 @@ cd build-sim
 - 视频：`/Videos`
 - 图书：`/Books`
 - Mini Apps：`/MiniApps`
+- GB / GBC 游戏：`/MiniApps/Games`、`/MiniApps/Games/GB`、`/MiniApps/Games/GBC`，
+  入口为桌面上的“GB / GBC”图标，支持音频、滚轮操作、卡带存档和 RTC。
+  不附带游戏；兼容性和速度需真机验证。详见
+  [GB/GBC 使用说明](docs/CRAZYPOD_GAMEBOY.zh-CN.md)。
 
 ## 控制方式
 

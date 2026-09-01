@@ -21,6 +21,9 @@
 #ifndef __ROCKMACROS_H__
 #define __ROCKMACROS_H__
 
+#ifdef CRAZYPOD_GAMEBOY_CORE
+#include "../../crazypod/gameboy/crazypod_gameboy_core_compat.h"
+#else
 #include "plugin.h"
 
 #define malloc(a) my_malloc(a)
@@ -94,4 +97,5 @@ extern bool plugbuf;
 extern struct options options;
 #define savedir ROCKBOX_DIR "/rockboy"
 
+#endif /* CRAZYPOD_GAMEBOY_CORE */
 #endif

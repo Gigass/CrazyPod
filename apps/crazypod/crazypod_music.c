@@ -1276,10 +1276,11 @@ void crazypod_music_init(void)
     memset(&scan_fingerprint, 0,
            sizeof(scan_fingerprint));
     catalog_ready = music_cache_load();
-    /* A persisted catalog is usable immediately, but its source fingerprint
-     * must be checked against the mounted media after every boot. */
+    /* The cache is atomically committed and checksum protected, so a clean
+     * boot can publish it immediately. USB remounts still request a source
+     * fingerprint validation through require_catalog_validation(). */
     catalog_validation =
-        crazypod_music_catalog_validation_after_mount(catalog_ready);
+        crazypod_music_catalog_validation_after_boot(catalog_ready);
     if(catalog_ready) {
         build_groups();
         load_favorites();

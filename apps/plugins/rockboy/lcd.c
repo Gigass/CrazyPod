@@ -64,11 +64,13 @@ unsigned char *vdest;
 fb_data *vdest;
 #endif
 
+#ifndef CRAZYPOD_GAMEBOY_CORE
 static fb_data* get_framebuffer(void)
 {
     struct viewport *vp_main = *(rb->screens[SCREEN_MAIN]->current_viewport);
     return vp_main->buffer->fb_ptr;
 }
+#endif
 
 #ifndef ASM_UPDATEPATPIX
 static void updatepatpix(void) ICODE_ATTR;
@@ -747,6 +749,7 @@ static void spr_scan(void)
 
 void lcd_begin(void)
 {
+#ifndef CRAZYPOD_GAMEBOY_CORE
     fb_data *lcd_fb = get_framebuffer();
 #if defined(HAVE_LCD_MODES) && (HAVE_LCD_MODES & LCD_MODE_PAL256)
     vdest=(unsigned char*)lcd_fb;
@@ -779,9 +782,11 @@ void lcd_begin(void)
             vdest+=S1;
     }
 #endif
+#endif /* CRAZYPOD_GAMEBOY_CORE */
     WY = R_WY;
 }
 
+#ifndef CRAZYPOD_GAMEBOY_CORE
 #ifdef HAVE_LCD_COLOR
 int SCALEWL IDATA_ATTR=1<<16;
 int SCALEWS IDATA_ATTR=1<<16;
@@ -866,6 +871,7 @@ void setvidmode(void)
     }
 #endif
 }
+#endif /* CRAZYPOD_GAMEBOY_CORE */
 
 void lcd_refreshline(void)
 {
@@ -925,6 +931,9 @@ void lcd_refreshline(void)
     }
     spr_scan();
 
+#ifdef CRAZYPOD_GAMEBOY_CORE
+    crazypod_gameboy_scanline(L, BUF, PAL);
+#else
 #if !defined(HAVE_LCD_COLOR)
 #if LCD_DEPTH == 1
     if (scanline_ind == 7)
@@ -1005,6 +1014,7 @@ void lcd_refreshline(void)
 #elif LCD_DEPTH == 2
     scanline_ind = (scanline_ind+1) % 4;
 #endif
+#endif /* CRAZYPOD_GAMEBOY_CORE */
 }
 
 #ifdef HAVE_LCD_COLOR

@@ -21,6 +21,8 @@ enum crazypod_menu_icon crazypod_miniapps_feature_item_icon(
 bool crazypod_miniapps_feature_render(
     const struct route_state *state, lv_obj_t *parent,
     uint32_t primary_color);
+bool crazypod_miniapps_feature_render_gameboy_preview(
+    const struct route_state *state, lv_obj_t *parent);
 void crazypod_miniapps_feature_render_active(
     lv_obj_t *parent, uint32_t primary_color);
 void crazypod_miniapps_feature_note_opened(void);
@@ -61,6 +63,7 @@ struct crazypod_miniapps_activation_host {
 bool crazypod_miniapps_feature_activate(
     const struct route_state *state,
     const struct crazypod_miniapps_activation_host *host);
+void crazypod_miniapps_feature_open_gameboy(void);
 unsigned crazypod_miniapps_feature_input_count(void);
 bool crazypod_miniapps_feature_exit_prompt_visible(void);
 bool crazypod_miniapps_feature_has_scene_content(void);

@@ -58,6 +58,14 @@ enum crazypod_music_catalog_validation {
 };
 
 static inline enum crazypod_music_catalog_validation
+crazypod_music_catalog_validation_after_boot(bool catalog_ready)
+{
+    return catalog_ready
+        ? CRAZYPOD_MUSIC_VALIDATION_CURRENT
+        : CRAZYPOD_MUSIC_VALIDATION_FAILED;
+}
+
+static inline enum crazypod_music_catalog_validation
 crazypod_music_catalog_validation_after_mount(bool catalog_ready)
 {
     return catalog_ready

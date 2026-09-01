@@ -18,9 +18,13 @@
 #define BOOKS_STATE_DIRECTORY "/.crazypod/books"
 #define BOOKS_STATE_PATH BOOKS_STATE_DIRECTORY "/library.bin"
 #define BOOKS_STATE_TEMP BOOKS_STATE_DIRECTORY "/library.tmp"
+#define BOOKS_CATALOG_PATH BOOKS_STATE_DIRECTORY "/catalog.bin"
+#define BOOKS_CATALOG_TEMP BOOKS_STATE_DIRECTORY "/catalog.tmp"
 #define BOOKS_MAGIC 0x4350424bu
 #define BOOKS_VERSION 2u
 #define BOOKS_VERSION_LEGACY 1u
+#define BOOKS_CATALOG_MAGIC 0x43504243u
+#define BOOKS_CATALOG_VERSION 1u
 #define BOOKS_MAX 64
 #define BOOKS_SCAN_DEPTH 6
 #define BOOK_PAGE_INPUT_SIZE 1536
@@ -52,6 +56,22 @@ struct books_state_disk {
     uint32_t checksum;
 };
 
+struct books_catalog_header_disk {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t entry_size;
+    uint32_t count;
+    uint32_t checksum;
+};
+
+struct book_catalog_entry_disk {
+    char path[MAX_PATH];
+    uint32_t format;
+    uint32_t size;
+    uint32_t content_size;
+    uint32_t mtime;
+};
+
 static struct crazypod_book books[BOOKS_MAX];
 static uint32_t recent_sequences[BOOKS_MAX];
 static unsigned char book_text_encodings[BOOKS_MAX];
@@ -59,6 +79,7 @@ static bool book_utf8_bom[BOOKS_MAX];
 static int book_count;
 static bool books_scan_loaded;
 static bool books_scan_dirty;
+static int active_epub_index = -1;
 static struct books_state_disk persisted;
 static unsigned char page_input[BOOK_PAGE_INPUT_SIZE];
 static unsigned char page_utf8[BOOK_PAGE_INPUT_SIZE * 3 + 1];
@@ -117,6 +138,14 @@ static bool write_exact(int fd, const void *buffer, size_t size)
         size -= (size_t)count;
     }
     return true;
+}
+
+static uint32_t catalog_hash_header(
+    const struct books_catalog_header_disk *header)
+{
+    return hash_bytes(
+        2166136261u, header,
+        offsetof(struct books_catalog_header_disk, checksum));
 }
 
 static bool utf8_valid(const unsigned char *data, size_t count,
@@ -543,6 +572,135 @@ static void add_book(const char *path, const struct dirinfo *info,
     ++book_count;
 }
 
+static void reset_book_catalog(void)
+{
+    memset(books, 0, sizeof(books));
+    memset(recent_sequences, 0, sizeof(recent_sequences));
+    memset(book_text_encodings, 0, sizeof(book_text_encodings));
+    memset(book_utf8_bom, 0, sizeof(book_utf8_bom));
+    book_count = 0;
+    active_epub_index = -1;
+}
+
+static void catalog_entry_from_book(
+    struct book_catalog_entry_disk *entry,
+    const struct crazypod_book *book)
+{
+    memset(entry, 0, sizeof(*entry));
+    snprintf(entry->path, sizeof(entry->path), "%s", book->path);
+    entry->format = (uint32_t)book->format;
+    entry->size = book->size;
+    entry->content_size = book->content_size;
+    entry->mtime = book->mtime;
+}
+
+static bool books_catalog_save(void)
+{
+    struct books_catalog_header_disk header;
+    struct book_catalog_entry_disk entry;
+    uint32_t hash;
+    int fd;
+    int i;
+    bool success;
+
+    memset(&header, 0, sizeof(header));
+    header.magic = BOOKS_CATALOG_MAGIC;
+    header.version = BOOKS_CATALOG_VERSION;
+    header.entry_size = sizeof(entry);
+    header.count = (uint32_t)book_count;
+    hash = catalog_hash_header(&header);
+    for(i = 0; i < book_count; ++i) {
+        catalog_entry_from_book(&entry, &books[i]);
+        hash = hash_bytes(hash, &entry, sizeof(entry));
+    }
+    header.checksum = hash;
+
+    mkdir("/.crazypod");
+    mkdir(BOOKS_STATE_DIRECTORY);
+    fd = open(BOOKS_CATALOG_TEMP,
+              O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(fd < 0)
+        return false;
+    success = write_exact(fd, &header, sizeof(header));
+    for(i = 0; success && i < book_count; ++i) {
+        catalog_entry_from_book(&entry, &books[i]);
+        success = write_exact(fd, &entry, sizeof(entry));
+    }
+    if(fsync(fd) < 0)
+        success = false;
+    close(fd);
+    if(!success || rename(BOOKS_CATALOG_TEMP,
+                          BOOKS_CATALOG_PATH) < 0) {
+        remove(BOOKS_CATALOG_TEMP);
+        return false;
+    }
+    return true;
+}
+
+static bool books_catalog_load(void)
+{
+    struct books_catalog_header_disk header;
+    struct book_catalog_entry_disk entry;
+    uint32_t hash;
+    uint32_t i;
+    int fd = open(BOOKS_CATALOG_PATH, O_RDONLY);
+    bool valid;
+
+    if(fd < 0)
+        return false;
+    valid = read_exact(fd, &header, sizeof(header)) &&
+        header.magic == BOOKS_CATALOG_MAGIC &&
+        header.version == BOOKS_CATALOG_VERSION &&
+        header.entry_size == sizeof(entry) &&
+        header.count <= BOOKS_MAX &&
+        filesize(fd) == (off_t)(sizeof(header) +
+            header.count * sizeof(entry));
+    hash = valid ? catalog_hash_header(&header) : 0;
+    reset_book_catalog();
+    for(i = 0; valid && i < header.count; ++i) {
+        const struct book_progress_disk *saved;
+        struct crazypod_book *book;
+
+        valid = read_exact(fd, &entry, sizeof(entry)) &&
+            memchr(entry.path, '\0', sizeof(entry.path)) != NULL &&
+            strncmp(entry.path, BOOKS_DIRECTORY "/",
+                    sizeof(BOOKS_DIRECTORY)) == 0 &&
+            entry.format <= CRAZYPOD_BOOK_EPUB;
+        if(!valid)
+            break;
+        hash = hash_bytes(hash, &entry, sizeof(entry));
+        book = &books[book_count];
+        memset(book, 0, sizeof(*book));
+        snprintf(book->path, sizeof(book->path), "%s", entry.path);
+        title_from_path(book->title, sizeof(book->title), entry.path);
+        book->format = (enum crazypod_book_format)entry.format;
+        book->size = entry.size;
+        book->content_size = book->format == CRAZYPOD_BOOK_EPUB
+            ? entry.content_size : entry.size;
+        book->mtime = entry.mtime;
+        book->bookmark = CRAZYPOD_BOOKMARK_NONE;
+        saved = saved_progress(path_hash(book->path));
+        if(saved != NULL) {
+            book->progress = book->format == CRAZYPOD_BOOK_EPUB ||
+                             saved->progress < book->content_size
+                ? saved->progress : 0;
+            book->bookmark = saved->bookmark == CRAZYPOD_BOOKMARK_NONE
+                ? CRAZYPOD_BOOKMARK_NONE
+                : book->format == CRAZYPOD_BOOK_EPUB ||
+                  saved->bookmark < book->content_size
+                    ? saved->bookmark : CRAZYPOD_BOOKMARK_NONE;
+            book->favorite = saved->favorite != 0;
+            recent_sequences[book_count] = saved->recent_sequence;
+        }
+        ++book_count;
+    }
+    close(fd);
+    valid = valid && hash == header.checksum;
+    if(!valid)
+        reset_book_catalog();
+    return valid;
+}
+
 static void scan_directory(const char *path, int depth)
 {
     DIR *directory;
@@ -578,11 +736,7 @@ void crazypod_books_init(void)
     int fd;
 
     mkdir(BOOKS_DIRECTORY);
-    memset(books, 0, sizeof(books));
-    memset(recent_sequences, 0, sizeof(recent_sequences));
-    memset(book_text_encodings, 0, sizeof(book_text_encodings));
-    memset(book_utf8_bom, 0, sizeof(book_utf8_bom));
-    book_count = 0;
+    reset_book_catalog();
     books_scan_loaded = false;
     books_scan_dirty = true;
     memset(&persisted, 0, sizeof(persisted));
@@ -619,18 +773,19 @@ void crazypod_books_init(void)
     }
     if(migrate_legacy)
         (void)state_save();
+    if(books_catalog_load()) {
+        books_scan_loaded = true;
+        books_scan_dirty = false;
+    }
 }
 
 void crazypod_books_scan(void)
 {
-    memset(books, 0, sizeof(books));
-    memset(recent_sequences, 0, sizeof(recent_sequences));
-    memset(book_text_encodings, 0, sizeof(book_text_encodings));
-    memset(book_utf8_bom, 0, sizeof(book_utf8_bom));
-    book_count = 0;
+    reset_book_catalog();
     scan_directory(BOOKS_DIRECTORY, 0);
     books_scan_loaded = true;
     books_scan_dirty = false;
+    (void)books_catalog_save();
 }
 
 bool crazypod_books_scan_needed(void)
@@ -641,6 +796,8 @@ bool crazypod_books_scan_needed(void)
 void crazypod_books_invalidate_scan(void)
 {
     books_scan_dirty = true;
+    remove(BOOKS_CATALOG_TEMP);
+    remove(BOOKS_CATALOG_PATH);
 }
 
 int crazypod_books_count(void)
@@ -779,16 +936,24 @@ bool crazypod_book_read_page(int index, uint32_t offset,
 
     if(text == NULL || size == 0 || book == NULL)
         return false;
-    max_lines = crazypod_books_font_size() == 0 ? 11 :
-                crazypod_books_font_size() == 2 ? 6 : 9;
+    max_lines = crazypod_books_font_size() == 0 ? 13 :
+                crazypod_books_font_size() == 2 ? 10 : 11;
     max_line_units = crazypod_books_font_size() == 0 ? 46 :
-                     crazypod_books_font_size() == 2 ? 32 : 41;
+                     crazypod_books_font_size() == 2 ? 37 : 41;
     source_path = book->path;
     if(book->format == CRAZYPOD_BOOK_EPUB) {
-        if(!crazypod_epub_prepare(
-               book->path, book->size, book->mtime,
-               epub_path, sizeof(epub_path), &book->content_size))
-            return false;
+        if(book->content_size == 0) {
+            if(!crazypod_epub_prepare(
+                   book->path, book->size, book->mtime,
+                   epub_path, sizeof(epub_path),
+                   &book->content_size))
+                return false;
+            active_epub_index = index;
+            (void)books_catalog_save();
+        }
+        else
+            crazypod_epub_text_path(
+                book->path, epub_path, sizeof(epub_path));
         source_path = epub_path;
     }
     if(offset >= book->content_size)
@@ -886,13 +1051,19 @@ static bool prepare_epub_book(int index)
         index >= 0 && index < book_count ? &books[index] : NULL;
     char text_path[MAX_PATH];
     char title[96];
+    uint32_t previous_content_size;
 
     if(book == NULL || book->format != CRAZYPOD_BOOK_EPUB)
         return false;
+    if(active_epub_index == index && book->content_size > 0 &&
+       book->details_loaded)
+        return true;
+    previous_content_size = book->content_size;
     if(!crazypod_epub_prepare(
            book->path, book->size, book->mtime,
            text_path, sizeof(text_path), &book->content_size))
         return false;
+    active_epub_index = index;
     title[0] = '\0';
     crazypod_epub_book_info(
         title, sizeof(title),
@@ -901,6 +1072,8 @@ static bool prepare_epub_book(int index)
     if(title[0] != '\0')
         snprintf(book->title, sizeof(book->title), "%s", title);
     book->details_loaded = true;
+    if(book->content_size != previous_content_size)
+        (void)books_catalog_save();
     return true;
 }
 

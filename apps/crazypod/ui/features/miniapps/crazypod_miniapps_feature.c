@@ -18,20 +18,29 @@
 #endif
 #include "crazypod_miniapp_screen.h"
 #include "crazypod_miniapps_feature.h"
+#include "crazypod_gameboy_screen.h"
+#include "../../presentation/crazypod_preview_primitives.h"
+#include "../../presentation/crazypod_ui_widgets.h"
 
 #define MINIAPP_MENU_HOLD_MS 900
+
+static enum crazypod_gameboy_result gameboy_result;
 
 int crazypod_miniapps_feature_item_count(
     const struct route_state *state)
 {
     if(state->route == UTILITIES_ROUTE_MENU)
         return crazypod_miniapps_count();
+    if(state->route == GAMEBOY_ROUTE_LIBRARY)
+        return crazypod_gameboy_count();
     return state->route == MINIAPP_ROUTE_VIEW ? 1 : 0;
 }
 
 const char *crazypod_miniapps_feature_title(
     const struct route_state *state)
 {
+    if(state->route == GAMEBOY_ROUTE_LIBRARY)
+        return "GB / GBC";
     if(state->route == MINIAPP_ROUTE_VIEW) {
         const struct crazypod_miniapp_metadata *metadata =
             crazypod_miniapps_metadata(state->group);
@@ -48,8 +57,13 @@ bool crazypod_miniapps_feature_item_title(
     const struct route_state *state, int index,
     const char **title)
 {
-    const struct crazypod_miniapp_metadata *metadata =
-        crazypod_miniapps_metadata(
+    const struct crazypod_miniapp_metadata *metadata;
+
+    if(state->route == GAMEBOY_ROUTE_LIBRARY) {
+        *title = crazypod_gameboy_title(index);
+        return true;
+    }
+    metadata = crazypod_miniapps_metadata(
             state->route == MINIAPP_ROUTE_VIEW
                 ? state->group : index);
 
@@ -72,9 +86,49 @@ bool crazypod_miniapps_feature_render(
     const struct route_state *state, lv_obj_t *parent,
     uint32_t primary_color)
 {
+    if(state->route == GAMEBOY_ROUTE_LIBRARY &&
+       (crazypod_gameboy_count() == 0 ||
+        gameboy_result != CRAZYPOD_GAMEBOY_OK)) {
+        const char *text = gameboy_result != CRAZYPOD_GAMEBOY_OK
+            ? crazypod_gameboy_screen_error(gameboy_result)
+            : CP_TR("Add .gb or .gbc files to /MiniApps/Games");
+        lv_obj_t *label = crazypod_ui_widget_label(
+            parent, text, &lv_font_montserrat_12, primary_color, 255);
+
+        lv_obj_set_pos(label, 24, 90);
+        lv_obj_set_width(label, 272);
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+        return true;
+    }
     if(state->route != MINIAPP_ROUTE_VIEW)
         return false;
     crazypod_miniapp_screen_render(parent, primary_color);
+    return true;
+}
+
+bool crazypod_miniapps_feature_render_gameboy_preview(
+    const struct route_state *state, lv_obj_t *parent)
+{
+    lv_obj_t *console;
+
+    if(state->route != GAMEBOY_ROUTE_LIBRARY)
+        return false;
+    console = crazypod_ui_widget_box(
+        parent, crazypod_preview_centered_x(92), 46,
+        92, 108, 9, 0xb9b9ae, 255);
+
+    crazypod_ui_widget_box(console, 10, 10, 72, 51, 4, 0x353b39, 255);
+    crazypod_ui_widget_box(console, 16, 16, 60, 39, 1, 0x8fa663, 255);
+    crazypod_ui_widget_box(console, 16, 77, 28, 9, 1, 0x242729, 255);
+    crazypod_ui_widget_box(console, 25, 68, 9, 27, 1, 0x242729, 255);
+    crazypod_ui_widget_box(console, 57, 82, 12, 12, 6, 0x8c344b, 255);
+    crazypod_ui_widget_box(console, 71, 70, 12, 12, 6, 0x8c344b, 255);
+    crazypod_preview_make_caption(
+        parent, "GB / GBC", &lv_font_montserrat_16,
+        state->route == GAMEBOY_ROUTE_LIBRARY
+            ? crazypod_gameboy_title(state->selected)
+            : CP_TR("Add .gb or .gbc files to /MiniApps/Games"),
+        &lv_font_montserrat_12);
     return true;
 }
 
@@ -155,7 +209,11 @@ bool crazypod_miniapps_feature_handle_input(
         .close = context->pop,
     };
 
-    (void)state;
+    if(state->route != MINIAPP_ROUTE_VIEW) {
+        if(state->route == GAMEBOY_ROUTE_LIBRARY)
+            gameboy_result = CRAZYPOD_GAMEBOY_OK;
+        return false;
+    }
     handled = crazypod_miniapp_input_handle(
         event, context->now,
         context->ticks_per_second * MINIAPP_MENU_HOLD_MS / 1000,
@@ -257,8 +315,20 @@ bool crazypod_miniapps_feature_activate(
         .render = host->render,
     };
 
+    if(state->route == GAMEBOY_ROUTE_LIBRARY) {
+        if(crazypod_gameboy_count() > 0)
+            gameboy_result = crazypod_gameboy_screen_run(state->selected);
+        host->render(false);
+        return true;
+    }
     return crazypod_miniapp_runtime_activate(
         state, &internal);
+}
+
+void crazypod_miniapps_feature_open_gameboy(void)
+{
+    crazypod_gameboy_scan();
+    gameboy_result = CRAZYPOD_GAMEBOY_OK;
 }
 
 unsigned crazypod_miniapps_feature_input_count(void)

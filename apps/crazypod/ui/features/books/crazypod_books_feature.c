@@ -147,8 +147,14 @@ bool crazypod_books_feature_item_title(
     case BOOKS_ROUTE_RECENTS:
     case BOOKS_ROUTE_LIBRARY:
     case BOOKS_ROUTE_FAVORITES: {
+        int resolved_index = book_index(state, index);
         const struct crazypod_book *book =
-            crazypod_book_get(book_index(state, index));
+            crazypod_book_get(resolved_index);
+
+        if(index == state->selected) {
+            crazypod_book_probe(resolved_index);
+            book = crazypod_book_get(resolved_index);
+        }
 
         *title = book != NULL ? book->title : "";
         return true;

@@ -404,7 +404,7 @@ void crazypod_books_preview_render(
     lv_obj_t *text_panel;
     char detail_text[64];
 
-    if(index >= 0)
+    if(index >= 0 && state->route != BOOKS_ROUTE_MENU)
         crazypod_book_probe(index);
     book = crazypod_book_get(index);
     crazypod_books_feature_item_title(

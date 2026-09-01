@@ -95,6 +95,11 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
 - **Mini Apps:** React-style TypeScript/TSX is AOT-compiled to C and then to
   native `app.arm`; Native ABI 1 drives host-owned LVGL. The device runs no
   JavaScript engine. Reference apps are 2048 and Capability Lab.
+- **GB / GBC:** A dedicated **GB / GBC** desktop app opens the Rockboy game library
+  for `.gb` and `.gbc` ROMs in `/MiniApps/Games`. It includes audio, wheel controls,
+  battery saves and RTC.
+  No games are bundled. Compatibility and speed need real-device testing;
+  see the [GB/GBC guide](docs/CRAZYPOD_GAMEBOY.zh-CN.md).
 - **Now Playing themes:** installable pure-TSX source packages can replace the
   playback page after explicit user selection. Firmware keeps the default
   page, audio engine, cover decoder, and sound-wave renderer. ABI 1.7 exposes
@@ -484,6 +489,8 @@ storage. Create them manually when installing without the archive:
 | Contacts | `/Contacts/*.vcf` |
 | Calendars | `/Calendars/*.ics` or `/Calendar/*.ics` |
 | Mini App and theme packages | `/MiniApps/*.cpk` |
+| GB / GBC ROMs | `/MiniApps/Games`, `/MiniApps/Games/GB`, `/MiniApps/Games/GBC` |
+| GB / GBC battery saves | `/.crazypod/gameboy` |
 | Theme import | `/.crazypod/import.upodtheme` |
 
 CrazyPod stores settings, notes, reading progress, workout history, caches, and

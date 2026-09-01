@@ -32,7 +32,7 @@
 #define QUEUE_PATH STATE_DIRECTORY "/queue.m3u8"
 #define QUEUE_TEMP_PATH STATE_DIRECTORY "/queue.tmp"
 #define STATE_MAGIC 0x43505354u
-#define STATE_VERSION 16u
+#define STATE_VERSION 17u
 #define STATE_SAVE_INTERVAL (30 * HZ)
 #define STATE_SAVE_RETRY_INTERVAL (30 * HZ)
 #define STATE_SAVE_MAX_RETRY_SHIFT 3
@@ -249,7 +249,7 @@ struct crazypod_state_disk_v7 {
     struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
     uint32_t menu_count;
     uint32_t menu_enabled_mask;
-    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    uint8_t menu_order[CRAZYPOD_APP_LEGACY_COUNT];
     uint32_t checksum;
 };
 
@@ -284,7 +284,7 @@ struct crazypod_state_disk_v8 {
     struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
     uint32_t menu_count;
     uint32_t menu_enabled_mask;
-    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    uint8_t menu_order[CRAZYPOD_APP_LEGACY_COUNT];
     int32_t reduce_motion;
     uint32_t checksum;
 };
@@ -320,7 +320,7 @@ struct crazypod_state_disk_v9 {
     struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
     uint32_t menu_count;
     uint32_t menu_enabled_mask;
-    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    uint8_t menu_order[CRAZYPOD_APP_LEGACY_COUNT];
     int32_t reduce_motion;
     int32_t storage_mode;
     uint32_t checksum;
@@ -357,7 +357,7 @@ struct crazypod_state_disk_v10 {
     struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
     uint32_t menu_count;
     uint32_t menu_enabled_mask;
-    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    uint8_t menu_order[CRAZYPOD_APP_LEGACY_COUNT];
     int32_t reduce_motion;
     int32_t storage_mode;
     int32_t language;
@@ -395,7 +395,7 @@ struct crazypod_state_disk_v11 {
     struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
     uint32_t menu_count;
     uint32_t menu_enabled_mask;
-    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    uint8_t menu_order[CRAZYPOD_APP_LEGACY_COUNT];
     int32_t reduce_motion;
     int32_t storage_mode;
     int32_t language;
@@ -434,7 +434,7 @@ struct crazypod_state_disk_v12 {
     struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
     uint32_t menu_count;
     uint32_t menu_enabled_mask;
-    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    uint8_t menu_order[CRAZYPOD_APP_LEGACY_COUNT];
     int32_t reduce_motion;
     int32_t storage_mode;
     int32_t language;
@@ -474,13 +474,57 @@ struct crazypod_state_disk_v15 {
     struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
     uint32_t menu_count;
     uint32_t menu_enabled_mask;
-    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    uint8_t menu_order[CRAZYPOD_APP_LEGACY_COUNT];
     int32_t reduce_motion;
     int32_t storage_mode;
     int32_t language;
     int32_t poweroff;
     int32_t headphone_popup_style;
     int32_t lyrics_mode;
+    uint32_t checksum;
+};
+
+/* Version 16 used a 16-entry application menu. Keep its exact layout so
+ * devices upgrading to the independent GB / GBC app can migrate settings. */
+struct crazypod_state_disk_v16 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    int32_t volume;
+    int32_t repeat_mode;
+    uint32_t shuffled;
+    int32_t queue_index;
+    uint32_t queue_count;
+    uint32_t queue_hash;
+    uint32_t elapsed;
+    int32_t eq_enabled;
+    int32_t bass;
+    int32_t treble;
+    int32_t balance;
+    int32_t brightness;
+    int32_t backlight_timeout;
+    int32_t backlight_timeout_plugged;
+    int32_t lcd_sleep_after_backlight_off;
+    int32_t sleeptimer_duration;
+    int32_t sleeptimer_on_startup;
+    int32_t keypress_restarts_sleeptimer;
+    int32_t usb_charging;
+    int32_t beep;
+    int32_t keyclick;
+    int32_t keyclick_repeats;
+    int32_t keyclick_hardware;
+    int32_t eq_precut;
+    struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
+    uint32_t menu_count;
+    uint32_t menu_enabled_mask;
+    uint8_t menu_order[CRAZYPOD_APP_LEGACY_COUNT];
+    int32_t reduce_motion;
+    int32_t storage_mode;
+    int32_t language;
+    int32_t poweroff;
+    int32_t headphone_popup_style;
+    int32_t lyrics_mode;
+    int32_t read_ipod_music;
     uint32_t checksum;
 };
 
@@ -584,6 +628,14 @@ static uint32_t state_v15_checksum(
         offsetof(struct crazypod_state_disk_v15, checksum));
 }
 
+static uint32_t state_v16_checksum(
+    const struct crazypod_state_disk_v16 *state)
+{
+    return crazypod_checksum_with_zeroed_u32(
+        state, sizeof(*state),
+        offsetof(struct crazypod_state_disk_v16, checksum));
+}
+
 static uint32_t state_v1_checksum(const struct crazypod_state_disk_v1 *state)
 {
     return crazypod_checksum_with_zeroed_u32(
@@ -671,6 +723,24 @@ static uint32_t state_v12_checksum(
         offsetof(struct crazypod_state_disk_v12, checksum));
 }
 
+static void expand_legacy_menu_order(
+    struct crazypod_state_disk *state, size_t old_checksum_offset)
+{
+    const size_t menu_offset = offsetof(
+        struct crazypod_state_disk, menu_order);
+    const size_t old_suffix_offset =
+        menu_offset + CRAZYPOD_APP_LEGACY_COUNT;
+    const size_t new_suffix_offset = offsetof(
+        struct crazypod_state_disk, reduce_motion);
+    const size_t suffix_size = old_checksum_offset - old_suffix_offset;
+
+    memmove((unsigned char *)state + new_suffix_offset,
+            (unsigned char *)state + old_suffix_offset, suffix_size);
+    memset((unsigned char *)state + old_suffix_offset, 0,
+           new_suffix_offset - old_suffix_offset);
+    state->menu_order[CRAZYPOD_APP_LEGACY_COUNT] = CRAZYPOD_APP_GAMEBOY;
+}
+
 static bool read_exact(int fd, void *buffer, size_t size)
 {
     unsigned char *bytes = buffer;
@@ -753,6 +823,36 @@ static bool load_header(
         valid = read_exact(fd, state, sizeof(*state)) &&
                 state->checksum == state_checksum(state);
     }
+    /* A development build briefly wrote the expanded layout as v16. Accept
+     * it so upgrading from that build does not discard the user's settings. */
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 16u &&
+            header[2] == sizeof(*state)) {
+        valid = read_exact(fd, state, sizeof(*state)) &&
+                state->checksum == state_checksum(state);
+        if(valid) {
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+        }
+    }
+    else if(header[0] == STATE_MAGIC &&
+            header[1] == 16u &&
+            header[2] == sizeof(struct crazypod_state_disk_v16)) {
+        struct crazypod_state_disk_v16 state_v16;
+
+        valid = read_exact(fd, &state_v16, sizeof(state_v16)) &&
+                state_v16.checksum == state_v16_checksum(&state_v16);
+        if(valid) {
+            memcpy(state, &state_v16,
+                   offsetof(struct crazypod_state_disk_v16, checksum));
+            expand_legacy_menu_order(
+                state, offsetof(struct crazypod_state_disk_v16, checksum));
+            state->magic = STATE_MAGIC;
+            state->version = STATE_VERSION;
+            state->size = sizeof(*state);
+        }
+    }
     else if(header[0] == STATE_MAGIC &&
             header[1] == 15u &&
             header[2] == sizeof(struct crazypod_state_disk_v15)) {
@@ -763,6 +863,8 @@ static bool load_header(
         if(valid) {
             memcpy(state, &state_v15,
                    offsetof(struct crazypod_state_disk_v15, checksum));
+            expand_legacy_menu_order(
+                state, offsetof(struct crazypod_state_disk_v15, checksum));
             state->magic = STATE_MAGIC;
             state->version = STATE_VERSION;
             state->size = sizeof(*state);
@@ -779,6 +881,8 @@ static bool load_header(
         if(valid) {
             memcpy(state, &state_v12,
                    offsetof(struct crazypod_state_disk_v12, checksum));
+            expand_legacy_menu_order(
+                state, offsetof(struct crazypod_state_disk_v12, checksum));
             state->magic = STATE_MAGIC;
             state->version = STATE_VERSION;
             state->size = sizeof(*state);
@@ -804,6 +908,8 @@ static bool load_header(
         if(valid) {
             memcpy(state, &state_v11,
                    offsetof(struct crazypod_state_disk_v11, checksum));
+            expand_legacy_menu_order(
+                state, offsetof(struct crazypod_state_disk_v11, checksum));
             state->magic = STATE_MAGIC;
             state->version = STATE_VERSION;
             state->size = sizeof(*state);
@@ -819,6 +925,8 @@ static bool load_header(
         if(valid) {
             memcpy(state, &state_v10,
                    offsetof(struct crazypod_state_disk_v10, checksum));
+            expand_legacy_menu_order(
+                state, offsetof(struct crazypod_state_disk_v10, checksum));
             state->magic = STATE_MAGIC;
             state->version = STATE_VERSION;
             state->size = sizeof(*state);
@@ -834,6 +942,8 @@ static bool load_header(
         if(valid) {
             memcpy(state, &state_v9,
                    offsetof(struct crazypod_state_disk_v9, checksum));
+            expand_legacy_menu_order(
+                state, offsetof(struct crazypod_state_disk_v9, checksum));
             state->magic = STATE_MAGIC;
             state->version = STATE_VERSION;
             state->size = sizeof(*state);
@@ -850,6 +960,8 @@ static bool load_header(
         if(valid) {
             memcpy(state, &state_v8,
                    offsetof(struct crazypod_state_disk_v8, checksum));
+            expand_legacy_menu_order(
+                state, offsetof(struct crazypod_state_disk_v8, checksum));
             state->magic = STATE_MAGIC;
             state->version = STATE_VERSION;
             state->size = sizeof(*state);
@@ -866,6 +978,8 @@ static bool load_header(
         if(valid) {
             memcpy(state, &state_v7,
                    offsetof(struct crazypod_state_disk_v7, checksum));
+            expand_legacy_menu_order(
+                state, offsetof(struct crazypod_state_disk_v7, checksum));
             state->magic = STATE_MAGIC;
             state->version = STATE_VERSION;
             state->size = sizeof(*state);

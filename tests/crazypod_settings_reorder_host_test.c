@@ -71,10 +71,27 @@ static void test_reorder_respects_bounds(void)
         CRAZYPOD_APP_MUSIC);
 }
 
+static void test_gameboy_is_visible_after_legacy_restore(void)
+{
+    uint8_t legacy_order[CRAZYPOD_APP_LEGACY_COUNT];
+    uint32_t enabled_mask;
+
+    crazypod_apps_reset();
+    assert(crazypod_apps_is_enabled(CRAZYPOD_APP_GAMEBOY));
+    assert(crazypod_apps_visible_index(CRAZYPOD_APP_GAMEBOY) >= 0);
+
+    crazypod_apps_export(legacy_order, sizeof(legacy_order), &enabled_mask);
+    enabled_mask &= ~((uint32_t)1u << CRAZYPOD_APP_GAMEBOY);
+    crazypod_apps_restore(legacy_order, sizeof(legacy_order), enabled_mask);
+    assert(crazypod_apps_is_enabled(CRAZYPOD_APP_GAMEBOY));
+    assert(crazypod_apps_visible_index(CRAZYPOD_APP_GAMEBOY) >= 0);
+}
+
 int main(void)
 {
     test_main_menu_opens_actions_overlay();
     test_direct_reorder_transaction();
     test_reorder_respects_bounds();
+    test_gameboy_is_visible_after_legacy_restore();
     return 0;
 }

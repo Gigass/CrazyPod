@@ -750,6 +750,18 @@ done:
     return success;
 }
 
+void crazypod_epub_text_path(const char *epub_path,
+                             char *text_path,
+                             size_t text_path_size)
+{
+    struct crazypod_epub_cache_paths paths;
+
+    if(text_path == NULL || text_path_size == 0)
+        return;
+    crazypod_epub_cache_paths(epub_path, &paths);
+    snprintf(text_path, text_path_size, "%s", paths.text);
+}
+
 int crazypod_epub_chapter_count(void)
 {
     return epub_chapter_count;

@@ -512,6 +512,14 @@ static int draw_text(const lv_font_t *font, const char *text,
     return x;
 }
 
+void crazypod_lcd_draw_text(const char *text, int x, int y,
+                            int maximum_x, uint32_t color)
+{
+    draw_text(&lv_font_montserrat_12, text, x, y, maximum_x,
+              LCD_RGBPACK((color >> 16) & 255,
+                          (color >> 8) & 255, color & 255));
+}
+
 static void format_video_time(char *buffer, size_t size, uint32_t seconds)
 {
     uint32_t hours = seconds / 3600u;

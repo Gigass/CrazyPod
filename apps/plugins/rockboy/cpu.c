@@ -939,6 +939,10 @@ next:
         die(
             "invalid opcode 0x%02X at address 0x%04X, rombank = %d\n",
             op, (PC-1) & 0xffff, mbc.rombank);
+#ifdef CRAZYPOD_GAMEBOY_CORE
+        /* Do not execute further ROM instructions after a fatal error. */
+        return cycles - i;
+#endif
         break;
     }
 #ifdef DYNAREC

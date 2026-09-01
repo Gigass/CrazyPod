@@ -844,5 +844,15 @@
   "Hour": "Hora",
   "Minute": "Minuto",
   "Second": "Segundo",
-  "Year": "Año"
+  "Year": "Año",
+  "Add .gb or .gbc files to /MiniApps/Games": "Añade archivos .gb/.gbc a /MiniApps/Games",
+  "Save and exit": "Guardar y salir",
+  "Game save failed": "Error al guardar la partida",
+  "Hold Center for game menu": "Mantén el centro: menú",
+  "Controls: /MiniApps/Games/README.txt": "Controles: /MiniApps/Games/README.txt",
+  "Unsupported or damaged GB/GBC ROM": "ROM GB/GBC dañada o no compatible",
+  "Not enough memory for this game": "Memoria insuficiente para este juego",
+  "Game save is damaged; original preserved": "Partida dañada; se conserva el original",
+  "Game emulation stopped": "Emulación detenida",
+  "Game file or save could not be written/read": "Error al leer/escribir el juego o la partida"
 }
