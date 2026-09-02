@@ -13,11 +13,13 @@
  * consumers.  Keeping the metadata in the cache lets pagination and display
  * agree without retaining a full XHTML DOM in firmware RAM. */
 enum crazypod_epub_format_style {
-    CRAZYPOD_EPUB_FORMAT_NORMAL = 0,
-    CRAZYPOD_EPUB_FORMAT_HEADING = 1,
-    CRAZYPOD_EPUB_FORMAT_QUOTE = 2,
-    CRAZYPOD_EPUB_FORMAT_PRE = 3,
-    CRAZYPOD_EPUB_FORMAT_LIST = 4,
+    /* The style byte lives in a NUL-terminated cache stream.  Keep every
+     * style value non-zero so NORMAL metadata cannot terminate the string. */
+    CRAZYPOD_EPUB_FORMAT_NORMAL = 1,
+    CRAZYPOD_EPUB_FORMAT_HEADING = 2,
+    CRAZYPOD_EPUB_FORMAT_QUOTE = 3,
+    CRAZYPOD_EPUB_FORMAT_PRE = 4,
+    CRAZYPOD_EPUB_FORMAT_LIST = 5,
     CRAZYPOD_EPUB_FORMAT_CENTER = 0x80
 };
 

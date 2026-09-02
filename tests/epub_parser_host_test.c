@@ -240,10 +240,12 @@ static bool test_html_rich_layout(const char *root)
     remove(output_path);
     if(count < 0)
         return false;
+    if(memchr(output, '\0', (size_t)count) != NULL)
+        return false;
     output[count] = '\0';
     marker = strchr(output, CRAZYPOD_EPUB_FORMAT_MARKER);
     return marker != NULL &&
-        (unsigned char)marker[1] ==
+        ((unsigned char)marker[1] & 0x7f) ==
             CRAZYPOD_EPUB_FORMAT_HEADING &&
         strchr(marker + 2, CRAZYPOD_EPUB_FORMAT_MARKER) != NULL &&
         strstr(output, "First paragraph.") != NULL &&
