@@ -1760,11 +1760,6 @@
         "apps/crazypod/ui/features/organizer/crazypod_clock_screen.c:77"
       ]
     },
-    "Finalizing library": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_workflow.c:155"
-      ]
-    },
     "First open creates a local reading cache": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_workflow.c:243"
@@ -2233,11 +2228,6 @@
     "Library and progress totals": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_preview.c:240"
-      ]
-    },
-    "Library is empty": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_workflow.c:146"
       ]
     },
     "Library ready": {
@@ -3270,16 +3260,6 @@
     "Reading": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:121"
-      ]
-    },
-    "Reading book titles and covers": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_workflow.c:152"
-      ]
-    },
-    "Reading final book titles and covers": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_workflow.c:166"
       ]
     },
     "Reading local book data": {

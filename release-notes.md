@@ -1,7 +1,6 @@
-# CrazyPod V1.3.0 (Draft)
+# CrazyPod V1.3.0
 
-Release status: not tagged. This draft covers changes after V1.2.1 and the
-current working tree.
+Released: 2026-09-02
 
 ## What's New
 
