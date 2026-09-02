@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "epub/crazypod_epub_layout.h"
+
 #include "file.h"
 
 #define CRAZYPOD_BOOKMARK_NONE UINT32_MAX
@@ -68,6 +70,7 @@ bool crazypod_books_set_font_size(int value);
 bool crazypod_books_set_theme(int value);
 /* Keep pagination in sync with the reader's currently visible viewport. */
 void crazypod_books_set_reader_layout(
-    unsigned max_lines, unsigned max_line_units);
+    unsigned max_lines, unsigned max_line_width,
+    crazypod_epub_layout_width_fn measure_width, void *context);
 
 #endif

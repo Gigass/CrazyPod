@@ -192,6 +192,14 @@ static bool test_html_images(const char *root)
         strchr(output, CRAZYPOD_EPUB_IMAGE_MARKER) != NULL;
 }
 
+static unsigned test_layout_width(
+    uint32_t codepoint, uint32_t next_codepoint, void *context)
+{
+    (void)next_codepoint;
+    (void)context;
+    return codepoint == ' ' ? 3 : 7;
+}
+
 static bool test_layout_pagination(void)
 {
     static const unsigned char english[] = "hello world again";
@@ -227,7 +235,13 @@ static bool test_layout_pagination(void)
     consumed = crazypod_epub_layout_page(
         image, sizeof(image), image, sizeof(image), false, false,
         output, sizeof(output), 2, 10);
-    return output[0] == '\0' && consumed == 1;
+    if(output[0] != '\0' || consumed != 1)
+        return false;
+    consumed = crazypod_epub_layout_page_with_measure(
+        (const unsigned char *)"ab cd", 5,
+        (const unsigned char *)"ab cd", 5, false, false,
+        output, sizeof(output), 2, 16, test_layout_width, NULL);
+    return strcmp(output, "ab\ncd") == 0 && consumed == 5;
 }
 
 static bool test_named_entities(void)
@@ -256,6 +270,12 @@ int main(int argc, char **argv)
                 "usage: %s EXTRACTED_EPUB_ROOT [EPUB_ARCHIVE]\n",
                 argv[0]);
         return 2;
+    }
+    if(argc == 2 && strcmp(argv[1], "--layout-only") == 0) {
+        if(!test_layout_pagination() || !test_named_entities())
+            return 1;
+        puts("layout tests passed");
+        return 0;
     }
     if(!test_remove_tree(argv[1])) {
         fprintf(stderr, "safe temporary tree cleanup failed\n");

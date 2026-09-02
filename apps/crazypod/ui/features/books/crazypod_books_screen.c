@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "lvgl.h"
+#include "lcd.h"
 
 #include "../../../crazypod_books.h"
 #include "../../../crazypod_book_image.h"
@@ -13,14 +14,12 @@
 #include "crazypod_books_screen.h"
 
 #define CRAZYPOD_BOOKS_FONT (&lv_font_source_han_sans_sc_14_cjk)
-#define CRAZYPOD_BOOKS_READER_TOP 28
-#define CRAZYPOD_BOOKS_READER_TOOLBAR_TOP 206
 #define CRAZYPOD_BOOKS_IMAGE_MARGIN 8
 #define CRAZYPOD_BOOKS_IMAGE_MAX_HEIGHT 204
 #define CRAZYPOD_BOOKS_WHITE 0xFFFFFF
 #define CRAZYPOD_BOOKS_PANEL 0x1B1B22
 
-static const lv_font_t *books_text_font(unsigned size)
+const lv_font_t *crazypod_books_screen_reader_font(unsigned size)
 {
     const lv_font_t *font = crazypod_runtime_font_at_size(size);
 
@@ -31,9 +30,19 @@ static const lv_font_t *books_text_font(unsigned size)
         : CRAZYPOD_BOOKS_FONT;
 }
 
+unsigned crazypod_books_screen_measure_width(
+    uint32_t codepoint, uint32_t next_codepoint, void *context)
+{
+    const lv_font_t *font = context;
+
+    if(font == NULL)
+        return 0;
+    return lv_font_get_glyph_width(font, codepoint, next_codepoint);
+}
+
 unsigned crazypod_books_screen_reader_line_height(unsigned size)
 {
-    const lv_font_t *font = books_text_font(size);
+    const lv_font_t *font = crazypod_books_screen_reader_font(size);
     int line_height;
 
     /* Pagination must follow the font actually rendered.  The bundled
@@ -53,16 +62,16 @@ void crazypod_books_screen_render_reader(
         crazypod_book_get(book_index);
     int theme = crazypod_books_theme();
     int font_size = crazypod_books_font_size();
-    const lv_font_t *reader_font = books_text_font(
+    const lv_font_t *reader_font = crazypod_books_screen_reader_font(
         font_size == 0 ? 12 : font_size == 2 ? 16 : 14);
     lv_obj_t *page;
     lv_obj_t *toolbar;
     lv_obj_t *label;
     lv_obj_t *image;
     const lv_image_dsc_t *reader_image;
-    int reader_height = toolbar_visible
-        ? CRAZYPOD_BOOKS_READER_TOOLBAR_TOP - CRAZYPOD_BOOKS_READER_TOP
-        : LCD_HEIGHT - CRAZYPOD_BOOKS_READER_TOP;
+    int reader_height = (toolbar_visible
+        ? CRAZYPOD_BOOKS_READER_TOOLBAR_TOP : LCD_HEIGHT) -
+        CRAZYPOD_BOOKS_READER_TOP - CRAZYPOD_BOOKS_READER_BOTTOM_MARGIN;
     int image_decode_height = reader_height >
         CRAZYPOD_BOOKS_IMAGE_MAX_HEIGHT
             ? CRAZYPOD_BOOKS_IMAGE_MAX_HEIGHT : reader_height;
@@ -115,12 +124,12 @@ void crazypod_books_screen_render_reader(
             LV_OPA_COVER);
         lv_obj_set_pos(label, CRAZYPOD_BOOKS_READER_MARGIN,
                        CRAZYPOD_BOOKS_READER_TOP);
-        lv_obj_set_width(label,
-                         LCD_WIDTH - CRAZYPOD_BOOKS_READER_MARGIN * 2);
-        lv_obj_set_height(
-            label,
-            (toolbar_visible ? CRAZYPOD_BOOKS_READER_TOOLBAR_TOP : LCD_HEIGHT) -
-            CRAZYPOD_BOOKS_READER_TOP);
+        lv_obj_set_size(
+            label, LCD_WIDTH - CRAZYPOD_BOOKS_READER_MARGIN * 2,
+            reader_height);
+        lv_obj_set_style_pad_all(label, 0, 0);
+        lv_obj_set_style_text_line_space(
+            label, CRAZYPOD_BOOKS_READER_LINE_SPACE, 0);
         lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
     }
 
@@ -171,8 +180,9 @@ void crazypod_books_screen_render_stats(lv_obj_t *content)
              crazypod_books_count(),
              crazypod_books_recent_count(),
              crazypod_books_favorite_count());
-    label = crazypod_ui_widget_label(panel, text, books_text_font(14),
-                       CRAZYPOD_BOOKS_WHITE, 230);
+    label = crazypod_ui_widget_label(
+        panel, text, crazypod_books_screen_reader_font(14),
+        CRAZYPOD_BOOKS_WHITE, 230);
     lv_obj_set_pos(label, 14, 13);
     lv_obj_set_width(label, 264);
 }
@@ -207,8 +217,9 @@ void crazypod_books_screen_render_info(lv_obj_t *content,
              format,
              (unsigned long)(book != NULL ? book->size / 1024u : 0),
              book != NULL ? book->path : "");
-    label = crazypod_ui_widget_label(panel, text, books_text_font(14),
-                       CRAZYPOD_BOOKS_WHITE, 225);
+    label = crazypod_ui_widget_label(
+        panel, text, crazypod_books_screen_reader_font(14),
+        CRAZYPOD_BOOKS_WHITE, 225);
     lv_obj_set_pos(label, 12, 10);
     lv_obj_set_width(label, 268);
     lv_obj_set_height(label, 112);

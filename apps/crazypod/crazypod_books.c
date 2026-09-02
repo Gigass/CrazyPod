@@ -86,7 +86,9 @@ static unsigned char page_input[BOOK_PAGE_INPUT_SIZE];
 static unsigned char page_utf8[BOOK_PAGE_INPUT_SIZE * 3 + 1];
 static unsigned char encoding_sample[BOOK_ENCODING_SAMPLE_SIZE];
 static unsigned reader_max_lines = 8;
-static unsigned reader_max_line_units = 42;
+static unsigned reader_max_line_width = 42;
+static crazypod_epub_layout_width_fn reader_measure_width;
+static void *reader_measure_context;
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 {
@@ -915,10 +917,11 @@ bool crazypod_book_read_page(int index, uint32_t offset,
     } else {
         utf8_count = source_count;
     }
-    consumed = crazypod_epub_layout_page(
+    consumed = crazypod_epub_layout_page_with_measure(
         utf8, utf8_count, page_input, source_count, source_is_gbk,
         book->format == CRAZYPOD_BOOK_MARKDOWN, text, size,
-        reader_max_lines, reader_max_line_units);
+        reader_max_lines, reader_max_line_width,
+        reader_measure_width, reader_measure_context);
     if(next_offset != NULL)
         *next_offset = offset + (uint32_t)consumed;
     return true;
@@ -1163,14 +1166,17 @@ int crazypod_books_font_size(void)
 }
 
 void crazypod_books_set_reader_layout(
-    unsigned max_lines, unsigned max_line_units)
+    unsigned max_lines, unsigned max_line_width,
+    crazypod_epub_layout_width_fn measure_width, void *context)
 {
     if(max_lines == 0)
         max_lines = 1;
-    if(max_line_units == 0)
-        max_line_units = 1;
+    if(max_line_width == 0)
+        max_line_width = 1;
     reader_max_lines = max_lines;
-    reader_max_line_units = max_line_units;
+    reader_max_line_width = max_line_width;
+    reader_measure_width = measure_width;
+    reader_measure_context = context;
 }
 
 int crazypod_books_theme(void)

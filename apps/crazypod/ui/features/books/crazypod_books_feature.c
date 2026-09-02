@@ -43,22 +43,31 @@ static struct {
 static void configure_reader_layout_for_size(
     bool toolbar_visible, unsigned size)
 {
+    const lv_font_t *font;
+
     if(size == 0)
         size = 14;
+    font = crazypod_books_screen_reader_font(size);
     unsigned line_height =
-        crazypod_books_screen_reader_line_height(size);
+        crazypod_books_screen_reader_line_height(size) +
+        CRAZYPOD_BOOKS_READER_LINE_SPACE;
     unsigned content_height = toolbar_visible
-        ? 206u - 28u : (unsigned)LCD_HEIGHT - 28u;
+        ? CRAZYPOD_BOOKS_READER_TOOLBAR_TOP -
+          CRAZYPOD_BOOKS_READER_TOP -
+          CRAZYPOD_BOOKS_READER_BOTTOM_MARGIN
+        : (unsigned)LCD_HEIGHT - CRAZYPOD_BOOKS_READER_TOP -
+          CRAZYPOD_BOOKS_READER_BOTTOM_MARGIN;
     unsigned max_lines = content_height / line_height;
-    unsigned max_line_units =
-        ((unsigned)LCD_WIDTH -
-         CRAZYPOD_BOOKS_READER_MARGIN * 2u) * 2u / size;
+    unsigned max_line_width = (unsigned)LCD_WIDTH -
+        CRAZYPOD_BOOKS_READER_MARGIN * 2u;
 
     if(max_lines == 0)
         max_lines = 1;
-    if(max_line_units == 0)
-        max_line_units = 1;
-    crazypod_books_set_reader_layout(max_lines, max_line_units);
+    if(max_line_width == 0)
+        max_line_width = 1;
+    crazypod_books_set_reader_layout(
+        max_lines, max_line_width,
+        crazypod_books_screen_measure_width, (void *)font);
 }
 
 static void configure_reader_layout(bool toolbar_visible)

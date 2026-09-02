@@ -125,6 +125,22 @@ static unsigned codepoint_units(uint32_t codepoint)
     return is_wide(codepoint) ? 2 : 1;
 }
 
+static unsigned measured_width(
+    uint32_t codepoint, uint32_t next_codepoint,
+    crazypod_epub_layout_width_fn measure_width, void *context)
+{
+    unsigned width;
+
+    if(codepoint_units(codepoint) == 0)
+        return 0;
+    if(measure_width != NULL) {
+        width = measure_width(codepoint, next_codepoint, context);
+        if(width != 0)
+            return width;
+    }
+    return codepoint_units(codepoint);
+}
+
 static size_t source_bytes_at(const unsigned char *source, size_t count,
                               size_t offset, bool source_is_gbk)
 {
@@ -147,12 +163,13 @@ static bool append_bytes(char *output, size_t output_size, size_t *used,
     return true;
 }
 
-size_t crazypod_epub_layout_page(
+size_t crazypod_epub_layout_page_with_measure(
     const unsigned char *utf8, size_t utf8_count,
     const unsigned char *source, size_t source_count,
     bool source_is_gbk, bool markdown,
     char *output, size_t output_size,
-    unsigned max_lines, unsigned max_line_units)
+    unsigned max_lines, unsigned max_line_width,
+    crazypod_epub_layout_width_fn measure_width, void *context)
 {
     size_t input = 0;
     size_t source_input = 0;
@@ -162,7 +179,9 @@ size_t crazypod_epub_layout_page(
     size_t last_break_source = SIZE_MAX;
     size_t last_break_output = SIZE_MAX;
     unsigned lines = 1;
-    unsigned line_units = 0;
+    unsigned line_width = 0;
+    unsigned space_width = measured_width(
+        ' ', 0, measure_width, context);
     uint32_t previous = 0;
     bool have_previous = false;
     bool pending_space = false;
@@ -171,11 +190,12 @@ size_t crazypod_epub_layout_page(
         return 0;
     output[0] = '\0';
     if(utf8 == NULL || source == NULL || max_lines == 0 ||
-       max_line_units == 0)
+       max_line_width == 0)
         return 0;
 
     while(input < utf8_count && source_input < source_count) {
         uint32_t codepoint;
+        uint32_t next_codepoint = 0;
         size_t character_bytes = utf8_decode(
             utf8 + input, utf8_count - input, &codepoint);
         size_t source_bytes;
@@ -184,6 +204,11 @@ size_t crazypod_epub_layout_page(
 
         if(character_bytes == 0)
             break;
+        if(input + character_bytes < utf8_count)
+            (void)utf8_decode(
+                utf8 + input + character_bytes,
+                utf8_count - input - character_bytes,
+                &next_codepoint);
         source_bytes = source_is_gbk
             ? source_bytes_at(source, source_count, source_input, true)
             : character_bytes;
@@ -210,7 +235,7 @@ size_t crazypod_epub_layout_page(
         if(codepoint == 0xfeff || codepoint == 0x00ad) {
             input += character_bytes;
             source_input += source_bytes;
-            if(codepoint == 0x00ad && line_units != 0) {
+            if(codepoint == 0x00ad && line_width != 0) {
                 last_break_input = input;
                 last_break_source = source_input;
                 last_break_output = used;
@@ -219,7 +244,7 @@ size_t crazypod_epub_layout_page(
         }
         if(codepoint == '\n' || codepoint == 0x2028 ||
            codepoint == 0x2029) {
-            if(used == 0 || line_units == 0) {
+            if(used == 0 || line_width == 0) {
                 input += character_bytes;
                 source_input += source_bytes;
                 pending_space = false;
@@ -235,7 +260,7 @@ size_t crazypod_epub_layout_page(
             source_input += source_bytes;
             ++lines;
             line_start = used;
-            line_units = 0;
+            line_width = 0;
             last_break_input = SIZE_MAX;
             last_break_source = SIZE_MAX;
             last_break_output = SIZE_MAX;
@@ -246,7 +271,7 @@ size_t crazypod_epub_layout_page(
         if(is_space(codepoint)) {
             input += character_bytes;
             source_input += source_bytes;
-            if(line_units != 0) {
+            if(line_width != 0) {
                 pending_space = true;
                 last_break_input = input;
                 last_break_source = source_input;
@@ -255,7 +280,7 @@ size_t crazypod_epub_layout_page(
             continue;
         }
 
-        can_break = line_units != 0 && !is_no_line_start(codepoint) &&
+        can_break = line_width != 0 && !is_no_line_start(codepoint) &&
             ((pending_space && !is_no_line_end(previous)) ||
              is_wide(codepoint) || (have_previous && is_wide(previous)));
         if(can_break) {
@@ -263,15 +288,13 @@ size_t crazypod_epub_layout_page(
             last_break_source = source_input;
             last_break_output = used;
         }
+        units = measured_width(
+            codepoint, next_codepoint, measure_width, context);
         if(pending_space && !(is_wide(codepoint) &&
                               have_previous && is_wide(previous)))
-            units = 1 + codepoint_units(codepoint);
-        else
-            units = codepoint_units(codepoint);
-        if(units == 0)
-            units = 1;
+            units += space_width;
 
-        if(line_units != 0 && line_units + units > max_line_units) {
+        if(line_width != 0 && line_width + units > max_line_width) {
             if(last_break_input != SIZE_MAX &&
                last_break_output > line_start &&
                last_break_input <= input) {
@@ -286,7 +309,7 @@ size_t crazypod_epub_layout_page(
                 break;
             ++lines;
             line_start = used;
-            line_units = 0;
+            line_width = 0;
             last_break_input = SIZE_MAX;
             last_break_source = SIZE_MAX;
             last_break_output = SIZE_MAX;
@@ -304,20 +327,34 @@ size_t crazypod_epub_layout_page(
             if(!append_bytes(output, output_size, &used,
                              (const unsigned char *)" ", 1))
                 break;
-            ++line_units;
+            line_width += space_width;
         }
         if(!append_bytes(output, output_size, &used,
                          utf8 + input, character_bytes))
             break;
         input += character_bytes;
         source_input += source_bytes;
-        line_units += codepoint_units(codepoint);
+        line_width += measured_width(
+            codepoint, next_codepoint, measure_width, context);
         pending_space = false;
         previous = codepoint;
         have_previous = true;
     }
     output[used] = '\0';
     return source_input;
+}
+
+size_t crazypod_epub_layout_page(
+    const unsigned char *utf8, size_t utf8_count,
+    const unsigned char *source, size_t source_count,
+    bool source_is_gbk, bool markdown,
+    char *output, size_t output_size,
+    unsigned max_lines, unsigned max_line_units)
+{
+    return crazypod_epub_layout_page_with_measure(
+        utf8, utf8_count, source, source_count,
+        source_is_gbk, markdown, output, output_size,
+        max_lines, max_line_units, NULL, NULL);
 }
 
 #endif

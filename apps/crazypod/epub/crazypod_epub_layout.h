@@ -3,6 +3,10 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
+
+typedef unsigned (*crazypod_epub_layout_width_fn)(
+    uint32_t codepoint, uint32_t next_codepoint, void *context);
 
 /* Paginate a UTF-8 view while returning the byte count consumed from source.
  * source may be a GBK buffer when source_is_gbk is true; this keeps saved
@@ -14,5 +18,16 @@ size_t crazypod_epub_layout_page(
     bool source_is_gbk, bool markdown,
     char *output, size_t output_size,
     unsigned max_lines, unsigned max_line_units);
+
+/* Paginate using the rendered font's advance width in pixels.  The callback
+ * may return zero for a missing glyph; the built-in Unicode width fallback is
+ * then used so pagination remains safe before a runtime font is ready. */
+size_t crazypod_epub_layout_page_with_measure(
+    const unsigned char *utf8, size_t utf8_count,
+    const unsigned char *source, size_t source_count,
+    bool source_is_gbk, bool markdown,
+    char *output, size_t output_size,
+    unsigned max_lines, unsigned max_line_width,
+    crazypod_epub_layout_width_fn measure_width, void *context);
 
 #endif
