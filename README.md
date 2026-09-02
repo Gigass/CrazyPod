@@ -536,8 +536,8 @@ the queue. The Favorite action adds or removes the current track from
 - The fixed localized font artifacts use PingFang SC as the primary Simplified
   Chinese face and Noto CJK for uncovered characters. Runtime Japanese,
   Traditional Chinese, and Korean system text keeps its regional Noto face.
-- 3.5mm headset remote buttons are not supported. The current target does not
-  initialize the Mikey remote controller or route its events into CrazyPod.
+- Compatible 3.5 mm inline remotes support volume plus single-, double-, and
+  triple-press playback controls. Remote hardware compatibility may vary.
 - Music, lyrics, books, photos, contacts, and calendars are local-only.
 - Video playback does not accept MP4/H.264/AAC directly. Convert those files
   to MPEG-1/2 first; subtitles, playlists, deletion, and on-device conversion

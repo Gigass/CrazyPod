@@ -51,6 +51,9 @@ static void game_audio_next(const void **start, size_t *size)
 
 static void audio_submit(const int16_t *samples, size_t count)
 {
+    static const struct mixer_play_cbs callbacks = {
+        .get_more = game_audio_next,
+    };
     unsigned tail;
 
     if(count == 0 || count > AUDIO_SAMPLES)
@@ -64,7 +67,7 @@ static void audio_submit(const int16_t *samples, size_t count)
     }
     if(!audio_playing && audio_count >= 2) {
         audio_playing = true;
-        mixer_channel_play_data(PCM_MIXER_CHAN_PLAYBACK, game_audio_next,
+        mixer_channel_play_data(PCM_MIXER_CHAN_PLAYBACK, &callbacks,
                                 audio_ring[audio_head],
                                 audio_sizes[audio_head]);
     }

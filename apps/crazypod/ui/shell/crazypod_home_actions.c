@@ -26,6 +26,8 @@
 #define COLOR_WHITE 0xFFFFFF
 #define COLOR_ACCENT 0xDBD1BD
 #define HOME_ACTION_COUNT 3
+#define HOME_ACTION_ICON_SIZE 28
+#define HOME_ACTION_ICON_CIRCLE_SIZE 42
 
 enum home_action {
     HOME_ACTION_QUEUE = 0,
@@ -177,6 +179,8 @@ static void show_action_list(void)
 
     for(index = 0; index < HOME_ACTION_COUNT; ++index) {
         const enum home_action action = (enum home_action)index;
+        const lv_image_dsc_t *asset =
+            crazypod_menu_icon_asset(action_icon(action));
         lv_obj_t *circle;
         int x = inset + index * (cell_width + gap);
 
@@ -185,13 +189,16 @@ static void show_action_list(void)
             cell_width, cell_height, 10,
             COLOR_WHITE, 9);
         circle = make_box(
-            actions.cells[index], 0, 0, 25, 25,
+            actions.cells[index], 0, 0,
+            HOME_ACTION_ICON_CIRCLE_SIZE,
+            HOME_ACTION_ICON_CIRCLE_SIZE,
             LV_RADIUS_CIRCLE, COLOR_WHITE, 20);
         lv_obj_center(circle);
         actions.icons[index] = lv_image_create(circle);
-        lv_image_set_src(
+        lv_image_set_src(actions.icons[index], asset);
+        lv_image_set_scale(
             actions.icons[index],
-            crazypod_menu_icon_asset(action_icon(action)));
+            HOME_ACTION_ICON_SIZE * LV_SCALE_NONE / asset->header.w);
         lv_obj_set_style_image_recolor(
             actions.icons[index], lv_color_hex(COLOR_WHITE), 0);
         lv_obj_set_style_image_recolor_opa(
@@ -430,12 +437,8 @@ bool crazypod_home_actions_handle_button(
     }
     else if(base == BUTTON_SELECT && !repeated)
         activate();
-    else if(base == BUTTON_MENU && !repeated) {
-        if(actions.adjusting)
-            show_action_list();
-        else
-            crazypod_home_actions_dismiss(true);
-    }
+    else if(base == BUTTON_MENU && !repeated)
+        crazypod_home_actions_dismiss(true);
     else if(base == BUTTON_PLAY && !repeated &&
             actions.callbacks.toggle_playback != NULL)
         actions.callbacks.toggle_playback();
