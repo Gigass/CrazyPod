@@ -22,7 +22,11 @@
 #ifndef PCM_INTERNAL_H
 #define PCM_INTERNAL_H
 
+#include <stdbool.h>
+
 #include "config.h"
+#include "pcm.h"
+#include "pcm_sink.h"
 #include "gcc_extensions.h" /* for FORCE_INLINE */
 
 #ifdef HAVE_SW_VOLUME_CONTROL
@@ -129,24 +133,12 @@ void pcm_play_stop_int(void);
 bool pcm_play_dma_complete_callback(enum pcm_dma_status status,
                                     const void **addr, size_t *size);
 
-extern unsigned long pcm_curr_sampr;
-extern unsigned long pcm_sampr;
-extern int pcm_fsel;
-
 #ifdef HAVE_PCM_DMA_ADDRESS
 void * pcm_dma_addr(void *addr);
 #endif
 
 extern volatile bool pcm_playing;
-
-void pcm_play_dma_lock(void);
-void pcm_play_dma_unlock(void);
-void pcm_play_dma_init(void) INIT_ATTR;
-void pcm_play_dma_postinit(void);
-void pcm_play_dma_start(const void *addr, size_t size);
-void pcm_play_dma_stop(void);
-
-void pcm_dma_apply_settings(void);
+struct pcm_sink* pcm_get_current_sink(void);
 
 #ifdef HAVE_PCM_CODEC_IDLE
 /* Codec wake may sleep and must be completed before taking a PCM lock.

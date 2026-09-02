@@ -277,6 +277,17 @@ static void handle_general(const unsigned char *payload, uint16_t length)
     command = payload[1];
     switch(command) {
         case 0x01: /* Identify (legacy) */
+            if(length >= 3 && payload[2] == 0x05) {
+                static const unsigned char begin_transmission[] = {
+                    0x05, 0x02
+                };
+
+                sleep(HZ / 3);
+                send_packet(begin_transmission,
+                            sizeof(begin_transmission));
+            }
+            break;
+
         case 0x02: /* Accessory ACK */
         case 0x28: /* ReturnAccessoryInfo */
             break;
@@ -312,12 +323,13 @@ static void handle_general(const unsigned char *payload, uint16_t length)
         case 0x0f: /* RequestLingoProtocolVersion */
             if(length >= 3 &&
                (payload[2] == 0x00 || payload[2] == 0x02
-                || payload[2] == 0x03
+                || payload[2] == 0x03 || payload[2] == 0x05
                )) {
                 const unsigned char response[] = {
                     0x00, 0x10, payload[2], 0x01,
                     payload[2] == 0x00 ? 0x09 :
-                    payload[2] == 0x02 ? 0x02 : 0x05
+                    payload[2] == 0x02 ? 0x02 :
+                    payload[2] == 0x03 ? 0x05 : 0x01
                 };
 
                 send_packet(response, sizeof(response));
@@ -345,6 +357,19 @@ static void handle_general(const unsigned char *payload, uint16_t length)
                     start_authentication();
                 else
                     mark_authenticated();
+                if((lingoes & (1u << 5)) != 0) {
+                    static const unsigned char get_accessory_info[] = {
+                        0x00, 0x27, 0x00
+                    };
+                    static const unsigned char begin_transmission[] = {
+                        0x05, 0x02
+                    };
+
+                    send_packet(get_accessory_info,
+                                sizeof(get_accessory_info));
+                    send_packet(begin_transmission,
+                                sizeof(begin_transmission));
+                }
             }
             else
                 send_general_ack(command, 0x02);
@@ -582,6 +607,14 @@ static void handle_display_remote(
         send_display_remote_ack(command, 0x04);
 }
 
+static void handle_rf_transmitter(
+    const unsigned char *payload, uint16_t length)
+{
+    if(length >= 2 &&
+       (payload[1] == 0x02 || payload[1] == 0x03))
+        send_packet(payload, 2);
+}
+
 static void handle_packet(const unsigned char *payload, uint16_t length)
 {
     if(length == 0)
@@ -592,6 +625,8 @@ static void handle_packet(const unsigned char *payload, uint16_t length)
         handle_simple_remote(payload, length);
     else if(payload[0] == 0x03)
         handle_display_remote(payload, length);
+    else if(payload[0] == 0x05)
+        handle_rf_transmitter(payload, length);
 }
 
 #ifdef CRAZYPOD_IAP_DIAGNOSTICS
@@ -672,7 +707,7 @@ bool iap_getc(IF_IAP_MP(int port,) unsigned char value)
     IF_IAP_MP((void)port;)
 
     if(!iap_started)
-        return false;
+        return true;
     if(rx_frame.state != CRAZYPOD_IAP_SYNC &&
        TIME_AFTER(current_tick, rx_frame.deadline)) {
         ++diagnostics.frame_timeouts;

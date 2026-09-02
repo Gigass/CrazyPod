@@ -319,7 +319,7 @@ static void start_pcm(bool reframe)
     pcm_play_dma_status_callback(PCM_DMAST_STARTED);
     pcm_play_dma_status_callback(PCM_DMAST_STARTED);
 
-    pcm_play_dma_start(pcm_dbl_buf[1], pcm_dbl_buf_size[1]);
+    pcm_get_current_sink()->ops.play(pcm_dbl_buf[1], pcm_dbl_buf_size[1]);
 }
 
 void pcm_play_dma_start_int(const void *addr, size_t size)
@@ -332,7 +332,7 @@ void pcm_play_dma_start_int(const void *addr, size_t size)
 
 void pcm_play_dma_stop_int(void)
 {
-    pcm_play_dma_stop();
+    pcm_get_current_sink()->ops.stop();
     src_buf_addr = NULL;
     src_buf_rem = 0;
 }

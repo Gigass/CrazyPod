@@ -139,7 +139,7 @@ struct crazypod_video_plugin_api {
         enum pcm_mixer_channel channel);
     void (*mixer_channel_play_data)(
         enum pcm_mixer_channel channel,
-        pcm_play_callback_type get_more,
+        const struct mixer_play_cbs *callbacks,
         const void *start, size_t size);
     void (*mixer_channel_play_pause)(
         enum pcm_mixer_channel channel, bool play);

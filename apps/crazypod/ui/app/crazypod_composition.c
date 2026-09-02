@@ -21,6 +21,7 @@
 #include "../presentation/crazypod_preview_motion.h"
 #include "../shell/crazypod_desktop.h"
 #include "../shell/crazypod_desktop_native.h"
+#include "../shell/crazypod_home_actions.h"
 #include "../shell/crazypod_shell.h"
 #include "../shell/crazypod_status_bar.h"
 #include "../shell/crazypod_system_prompts.h"
@@ -307,6 +308,10 @@ void crazypod_composition_configure(
             crazypod_desktop_refresh_appearance,
         .notify = notify_feature_action,
     };
+    const struct crazypod_home_actions_callbacks home_actions = {
+        .open_queue = crazypod_now_playing_overlay_show_queue,
+        .toggle_playback = crazypod_playback_toggle,
+    };
 
     crazypod_preview_motion_configure(&preview);
     crazypod_menu_preview_configure(&menu_preview);
@@ -321,6 +326,8 @@ void crazypod_composition_configure(
     crazypod_music_library_configure(&music);
     crazypod_wallpaper_crop_runtime_configure(&crop);
     crazypod_photos_runtime_configure(&photos);
+    crazypod_home_actions_configure(
+        crazypod_desktop_screen(), &home_actions);
     configure_now_playing();
     configure_now_navigation();
 }

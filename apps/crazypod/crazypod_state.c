@@ -1210,6 +1210,19 @@ static int clamp_int(int value, int minimum, int maximum)
 
 static void apply_runtime_settings(void)
 {
+    /* The iPod 6G display is unreadable without its backlight. Rockbox's
+     * negative timeout means "always off", so migrate legacy CrazyPod values
+     * to the supported "always on" value before applying them. */
+    if(global_settings.backlight_timeout < 0) {
+        global_settings.backlight_timeout = 0;
+        state_dirty = true;
+    }
+#if CONFIG_CHARGING
+    if(global_settings.backlight_timeout_plugged < 0) {
+        global_settings.backlight_timeout_plugged = 0;
+        state_dirty = true;
+    }
+#endif
     sound_set_volume(global_status.volume);
     sound_settings_apply();
     crazypod_eq_settings_apply();
@@ -1262,11 +1275,15 @@ static void clamp_and_apply_settings(const struct crazypod_state_disk *state)
         clamp_int(state->brightness, MIN_BRIGHTNESS_SETTING,
                   MAX_BRIGHTNESS_SETTING);
 #endif
+    if(state->backlight_timeout < 0)
+        state_dirty = true;
     global_settings.backlight_timeout =
-        clamp_int(state->backlight_timeout, -1, 7200);
+        clamp_int(state->backlight_timeout, 0, 7200);
 #if CONFIG_CHARGING
+    if(state->backlight_timeout_plugged < 0)
+        state_dirty = true;
     global_settings.backlight_timeout_plugged =
-        clamp_int(state->backlight_timeout_plugged, -1, 7200);
+        clamp_int(state->backlight_timeout_plugged, 0, 7200);
 #endif
     global_settings.lcd_sleep_after_backlight_off =
         clamp_int(state->lcd_sleep_after_backlight_off, -1, 7200);

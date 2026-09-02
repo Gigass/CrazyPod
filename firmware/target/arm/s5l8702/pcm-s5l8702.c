@@ -31,6 +31,7 @@
 #include "pcm-internal.h"
 #include "pcm_sampr.h"
 #include "pcm-target.h"
+#include "pcm_sink.h"
 #include "dma-s5l8702.h"
 
 /* DMA configuration */
@@ -82,13 +83,11 @@ static struct dmac_ch_cfg dma_play_ch_cfg = {
 #define WATERMARK_BYTES     (PCM_WATERMARK * 4)
 
 static volatile int locked = 0;
-/* When set, pcm_play_dma_start() returns immediately without starting
- * I2S DMA.  Used by USB audio source pull mode where the USB ISR
- * drives audio data instead of the DMA controller. */
-volatile bool pcm_dma_start_inhibit = false;
 static unsigned char dblbuf[2][WATERMARK_BYTES] CACHEALIGN_ATTR;
 static int active_dblbuf;
 size_t pcm_remaining;
+
+static void sink_dma_stop(void);
 
 #ifdef HAVE_PCM_CODEC_IDLE
 enum pcm_audio_power_state
@@ -246,12 +245,7 @@ static void pcm_audio_power_prepare(bool recording)
         pcm_mixer_idle_pending = false;
     }
 
-    /* USB source pull mode needs logical PCM callbacks but no analog path. */
-    bool inhibited = playback && pcm_dma_start_inhibit;
     restore_irq(oldlevel);
-
-    if (inhibited)
-        return;
 
     mutex_lock(&pcm_audio_power_mutex);
 
@@ -316,8 +310,7 @@ void pcm_play_dma_commit_prepare(void)
     if (pcm_playback_prepare_count != 0)
         pcm_playback_prepare_count--;
 
-    if (!pcm_dma_start_inhibit)
-        pcm_playback_power_wanted = true;
+    pcm_playback_power_wanted = true;
 
     bool powerdown = !pcm_audio_power_wanted_locked();
     if (powerdown)
@@ -371,14 +364,14 @@ void pcm_rec_dma_commit_prepare(void)
 #endif /* HAVE_PCM_CODEC_IDLE */
 
 /* Mask the DMA interrupt */
-void pcm_play_lock(void)
+static void sink_lock(void)
 {
     if (locked++ == 0)
         dmac_ch_lock_int(&dma_play_ch);
 }
 
 /* Unmask the DMA interrupt if enabled */
-void pcm_play_unlock(void)
+static void sink_unlock(void)
 {
     if (--locked == 0)
         dmac_ch_unlock_int(&dma_play_ch);
@@ -426,16 +419,13 @@ static void dma_play_callback(void *cb_data)
     pcm_play_dma_status_callback(PCM_DMAST_STARTED);
 }
 
-void pcm_play_dma_start(const void* addr, size_t size)
+static void sink_dma_start(const void* addr, size_t size)
 {
-    if (pcm_dma_start_inhibit)
-        return;
-
 #ifdef HAVE_PCM_CODEC_IDLE
     dmac_ch_stop(&dma_play_ch);
     I2STXCOM = 0xa;
 #else
-    pcm_play_dma_stop();
+    sink_dma_stop();
 
     /* un-gate I2S clock before starting DMA */
     PWRCON(1) &= ~(1 << 7);
@@ -447,7 +437,7 @@ void pcm_play_dma_start(const void* addr, size_t size)
     dma_play_callback((void*)addr);
 }
 
-void pcm_play_dma_stop(void)
+static void sink_dma_stop(void)
 {
     dmac_ch_stop(&dma_play_ch);
     I2STXCOM = 0xa;
@@ -464,7 +454,7 @@ void pcm_play_dma_stop(void)
 #define MCLK_FREQ     12000000
 
 /* set the configured PCM frequency */
-void pcm_dma_apply_settings(void)
+static void sink_set_freq(uint16_t freq)
 {
     static uint16_t last_clkcon3l = 0;
     uint16_t clkcon3l;
@@ -476,12 +466,12 @@ void pcm_dma_apply_settings(void)
      * obtaining 32 KHz in LRCK controller input and 8 MHz in SCLK input.
      * OF uses this trick.
      */
-    if (pcm_fsel == HW_FREQ_32) {
+    if (freq == HW_FREQ_32) {
         fsel = HW_FREQ_48;
         clkcon3l = 0x3028;  /* PLL2 / 3 / 9 -> 8 MHz */
     }
     else {
-        fsel = pcm_fsel;
+        fsel = freq;
         clkcon3l = 0;  /* OSC0 -> 12 MHz */
     }
 
@@ -512,7 +502,7 @@ void pcm_dma_apply_settings(void)
 #endif
 }
 
-void pcm_play_dma_init(void)
+static void sink_dma_init(void)
 {
 #ifdef HAVE_PCM_CODEC_IDLE
     mutex_init(&pcm_audio_power_mutex);
@@ -536,7 +526,7 @@ void pcm_play_dma_init(void)
     I2SCLKCON = 1;
 
     audiohw_preinit();
-    pcm_dma_apply_settings();
+    sink_set_freq(HW_FREQ_DEFAULT);
 
 #ifdef HAVE_PCM_CODEC_IDLE
     if (!create_thread(pcm_audio_power_thread, pcm_audio_power_stack,
@@ -546,7 +536,7 @@ void pcm_play_dma_init(void)
 #endif
 }
 
-void pcm_play_dma_postinit(void)
+static void sink_dma_postinit(void)
 {
     audiohw_postinit();
 
@@ -555,6 +545,23 @@ void pcm_play_dma_postinit(void)
     pcm_audio_powerdown_now();
 #endif
 }
+
+struct pcm_sink builtin_pcm_sink = {
+    .caps = {
+        .samprs       = hw_freq_sampr,
+        .num_samprs   = HW_NUM_FREQ,
+        .default_freq = HW_FREQ_DEFAULT,
+    },
+    .ops = {
+        .init     = sink_dma_init,
+        .postinit = sink_dma_postinit,
+        .set_freq = sink_set_freq,
+        .lock     = sink_lock,
+        .unlock   = sink_unlock,
+        .play     = sink_dma_start,
+        .stop     = sink_dma_stop,
+    },
+};
 
 #ifdef HAVE_PCM_DMA_ADDRESS
 void * pcm_dma_addr(void *addr)

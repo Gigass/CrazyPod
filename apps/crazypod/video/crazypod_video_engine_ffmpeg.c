@@ -243,6 +243,10 @@ static void audio_get_more(const void **start, size_t *size)
 
 static void start_audio_if_needed(void)
 {
+    static const struct mixer_play_cbs callbacks = {
+        .get_more = audio_get_more,
+    };
+
     if(engine.audio_count == 0 || engine.status !=
        CRAZYPOD_VIDEO_ENGINE_PLAYING)
         return;
@@ -250,7 +254,7 @@ static void start_audio_if_needed(void)
         mixer_channel_set_amplitude(
             PCM_MIXER_CHAN_PLAYBACK, MIX_AMP_UNITY);
         mixer_channel_play_data(
-            PCM_MIXER_CHAN_PLAYBACK, audio_get_more, NULL, 0);
+            PCM_MIXER_CHAN_PLAYBACK, &callbacks, NULL, 0);
     }
 }
 

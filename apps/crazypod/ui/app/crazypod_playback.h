@@ -10,6 +10,7 @@ struct crazypod_playback_host {
 void crazypod_playback_configure(
     const struct crazypod_playback_host *host);
 void crazypod_playback_initialize(void);
+bool crazypod_playback_commands_ready(void);
 void crazypod_playback_headphone_changed(bool inserted);
 int crazypod_playback_initial_album_index(void);
 void crazypod_playback_toggle(void);
@@ -19,8 +20,10 @@ bool crazypod_playback_seek_begin(int direction);
 void crazypod_playback_seek_step(void);
 void crazypod_playback_seek_finish(void);
 void crazypod_playback_toggle_async(void);
+void crazypod_playback_stop_async(void);
 void crazypod_playback_next_async(void);
 void crazypod_playback_previous_or_restart_async(void);
+void crazypod_playback_select_async(int queue_index);
 void crazypod_playback_refresh_lock_screen(void);
 void crazypod_playback_request_refresh_after_unlock(
     uint32_t present_sequence, bool animate_capsule);

@@ -110,6 +110,22 @@ int usb_drv_get_frame_number(void);
 int usb_drv_get_iisoixfr_count(void);
 #endif
 
+/* batched request api is for workloads that perform very high-frequency,
+ * performance-sensitive isochronous transactions continuously.
+ * this api allows multiple transaction requests to be buffered in udc driver.
+ * so that it can maximize the controller's performance. */
+
+/* called when usb system requires more buffer */
+typedef void(*usb_drv_batch_get_more)(const void** ptr, size_t* len);
+
+/* prepare request queue */
+int usb_drv_batch_init(int ep, usb_drv_batch_get_more get_more);
+/* destroy request queue */
+int usb_drv_batch_deinit(void);
+/* start processing */
+int usb_drv_batch_start(void);
+/* stop processing */
+int usb_drv_batch_stop(void);
 /* USB_STRING_INITIALIZER(u"Example String") */
 #define USB_STRING_INITIALIZER(S) { \
     sizeof(struct usb_string_descriptor) + sizeof(S) - sizeof(*S), \

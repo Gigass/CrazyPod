@@ -20,36 +20,56 @@
  ****************************************************************************/
 #include "pcm.h"
 #include "pcm-internal.h"
+#include "pcm_sampr.h"
+#include "pcm_sink.h"
 
-void pcm_dma_apply_settings(void)
+static void sink_set_freq(uint16_t freq)
+{
+    (void)freq;
+}
+
+static void sink_dma_init(void)
 {
 }
 
-void pcm_play_dma_init(void)
+static void sink_dma_postinit(void)
 {
 }
 
-void pcm_play_dma_postinit(void)
-{
-}
-
-void pcm_play_dma_start(const void *addr, size_t size)
+static void sink_dma_start(const void *addr, size_t size)
 {
     (void)addr;
     (void)size;
 }
 
-void pcm_play_dma_stop(void)
+static void sink_dma_stop(void)
 {
 }
 
-void pcm_play_lock(void)
+static void sink_lock(void)
 {
 }
 
-void pcm_play_unlock(void)
+static void sink_unlock(void)
 {
 }
+
+struct pcm_sink builtin_pcm_sink = {
+    .caps = {
+        .samprs       = hw_freq_sampr,
+        .num_samprs   = HW_NUM_FREQ,
+        .default_freq = HW_FREQ_DEFAULT,
+    },
+    .ops = {
+        .init     = sink_dma_init,
+        .postinit = sink_dma_postinit,
+        .set_freq = sink_set_freq,
+        .lock     = sink_lock,
+        .unlock   = sink_unlock,
+        .play     = sink_dma_start,
+        .stop     = sink_dma_stop,
+    },
+};
 
 #ifdef HAVE_RECORDING
 void pcm_rec_dma_init(void)

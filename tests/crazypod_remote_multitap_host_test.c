@@ -97,6 +97,54 @@ int main(void)
     assert(crazypod_remote_multitap_tick(&state, 845) ==
            CRAZYPOD_REMOTE_MULTITAP_NEXT);
 
+    /* Mikey emits multimedia press/release pairs. They use the same
+     * single/double/triple semantics as the existing remote state machine. */
+    crazypod_remote_multitap_reset(&state);
+    assert(crazypod_multitap_handle_button(
+               &state, BUTTON_MULTIMEDIA_PLAYPAUSE,
+               BUTTON_MULTIMEDIA_PLAYPAUSE, 850, 30) ==
+           CRAZYPOD_REMOTE_MULTITAP_NONE);
+    assert(crazypod_multitap_handle_button(
+               &state, BUTTON_MULTIMEDIA_PLAYPAUSE | BUTTON_REL,
+               BUTTON_MULTIMEDIA_PLAYPAUSE, 855, 30) ==
+           CRAZYPOD_REMOTE_MULTITAP_NONE);
+    assert(crazypod_multitap_handle_button(
+               &state, BUTTON_MULTIMEDIA_PLAYPAUSE,
+               BUTTON_MULTIMEDIA_PLAYPAUSE, 865, 30) ==
+           CRAZYPOD_REMOTE_MULTITAP_NONE);
+    assert(crazypod_multitap_handle_button(
+               &state, BUTTON_MULTIMEDIA_PLAYPAUSE | BUTTON_REL,
+               BUTTON_MULTIMEDIA_PLAYPAUSE, 870, 30) ==
+           CRAZYPOD_REMOTE_MULTITAP_NONE);
+    assert(crazypod_remote_multitap_tick(&state, 900) ==
+           CRAZYPOD_REMOTE_MULTITAP_NEXT);
+
+    crazypod_remote_multitap_reset(&state);
+    assert(crazypod_multitap_handle_button(
+               &state, BUTTON_MULTIMEDIA_PLAYPAUSE,
+               BUTTON_MULTIMEDIA_PLAYPAUSE, 910, 30) ==
+           CRAZYPOD_REMOTE_MULTITAP_NONE);
+    assert(crazypod_multitap_handle_button(
+               &state, BUTTON_MULTIMEDIA_PLAYPAUSE | BUTTON_REL,
+               BUTTON_MULTIMEDIA_PLAYPAUSE, 915, 30) ==
+           CRAZYPOD_REMOTE_MULTITAP_NONE);
+    assert(crazypod_multitap_handle_button(
+               &state, BUTTON_MULTIMEDIA_PLAYPAUSE,
+               BUTTON_MULTIMEDIA_PLAYPAUSE, 925, 30) ==
+           CRAZYPOD_REMOTE_MULTITAP_NONE);
+    assert(crazypod_multitap_handle_button(
+               &state, BUTTON_MULTIMEDIA_PLAYPAUSE | BUTTON_REL,
+               BUTTON_MULTIMEDIA_PLAYPAUSE, 930, 30) ==
+           CRAZYPOD_REMOTE_MULTITAP_NONE);
+    assert(crazypod_multitap_handle_button(
+               &state, BUTTON_MULTIMEDIA_PLAYPAUSE,
+               BUTTON_MULTIMEDIA_PLAYPAUSE, 940, 30) ==
+           CRAZYPOD_REMOTE_MULTITAP_NONE);
+    assert(crazypod_multitap_handle_button(
+               &state, BUTTON_MULTIMEDIA_PLAYPAUSE | BUTTON_REL,
+               BUTTON_MULTIMEDIA_PLAYPAUSE, 945, 30) ==
+           CRAZYPOD_REMOTE_MULTITAP_PREVIOUS);
+
     /* Universal Dock lock-screen captures include an 840 ms release-to-press
      * gap. A 900 ms lock-screen window must retain that first tap. */
     crazypod_remote_multitap_reset(&state);

@@ -37,6 +37,9 @@ prepare_generated_headers() {
         -j1 "$builddir_unix/apps/core_asmdefs.h"
     make EXTRA_DEFINES="$CRAZYPOD_BUILD_DEFINES" \
         -j1 "$builddir_unix/ram.link"
+    mkdir -p "$builddir_unix/miniapps"
+    make EXTRA_DEFINES="$CRAZYPOD_BUILD_DEFINES" \
+        -j1 "$builddir_unix/miniapps/miniapp.link"
 }
 
 verify_stack_alignment() {

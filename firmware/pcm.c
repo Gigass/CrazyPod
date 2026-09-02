@@ -42,21 +42,19 @@
  *   Semi-private -
  *      pcm_play_dma_complete_callback
  *      pcm_play_dma_status_callback
- *      pcm_play_dma_init
- *      pcm_play_dma_postinit
- *      pcm_play_dma_start
- *      pcm_play_dma_stop
+ *      pcm_get_current_sink
+ *      pcm_sink.init
+ *      pcm_sink.postinit
+ *      pcm_sink.play
+ *      pcm_sink.stop
  *   Data Read/Written within TSP -
- *      pcm_sampr (R)
- *      pcm_fsel (R)
- *      pcm_curr_sampr (R)
  *      pcm_playing (R)
  *
  * ==Playback/Recording==
  *   Public -
  *      pcm_dma_addr
  *   Semi-private -
- *      pcm_dma_apply_settings
+ *      pcm_sink.set_freq
  *
  * ==Recording==
  *   Public -
@@ -81,6 +79,19 @@
 /* 'true' when all stages of pcm initialization have completed */
 static bool pcm_is_ready = false;
 
+#ifdef USB_ENABLE_IAP
+extern struct pcm_sink iap_pcm_sink;
+#endif
+
+static struct pcm_sink* sinks[PCM_SINK_NUM] = {
+    [PCM_SINK_BUILTIN] = &builtin_pcm_sink,
+#ifdef USB_ENABLE_IAP
+    [PCM_SINK_IAP] = &iap_pcm_sink,
+#endif
+};
+static enum pcm_sink_ids cur_sink = PCM_SINK_BUILTIN;
+static struct mutex sink_mutex; /* protects sinks and cur_sink */
+
 /* The registered callback function to ask for more mp3 data */
 volatile pcm_play_callback_type
     pcm_callback_for_more SHAREDBSS_ATTR = NULL;
@@ -89,15 +100,15 @@ volatile pcm_status_callback_type
     pcm_play_status_callback SHAREDBSS_ATTR = NULL;
 /* PCM playback state */
 volatile bool pcm_playing SHAREDBSS_ATTR = false;
-/* samplerate of currently playing audio - undefined if stopped */
-unsigned long pcm_curr_sampr SHAREDBSS_ATTR = 0;
-/* samplerate waiting to be set */
-unsigned long pcm_sampr SHAREDBSS_ATTR = HW_SAMPR_DEFAULT;
-/* samplerate frequency selection index */
-int pcm_fsel SHAREDBSS_ATTR = HW_FREQ_DEFAULT;
 
-static bool pcm_play_data_start_int(const void *addr, size_t size);
+static bool pcm_play_data_start_int(const void *addr, size_t size,
+                                    bool power_prepared);
 void pcm_play_stop_int(void);
+
+struct pcm_sink* pcm_get_current_sink(void)
+{
+    return sinks[cur_sink];
+}
 
 #if !defined(HAVE_SW_VOLUME_CONTROL) || defined(PCM_SW_VOLUME_UNBUFFERED)
 /** Standard hw volume/unbuffered control functions - otherwise, see
@@ -108,12 +119,12 @@ static inline void pcm_play_dma_start_int(const void *addr, size_t size)
     /* Smoothed transition might not have happened so sync now */
     pcm_sync_pcm_factors();
 #endif
-    pcm_play_dma_start(addr, size);
+    sinks[cur_sink]->ops.play(addr, size);
 }
 
 static inline void pcm_play_dma_stop_int(void)
 {
-    pcm_play_dma_stop();
+    sinks[cur_sink]->ops.stop();
 }
 
 bool pcm_play_dma_complete_callback(enum pcm_dma_status status,
@@ -123,8 +134,9 @@ bool pcm_play_dma_complete_callback(enum pcm_dma_status status,
     if (status < PCM_DMAST_OK)
         status = pcm_play_dma_status_callback(status);
 
-    if (status >= PCM_DMAST_OK && pcm_get_more_int(addr, size))
+    if (status >= PCM_DMAST_OK && pcm_get_more_int(addr, size)) {
         return true;
+    }
 
     /* Error, callback missing or no more DMA to do */
     pcm_play_stop_int();
@@ -132,7 +144,8 @@ bool pcm_play_dma_complete_callback(enum pcm_dma_status status,
 }
 #endif /* !HAVE_SW_VOLUME_CONTROL || PCM_SW_VOLUME_UNBUFFERED */
 
-static bool pcm_play_data_start_int(const void *addr, size_t size)
+static bool pcm_play_data_start_int(const void *addr, size_t size,
+                                    bool power_prepared)
 {
     ALIGN_AUDIOBUF(addr, size);
 
@@ -140,9 +153,10 @@ static bool pcm_play_data_start_int(const void *addr, size_t size)
     {
         pcm_apply_settings();
 #ifdef HAVE_PCM_CODEC_IDLE
-        /* The blocking half of this reservation completed before the
-         * caller took pcm_play_lock(). */
-        pcm_play_dma_commit_prepare();
+        if (power_prepared)
+            pcm_play_dma_commit_prepare();
+#else
+        (void)power_prepared;
 #endif
         logf(" pcm_play_dma_start_int");
         pcm_play_dma_start_int(addr, size);
@@ -150,7 +164,6 @@ static bool pcm_play_data_start_int(const void *addr, size_t size)
         return true;
     }
 
-    /* Force a stop */
     logf(" pcm_play_stop_int");
     pcm_play_stop_int();
     return false;
@@ -228,7 +241,15 @@ void pcm_do_peak_calculation(struct pcm_peaks *peaks, bool active,
 
     if (active)
     {
-        int framecount = peaks->period*pcm_curr_sampr / HZ;
+        struct pcm_sink* sink = sinks[cur_sink];
+        if (sink->configured_freq == -1UL)
+        {
+            logf("not configured yet");
+            return;
+        }
+
+        unsigned long sampr = sink->caps.samprs[sink->configured_freq];
+        int framecount = peaks->period * sampr / HZ;
         count = MIN(framecount, count);
 
         if (count > 0)
@@ -252,16 +273,29 @@ bool pcm_is_playing(void)
  * interface
  */
 
+void pcm_play_lock(void) {
+    mutex_lock(&sink_mutex);
+    sinks[cur_sink]->ops.lock();
+    /* hold sink_mutex until pcm_play_unlock() */
+}
+
+void pcm_play_unlock(void) {
+    sinks[cur_sink]->ops.unlock();
+    mutex_unlock(&sink_mutex);
+}
+
 /* This should only be called at startup before any audio playback or
    recording is attempted */
 void pcm_init(void)
 {
     logf("pcm_init");
 
-    pcm_set_frequency(HW_SAMPR_DEFAULT);
-
-    logf(" pcm_play_dma_init");
-    pcm_play_dma_init();
+    mutex_init(&sink_mutex);
+    for(size_t i = 0; i < ARRAYLEN(sinks); i += 1) {
+        sinks[i]->pending_freq = sinks[i]->caps.default_freq;
+        sinks[i]->configured_freq = -1UL;
+        sinks[i]->ops.init();
+    }
 }
 
 /* Finish delayed init */
@@ -269,9 +303,9 @@ void pcm_postinit(void)
 {
     logf("pcm_postinit");
 
-    logf(" pcm_play_dma_postinit");
-
-    pcm_play_dma_postinit();
+    for(size_t i = 0; i < ARRAYLEN(sinks); i += 1) {
+        sinks[i]->ops.postinit();
+    }
 
     pcm_is_ready = true;
 }
@@ -281,17 +315,82 @@ bool pcm_is_initialized(void)
     return pcm_is_ready;
 }
 
+enum pcm_sink_ids pcm_current_sink(void)
+{
+    return cur_sink;
+}
+
+const struct pcm_sink_caps* pcm_sink_caps(enum pcm_sink_ids sink)
+{
+    return &sinks[sink]->caps;
+}
+
+const struct pcm_sink_caps* pcm_current_sink_caps(void)
+{
+    return pcm_sink_caps(pcm_current_sink());
+}
+
+bool pcm_switch_sink(enum pcm_sink_ids sink)
+{
+    logf("pcm_switch_sink %d to %d", cur_sink, sink);
+    if(sink >= ARRAYLEN(sinks)) {
+        return false;
+    }
+
+    if(cur_sink == sink) {
+        return true;
+    }
+#ifdef HAVE_PCM_CODEC_IDLE
+    bool power_prepared = false;
+    if (pcm_playing && sink == PCM_SINK_BUILTIN) {
+        pcm_play_dma_prepare();
+        power_prepared = true;
+    }
+#endif
+
+    /* save current sink before switching */
+    struct pcm_sink* old_sink = sinks[cur_sink];
+    /* update sink index */
+    cur_sink = sink;
+    /* synchronize frequency */
+    unsigned long cur_sampr = old_sink->caps.samprs[old_sink->pending_freq];
+    pcm_set_frequency(cur_sampr);
+    pcm_apply_settings();
+    /* when playing, continue playing on new sink */
+    if(pcm_playing) {
+        old_sink->ops.stop();
+        /* need more */
+        const void *start;
+        size_t size;
+        if(pcm_get_more_int(&start, &size)) {
+#ifdef HAVE_PCM_CODEC_IDLE
+            if (power_prepared)
+                pcm_play_dma_commit_prepare();
+#endif
+            pcm_play_dma_start_int(start, size);
+        } else {
+#ifdef HAVE_PCM_CODEC_IDLE
+            if (power_prepared)
+                pcm_play_dma_cancel_prepare();
+#endif
+            pcm_play_stop_int();
+        }
+    }
+
+    return true;
+}
+
 static bool pcm_play_data_common(pcm_play_callback_type get_more,
                                  pcm_status_callback_type status_cb,
-                                 const void *start, size_t size)
+                                 const void *start, size_t size,
+                                 bool power_prepared)
 {
     pcm_play_lock();
 
     pcm_callback_for_more = get_more;
     pcm_play_status_callback = status_cb;
 
-    logf(" pcm_play_data_start_int");
-    bool started = pcm_play_data_start_int(start, size);
+    bool started = pcm_play_data_start_int(start, size, power_prepared);
 
     pcm_play_unlock();
 
@@ -304,14 +403,19 @@ void pcm_play_data(pcm_play_callback_type get_more,
 {
     logf("pcm_play_data");
 
+    bool power_prepared = false;
 #ifdef HAVE_PCM_CODEC_IDLE
-    pcm_play_dma_prepare();
+    if (pcm_current_sink() == PCM_SINK_BUILTIN) {
+        pcm_play_dma_prepare();
+        power_prepared = true;
+    }
 #endif
 
-    bool started = pcm_play_data_common(get_more, status_cb, start, size);
+    bool started = pcm_play_data_common(get_more, status_cb, start, size,
+                                        power_prepared);
 
 #ifdef HAVE_PCM_CODEC_IDLE
-    if (!started)
+    if (power_prepared && !started)
         pcm_play_dma_cancel_prepare();
 #else
     (void)started;
@@ -319,13 +423,11 @@ void pcm_play_data(pcm_play_callback_type get_more,
 }
 
 #ifdef HAVE_PCM_CODEC_IDLE
-/* Mixer callers reserve power before taking their outer pcm_play_lock().
- * This entry point consumes that reservation without another wake. */
 void pcm_play_data_prepared(pcm_play_callback_type get_more,
                             pcm_status_callback_type status_cb,
                             const void *start, size_t size)
 {
-    if (!pcm_play_data_common(get_more, status_cb, start, size))
+    if (!pcm_play_data_common(get_more, status_cb, start, size, true))
         pcm_play_dma_cancel_prepare();
 }
 #endif
@@ -366,20 +468,22 @@ void pcm_set_frequency(unsigned int samplerate)
     samplerate = pcm_sampr_to_hw_sampr(samplerate, type);
 #endif /* CONFIG_SAMPR_TYPES */
 
-    index = round_value_to_list32(samplerate, hw_freq_sampr,
-                                  HW_NUM_FREQ, false);
+    mutex_lock(&sink_mutex);
+    struct pcm_sink* sink = sinks[cur_sink];
+    index = round_value_to_list32(samplerate, sink->caps.samprs, sink->caps.num_samprs, false);
 
-    if (samplerate != hw_freq_sampr[index])
-        index = HW_FREQ_DEFAULT; /* Invalid = default */
+    if (samplerate != sink->caps.samprs[index])
+        index = sink->caps.default_freq; /* Invalid = default */
 
-    pcm_sampr = hw_freq_sampr[index];
-    pcm_fsel = index;
+    sink->pending_freq = index;
+    mutex_unlock(&sink_mutex);
 }
 
 /* return last-set frequency */
 unsigned int pcm_get_frequency(void)
 {
-    return pcm_sampr;
+    struct pcm_sink* sink = sinks[cur_sink];
+    return sink->caps.samprs[sink->pending_freq];
 }
 
 /* apply pcm settings to the hardware */
@@ -389,12 +493,14 @@ void pcm_apply_settings(void)
 
     pcm_wait_for_init();
 
-    if (pcm_sampr != pcm_curr_sampr)
-    {
-        logf(" pcm_dma_apply_settings");
-        pcm_dma_apply_settings();
-        pcm_curr_sampr = pcm_sampr;
+    mutex_lock(&sink_mutex);
+    struct pcm_sink* sink = sinks[cur_sink];
+    if(sink->pending_freq != sink->configured_freq) {
+        logf(" sink->set_freq");
+        sink->ops.set_freq(sink->pending_freq);
+        sink->configured_freq = sink->pending_freq;
     }
+    mutex_unlock(&sink_mutex);
 }
 
 #ifdef HAVE_RECORDING
@@ -475,11 +581,6 @@ void pcm_init_recording(void)
 
     /* Stop the beasty before attempting recording */
     mixer_reset();
-
-#ifdef HAVE_PCM_CODEC_IDLE
-    /* Codec wake may sleep; never perform it while pcm_rec_lock is held. */
-    pcm_rec_dma_prepare();
-#endif
 
     /* Recording init is locked unlike general pcm init since this is not
      * just a one-time event at startup and it should and must be safe by

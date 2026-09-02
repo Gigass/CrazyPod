@@ -47,6 +47,9 @@ struct usb_class_driver {
     /* Set this to true if the driver needs exclusive disk access (e.g. usb storage) */
     bool needs_exclusive_storage;
 
+    /* Set this when the active configuration needs sustained CPU speed. */
+    bool needs_cpu_boost;
+
     /* USB config number this driver belongs to */
     uint8_t config;
 
@@ -118,6 +121,9 @@ struct usb_class_driver {
      * Returns value on success and -1 on error.
      * Mandatory function if alternate interface support is needed */
     int (*get_interface)(int interface);
+
+    /* Returns an endpoint max packet size, or -1 for the controller default. */
+    int (*get_max_packet_size)(int ep);
 
     /* Invoked by USB_NOTIFY_CLASS_DRIVER
        Optional function */

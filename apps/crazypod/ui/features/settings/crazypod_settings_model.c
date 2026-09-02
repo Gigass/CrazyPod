@@ -22,7 +22,7 @@
 #include "crazypod_settings_model.h"
 
 static const int setting_timeout_values[] = {
-    -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
     15, 20, 25, 30, 45, 60, 90, 120, 180, 240, 300
 };
 

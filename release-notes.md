@@ -1,3 +1,45 @@
+# CrazyPod V1.3.0 (Draft)
+
+Release status: not tagged. This draft covers changes after V1.2.1 and the
+current working tree.
+
+## What's New
+
+### New
+
+- Play legally obtained GB and GBC games from `/MiniApps/Games`. The standalone
+  app supports Click Wheel controls, audio, battery-backed saves, and RTC data.
+- Control playback with compatible 3.5 mm inline remotes. Single, double, and
+  triple presses handle play/pause, next, and previous; volume buttons work
+  throughout CrazyPod.
+- Open Home Actions for the queue, brightness, and volume.
+  Holding Play on Home now opens the lock screen.
+
+### Improved
+
+- Music Cover Flow now follows the Click Wheel with continuous acceleration,
+  gentle release inertia, and smooth snapping. Artwork prefetching pauses while
+  you scroll to reduce contention.
+- Music, Books, and Mini Apps can reuse persistent catalogs instead of fully
+  rescanning unchanged content at every launch.
+- EPUB text extraction preserves more document structure, removes hidden
+  markup, and shows clearer first-open and reflow progress.
+- Notes now use transactional saves and recover the previous title and body if
+  a write is interrupted.
+- A 50 fps UI cadence reduces unnecessary CPU and LCD work while preserving
+  Click Wheel motion and display sync.
+
+### Fixed
+
+- Restored the USB mode prompt after plugging in the iPod; multimedia-key
+  handling no longer consumes system events.
+- Screen recording now reports save and size-limit failures instead of showing
+  a false success message.
+- Mini Apps in the legacy `/MiniApps/Install` directory remain discoverable
+  during migration to `/MiniApps`.
+
+---
+
 # CrazyPod V1.0
 
 > Compatibility hotfix: 8-bit type 0/1 panels retain the TE command already

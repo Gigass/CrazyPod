@@ -57,6 +57,10 @@
 #include "usb_iap_hid.h"
 #endif
 
+#ifdef USB_ENABLE_IAP
+#include "usb_iap.h"
+#endif
+
 /* TODO: Move target-specific stuff somewhere else (serial number reading) */
 
 #if defined(IPOD_ARCH) && defined(CPU_PP)
@@ -339,6 +343,33 @@ static struct usb_class_driver drivers[USB_NUM_DRIVERS] =
         .get_interface = usb_iap_hid_get_interface,
     },
 #endif
+#ifdef USB_ENABLE_IAP
+    [USB_DRIVER_IAP] = {
+        .enabled = false,
+        .needs_exclusive_storage = false,
+        .needs_cpu_boost = true,
+        .config = 2,
+        .first_interface = 0,
+        .last_interface = 0,
+        .ep_allocs_size = ARRAYLEN(usb_iap_ep_allocs),
+        .ep_allocs = usb_iap_ep_allocs,
+        .set_first_interface = usb_iap_set_first_interface,
+        .get_config_descriptor = usb_iap_get_config_descriptor,
+        .init_connection = usb_iap_init_connection,
+        .init = usb_iap_init,
+        .disconnect = usb_iap_disconnect,
+        .transfer_complete = usb_iap_transfer_complete,
+        .fast_transfer_complete = usb_iap_fast_transfer_complete,
+        .control_request = usb_iap_control_request,
+#ifdef HAVE_HOTSWAP
+        .notify_hotswap = NULL,
+#endif
+        .set_interface = usb_iap_set_interface,
+        .get_interface = usb_iap_get_interface,
+        .get_max_packet_size = usb_iap_get_max_packet_size,
+        .notify_event = usb_iap_notify_event,
+    },
+#endif
 };
 
 #ifdef USB_LEGACY_CONTROL_API
@@ -590,6 +621,61 @@ void usb_core_hotswap_event(int volume, bool inserted)
 }
 #endif
 
+#ifdef USB_BATCH_NON_NATIVE
+static uint8_t batch_ep;
+static bool batch_stopped;
+static usb_drv_batch_get_more batch_get_more;
+
+int usb_drv_batch_init(int ep, usb_drv_batch_get_more get_more)
+{
+    if(batch_ep != 0) {
+        logf("usb_core: batch api in use user=0x%02X", batch_ep);
+        return -1;
+    }
+    batch_ep = ep;
+    batch_get_more = get_more;
+    batch_stopped = false;
+    return 0;
+}
+
+int usb_drv_batch_deinit(void)
+{
+    usb_drv_batch_stop();
+    batch_ep = 0;
+    return 0;
+}
+
+static int batch_get_and_send(void)
+{
+    const void *ptr;
+    size_t length;
+
+    batch_get_more(&ptr, &length);
+    if(length == 0 || batch_stopped)
+        return 0;
+    return usb_drv_send_nonblocking(
+        EP_NUM(batch_ep), (void *)ptr, length);
+}
+
+int usb_drv_batch_start(void)
+{
+    batch_stopped = false;
+    return batch_get_and_send();
+}
+
+int usb_drv_batch_stop(void)
+{
+    batch_stopped = true;
+    return 0;
+}
+
+static void batch_xfer_complete(void)
+{
+    if(!batch_stopped)
+        batch_get_and_send();
+}
+#endif
+
 static void usb_core_set_serial_function_id(void)
 {
     int i, id = 0;
@@ -606,21 +692,28 @@ static void init_deinit_endpoints(uint8_t conf_index, bool init) {
     for(int epnum = 0; epnum < USB_NUM_ENDPOINTS; epnum += 1) {
         for(int dir = 0; dir < 2; dir += 1) {
             struct ep_alloc_state* alloc = &ep_alloc_states[conf_index][epnum];
-            if(alloc->owner[dir] == NULL) {
+            struct usb_class_driver* driver = alloc->owner[dir];
+            if(driver == NULL) {
                 continue;
             }
             int ep = epnum | (dir == DIR_OUT ? USB_DIR_OUT : USB_DIR_IN);
-            int ret = init ?
-                usb_drv_init_endpoint(ep, alloc->type[dir], -1) :
-                usb_drv_deinit_endpoint(ep);
+            int ret;
+            if(init) {
+                int max_packet_size = driver->get_max_packet_size
+                    ? driver->get_max_packet_size(ep) : -1;
+                ret = usb_drv_init_endpoint(
+                    ep, alloc->type[dir], max_packet_size);
+            } else {
+                ret = usb_drv_deinit_endpoint(ep);
+            }
             if(ret) {
                 logf("usb_core: usb_drv_%s_endpoint failed ep=%d dir=%d", init ? "init" : "deinit", epnum, dir);
                 continue;
             }
             if(init) {
-                ep_data[epnum].completion_handler[dir] = alloc->owner[dir]->transfer_complete;
-                ep_data[epnum].fast_completion_handler[dir] = alloc->owner[dir]->fast_transfer_complete;
-                ep_data[epnum].control_handler[dir] = alloc->owner[dir]->control_request;
+                ep_data[epnum].completion_handler[dir] = driver->transfer_complete;
+                ep_data[epnum].fast_completion_handler[dir] = driver->fast_transfer_complete;
+                ep_data[epnum].control_handler[dir] = driver->control_request;
             }
         }
     }
@@ -901,6 +994,7 @@ static int usb_core_do_set_config(uint8_t new_config)
     usb_state = usb_config == 0 ? ADDRESS : CONFIGURED;
 
     bool require_exclusive = false;
+    bool require_cpu_boost = false;
 
     /* activate new config */
     if(usb_config != 0) {
@@ -909,6 +1003,7 @@ static int usb_core_do_set_config(uint8_t new_config)
             if(is_active(drivers[i]) && drivers[i].init_connection != NULL) {
                 drivers[i].init_connection();
                 require_exclusive |= drivers[i].needs_exclusive_storage;
+                require_cpu_boost |= drivers[i].needs_cpu_boost;
             }
         }
     }
@@ -920,6 +1015,18 @@ static int usb_core_do_set_config(uint8_t new_config)
         }
     } else {
         usb_release_exclusive_storage();
+    }
+
+    if(require_cpu_boost) {
+        trigger_cpu_boost();
+#ifdef HAVE_PRIORITY_SCHEDULING
+        thread_set_priority(thread_self(), PRIORITY_REALTIME);
+#endif
+    } else {
+#ifdef HAVE_PRIORITY_SCHEDULING
+        thread_set_priority(thread_self(), PRIORITY_SYSTEM);
+#endif
+        cancel_cpu_boost();
     }
 
     #ifdef HAVE_USB_CHARGING_ENABLE
@@ -1188,8 +1295,13 @@ void usb_core_bus_reset(void)
 /* called by usb_drv_transfer_completed() */
 void usb_core_transfer_complete(int endpoint, int dir, int status, int length)
 {
-    struct usb_transfer_completion_event_data* completion_event =
-        &ep_data[endpoint].completion_event[EP_DIR(dir)];
+#ifdef USB_BATCH_NON_NATIVE
+    if(batch_ep != 0 && (endpoint | dir) == batch_ep) {
+        batch_xfer_complete();
+        return;
+    }
+#endif
+
     /* Fast notification */
     fast_completion_handler_t handler = ep_data[endpoint].fast_completion_handler[EP_DIR(dir)];
     if(handler != NULL && handler(endpoint, dir, status, length))
@@ -1211,6 +1323,9 @@ void usb_core_transfer_complete(int endpoint, int dir, int status, int length)
         }
     }
 #endif
+
+    struct usb_transfer_completion_event_data* completion_event =
+        &ep_data[endpoint].completion_event[EP_DIR(dir)];
 
     completion_event->endpoint = endpoint;
     completion_event->dir = dir;

@@ -1365,6 +1365,9 @@ Lyre prototype 1 */
 //#define USB_HAS_INTERRUPT -- seems to be broken
 #endif /* CONFIG_USBOTG */
 
+#define USB_BATCH_NON_NATIVE
+#define USB_BATCH_SLOTS 1
+
 /* define the class drivers to enable */
 #ifdef BOOTLOADER
 
@@ -1392,14 +1395,24 @@ Lyre prototype 1 */
 #define USB_ENABLE_AUDIO
 #endif
 
+#if defined(USB_HAS_INTERRUPT) && defined(USB_HAS_ISOCHRONOUS) && \
+    USB_VENDOR_ID == 0x05ac
+#define USB_ENABLE_IAP
+#endif
+
+#ifdef USB_ENABLE_IAP
+#define HAVE_MULTIMEDIA_KEYS
+#endif
+
 #endif /* BOOTLOADER */
 
 #endif /* HAVE_USBSTACK */
 
 #ifdef IPOD_6G
 /*
- * CrazyPod keeps USB storage-only. The 30-pin UART accessory transport is
- * independent of the USB device stack and remains available for dock remotes.
+ * The legacy UART accessory transport remains independent of the USB iAP
+ * accessory profile. Generic USB audio/HID and the obsolete split iAP HID
+ * driver stay disabled.
  */
 #ifdef IPOD_ACCESSORY_PROTOCOL
 #define CRAZYPOD_IAP_SIMPLE_REMOTE
@@ -1407,13 +1420,15 @@ Lyre prototype 1 */
 #undef USB_ENABLE_AUDIO
 #undef USB_ENABLE_HID
 #undef USB_ENABLE_IAP_HID
+#define USB_ENABLE_CHARGING_ONLY
 #undef TARGET_EXTRA_THREADS
-/* CrazyPod has seven long-lived product workers beyond Rockbox's base
- * allowance. MPEG playback then needs three transient slots (manager, video
- * and disk buffering), while library validation may use one more. Keep 24
+/* CrazyPod has eight long-lived product workers beyond Rockbox's base
+ * allowance, including the Mikey inline-remote poller. MPEG playback then
+ * needs three transient slots (manager, video and disk buffering), while
+ * library validation may use one more. Keep 24
  * total slots on click-wheel builds instead of running at the allocator's
  * edge. Thread creation failures are still handled transactionally. */
-#define TARGET_EXTRA_THREADS 7
+#define TARGET_EXTRA_THREADS 8
 #undef HAVE_DIRCACHE
 #endif
 

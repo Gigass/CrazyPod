@@ -71,6 +71,13 @@ void pcm_init(void) INIT_ATTR;
 void pcm_postinit(void);
 bool pcm_is_initialized(void);
 
+enum pcm_sink_ids pcm_current_sink(void);
+const struct pcm_sink_caps* pcm_sink_caps(enum pcm_sink_ids sink);
+bool pcm_switch_sink(enum pcm_sink_ids sink);
+
+/* shortcut for plugins */
+const struct pcm_sink_caps* pcm_current_sink_caps(void);
+
 /* This is for playing "raw" PCM data */
 void pcm_play_data(pcm_play_callback_type get_more,
                    pcm_status_callback_type status_cb,

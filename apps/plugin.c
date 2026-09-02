@@ -653,6 +653,7 @@ static const struct plugin_api rockbox_api = {
     pcm_is_playing,
     pcm_play_lock,
     pcm_play_unlock,
+    pcm_current_sink_caps,
     beep_play,
 #ifdef HAVE_RECORDING
     &rec_freq_sampr[0],
