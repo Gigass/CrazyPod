@@ -428,9 +428,9 @@ static bool check_disk_present(IF_MD_NONVOID(int volume))
 
 static void update_disk_presence(IF_MD_NONVOID(int volume))
 {
-    if(!presence_known[volume]) {
-        ejected[volume] = !check_disk_present(IF_MD(volume));
-        presence_known[volume] = true;
+    if(!presence_known[IF_MD_DRV(volume)]) {
+        ejected[IF_MD_DRV(volume)] = !check_disk_present(IF_MD(volume));
+        presence_known[IF_MD_DRV(volume)] = true;
     }
 }
 
