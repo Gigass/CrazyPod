@@ -1,3 +1,28 @@
+# CrazyPod V1.3.1
+
+Released: 2026-09-02
+
+## Fixed
+
+- Increased the lock-screen metadata font-warming thread stack from 3 KiB to
+  5 KiB. This addresses the observed `Stkov crazypod lock font` overflow when
+  first loading song metadata and runtime fonts, especially across track
+  changes and shuffled playback.
+- No storage-driver, FLAC-decoder, logic-board detection, or inline-remote
+  behavior changed in this hotfix.
+
+## Validation
+
+- CrazyPod UI, Mini App, Game Boy, EPUB, font, localization, architecture, and
+  whitespace checks pass.
+- The iPod 6G production firmware and complete install archive build with
+  version `V1.3.1`.
+- Physical confirmation on the reporting user's 420-track FLAC library remains
+  pending; this release fixes the confirmed stack overflow without claiming
+  that every reported freeze has been reproduced locally.
+
+---
+
 # CrazyPod V1.3.0
 
 Released: 2026-09-02
