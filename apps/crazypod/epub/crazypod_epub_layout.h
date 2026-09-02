@@ -11,7 +11,8 @@ typedef unsigned (*crazypod_epub_layout_width_fn)(
 /* Paginate a UTF-8 view while returning the byte count consumed from source.
  * source may be a GBK buffer when source_is_gbk is true; this keeps saved
  * reading offsets aligned with the original file instead of the converted
- * UTF-8 buffer. */
+ * UTF-8 buffer.  EPUB format markers are copied to output, but do not consume
+ * display width. */
 size_t crazypod_epub_layout_page(
     const unsigned char *utf8, size_t utf8_count,
     const unsigned char *source, size_t source_count,

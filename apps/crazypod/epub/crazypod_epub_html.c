@@ -29,9 +29,12 @@ struct html_text_writer {
     size_t used;
     uint32_t total;
     bool has_text;
+    bool rich;
+    bool format_active;
     bool pending_space;
     bool failed;
     int pending_breaks;
+    uint32_t format_offset;
     char buffer[1024];
 };
 
@@ -101,6 +104,7 @@ static bool writer_text(struct html_text_writer *writer,
     writer->pending_breaks = 0;
     writer->pending_space = false;
     writer->has_text = true;
+    writer->format_active = false;
     return writer_raw(writer, text, size);
 }
 
@@ -173,6 +177,76 @@ static bool tag_break(const char *tag)
             return true;
     }
     return false;
+}
+
+static int tag_format_style(const char *tag)
+{
+    char style[256];
+    char class_name[256];
+    int result = CRAZYPOD_EPUB_FORMAT_NORMAL;
+
+    if(tag[0] == '/')
+        return -1;
+    if(tag_matches(tag, "h1") || tag_matches(tag, "h2") ||
+       tag_matches(tag, "h3") || tag_matches(tag, "h4") ||
+       tag_matches(tag, "h5") || tag_matches(tag, "h6"))
+        result = CRAZYPOD_EPUB_FORMAT_HEADING;
+    else if(tag_matches(tag, "blockquote"))
+        result = CRAZYPOD_EPUB_FORMAT_QUOTE;
+    else if(tag_matches(tag, "pre"))
+        result = CRAZYPOD_EPUB_FORMAT_PRE;
+    else if(tag_matches(tag, "li"))
+        result = CRAZYPOD_EPUB_FORMAT_LIST;
+    else if(!tag_matches(tag, "p") && !tag_matches(tag, "div") &&
+            !tag_matches(tag, "section") &&
+            !tag_matches(tag, "article") &&
+            !tag_matches(tag, "header") &&
+            !tag_matches(tag, "footer") &&
+            !tag_matches(tag, "aside") &&
+            !tag_matches(tag, "figure") &&
+            !tag_matches(tag, "figcaption") &&
+            !tag_matches(tag, "dt") && !tag_matches(tag, "dd"))
+        return -1;
+
+    style[0] = '\0';
+    if(crazypod_epub_extract_attribute(
+           tag, tag + strlen(tag), "style", style, sizeof(style)) &&
+       crazypod_epub_html_find_ascii(style, "text-align") != NULL &&
+       crazypod_epub_html_find_ascii(style, "center") != NULL)
+        result |= CRAZYPOD_EPUB_FORMAT_CENTER;
+    class_name[0] = '\0';
+    if(crazypod_epub_extract_attribute(
+           tag, tag + strlen(tag), "class",
+           class_name, sizeof(class_name)) &&
+       (crazypod_epub_html_find_ascii(class_name, "center") != NULL ||
+        crazypod_epub_html_find_ascii(class_name, "title") != NULL ||
+        crazypod_epub_html_find_ascii(class_name, "chapter") != NULL ||
+        crazypod_epub_html_find_ascii(class_name, "epigraph") != NULL))
+        result |= CRAZYPOD_EPUB_FORMAT_CENTER;
+    return result;
+}
+
+static bool writer_format(struct html_text_writer *writer, int style)
+{
+    unsigned char format[2] = {
+        (unsigned char)CRAZYPOD_EPUB_FORMAT_MARKER,
+        (unsigned char)style,
+    };
+    int i;
+
+    if(!writer->rich)
+        return true;
+    if(writer->has_text) {
+        for(i = 0; i < writer->pending_breaks; ++i) {
+            if(!writer_raw(writer, "\n", 1))
+                return false;
+        }
+    }
+    writer->format_offset = writer->total;
+    writer->format_active = true;
+    writer->pending_breaks = 0;
+    writer->pending_space = false;
+    return writer_raw(writer, (const char *)format, sizeof(format));
 }
 
 int crazypod_epub_html_decode_entity(const char *entity, char *output)
@@ -384,15 +458,17 @@ bool crazypod_epub_html_copy_markup_text(char *output, size_t size,
     return used > 0;
 }
 
-bool crazypod_epub_html_append_text_with_images(
+static bool append_text_with_images(
     const char *path, int output_fd,
-    crazypod_epub_html_image_callback image_callback, void *context)
+    crazypod_epub_html_image_callback image_callback, void *context,
+    bool rich)
 {
     char input[1024];
     char tag[512];
     char entity[16];
     struct html_text_writer writer = {
         .fd = output_fd,
+        .rich = rich,
     };
     int tag_length = 0;
     int entity_length = 0;
@@ -423,6 +499,14 @@ bool crazypod_epub_html_append_text_with_images(
                         if(tag_matches(tag, "img") &&
                            tag[0] != '/' && image_callback != NULL) {
                             char source[256];
+                            uint32_t image_offset =
+                                (uint32_t)writer.total +
+                                (writer.has_text
+                                     ? (uint32_t)writer.pending_breaks
+                                     : 0);
+
+                            if(writer.rich && writer.format_active)
+                                image_offset = writer.format_offset;
 
                             source[0] = '\0';
                             if(crazypod_epub_extract_attribute(
@@ -430,10 +514,7 @@ bool crazypod_epub_html_append_text_with_images(
                                    source, sizeof(source)) &&
                                image_callback(
                                    source,
-                                   (uint32_t)writer.total +
-                                   (writer.has_text
-                                        ? (uint32_t)writer.pending_breaks
-                                        : 0),
+                                   image_offset,
                                    context)) {
                                 writer_break(&writer, 1);
                                 if(!writer_text(
@@ -446,8 +527,18 @@ bool crazypod_epub_html_append_text_with_images(
                                 writer_break(&writer, 1);
                             }
                         }
-                        else if(tag_break(tag))
-                            writer_break(&writer, 1);
+                        else {
+                            int style = tag_format_style(tag);
+
+                            if(style >= 0 && writer.rich) {
+                                if(!writer_format(&writer, style)) {
+                                    close(fd);
+                                    return false;
+                                }
+                            }
+                            else if(tag_break(tag))
+                                writer_break(&writer, 1);
+                        }
                     }
                     in_tag = false;
                     tag_length = 0;
@@ -508,6 +599,22 @@ bool crazypod_epub_html_append_text_with_images(
             return false;
     }
     return count == 0 && writer_flush(&writer);
+}
+
+bool crazypod_epub_html_append_text_with_images(
+    const char *path, int output_fd,
+    crazypod_epub_html_image_callback image_callback, void *context)
+{
+    return append_text_with_images(
+        path, output_fd, image_callback, context, false);
+}
+
+bool crazypod_epub_html_append_rich_text_with_images(
+    const char *path, int output_fd,
+    crazypod_epub_html_image_callback image_callback, void *context)
+{
+    return append_text_with_images(
+        path, output_fd, image_callback, context, true);
 }
 
 bool crazypod_epub_html_append_text(const char *path, int output_fd)

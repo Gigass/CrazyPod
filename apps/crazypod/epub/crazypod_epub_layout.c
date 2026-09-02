@@ -125,6 +125,19 @@ static unsigned codepoint_units(uint32_t codepoint)
     return is_wide(codepoint) ? 2 : 1;
 }
 
+static unsigned format_indent_units(int style, unsigned space_width)
+{
+    if((style & CRAZYPOD_EPUB_FORMAT_CENTER) != 0)
+        return 0;
+    style &= 0x7f;
+    if(style == CRAZYPOD_EPUB_FORMAT_NORMAL ||
+       style == CRAZYPOD_EPUB_FORMAT_LIST)
+        return space_width * 2u;
+    if(style == CRAZYPOD_EPUB_FORMAT_QUOTE)
+        return space_width * 3u;
+    return 0;
+}
+
 static unsigned measured_width(
     uint32_t codepoint, uint32_t next_codepoint,
     crazypod_epub_layout_width_fn measure_width, void *context)
@@ -185,6 +198,12 @@ size_t crazypod_epub_layout_page_with_measure(
     uint32_t previous = 0;
     bool have_previous = false;
     bool pending_space = false;
+    int format_style = -1;
+    unsigned line_indent = 0;
+    bool line_indent_pending = false;
+    bool line_has_content = false;
+    bool page_has_text = false;
+    bool markdown_prefix_seen = false;
 
     if(output == NULL || output_size == 0)
         return 0;
@@ -214,11 +233,94 @@ size_t crazypod_epub_layout_page_with_measure(
             : character_bytes;
         if(source_bytes == 0 || source_input + source_bytes > source_count)
             break;
-        if(markdown && (codepoint == '#' || codepoint == '*' ||
-                        codepoint == '`')) {
+        if(codepoint == CRAZYPOD_EPUB_FORMAT_MARKER) {
+            size_t style_source_bytes;
+            unsigned char style;
+
+            if(input + character_bytes >= utf8_count)
+                break;
+            style = utf8[input + character_bytes];
+            style_source_bytes = source_is_gbk
+                ? source_bytes_at(source, source_count,
+                                  source_input + source_bytes, true)
+                : 1;
+            if(style_source_bytes == 0 ||
+               source_input + source_bytes + style_source_bytes >
+                   source_count || used + 3 > output_size)
+                break;
+            if(!append_bytes(output, output_size, &used,
+                             utf8 + input, character_bytes) ||
+               !append_bytes(output, output_size, &used,
+                             utf8 + input + character_bytes, 1))
+                break;
+            input += character_bytes + 1;
+            source_input += source_bytes + style_source_bytes;
+            format_style = style;
+            line_indent = format_indent_units(
+                format_style, space_width);
+            line_indent_pending = true;
+            line_has_content = false;
+            pending_space = false;
+            have_previous = false;
+            continue;
+        }
+        if(markdown && !line_has_content && codepoint == '#') {
+            unsigned char format[2] = {
+                (unsigned char)CRAZYPOD_EPUB_FORMAT_MARKER,
+                (unsigned char)CRAZYPOD_EPUB_FORMAT_HEADING,
+            };
+
+            if(!markdown_prefix_seen) {
+                if(used + sizeof(format) + 1 > output_size ||
+                   !append_bytes(output, output_size, &used,
+                                 format, sizeof(format)))
+                    break;
+                markdown_prefix_seen = true;
+                format_style = CRAZYPOD_EPUB_FORMAT_HEADING;
+                line_indent = 0;
+                line_indent_pending = true;
+            }
             input += character_bytes;
             source_input += source_bytes;
             continue;
+        }
+        if(markdown && !line_has_content && codepoint == '`') {
+            unsigned char format[2] = {
+                (unsigned char)CRAZYPOD_EPUB_FORMAT_MARKER,
+                (unsigned char)CRAZYPOD_EPUB_FORMAT_PRE,
+            };
+
+            if(!markdown_prefix_seen) {
+                if(used + sizeof(format) + 1 > output_size ||
+                   !append_bytes(output, output_size, &used,
+                                 format, sizeof(format)))
+                    break;
+                markdown_prefix_seen = true;
+                format_style = CRAZYPOD_EPUB_FORMAT_PRE;
+                line_indent = 0;
+                line_indent_pending = true;
+            }
+            input += character_bytes;
+            source_input += source_bytes;
+            continue;
+        }
+        if(markdown && !line_has_content && !markdown_prefix_seen &&
+           (codepoint == '*' || codepoint == '-' || codepoint == '+') &&
+           (next_codepoint == ' ' || next_codepoint == '\t')) {
+            unsigned char format[2] = {
+                (unsigned char)CRAZYPOD_EPUB_FORMAT_MARKER,
+                (unsigned char)CRAZYPOD_EPUB_FORMAT_LIST,
+            };
+
+            if(used + sizeof(format) + 1 > output_size ||
+               !append_bytes(output, output_size, &used,
+                             format, sizeof(format)))
+                break;
+            markdown_prefix_seen = true;
+            format_style = CRAZYPOD_EPUB_FORMAT_LIST;
+            line_indent = format_indent_units(
+                format_style, space_width);
+            line_indent_pending = true;
         }
         if(codepoint == '\r') {
             input += character_bytes;
@@ -226,7 +328,7 @@ size_t crazypod_epub_layout_page_with_measure(
             continue;
         }
         if(codepoint == CRAZYPOD_EPUB_IMAGE_MARKER) {
-            if(used != 0)
+            if(page_has_text)
                 break;
             input += character_bytes;
             source_input += source_bytes;
@@ -249,6 +351,12 @@ size_t crazypod_epub_layout_page_with_measure(
                 source_input += source_bytes;
                 pending_space = false;
                 have_previous = false;
+                line_indent_pending =
+                    (format_style & 0x7f) ==
+                        CRAZYPOD_EPUB_FORMAT_LIST ||
+                    (format_style & 0x7f) ==
+                        CRAZYPOD_EPUB_FORMAT_QUOTE;
+                markdown_prefix_seen = false;
                 continue;
             }
             if(lines >= max_lines)
@@ -266,6 +374,11 @@ size_t crazypod_epub_layout_page_with_measure(
             last_break_output = SIZE_MAX;
             pending_space = false;
             have_previous = false;
+            line_has_content = false;
+            line_indent_pending =
+                (format_style & 0x7f) == CRAZYPOD_EPUB_FORMAT_LIST ||
+                (format_style & 0x7f) == CRAZYPOD_EPUB_FORMAT_QUOTE;
+            markdown_prefix_seen = false;
             continue;
         }
         if(is_space(codepoint)) {
@@ -280,7 +393,7 @@ size_t crazypod_epub_layout_page_with_measure(
             continue;
         }
 
-        can_break = line_width != 0 && !is_no_line_start(codepoint) &&
+        can_break = line_has_content && !is_no_line_start(codepoint) &&
             ((pending_space && !is_no_line_end(previous)) ||
              is_wide(codepoint) || (have_previous && is_wide(previous)));
         if(can_break) {
@@ -290,6 +403,8 @@ size_t crazypod_epub_layout_page_with_measure(
         }
         units = measured_width(
             codepoint, next_codepoint, measure_width, context);
+        if(line_indent_pending && !line_has_content)
+            units += line_indent;
         if(pending_space && !(is_wide(codepoint) &&
                               have_previous && is_wide(previous)))
             units += space_width;
@@ -315,6 +430,11 @@ size_t crazypod_epub_layout_page_with_measure(
             last_break_output = SIZE_MAX;
             pending_space = false;
             have_previous = false;
+            line_has_content = false;
+            line_indent_pending =
+                (format_style & 0x7f) == CRAZYPOD_EPUB_FORMAT_LIST ||
+                (format_style & 0x7f) == CRAZYPOD_EPUB_FORMAT_QUOTE;
+            markdown_prefix_seen = false;
             continue;
         }
         if(used + character_bytes + 1 > output_size ||
@@ -329,6 +449,10 @@ size_t crazypod_epub_layout_page_with_measure(
                 break;
             line_width += space_width;
         }
+        if(line_indent_pending && !line_has_content) {
+            line_width += line_indent;
+            line_indent_pending = false;
+        }
         if(!append_bytes(output, output_size, &used,
                          utf8 + input, character_bytes))
             break;
@@ -339,6 +463,8 @@ size_t crazypod_epub_layout_page_with_measure(
         pending_space = false;
         previous = codepoint;
         have_previous = true;
+        line_has_content = true;
+        page_has_text = true;
     }
     output[used] = '\0';
     return source_input;

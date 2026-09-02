@@ -495,7 +495,7 @@ static bool build_epub_text(const char *root, const char *opf_path,
                 crazypod_epub_directory_of(
                     image_context.directory,
                     sizeof(image_context.directory), chapter);
-                if(crazypod_epub_html_append_text_with_images(
+                if(crazypod_epub_html_append_rich_text_with_images(
                        chapter, output_fd, append_epub_image,
                        &image_context)) {
                     if(epub_chapter_count < EPUB_CHAPTER_MAX) {

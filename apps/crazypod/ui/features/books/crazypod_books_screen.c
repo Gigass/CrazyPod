@@ -3,6 +3,7 @@
 #include "../../../crazypod_l10n.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "lvgl.h"
 #include "lcd.h"
@@ -10,6 +11,7 @@
 #include "../../../crazypod_books.h"
 #include "../../../crazypod_book_image.h"
 #include "../../../crazypod_runtime_font.h"
+#include "../../../epub/crazypod_epub_html.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_books_screen.h"
 
@@ -21,6 +23,7 @@
 
 static lv_font_t reader_fallback_12;
 static bool reader_fallback_12_ready;
+static char reader_line[2048];
 
 unsigned crazypod_books_screen_reader_size(int setting)
 {
@@ -62,6 +65,122 @@ unsigned crazypod_books_screen_measure_width(
     if(font == NULL)
         return 0;
     return lv_font_get_glyph_width(font, codepoint, next_codepoint);
+}
+
+static int reader_style_indent_px(const lv_font_t *font, int style)
+{
+    int space_width;
+    int count;
+
+    if(font == NULL)
+        return 0;
+    style &= 0x7f;
+    if(style == CRAZYPOD_EPUB_FORMAT_QUOTE)
+        count = 3;
+    else if(style == CRAZYPOD_EPUB_FORMAT_NORMAL ||
+            style == CRAZYPOD_EPUB_FORMAT_LIST)
+        count = 2;
+    else
+        return 0;
+    space_width = lv_font_get_glyph_width(font, ' ', 0);
+    return space_width > 0 ? space_width * count : 0;
+}
+
+static void render_reader_line(
+    lv_obj_t *page, const char *text, size_t text_size,
+    const lv_font_t *font, uint32_t ink_color, int style,
+    bool first_line, int *line_y, unsigned line_height)
+{
+    lv_obj_t *label;
+    int base_style = style & 0x7f;
+    int indent = reader_style_indent_px(font, style);
+    int x = CRAZYPOD_BOOKS_READER_MARGIN +
+        ((base_style == CRAZYPOD_EPUB_FORMAT_QUOTE ||
+          base_style == CRAZYPOD_EPUB_FORMAT_LIST || first_line)
+             ? indent : 0);
+    int width = LCD_WIDTH - CRAZYPOD_BOOKS_READER_MARGIN * 2 -
+        (x - CRAZYPOD_BOOKS_READER_MARGIN);
+    bool centered = (style & CRAZYPOD_EPUB_FORMAT_CENTER) != 0 ||
+        base_style == CRAZYPOD_EPUB_FORMAT_HEADING;
+
+    if(width < 1)
+        width = 1;
+    if(centered) {
+        x = CRAZYPOD_BOOKS_READER_MARGIN;
+        width = LCD_WIDTH - CRAZYPOD_BOOKS_READER_MARGIN * 2;
+    }
+    if(text_size >= sizeof(reader_line))
+        text_size = sizeof(reader_line) - 1;
+    if(text != reader_line)
+        memcpy(reader_line, text, text_size);
+    reader_line[text_size] = '\0';
+    label = crazypod_ui_widget_label(
+        page, reader_line, font, ink_color, LV_OPA_COVER);
+    lv_obj_set_pos(label, x, *line_y);
+    lv_obj_set_size(label, width, line_height);
+    lv_obj_set_style_pad_all(label, 0, 0);
+    lv_obj_set_style_text_line_space(label, 0, 0);
+    if(centered)
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    *line_y += (int)line_height;
+}
+
+static bool reader_has_format_markers(const char *text)
+{
+    return text != NULL &&
+        strchr(text, CRAZYPOD_EPUB_FORMAT_MARKER) != NULL;
+}
+
+static void render_reader_rich_text(
+    lv_obj_t *page, const char *text, const lv_font_t *font,
+    uint32_t ink_color, int reader_top, int reader_height,
+    unsigned line_height)
+{
+    size_t line_size = 0;
+    size_t input = 0;
+    int style = CRAZYPOD_EPUB_FORMAT_NORMAL;
+    int line_y = reader_top;
+    bool first_line = false;
+
+    while(text != NULL) {
+        unsigned char value = (unsigned char)text[input];
+
+        if(value == (unsigned char)CRAZYPOD_EPUB_FORMAT_MARKER &&
+           text[input + 1] != '\0') {
+            if(line_size > 0) {
+                if(line_y < reader_top + reader_height)
+                    render_reader_line(
+                        page, reader_line, line_size, font, ink_color,
+                        style, first_line, &line_y, line_height);
+                line_size = 0;
+                first_line = false;
+            }
+            style = (unsigned char)text[input + 1];
+            first_line = true;
+            input += 2;
+            continue;
+        }
+        if(value == '\n' || value == '\0') {
+            if(line_y < reader_top + reader_height)
+                render_reader_line(
+                    page, reader_line, line_size, font, ink_color,
+                    style, first_line, &line_y, line_height);
+            {
+                bool had_text = line_size > 0;
+
+                line_size = 0;
+                if(had_text)
+                    first_line = false;
+            }
+            if(value == '\0')
+                break;
+            ++input;
+            continue;
+        }
+        if(line_size + 1 < sizeof(reader_line))
+            reader_line[line_size++] = (char)value;
+        ++input;
+    }
 }
 
 unsigned crazypod_books_screen_reader_line_height(unsigned size)
@@ -139,21 +258,31 @@ void crazypod_books_screen_render_reader(
         lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
     }
     else {
-        label = crazypod_ui_widget_label(
-            page,
-            page_text[0] != '\0'
-                ? page_text : CP_TR("This book could not be decoded."),
-            reader_font, ink_color,
-            LV_OPA_COVER);
-        lv_obj_set_pos(label, CRAZYPOD_BOOKS_READER_MARGIN,
-                       CRAZYPOD_BOOKS_READER_TOP);
-        lv_obj_set_size(
-            label, LCD_WIDTH - CRAZYPOD_BOOKS_READER_MARGIN * 2,
-            reader_height);
-        lv_obj_set_style_pad_all(label, 0, 0);
-        lv_obj_set_style_text_line_space(
-            label, CRAZYPOD_BOOKS_READER_LINE_SPACE, 0);
-        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+        if(reader_has_format_markers(page_text))
+            render_reader_rich_text(
+                page, page_text, reader_font, ink_color,
+                CRAZYPOD_BOOKS_READER_TOP, reader_height,
+                crazypod_books_screen_reader_line_height(
+                    crazypod_books_screen_reader_size(
+                        crazypod_books_font_size())) +
+                    CRAZYPOD_BOOKS_READER_LINE_SPACE);
+        else {
+            label = crazypod_ui_widget_label(
+                page,
+                page_text[0] != '\0'
+                    ? page_text : CP_TR("This book could not be decoded."),
+                reader_font, ink_color,
+                LV_OPA_COVER);
+            lv_obj_set_pos(label, CRAZYPOD_BOOKS_READER_MARGIN,
+                           CRAZYPOD_BOOKS_READER_TOP);
+            lv_obj_set_size(
+                label, LCD_WIDTH - CRAZYPOD_BOOKS_READER_MARGIN * 2,
+                reader_height);
+            lv_obj_set_style_pad_all(label, 0, 0);
+            lv_obj_set_style_text_line_space(
+                label, CRAZYPOD_BOOKS_READER_LINE_SPACE, 0);
+            lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+        }
     }
 
     if(!toolbar_visible)

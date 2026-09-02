@@ -1012,6 +1012,21 @@ static bool prepare_epub_book(int index)
     if(title[0] != '\0')
         snprintf(book->title, sizeof(book->title), "%s", title);
     book->details_loaded = true;
+    if(book->content_size != previous_content_size &&
+       previous_content_size > 0) {
+        struct book_progress_disk *entry = progress_entry(index);
+
+        /* A new cache carries formatting bytes, so old byte offsets no
+         * longer point at the same characters.  Restart this EPUB instead of
+         * opening in the middle of a format marker. */
+        book->progress = 0;
+        book->bookmark = CRAZYPOD_BOOKMARK_NONE;
+        if(entry != NULL) {
+            entry->progress = 0;
+            entry->bookmark = CRAZYPOD_BOOKMARK_NONE;
+        }
+        (void)state_save();
+    }
     if(book->content_size != previous_content_size)
         (void)books_catalog_save();
     return true;

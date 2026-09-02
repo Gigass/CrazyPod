@@ -194,10 +194,12 @@ void crazypod_books_workflow_begin_reader(
     bool show_progress;
     bool ready;
     bool loaded = false;
+    uint32_t previous_content_size;
 
     book = crazypod_book_get(index);
     if(book == NULL)
         return;
+    previous_content_size = book->content_size;
     show_progress =
         book->format == CRAZYPOD_BOOK_EPUB &&
         book->content_size == 0;
@@ -212,6 +214,9 @@ void crazypod_books_workflow_begin_reader(
     book = crazypod_book_get(index);
     if(book == NULL)
         return;
+    if(previous_content_size > 0 &&
+       book->content_size != previous_content_size)
+        offset = 0;
     if(book->content_size > 0 && offset >= book->content_size)
         offset = 0;
     crazypod_book_session_begin(index);

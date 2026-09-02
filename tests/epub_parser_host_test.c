@@ -192,6 +192,64 @@ static bool test_html_images(const char *root)
         strchr(output, CRAZYPOD_EPUB_IMAGE_MARKER) != NULL;
 }
 
+static bool test_html_rich_layout(const char *root)
+{
+    static const char source[] =
+        "<body><h1 style=\"text-align:center\">Chapter</h1>"
+        "<p>First paragraph.</p><blockquote>Quoted text.</blockquote>"
+        "<ul><li>One</li><li>Two</li></ul></body>";
+    char input_path[MAX_PATH];
+    char output_path[MAX_PATH];
+    char output[256];
+    ssize_t count;
+    int input;
+    int result;
+    const char *marker;
+
+    if(snprintf(input_path, sizeof(input_path),
+                "%s/.rich-test.xhtml", root) >=
+       (int)sizeof(input_path) ||
+       snprintf(output_path, sizeof(output_path),
+                "%s/.rich-test.txt", root) >=
+       (int)sizeof(output_path))
+        return false;
+    input = open(input_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(input < 0 || !write_exact(input, source, sizeof(source) - 1)) {
+        if(input >= 0)
+            close(input);
+        return false;
+    }
+    close(input);
+    result = open(output_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(result < 0 || !crazypod_epub_html_append_rich_text_with_images(
+           input_path, result, NULL, NULL)) {
+        if(result >= 0)
+            close(result);
+        remove(input_path);
+        return false;
+    }
+    close(result);
+    result = open(output_path, O_RDONLY);
+    if(result < 0) {
+        remove(input_path);
+        return false;
+    }
+    count = read(result, output, sizeof(output) - 1);
+    close(result);
+    remove(input_path);
+    remove(output_path);
+    if(count < 0)
+        return false;
+    output[count] = '\0';
+    marker = strchr(output, CRAZYPOD_EPUB_FORMAT_MARKER);
+    return marker != NULL &&
+        (unsigned char)marker[1] ==
+            CRAZYPOD_EPUB_FORMAT_HEADING &&
+        strchr(marker + 2, CRAZYPOD_EPUB_FORMAT_MARKER) != NULL &&
+        strstr(output, "First paragraph.") != NULL &&
+        strstr(output, "Quoted text.") != NULL;
+}
+
 static unsigned test_layout_width(
     uint32_t codepoint, uint32_t next_codepoint, void *context)
 {
@@ -210,6 +268,19 @@ static bool test_layout_pagination(void)
         "\xe4\xb8\xad\xe6\x96\x87";
     static const unsigned char image[] = {
         CRAZYPOD_EPUB_IMAGE_MARKER, 'x'
+    };
+    static const unsigned char rich[] = {
+        CRAZYPOD_EPUB_FORMAT_MARKER,
+        CRAZYPOD_EPUB_FORMAT_HEADING,
+        'a', 'b', '\n',
+        CRAZYPOD_EPUB_FORMAT_MARKER,
+        CRAZYPOD_EPUB_FORMAT_QUOTE,
+        'c', 'd'
+    };
+    static const unsigned char rich_image[] = {
+        CRAZYPOD_EPUB_FORMAT_MARKER,
+        CRAZYPOD_EPUB_FORMAT_NORMAL,
+        CRAZYPOD_EPUB_IMAGE_MARKER
     };
     char output[64];
     size_t consumed;
@@ -236,6 +307,23 @@ static bool test_layout_pagination(void)
         image, sizeof(image), image, sizeof(image), false, false,
         output, sizeof(output), 2, 10);
     if(output[0] != '\0' || consumed != 1)
+        return false;
+    consumed = crazypod_epub_layout_page(
+        rich, sizeof(rich), rich, sizeof(rich), false, false,
+        output, sizeof(output), 2, 10);
+    if(consumed != sizeof(rich) ||
+       (unsigned char)output[0] !=
+           (unsigned char)CRAZYPOD_EPUB_FORMAT_MARKER ||
+       (unsigned char)output[1] != CRAZYPOD_EPUB_FORMAT_HEADING ||
+       strstr(output, "ab") == NULL)
+        return false;
+    consumed = crazypod_epub_layout_page(
+        rich_image, sizeof(rich_image), rich_image, sizeof(rich_image),
+        false, false, output, sizeof(output), 2, 10);
+    if(consumed != sizeof(rich_image) ||
+       (unsigned char)output[0] !=
+           (unsigned char)CRAZYPOD_EPUB_FORMAT_MARKER ||
+       (unsigned char)output[1] != CRAZYPOD_EPUB_FORMAT_NORMAL)
         return false;
     consumed = crazypod_epub_layout_page_with_measure(
         (const unsigned char *)"ab cd", 5,
@@ -265,6 +353,9 @@ int main(int argc, char **argv)
     off_t output_size;
     int i;
 
+    if(argc == 3 && strcmp(argv[1], "--rich-only") == 0)
+        return test_html_rich_layout(argv[2]) ? 0 : 1;
+
     if(argc != 2 && argc != 3) {
         fprintf(stderr,
                 "usage: %s EXTRACTED_EPUB_ROOT [EPUB_ARCHIVE]\n",
@@ -287,6 +378,10 @@ int main(int argc, char **argv)
     }
     if(!test_html_images(argv[1])) {
         fprintf(stderr, "HTML inline image handling failed\n");
+        return 1;
+    }
+    if(!test_html_rich_layout(argv[1])) {
+        fprintf(stderr, "HTML rich layout handling failed\n");
         return 1;
     }
     if(!test_layout_pagination()) {

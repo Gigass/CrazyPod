@@ -5,11 +5,11 @@
 
 #include "lvgl.h"
 
-#define CRAZYPOD_BOOKS_READER_TOP 28
-#define CRAZYPOD_BOOKS_READER_TOOLBAR_TOP 206
-#define CRAZYPOD_BOOKS_READER_MARGIN 16
-#define CRAZYPOD_BOOKS_READER_BOTTOM_MARGIN 8
-#define CRAZYPOD_BOOKS_READER_LINE_SPACE 2
+#define CRAZYPOD_BOOKS_READER_TOP 16
+#define CRAZYPOD_BOOKS_READER_TOOLBAR_TOP 214
+#define CRAZYPOD_BOOKS_READER_MARGIN 8
+#define CRAZYPOD_BOOKS_READER_BOTTOM_MARGIN 4
+#define CRAZYPOD_BOOKS_READER_LINE_SPACE 1
 
 unsigned crazypod_books_screen_reader_size(int setting);
 const lv_font_t *crazypod_books_screen_reader_font(unsigned size);
