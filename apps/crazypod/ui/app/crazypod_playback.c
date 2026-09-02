@@ -40,7 +40,10 @@
 #define SEEK_MAX_STEP_PERCENT 3
 #define SEEK_MIN_STEP_MS 500u
 #define PLAYBACK_COMMAND_STACK_SIZE (DEFAULT_STACK_SIZE + 0x1000)
-#define LOCK_METADATA_WARM_STACK_SIZE (DEFAULT_STACK_SIZE + 0x800)
+/* The worker keeps full playback and catalog-track snapshots on its stack
+ * while the first font load walks the runtime-font fallback and coverage
+ * paths. 3 KiB overflowed on real hardware with user-provided metadata. */
+#define LOCK_METADATA_WARM_STACK_SIZE (DEFAULT_STACK_SIZE + 0x1000)
 #define LOCK_METADATA_WARM_EVENT 1
 #define LOCK_TITLE_FONT_SIZE 15
 #define LOCK_ARTIST_FONT_SIZE 12
