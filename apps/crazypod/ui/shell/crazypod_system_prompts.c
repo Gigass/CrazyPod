@@ -2,6 +2,7 @@
 
 #ifdef IPOD_6G
 
+#include "audio.h"
 #include "backlight.h"
 #include "button.h"
 #include "file.h"
@@ -113,6 +114,7 @@ static void execute(enum shutdown_type type)
         crazypod_miniapps_feature_close();
     }
     crazypod_state_save(true);
+    audio_stop();
     shutdown_hw(type);
 }
 
