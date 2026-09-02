@@ -102,6 +102,20 @@ static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
     return hash;
 }
 
+static int font_size_index(int value)
+{
+    /* Older development builds wrote the displayed point size instead of
+     * the three-value setting index. Accept both forms so an old library
+     * file cannot silently force every reader page back to 14 pt. */
+    if(value == 12)
+        return 0;
+    if(value == 14)
+        return 1;
+    if(value == 16)
+        return 2;
+    return value >= 0 && value <= 2 ? value : 1;
+}
+
 static uint32_t path_hash(const char *path)
 {
     return hash_bytes(2166136261u, path, strlen(path));
@@ -679,6 +693,12 @@ void crazypod_books_init(void)
            loaded.count <= BOOKS_MAX &&
            loaded.checksum == state_checksum(&loaded)) {
             persisted = loaded;
+            if(persisted.font_size != (uint32_t)font_size_index(
+                   (int)persisted.font_size)) {
+                persisted.font_size = (uint32_t)font_size_index(
+                    (int)persisted.font_size);
+                migrate_legacy = true;
+            }
             if(persisted.version == BOOKS_VERSION_LEGACY) {
                 uint32_t i;
 
@@ -1162,7 +1182,7 @@ bool crazypod_book_delete(int index)
 
 int crazypod_books_font_size(void)
 {
-    return persisted.font_size <= 2 ? (int)persisted.font_size : 1;
+    return font_size_index((int)persisted.font_size);
 }
 
 void crazypod_books_set_reader_layout(
@@ -1186,6 +1206,7 @@ int crazypod_books_theme(void)
 
 bool crazypod_books_set_font_size(int value)
 {
+    value = font_size_index(value);
     if(value < 0 || value > 2)
         return false;
     persisted.font_size = (uint32_t)value;

@@ -72,8 +72,8 @@ static void configure_reader_layout_for_size(
 
 static void configure_reader_layout(bool toolbar_visible)
 {
-    unsigned size = crazypod_books_font_size() == 0 ? 12 :
-        crazypod_books_font_size() == 2 ? 16 : 14;
+    unsigned size = crazypod_books_screen_reader_size(
+        crazypod_books_font_size());
 
     configure_reader_layout_for_size(toolbar_visible, size);
 }
@@ -543,7 +543,7 @@ void crazypod_books_feature_apply_font_size(int value)
 {
     configure_reader_layout_for_size(
         reader_view.toolbar_visible,
-        value == 0 ? 12 : value == 2 ? 16 : 14);
+        crazypod_books_screen_reader_size(value));
     crazypod_books_workflow_apply_font_size(value);
 }
 

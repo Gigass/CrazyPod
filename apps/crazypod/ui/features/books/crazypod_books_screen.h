@@ -11,6 +11,7 @@
 #define CRAZYPOD_BOOKS_READER_BOTTOM_MARGIN 8
 #define CRAZYPOD_BOOKS_READER_LINE_SPACE 2
 
+unsigned crazypod_books_screen_reader_size(int setting);
 const lv_font_t *crazypod_books_screen_reader_font(unsigned size);
 unsigned crazypod_books_screen_reader_line_height(unsigned size);
 unsigned crazypod_books_screen_measure_width(

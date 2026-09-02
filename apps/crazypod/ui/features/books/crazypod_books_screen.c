@@ -19,12 +19,36 @@
 #define CRAZYPOD_BOOKS_WHITE 0xFFFFFF
 #define CRAZYPOD_BOOKS_PANEL 0x1B1B22
 
+static lv_font_t reader_fallback_12;
+static bool reader_fallback_12_ready;
+
+unsigned crazypod_books_screen_reader_size(int setting)
+{
+    if(setting == 0)
+        return 12;
+    if(setting == 2)
+        return 16;
+    return 14;
+}
+
 const lv_font_t *crazypod_books_screen_reader_font(unsigned size)
 {
     const lv_font_t *font = crazypod_runtime_font_at_size(size);
 
     if(font != NULL)
         return font;
+    if(size <= 12) {
+        /* Keep the fallback at 12 pt too. Use a private descriptor so the
+         * generic UI resolver does not treat it as its 12 px role and replace
+         * it with the 18 px metadata face. */
+        if(!reader_fallback_12_ready) {
+            reader_fallback_12 = lv_font_crazypod_i18n_12;
+            reader_fallback_12.fallback =
+                &lv_font_source_han_sans_sc_14_cjk;
+            reader_fallback_12_ready = true;
+        }
+        return &reader_fallback_12;
+    }
     return size >= 16
         ? &lv_font_source_han_sans_sc_16_cjk
         : CRAZYPOD_BOOKS_FONT;
@@ -61,9 +85,8 @@ void crazypod_books_screen_render_reader(
     const struct crazypod_book *book =
         crazypod_book_get(book_index);
     int theme = crazypod_books_theme();
-    int font_size = crazypod_books_font_size();
     const lv_font_t *reader_font = crazypod_books_screen_reader_font(
-        font_size == 0 ? 12 : font_size == 2 ? 16 : 14);
+        crazypod_books_screen_reader_size(crazypod_books_font_size()));
     lv_obj_t *page;
     lv_obj_t *toolbar;
     lv_obj_t *label;
