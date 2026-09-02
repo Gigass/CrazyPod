@@ -782,7 +782,7 @@ static void request_handler_device_get_descriptor(struct usb_ctrlrequest* req, v
 
         case USB_DT_OTHER_SPEED_CONFIG:
         case USB_DT_CONFIG: {
-            if(index > NUM_CONFIGS) {
+            if(index >= NUM_CONFIGS) {
                 logf("invalid config dt index %u", index);
                 break;
             }

@@ -136,6 +136,7 @@
 #define ASC_READ_ERROR              0x11
 #define ASC_NOT_READY               0x04
 #define ASC_INVALID_COMMAND         0x20
+#define ASC_LOGICAL_UNIT_NOT_SUPPORTED 0x25
 
 #define ASCQ_BECOMING_READY         0x01
 
@@ -297,6 +298,7 @@ static struct {
     unsigned char *data[2];
     unsigned char data_select;
     unsigned int last_result;
+    unsigned int data_residue;
 } cur_cmd;
 
 static struct {
@@ -310,15 +312,19 @@ static void handle_scsi(struct command_block_wrapper* cbw);
 static void send_csw(int status);
 static void send_command_result(void *data,int size);
 static void send_command_failed_result(void);
+static void reject_command(struct command_block_wrapper *cbw);
 static void send_block_data(void *data,int size);
 static void receive_block_data(void *data,int size);
+static void receive_failed_data(void *data,int size);
 #if CONFIG_RTC
 static void receive_time(void);
 #endif
 static void fill_inquiry(IF_MD_NONVOID(int lun));
 static void send_and_read_next(void);
 static bool ejected[NUM_DRIVES];
+static bool presence_known[NUM_DRIVES];
 static bool locked[NUM_DRIVES];
+static unsigned int failed_data_remaining;
 
 static int usb_interface;
 
@@ -338,18 +344,61 @@ static bool skip_first = 0;
 static unsigned char* ramdisk_buffer;
 #endif
 
+static bool usb_storage_media_access_allowed(void)
+{
+#ifdef USB_USE_RAMDISK
+    return true;
+#else
+    return usb_exclusive_storage();
+#endif
+}
+
+static bool scsi_command_needs_media(unsigned char opcode)
+{
+    switch(opcode) {
+        case SCSI_TEST_UNIT_READY:
+        case SCSI_MODE_SENSE_6:
+        case SCSI_MODE_SENSE_10:
+        case USB_UFI_READ_FORMAT_CAPACITY:
+        case SCSI_READ_CAPACITY_10:
+        case SCSI_READ_CAPACITY_16:
+        case SCSI_READ_10:
+        case SCSI_READ_16:
+        case SCSI_WRITE_10:
+        case SCSI_WRITE_16:
+#if (CONFIG_STORAGE & STORAGE_ATA)
+        case SAT_ATA_PASSTHROUGH_12:
+        case SAT_ATA_PASSTHROUGH_16:
+#endif
+            return true;
+        default:
+            return false;
+    }
+}
+
 static enum {
     WAITING_FOR_COMMAND,
     SENDING_BLOCKS,
     SENDING_RESULT,
     SENDING_FAILED_RESULT,
     RECEIVING_BLOCKS,
+    RECEIVING_FAILED_BLOCKS,
 #if CONFIG_RTC
     RECEIVING_TIME,
 #endif
     WAITING_FOR_CSW_COMPLETION_OR_COMMAND,
     WAITING_FOR_CSW_COMPLETION
 } state = WAITING_FOR_COMMAND;
+
+static void reset_transaction_state(void)
+{
+    state = WAITING_FOR_COMMAND;
+    failed_data_remaining = 0;
+    cur_cmd.tag = 0;
+    cur_cmd.lun = 0;
+    cur_cmd.cur_cmd = 0;
+    cur_cmd.data_residue = 0;
+}
 
 #if CONFIG_RTC
 static void yearday_to_daymonth(int yd, int y, int *d, int *m)
@@ -377,15 +426,26 @@ static bool check_disk_present(IF_MD_NONVOID(int volume))
 #endif
 }
 
+static void update_disk_presence(IF_MD_NONVOID(int volume))
+{
+    if(!presence_known[volume]) {
+        ejected[volume] = !check_disk_present(IF_MD(volume));
+        presence_known[volume] = true;
+    }
+}
+
 #ifdef HAVE_HOTSWAP
 void usb_storage_notify_hotswap(int volume,bool inserted)
 {
     logf("notify %d",inserted);
-    if(inserted && check_disk_present(IF_MD(volume))) {
+    bool access_allowed = usb_storage_media_access_allowed();
+    if(inserted && access_allowed && check_disk_present(IF_MD(volume))) {
         ejected[volume] = false;
+        presence_known[volume] = true;
     }
     else {
         ejected[volume] = true;
+        presence_known[volume] = !inserted || access_allowed;
         /* If this happens while the device is locked, weird things may happen.
            At least try to keep our state consistent */
         locked[volume]=false;
@@ -440,7 +500,7 @@ void usb_storage_init_connection(void)
 {
     logf("ums: set config");
     /* prime rx endpoint. We only need room for commands */
-    state = WAITING_FOR_COMMAND;
+    reset_transaction_state();
 
 #ifdef USB_STATIC_ALLOC
     static unsigned char _cbw_buffer[MAX_CBW_SIZE]
@@ -480,13 +540,24 @@ void usb_storage_init_connection(void)
     int i;
     for(i=0;i<storage_num_drives();i++) {
         locked[i] = false;
-        ejected[i] = !check_disk_present(IF_MD(i));
+#ifdef USB_USE_RAMDISK
+        ejected[i] = false;
+        presence_known[i] = true;
+#else
+        ejected[i] = true;
+        presence_known[i] = false;
+#endif
         queue_broadcast(SYS_USB_LUN_LOCKED, (i<<16)+0);
     }
 }
 
 void usb_storage_disconnect(void)
 {
+    reset_transaction_state();
+    for(int i = 0; i < NUM_DRIVES; i++) {
+        presence_known[i] = false;
+        ejected[i] = true;
+    }
 #ifndef USB_STATIC_ALLOC
     usb_handle = core_free(usb_handle);
 #endif
@@ -572,6 +643,36 @@ void usb_storage_transfer_complete(int ep,int dir,int status,int length)
                 cur_sense_data.ascq=0;
             }
             break;
+        case RECEIVING_FAILED_BLOCKS:
+            if(dir==USB_DIR_IN) {
+                logf("IN received in failed RECEIVING");
+            }
+            if(status==0) {
+                unsigned int requested = MIN(WRITE_BUFFER_SIZE,
+                                             failed_data_remaining);
+                unsigned int received = MIN((unsigned int)length,
+                                            requested);
+
+                failed_data_remaining -= received;
+                cur_cmd.data_residue = failed_data_remaining;
+
+                if((unsigned int)length < requested ||
+                   failed_data_remaining == 0) {
+                    if((unsigned int)length < requested)
+                        usb_drv_stall(EP_OUT, true, false);
+                    send_csw(UMS_STATUS_FAIL);
+                }
+                else {
+                    receive_failed_data(tb.transfer_buffer,
+                                        MIN(WRITE_BUFFER_SIZE,
+                                            failed_data_remaining));
+                }
+            }
+            else {
+                cur_cmd.data_residue = failed_data_remaining;
+                send_csw(UMS_STATUS_FAIL);
+            }
+            break;
         case WAITING_FOR_CSW_COMPLETION_OR_COMMAND:
             if(dir==USB_DIR_IN) {
                 /* This was the CSW */
@@ -617,6 +718,11 @@ void usb_storage_transfer_complete(int ep,int dir,int status,int length)
         case SENDING_FAILED_RESULT:
             if(dir==USB_DIR_OUT) {
                 logf("OUT received in SENDING");
+            }
+            if(dir==USB_DIR_IN && status==0) {
+                /* DesignWare has no clear-halt notification. Queue the CSW
+                 * while halted; CLEAR_FEATURE releases this transfer. */
+                usb_drv_stall(EP_IN, true, true);
             }
             send_csw(UMS_STATUS_FAIL);
             break;
@@ -715,7 +821,7 @@ bool usb_storage_control_request(struct usb_ctrlrequest* req, void* reqdata, uns
 
         case USB_BULK_RESET_REQUEST:
             logf("ums: bulk reset");
-            state = WAITING_FOR_COMMAND;
+            reset_transaction_state();
             /* UMS BOT 3.1 says The device shall preserve the value of its bulk
                data toggle bits and endpoint STALL conditions despite
                the Bulk-Only Mass Storage Reset. */
@@ -774,7 +880,8 @@ static void handle_scsi(struct command_block_wrapper* cbw)
     sector_t block_count;
     unsigned int block_size;
     bool lun_present=true;
-    unsigned char lun = cbw->lun;
+    unsigned int lun = cbw->lun;
+    bool needs_media = scsi_command_needs_media(cbw->command_block[0]);
 
     if(letoh32(cbw->signature) != CBW_SIGNATURE) {
         logf("ums: bad cbw signature (%x)", cbw->signature);
@@ -791,6 +898,33 @@ static void handle_scsi(struct command_block_wrapper* cbw)
     if(skip_first) lun++;
 #endif
 
+    cur_cmd.tag = cbw->tag;
+    cur_cmd.lun = lun;
+    cur_cmd.cur_cmd = cbw->command_block[0];
+    cur_cmd.data_residue = 0;
+
+    if(lun >= (unsigned int)storage_num_drives()) {
+        cur_sense_data.sense_key=SENSE_ILLEGAL_REQUEST;
+        cur_sense_data.information=0;
+        cur_sense_data.asc=ASC_LOGICAL_UNIT_NOT_SUPPORTED;
+        cur_sense_data.ascq=0;
+        reject_command(cbw);
+        return;
+    }
+
+    if(needs_media) {
+        if(!usb_storage_media_access_allowed()) {
+            cur_sense_data.sense_key=SENSE_NOT_READY;
+            cur_sense_data.information=0;
+            cur_sense_data.asc=ASC_NOT_READY;
+            cur_sense_data.ascq=ASCQ_BECOMING_READY;
+            reject_command(cbw);
+            return;
+        }
+
+        update_disk_presence(IF_MD(lun));
+    }
+
     storage_get_info(lun,&info);
 #ifdef USB_USE_RAMDISK
     block_size = SECTOR_SIZE;
@@ -801,7 +935,7 @@ static void handle_scsi(struct command_block_wrapper* cbw)
 #endif
 
 #ifdef HAVE_HOTSWAP
-    if(storage_removable(lun) && !storage_present(lun)) {
+    if(needs_media && storage_removable(lun) && !storage_present(lun)) {
         ejected[lun] = true;
     }
 #endif
@@ -810,27 +944,18 @@ static void handle_scsi(struct command_block_wrapper* cbw)
         lun_present = false;
 
     unsigned int block_size_mult = 1; /* Number of LOGICAL storage device blocks in each USB block */
+    if(needs_media) {
 #ifdef MAX_VIRT_SECTOR_SIZE
-    block_size_mult = disk_get_sector_multiplier(IF_MD(lun));
+        block_size_mult = disk_get_sector_multiplier(IF_MD(lun));
 #endif
+    }
 
     uint32_t bsize = block_size*block_size_mult;
     sector_t bcount = block_count/block_size_mult;
 
-    cur_cmd.tag = cbw->tag;
-    cur_cmd.lun = lun;
-    cur_cmd.cur_cmd = cbw->command_block[0];
-
     switch (cbw->command_block[0]) {
         case SCSI_TEST_UNIT_READY:
             logf("scsi test_unit_ready %d",lun);
-            if(!usb_exclusive_storage()) {
-                send_csw(UMS_STATUS_FAIL);
-                cur_sense_data.sense_key=SENSE_NOT_READY;
-                cur_sense_data.asc=ASC_MEDIUM_NOT_PRESENT;
-                cur_sense_data.ascq=0;
-                break;
-            }
             if(lun_present) {
                 send_csw(UMS_STATUS_GOOD);
             }
@@ -1021,6 +1146,7 @@ static void handle_scsi(struct command_block_wrapper* cbw)
                     {
                         logf("scsi eject");
                         ejected[lun]=true;
+                        presence_known[lun]=true;
                     }
                 }
             }
@@ -1408,8 +1534,35 @@ static void send_command_result(void *data,int size)
 
 static void send_command_failed_result(void)
 {
+    struct command_block_wrapper *cbw = (void *)cbw_buffer;
+
+    failed_data_remaining = 0;
+    cur_cmd.data_residue = cbw->data_transfer_length;
+    if(cur_cmd.data_residue == 0) {
+        send_csw(UMS_STATUS_FAIL);
+        return;
+    }
     usb_drv_send_nonblocking(EP_IN, NULL, 0);
     state = SENDING_FAILED_RESULT;
+}
+
+static void reject_command(struct command_block_wrapper *cbw)
+{
+    failed_data_remaining = 0;
+    cur_cmd.data_residue = cbw->data_transfer_length;
+
+    if(cur_cmd.data_residue == 0) {
+        send_csw(UMS_STATUS_FAIL);
+    }
+    else if((cbw->flags & 0x80) != 0) {
+        send_command_failed_result();
+    }
+    else {
+        failed_data_remaining = cur_cmd.data_residue;
+        receive_failed_data(tb.transfer_buffer,
+                            MIN(WRITE_BUFFER_SIZE,
+                                failed_data_remaining));
+    }
 }
 
 #if CONFIG_RTC
@@ -1426,15 +1579,22 @@ static void receive_block_data(void *data,int size)
     state = RECEIVING_BLOCKS;
 }
 
+static void receive_failed_data(void *data,int size)
+{
+    usb_drv_recv_nonblocking(EP_OUT, data, size);
+    state = RECEIVING_FAILED_BLOCKS;
+}
+
 static void send_csw(int status)
 {
     tb.csw->signature = htole32(CSW_SIGNATURE);
     tb.csw->tag = cur_cmd.tag;
-    tb.csw->data_residue = 0;
+    tb.csw->data_residue = htole32(cur_cmd.data_residue);
     tb.csw->status = status;
 
     usb_drv_send_nonblocking(EP_IN, tb.csw,
             sizeof(struct command_status_wrapper));
+    failed_data_remaining = 0;
     state = WAITING_FOR_CSW_COMPLETION_OR_COMMAND;
     //logf("CSW: %X",status);
     /* Already start waiting for the next command */
