@@ -10,7 +10,6 @@
 
 #include "../../../crazypod_books.h"
 #include "../../../crazypod_book_image.h"
-#include "../../../crazypod_runtime_font.h"
 #include "../../../epub/crazypod_epub_html.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_books_screen.h"
@@ -36,14 +35,14 @@ unsigned crazypod_books_screen_reader_size(int setting)
 
 const lv_font_t *crazypod_books_screen_reader_font(unsigned size)
 {
-    const lv_font_t *font = crazypod_runtime_font_at_size(size);
-
-    if(font != NULL)
-        return font;
+    /* The reader deliberately uses the bundled faces instead of the
+     * optional AOT font pool.  A missing or stale AOT pack must not collapse
+     * all three reader choices onto one fallback face.  These fonts contain
+     * the CJK repertoire as well as the Latin punctuation used by books, so
+     * pagination and rendering remain deterministic on a cold device. */
     if(size <= 12) {
-        /* Keep the fallback at 12 pt too. Use a private descriptor so the
-         * generic UI resolver does not treat it as its 12 px role and replace
-         * it with the 18 px metadata face. */
+        /* Keep the 12 pt face from being mistaken for the generic 12 px UI
+         * role, which would make crazypod_ui_widget_label replace it. */
         if(!reader_fallback_12_ready) {
             reader_fallback_12 = lv_font_crazypod_i18n_12;
             reader_fallback_12.fallback =
@@ -116,6 +115,10 @@ static void render_reader_line(
     reader_line[text_size] = '\0';
     label = crazypod_ui_widget_label(
         page, reader_line, font, ink_color, LV_OPA_COVER);
+    /* The generic label helper may resolve localized UI fonts.  Re-apply the
+     * reader face so a book's text can never be promoted to a metadata size.
+     */
+    lv_obj_set_style_text_font(label, font, 0);
     lv_obj_set_pos(label, x, *line_y);
     lv_obj_set_size(label, width, line_height);
     lv_obj_set_style_pad_all(label, 0, 0);
@@ -273,6 +276,7 @@ void crazypod_books_screen_render_reader(
                     ? page_text : CP_TR("This book could not be decoded."),
                 reader_font, ink_color,
                 LV_OPA_COVER);
+            lv_obj_set_style_text_font(label, reader_font, 0);
             lv_obj_set_pos(label, CRAZYPOD_BOOKS_READER_MARGIN,
                            CRAZYPOD_BOOKS_READER_TOP);
             lv_obj_set_size(
