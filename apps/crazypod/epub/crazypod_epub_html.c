@@ -158,25 +158,31 @@ static bool tag_ignored(const char *tag)
            tag_matches(tag, "math") ||
            tag_matches(tag, "nav") ||
            tag_matches(tag, "noscript") ||
-           tag_matches(tag, "template");
+           tag_matches(tag, "template") ||
+           tag_matches(tag, "rt") ||
+           tag_matches(tag, "rp");
 }
 
-static bool tag_break(const char *tag)
+static int tag_break_count(const char *tag)
 {
-    static const char *const names[] = {
-        "p", "div", "section", "article", "header", "footer",
-        "aside", "blockquote", "pre", "figure", "figcaption",
-        "ul", "ol", "dl", "dt", "dd", "li", "table", "tr",
-        "br", "br/", "hr", "hr/", "h1", "h2", "h3", "h4",
-        "h5", "h6"
-    };
-    size_t i;
-
-    for(i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
-        if(tag_matches(tag, names[i]))
-            return true;
-    }
-    return false;
+    if(tag_matches(tag, "p") || tag_matches(tag, "blockquote") ||
+       tag_matches(tag, "pre") || tag_matches(tag, "h1") ||
+       tag_matches(tag, "h2") || tag_matches(tag, "h3") ||
+       tag_matches(tag, "h4") || tag_matches(tag, "h5") ||
+       tag_matches(tag, "h6"))
+        return 2;
+    if(tag_matches(tag, "div") || tag_matches(tag, "section") ||
+       tag_matches(tag, "article") || tag_matches(tag, "header") ||
+       tag_matches(tag, "footer") || tag_matches(tag, "aside") ||
+       tag_matches(tag, "figure") || tag_matches(tag, "figcaption") ||
+       tag_matches(tag, "ul") || tag_matches(tag, "ol") ||
+       tag_matches(tag, "dl") || tag_matches(tag, "dt") ||
+       tag_matches(tag, "dd") || tag_matches(tag, "li") ||
+       tag_matches(tag, "table") || tag_matches(tag, "tr") ||
+       tag_matches(tag, "br") || tag_matches(tag, "br/") ||
+       tag_matches(tag, "hr") || tag_matches(tag, "hr/"))
+        return 1;
+    return 0;
 }
 
 static int tag_format_style(const char *tag)
@@ -536,8 +542,12 @@ static bool append_text_with_images(
                                     return false;
                                 }
                             }
-                            else if(tag_break(tag))
-                                writer_break(&writer, 1);
+                            else {
+                                int breaks = tag_break_count(tag);
+
+                                if(breaks > 0)
+                                    writer_break(&writer, breaks);
+                            }
                         }
                     }
                     in_tag = false;

@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -12,6 +13,20 @@
 #endif
 
 #ifdef _WIN32
+static inline int host_test_open(
+    const char *path, int flags, ...)
+{
+    va_list arguments;
+    int mode = 0;
+
+    va_start(arguments, flags);
+    if((flags & O_CREAT) != 0)
+        mode = va_arg(arguments, int);
+    va_end(arguments);
+    return _open(path, flags | O_BINARY, mode);
+}
+#define open host_test_open
+
 static inline int host_test_fsync(int fd)
 {
     return _commit(fd);

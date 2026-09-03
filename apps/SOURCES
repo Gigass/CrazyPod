@@ -110,6 +110,7 @@ crazypod/epub/extraction/crazypod_epub_extraction.c
 crazypod/crazypod_epub.c
 crazypod/crazypod_book_cover.c
 crazypod/crazypod_book_image.c
+crazypod/crazypod_book_png.c
 crazypod/crazypod_organizer.c
 crazypod/crazypod_workouts.c
 crazypod/crazypod_state.c

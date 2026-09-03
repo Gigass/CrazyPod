@@ -82,7 +82,8 @@ static bool test_html_layout(const char *root)
         "<ul><li>Alpha</li><li>Beta</li></ul></section>"
         "</body></html>";
     static const char expected[] =
-        "Chapter & One\nFirst paragraph.\nSecond\nline.\nAlpha\nBeta";
+        "Chapter & One\n\nFirst paragraph.\n\nSecond\nline.\n\n"
+        "Alpha\n\nBeta";
     char input_path[MAX_PATH];
     char output_path[MAX_PATH];
     char output[256];
@@ -268,6 +269,14 @@ static bool test_layout_pagination(void)
     static const unsigned char gbk[] = "\xd6\xd0\xce\xc4";
     static const unsigned char converted[] =
         "\xe4\xb8\xad\xe6\x96\x87";
+    static const unsigned char utf16le[] = {
+        0x41, 0x00, 0x2d, 0x4e, 0x3d, 0xd8, 0x00, 0xde
+    };
+    static const unsigned char utf16be[] = {
+        0x00, 0x41, 0x4e, 0x2d, 0xd8, 0x3d, 0xde, 0x00
+    };
+    static const unsigned char utf16_text[] =
+        "A\xe4\xb8\xad\xf0\x9f\x98\x80";
     static const unsigned char image[] = {
         CRAZYPOD_EPUB_IMAGE_MARKER, 'x'
     };
@@ -304,6 +313,18 @@ static bool test_layout_pagination(void)
         gbk, sizeof(gbk) - 1, true, false,
         output, sizeof(output), 1, 4);
     if(strcmp(output, "中文") != 0 || consumed != sizeof(gbk) - 1)
+        return false;
+    consumed = crazypod_epub_layout_page_with_encoding(
+        utf16_text, sizeof(utf16_text) - 1,
+        utf16le, sizeof(utf16le), CRAZYPOD_EPUB_SOURCE_UTF16LE,
+        false, output, sizeof(output), 1, 10);
+    if(strcmp(output, "A中😀") != 0 || consumed != sizeof(utf16le))
+        return false;
+    consumed = crazypod_epub_layout_page_with_encoding(
+        utf16_text, sizeof(utf16_text) - 1,
+        utf16be, sizeof(utf16be), CRAZYPOD_EPUB_SOURCE_UTF16BE,
+        false, output, sizeof(output), 1, 10);
+    if(strcmp(output, "A中😀") != 0 || consumed != sizeof(utf16be))
         return false;
     consumed = crazypod_epub_layout_page(
         image, sizeof(image), image, sizeof(image), false, false,
@@ -480,10 +501,8 @@ int main(int argc, char **argv)
                (uint32_t)source.st_mtime,
                cached_text, sizeof(cached_text),
                &cached_text_size) ||
-           progress_calls == 0 ||
-           progress_last != 100 ||
-           !saw_stage) {
-            fprintf(stderr, "cached reading progress failed\n");
+           progress_calls != 0 || progress_last != 0 || saw_stage) {
+            fprintf(stderr, "cached reading rebuilt unexpectedly\n");
             return 1;
         }
         crazypod_epub_set_progress_callback(NULL, NULL);

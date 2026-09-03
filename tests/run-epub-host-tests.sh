@@ -38,6 +38,47 @@ cc -std=c11 -Wall -Wextra -Werror \
     $zip_sources \
     -o "$test_root/zip_extract_test"
 
+cc -std=c11 -Wall -Wextra -Werror \
+    -include tests/epub-host-stubs/config.h \
+    -Itests/epub-host-stubs \
+    -Itests/crazypod-image-stubs \
+    -Iapps/crazypod \
+    -Ifirmware/include \
+    tests/crazypod_book_png_host_test.c \
+    apps/crazypod/crazypod_book_png.c \
+    firmware/common/inflate.c \
+    firmware/common/crc32.c \
+    firmware/common/adler32.c \
+    -o "$test_root/crazypod_book_png_host_test"
+
+python3 - "$test_root/image.png" "$test_root/broken.png" <<'PY'
+import struct
+import sys
+import zlib
+
+def chunk(name, data):
+    return (struct.pack(">I", len(data)) + name + data +
+            struct.pack(">I", zlib.crc32(name + data) & 0xffffffff))
+
+row0 = bytes([0, 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255])
+actual_row1 = bytes([255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 128])
+encoded_row1 = bytearray([1])
+previous = 0
+for value in actual_row1:
+    encoded_row1.append((value - previous) & 0xff)
+    previous = value
+raw = row0 + bytes(encoded_row1)
+png = (b"\x89PNG\r\n\x1a\n" +
+       chunk(b"IHDR", struct.pack(">IIBBBBB", 3, 2, 8, 6, 0, 0, 0)) +
+       chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+with open(sys.argv[1], "wb") as output:
+    output.write(png)
+with open(sys.argv[2], "wb") as output:
+    output.write(b"not a png")
+PY
+"$test_root/crazypod_book_png_host_test" \
+    "$test_root/image.png" "$test_root/broken.png"
+
 python3 - "$test_root/traversal.epub" <<'PY'
 import sys
 import zipfile

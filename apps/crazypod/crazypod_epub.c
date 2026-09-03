@@ -684,7 +684,6 @@ bool crazypod_epub_prepare(const char *epub_path,
     off_t size;
     bool success = false;
 
-    report_prepare_progress(5, CP_TR("Checking book cache"));
     crazypod_epub_cache_ensure_directory();
     crazypod_epub_cache_paths(epub_path, &paths);
     epub_cache_hash = hash;
@@ -702,10 +701,10 @@ bool crazypod_epub_prepare(const char *epub_path,
                  "%s", cache_book.cover_path);
         if(text_size != NULL)
             *text_size = cache_book.text_size;
-        report_prepare_progress(100, CP_TR("Book ready"));
         return true;
     }
 
+    report_prepare_progress(5, CP_TR("Checking book cache"));
     report_prepare_progress(12, CP_TR("Clearing temporary files"));
     epub_cache_hash = hash;
     crazypod_epub_cache_remove(epub_path);
@@ -798,6 +797,14 @@ static const char *epub_image_extension(const char *path)
         return ".jpeg";
     if(crazypod_epub_ascii_equal(dot, ".bmp"))
         return ".bmp";
+    if(crazypod_epub_ascii_equal(dot, ".png"))
+        return ".png";
+    /* Keep unsupported resources in the cache so the reader can show an
+     * image placeholder instead of silently removing an EPUB image. */
+    if(crazypod_epub_ascii_equal(dot, ".gif"))
+        return ".gif";
+    if(crazypod_epub_ascii_equal(dot, ".webp"))
+        return ".webp";
     return NULL;
 }
 
