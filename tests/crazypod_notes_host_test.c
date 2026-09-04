@@ -24,7 +24,7 @@ int main(int argc, char **argv)
 
     assert(argc == 2);
     notes_test_root = argv[1];
-    assert(mkdir(notes_test_root) == 0);
+    assert(mkdir(notes_test_root, 0700) == 0);
     crazypod_notes_init();
 
     id = crazypod_note_save(0, "Old title", "old body");

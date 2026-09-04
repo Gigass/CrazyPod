@@ -73,8 +73,7 @@ void yield(void)
 }
 void pcm_play_lock(void) { ++locks; }
 void pcm_play_unlock(void) { assert(locks > 0); --locks; }
-void mixer_channel_play_data(
-    int channel, const struct mixer_play_cbs *callbacks,
+void mixer_channel_play_data(int channel, const struct mixer_play_cbs *callbacks,
                              const void *data, size_t size)
 {
     assert(channel == 0 && locks > 0 && data != NULL && size > 0);

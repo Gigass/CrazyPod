@@ -58,7 +58,7 @@ static inline int notes_test_mkdir(const char *path)
     char mapped[2 * MAX_PATH];
 
     notes_test_map_path(mapped, sizeof(mapped), path);
-    return mkdir(mapped);
+    return mkdir(mapped, 0700);
 }
 
 static inline int notes_test_remove(const char *path)
