@@ -28,6 +28,7 @@
 #include "audio.h"
 #include "sound.h"
 #include "general.h"
+#include "panic.h"
 #include "pcm-internal.h"
 #include "pcm_mixer.h"
 
@@ -306,7 +307,8 @@ void pcm_play_lock(void) {
 }
 
 void pcm_play_unlock(void) {
-    ASSERT(sink_lock_owner == thread_self() && sink_lock_depth > 0);
+    if(sink_lock_owner != thread_self() || sink_lock_depth == 0)
+        panicf("pcm_play_unlock without matching lock");
     if (--sink_lock_depth > 0)
         return;
 

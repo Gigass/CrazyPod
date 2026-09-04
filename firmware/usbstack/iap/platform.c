@@ -487,8 +487,7 @@ void iap_platform_dump_hex(const void* ptr, size_t size) {
 }
 
 IAPBool iap_platform_on_acc_samprs_received(struct IAPContext* iap_ctx, struct IAPSpan* samprs) {
-    (void)iap_ctx;
-
+    struct Platform* plt = iap_ctx->platform;
     bool has_44k = false;
     bool has_48k = false;
     while(samprs->size > 0) {
@@ -501,7 +500,7 @@ IAPBool iap_platform_on_acc_samprs_received(struct IAPContext* iap_ctx, struct I
     /* The callback runs under iap_ctx_mutex.  Sink changes can enter the
      * audio callback, which may ask for the same context again.  Defer the
      * transition until the USB control/tick caller releases that mutex. */
-    iap_ctx->platform->sink_switch_pending = true;
+    plt->sink_switch_pending = true;
     return iap_true;
 }
 

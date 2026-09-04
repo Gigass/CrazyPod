@@ -292,9 +292,10 @@ static bool            iap_ctx_mutex_initialized = false;
 static void process_deferred_sink_switch(void) {
     bool pending;
     struct IAPContext* ctx = _iap_acquire_ctx(true);
+    struct Platform* plt = ctx->platform;
 
-    pending = ctx->platform->sink_switch_pending;
-    ctx->platform->sink_switch_pending = false;
+    pending = plt->sink_switch_pending;
+    plt->sink_switch_pending = false;
     _iap_release_ctx();
     if(pending)
         check_act(mixer_switch_sink(PCM_SINK_IAP), );
