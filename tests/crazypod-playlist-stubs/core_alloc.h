@@ -13,5 +13,6 @@ void *core_get_data(int handle);
 
 int test_core_alloc_active_handles(void);
 int test_core_alloc_pin_count(void);
+void test_core_alloc_fail_next(void);
 
 #endif

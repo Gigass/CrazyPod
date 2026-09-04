@@ -30,6 +30,7 @@
 #include "../presentation/crazypod_preview_motion.h"
 #include "../shell/crazypod_lock_screen.h"
 #include "../shell/crazypod_now_capsule.h"
+#include "../shell/crazypod_notification.h"
 #include "../shell/crazypod_shell.h"
 #include "crazypod_app_launcher.h"
 #include "crazypod_choice_coordinator.h"
@@ -67,6 +68,8 @@ struct crazypod_music_selection_request {
     enum crazypod_music_scope scope;
     int group_index;
     int selected_index;
+    unsigned generation;
+    bool shuffle_all;
     char query[PLAYBACK_SEARCH_QUERY_SIZE];
 };
 
@@ -97,7 +100,9 @@ static long lock_metadata_warm_stack[
 static bool lock_metadata_warm_thread_started;
 static struct crazypod_lock_playback_cache lock_playback;
 static struct crazypod_music_selection_request music_selection;
+static unsigned music_selection_generation;
 static bool music_selection_pending;
+static bool music_selection_failed;
 static bool play_state_command_queued;
 static bool stop_command_queued;
 
@@ -358,18 +363,28 @@ static void playback_command_thread(void)
             request = music_selection;
             music_selection_pending = false;
             mutex_unlock(&lock_playback_mutex);
-            started = request.scope == CRAZYPOD_SCOPE_ALL ||
-                request.scope == CRAZYPOD_SCOPE_ARTIST ||
-                request.scope == CRAZYPOD_SCOPE_ALBUM ||
-                request.scope == CRAZYPOD_SCOPE_PLAYLIST
-                    ? crazypod_music_play(
-                        request.scope, request.group_index,
-                        request.selected_index)
-                    : crazypod_music_play_search(
-                        request.query, request.selected_index);
+            if(request.shuffle_all)
+                started = crazypod_music_shuffle_all(
+                    (unsigned int)current_tick);
+            else
+                started = request.scope == CRAZYPOD_SCOPE_ALL ||
+                    request.scope == CRAZYPOD_SCOPE_ARTIST ||
+                    request.scope == CRAZYPOD_SCOPE_ALBUM ||
+                    request.scope == CRAZYPOD_SCOPE_PLAYLIST
+                        ? crazypod_music_play(
+                            request.scope, request.group_index,
+                            request.selected_index)
+                        : crazypod_music_play_search(
+                            request.query, request.selected_index);
             if(started) {
                 crazypod_state_forget_resume();
                 crazypod_state_mark_dirty();
+            }
+            else {
+                mutex_lock(&lock_playback_mutex);
+                if(request.generation == music_selection_generation)
+                    music_selection_failed = true;
+                mutex_unlock(&lock_playback_mutex);
             }
             break;
         }
@@ -455,7 +470,9 @@ void crazypod_playback_initialize(void)
     lock_playback.requested_queue_index = -1;
     lock_playback.requested_playing = -1;
     memset(&music_selection, 0, sizeof(music_selection));
+    music_selection_generation = 0;
     music_selection_pending = false;
+    music_selection_failed = false;
     play_state_command_queued = false;
     stop_command_queued = false;
     if(!lock_metadata_warm_thread_started) {
@@ -466,7 +483,7 @@ void crazypod_playback_initialize(void)
             lock_metadata_warm_thread, lock_metadata_warm_stack,
             sizeof(lock_metadata_warm_stack), 0,
             "crazypod lock font"
-            IF_PRIO(, PRIORITY_USER_INTERFACE)
+            IF_PRIO(, PRIORITY_BACKGROUND)
             IF_COP(, CPU));
         lock_metadata_warm_thread_started = thread_id != 0;
     }
@@ -482,7 +499,7 @@ void crazypod_playback_initialize(void)
             playback_command_thread, playback_command_stack,
             sizeof(playback_command_stack), 0,
             "crazypod playback"
-            IF_PRIO(, PRIORITY_USER_INTERFACE)
+            IF_PRIO(, PRIORITY_BACKGROUND)
             IF_COP(, CPU));
         playback_command_thread_started = thread_id != 0;
         if(!playback_command_thread_started)
@@ -538,10 +555,23 @@ void crazypod_playback_toggle(void)
     int status = audio_status();
 
     if(crazypod_queue_count() <= 0) {
-        if(crazypod_music_track_count() > 0)
-            crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0);
-        crazypod_state_forget_resume();
-        crazypod_state_mark_dirty();
+        bool started = false;
+        bool deferred = false;
+
+        if(crazypod_music_track_count() > 0) {
+            if(playback_command_thread_started) {
+                started = crazypod_playback_select_music_async(
+                    CRAZYPOD_SCOPE_ALL, 0, 0, NULL);
+                deferred = started;
+            }
+            else
+                started = crazypod_music_play(
+                    CRAZYPOD_SCOPE_ALL, 0, 0);
+        }
+        if(started && !deferred) {
+            crazypod_state_forget_resume();
+            crazypod_state_mark_dirty();
+        }
         return;
     }
     if(status & AUDIO_STATUS_PAUSE)
@@ -703,6 +733,8 @@ void crazypod_playback_toggle_async(void)
     bool playing;
     bool post = false;
 
+    if(!playback_command_thread_started)
+        return;
     mutex_lock(&lock_playback_mutex);
     playing = lock_playback.requested_playing >= 0
         ? lock_playback.requested_playing != 0
@@ -723,6 +755,8 @@ void crazypod_playback_stop_async(void)
 {
     bool post = false;
 
+    if(!playback_command_thread_started)
+        return;
     mutex_lock(&lock_playback_mutex);
     lock_playback.requested_playing = false;
     if(!stop_command_queued) {
@@ -740,6 +774,8 @@ void crazypod_playback_next_async(void)
     char path[MAX_PATH];
     int index;
 
+    if(!playback_command_thread_started)
+        return;
     mutex_lock(&lock_playback_mutex);
     index = lock_playback.requested_queue_index >= 0
         ? lock_playback.requested_queue_index
@@ -764,6 +800,8 @@ void crazypod_playback_previous_or_restart_async(void)
     int current_index;
     int requested_index;
 
+    if(!playback_command_thread_started)
+        return;
     mutex_lock(&lock_playback_mutex);
     current_index = lock_playback.requested_queue_index >= 0
         ? lock_playback.requested_queue_index
@@ -794,7 +832,8 @@ void crazypod_playback_previous_or_restart_async(void)
 
 void crazypod_playback_select_async(int queue_index)
 {
-    if(queue_index < 0 || queue_index >= crazypod_queue_count())
+    if(!playback_command_thread_started ||
+       queue_index < 0 || queue_index >= crazypod_queue_count())
         return;
     mutex_lock(&lock_playback_mutex);
     lock_playback.requested_queue_index = queue_index;
@@ -820,11 +859,41 @@ bool crazypod_playback_select_music_async(
        scope != CRAZYPOD_SCOPE_SEARCH)
         return false;
     mutex_lock(&lock_playback_mutex);
+    ++music_selection_generation;
     music_selection.scope = scope;
     music_selection.group_index = group_index;
     music_selection.selected_index = selected_index;
+    music_selection.generation = music_selection_generation;
+    music_selection.shuffle_all = false;
     snprintf(music_selection.query, sizeof(music_selection.query),
              "%s", query != NULL ? query : "");
+    music_selection_failed = false;
+    if(!music_selection_pending) {
+        music_selection_pending = true;
+        post = true;
+    }
+    mutex_unlock(&lock_playback_mutex);
+    if(post)
+        queue_post(&playback_command_queue,
+                   CRAZYPOD_PLAYBACK_COMMAND_SELECT_MUSIC, 0);
+    return true;
+}
+
+bool crazypod_playback_shuffle_all_async(void)
+{
+    bool post = false;
+
+    if(!playback_command_thread_started)
+        return false;
+    mutex_lock(&lock_playback_mutex);
+    ++music_selection_generation;
+    music_selection.scope = CRAZYPOD_SCOPE_ALL;
+    music_selection.group_index = 0;
+    music_selection.selected_index = 0;
+    music_selection.generation = music_selection_generation;
+    music_selection.shuffle_all = true;
+    music_selection.query[0] = '\0';
+    music_selection_failed = false;
     if(!music_selection_pending) {
         music_selection_pending = true;
         post = true;
@@ -900,6 +969,7 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
 {
     struct crazypod_track track;
     bool have_track;
+    bool music_selection_error;
     struct mp3entry *id3;
 
     (void)timer;
@@ -911,6 +981,13 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
     }
     if(playback.unlock_refresh_pending)
         return;
+    mutex_lock(&lock_playback_mutex);
+    music_selection_error = music_selection_failed;
+    music_selection_failed = false;
+    mutex_unlock(&lock_playback_mutex);
+    if(music_selection_error)
+        crazypod_notification_show(
+            CRAZYPOD_NOTIFICATION_ERROR, CP_TR("No track available"));
     if(crazypod_music_library_update())
         return;
     crazypod_app_launcher_process_pending();

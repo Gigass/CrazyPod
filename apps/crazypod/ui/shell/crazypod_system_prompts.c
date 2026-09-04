@@ -27,7 +27,9 @@
 #include "../features/customize/crazypod_customize_feature.h"
 #include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/music/crazypod_music_feature.h"
+#include "../features/notes/crazypod_notes_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
+#include "../features/organizer/crazypod_organizer_feature.h"
 #include "../presentation/crazypod_overlay_glass.h"
 #include "../presentation/crazypod_popup_motion.h"
 #include "../presentation/crazypod_preview_motion.h"
@@ -117,6 +119,8 @@ static void dismissed(void)
 static void execute(enum shutdown_type type)
 {
     (void)crazypod_screen_recording_stop(prompts.host.now());
+    crazypod_notes_feature_save_draft();
+    crazypod_organizer_feature_pause_workout(prompts.host.now());
     if(crazypod_miniapps_feature_is_open()) {
         crazypod_miniapps_feature_reset_input();
         crazypod_miniapps_feature_close();

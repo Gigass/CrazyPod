@@ -29,6 +29,7 @@ void crazypod_playback_select_async(int queue_index);
 bool crazypod_playback_select_music_async(
     enum crazypod_music_scope scope, int group_index,
     int selected_index, const char *query);
+bool crazypod_playback_shuffle_all_async(void);
 void crazypod_playback_refresh_lock_screen(void);
 void crazypod_playback_request_refresh_after_unlock(
     uint32_t present_sequence, bool animate_capsule);

@@ -5,21 +5,26 @@
 #include "kernel.h"
 #include "timefuncs.h"
 
+#include "../../crazypod_l10n.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_organizer.h"
 #include "../../crazypod_photos.h"
 #include "../../crazypod_state.h"
-#include "../../crazypod_videos.h"
 #include "../features/books/crazypod_books_feature.h"
 #include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/notes/crazypod_notes_feature.h"
 #include "../features/organizer/crazypod_organizer_feature.h"
 #include "../features/photos/crazypod_photos_feature.h"
+#include "../features/now_playing/crazypod_now_playing_feature.h"
 #include "../navigation/crazypod_route_registry.h"
 #include "../navigation/crazypod_ui_routes.h"
+#include "../shell/crazypod_home_actions.h"
 #include "../shell/crazypod_shell.h"
+#include "../shell/crazypod_notification.h"
 #include "crazypod_app_launcher.h"
+#include "crazypod_choice_coordinator.h"
+#include "crazypod_playback.h"
 #include "crazypod_scene_transition.h"
 
 static struct crazypod_app_launcher_host host;
@@ -48,6 +53,25 @@ static void open_music(void)
 
 void crazypod_app_launcher_open_now_playing(void)
 {
+    /* This entry point is also used by the dock shortcut while another
+     * product route is visible. Tear down modal/runtime owners first; merely
+     * replacing the route would leave a Mini App alive but no longer serviced.
+     */
+    if(crazypod_home_actions_visible())
+        crazypod_home_actions_dismiss(false);
+    if(crazypod_now_playing_overlay_visible())
+        crazypod_now_playing_overlay_dismiss(false);
+    if(crazypod_choice_coordinator_visible())
+        crazypod_choice_coordinator_dismiss(false);
+    if(crazypod_miniapps_feature_is_open()) {
+        crazypod_miniapps_feature_reset_input();
+        crazypod_miniapps_feature_close();
+    }
+    crazypod_notes_feature_save_draft();
+    crazypod_organizer_feature_pause_workout(current_tick);
+    if(crazypod_shell_product_active() &&
+       crazypod_music_library_loading())
+        crazypod_music_library_leave(current_tick);
     shuffle_pending = false;
     (void)crazypod_music_validate_catalog_async();
     crazypod_shell_open_product();
@@ -70,8 +94,19 @@ static void open_shuffle_screen(void)
 
 static void start_shuffle(void)
 {
-    if(!crazypod_music_shuffle_all((unsigned int)current_tick))
+    if(crazypod_playback_commands_ready()) {
+        if(!crazypod_playback_shuffle_all_async())
+            crazypod_notification_show(
+                CRAZYPOD_NOTIFICATION_ERROR,
+                CP_TR("No track available"));
         return;
+    }
+    if(!crazypod_music_shuffle_all((unsigned int)current_tick)) {
+        crazypod_notification_show(
+            CRAZYPOD_NOTIFICATION_ERROR,
+            CP_TR("No track available"));
+        return;
+    }
     crazypod_state_forget_resume();
     crazypod_state_mark_dirty();
 }
@@ -130,9 +165,7 @@ void crazypod_app_launcher_open(enum crazypod_app_id id)
     case CRAZYPOD_APP_PHOTOS:
         host.boost(true);
         crazypod_photos_set_route_suspended(false);
-        crazypod_videos_set_route_suspended(false);
         crazypod_photos_ensure_catalog();
-        crazypod_videos_ensure_catalog();
         crazypod_photos_feature_reset_controller();
         crazypod_photos_feature_reset_view();
         open_route(PHOTOS_ROUTE_MENU);

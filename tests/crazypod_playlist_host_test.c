@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "audio.h"
 #include "core_alloc.h"
 #include "crazypod_playlist.h"
 #include "playlist.h"
@@ -13,6 +14,8 @@ struct system_status global_status;
 
 static int play_count;
 static bool read_ipod_music;
+static int audio_state;
+static struct mp3entry audio_track;
 
 #define LARGE_QUEUE_LENGTH 2501
 
@@ -21,17 +24,35 @@ static const char *large_path_pointers[LARGE_QUEUE_LENGTH];
 
 void audio_stop(void)
 {
+    audio_state = 0;
+}
+
+int audio_status(void)
+{
+    return audio_state;
+}
+
+struct mp3entry *audio_current_track(void)
+{
+    return audio_state != 0 ? &audio_track : NULL;
+}
+
+void audio_pause(void)
+{
+    audio_state = AUDIO_STATUS_PLAY | AUDIO_STATUS_PAUSE;
 }
 
 void audio_play(unsigned long elapsed, unsigned long offset)
 {
-    (void)elapsed;
-    (void)offset;
+    audio_track.elapsed = elapsed;
+    audio_track.offset = offset;
+    audio_state = AUDIO_STATUS_PLAY;
     ++play_count;
 }
 
 void audio_resume(void)
 {
+    audio_state = AUDIO_STATUS_PLAY;
 }
 
 bool crazypod_state_read_ipod_music(void)
@@ -79,6 +100,18 @@ int main(void)
     assert(strcmp(current_path(), paths[2]) == 0);
     assert(crazypod_queue_replace(paths, 4, 1));
     assert(strcmp(current_path(), paths[1]) == 0);
+
+    {
+        const char *allocation_failure_paths[100];
+        int index;
+
+        for(index = 0; index < 100; ++index)
+            allocation_failure_paths[index] = paths[index % 4];
+        test_core_alloc_fail_next();
+        assert(!crazypod_queue_replace(allocation_failure_paths, 100, 0));
+        assert(crazypod_queue_count() == 4);
+        assert((audio_status() & AUDIO_STATUS_PLAY) != 0);
+    }
 
     crazypod_queue_restore_begin();
     assert(!crazypod_queue_restore_add(

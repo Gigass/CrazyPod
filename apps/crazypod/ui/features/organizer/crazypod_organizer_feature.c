@@ -703,6 +703,11 @@ bool crazypod_organizer_feature_workout_running(void)
     return crazypod_activity_workout_running();
 }
 
+void crazypod_organizer_feature_pause_workout(long now)
+{
+    crazypod_activity_workout_pause(now);
+}
+
 const char *crazypod_organizer_feature_editor_title(
     char *buffer, size_t buffer_size)
 {

@@ -65,6 +65,7 @@ bool crazypod_organizer_feature_handle_input(
     const struct crazypod_feature_input_context *context);
 bool crazypod_organizer_feature_stopwatch_running(void);
 bool crazypod_organizer_feature_workout_running(void);
+void crazypod_organizer_feature_pause_workout(long now);
 const char *crazypod_organizer_feature_editor_title(
     char *buffer, size_t buffer_size);
 void crazypod_organizer_feature_render_preview(

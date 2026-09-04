@@ -683,6 +683,12 @@ bool crazypod_photo_delete(int index)
     photo_suspended = true;
     mutex_unlock(&photo_mutex);
     wait_for_photo_idle();
+    /* A catalog refresh owns the catalog I/O lock while it walks the
+     * filesystem. Cancel and drain it before deleting so the wheel handler
+     * never waits behind a full media scan. */
+    crazypod_photo_catalog_cancel_refresh();
+    wait_for_photo_catalog_idle();
+    crazypod_photo_catalog_reset_refresh_cancel();
     deleted = crazypod_photo_catalog_delete(index);
     if(deleted)
         schedule_catalog_save();

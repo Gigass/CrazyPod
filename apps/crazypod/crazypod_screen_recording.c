@@ -58,6 +58,7 @@ static struct {
     bool active;
     bool stop_requested;
     bool worker_busy;
+    bool capture_in_progress;
     bool wake_queued;
     bool failed;
     bool completion_pending;
@@ -285,6 +286,11 @@ static void recording_thread(void)
             off_t valid_size;
 
             mutex_lock(&recording.mutex);
+            if(recording.capture_in_progress) {
+                mutex_unlock(&recording.mutex);
+                sleep(1);
+                continue;
+            }
             if(recording.count == 0) {
                 should_finish = recording.stop_requested;
                 if(!should_finish) {
@@ -542,6 +548,7 @@ crazypod_screen_recording_service(long now)
     int countdown_step;
     long countdown_started_at;
     uint32_t expected_frames;
+    unsigned slot;
 
     mutex_lock(&recording.mutex);
     active = recording.active;
@@ -600,19 +607,29 @@ crazypod_screen_recording_service(long now)
         return CRAZYPOD_SCREEN_RECORDING_EVENT_NONE;
     }
     ++recording.frames_scheduled;
-    if(recording.count >= RECORDING_QUEUE_SLOTS) {
+    if(recording.count >= RECORDING_QUEUE_SLOTS ||
+       recording.capture_in_progress) {
         ++recording.dropped_frames;
         mutex_unlock(&recording.mutex);
         return CRAZYPOD_SCREEN_RECORDING_EVENT_NONE;
     }
-    copy_frame(recording.slots[recording.tail].pixels);
+    slot = recording.tail;
     recording.tail =
         (recording.tail + 1u) % RECORDING_QUEUE_SLOTS;
     ++recording.count;
+    recording.capture_in_progress = true;
     if(!recording.wake_queued) {
         recording.wake_queued = true;
         post = true;
     }
+    mutex_unlock(&recording.mutex);
+    /* Frame conversion is deliberately outside the control mutex.  A full
+     * LCD copy can take long enough on the iPod to make wheel input feel
+     * stuck; the worker waits on capture_in_progress before consuming the
+     * reserved slot. */
+    copy_frame(recording.slots[slot].pixels);
+    mutex_lock(&recording.mutex);
+    recording.capture_in_progress = false;
     mutex_unlock(&recording.mutex);
     if(post)
         queue_post(&recording.queue, RECORDING_WAKE, 0);

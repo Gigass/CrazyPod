@@ -164,7 +164,7 @@ void crazypod_video_poster_init(void)
     queue_init(&poster_queue, false);
     if(create_thread(poster_thread, poster_stack, sizeof(poster_stack), 0,
                      "crazypod video posters"
-                     IF_PRIO(, PRIORITY_USER_INTERFACE)
+                     IF_PRIO(, PRIORITY_BACKGROUND)
                      IF_COP(, CPU)) == 0)
         panicf("video poster thread");
 }

@@ -33,7 +33,9 @@
 #define BOOK_PAGE_INPUT_SIZE 1536
 #define BOOK_ENCODING_SAMPLE_SIZE 4096
 #define BOOKS_SCAN_EVENT 1
-#define BOOKS_SCAN_STACK_SIZE (DEFAULT_STACK_SIZE + 0x1000)
+/* Each recursive directory frame owns a MAX_PATH child buffer. Keep the
+ * scanner in the same stack budget as Rockbox's tagcache worker. */
+#define BOOKS_SCAN_STACK_SIZE (DEFAULT_STACK_SIZE + 0x4000)
 
 enum book_text_encoding {
     BOOK_TEXT_ENCODING_UNKNOWN,
@@ -98,6 +100,7 @@ static void *reader_measure_context;
 static struct event_queue books_scan_queue;
 static long books_scan_stack[
     BOOKS_SCAN_STACK_SIZE / sizeof(long)];
+static struct mutex books_catalog_io_mutex;
 static bool books_scan_worker_started;
 static volatile bool books_scan_processing;
 static volatile bool books_scan_abort_requested;
@@ -654,6 +657,11 @@ static bool books_catalog_save(void)
     int i;
     bool success;
 
+    /* Serialize every writer with USB invalidation and with the lazy EPUB
+     * metadata save. The catalog uses one temporary pathname, so protecting
+     * only the final rename would still let one writer delete another's
+     * temporary file after a failed publish. */
+    mutex_lock(&books_catalog_io_mutex);
     memset(&header, 0, sizeof(header));
     header.magic = BOOKS_CATALOG_MAGIC;
     header.version = BOOKS_CATALOG_VERSION;
@@ -670,8 +678,10 @@ static bool books_catalog_save(void)
     mkdir(BOOKS_STATE_DIRECTORY);
     fd = open(BOOKS_CATALOG_TEMP,
               O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if(fd < 0)
+    if(fd < 0) {
+        mutex_unlock(&books_catalog_io_mutex);
         return false;
+    }
     success = write_exact(fd, &header, sizeof(header));
     for(i = 0; success && i < book_count; ++i) {
         catalog_entry_from_book(&entry, &books[i]);
@@ -680,8 +690,10 @@ static bool books_catalog_save(void)
     if(fsync(fd) < 0)
         success = false;
     close(fd);
-    if(!success || rename(BOOKS_CATALOG_TEMP,
-                          BOOKS_CATALOG_PATH) < 0) {
+    success = success && !books_scan_abort_requested &&
+        rename(BOOKS_CATALOG_TEMP, BOOKS_CATALOG_PATH) == 0;
+    mutex_unlock(&books_catalog_io_mutex);
+    if(!success) {
         remove(BOOKS_CATALOG_TEMP);
         return false;
     }
@@ -790,6 +802,7 @@ void crazypod_books_init(void)
     int fd;
     unsigned int thread_id;
 
+    mutex_init(&books_catalog_io_mutex);
     queue_init(&books_scan_queue, false);
     thread_id = create_thread(
         books_scan_thread, books_scan_stack, sizeof(books_scan_stack), 0,
@@ -896,27 +909,30 @@ bool crazypod_books_scan_needed(void)
 
 void crazypod_books_invalidate_scan(void)
 {
+    mutex_lock(&books_catalog_io_mutex);
     books_scan_abort_requested = true;
     books_scan_dirty = true;
     remove(BOOKS_CATALOG_TEMP);
     remove(BOOKS_CATALOG_PATH);
+    mutex_unlock(&books_catalog_io_mutex);
 }
 
 int crazypod_books_count(void)
 {
-    return book_count;
+    return books_scan_processing ? 0 : book_count;
 }
 
 const struct crazypod_book *crazypod_book_get(int index)
 {
-    return index >= 0 && index < book_count ? &books[index] : NULL;
+    return !books_scan_processing && index >= 0 && index < book_count
+        ? &books[index] : NULL;
 }
 
 int crazypod_book_index(const struct crazypod_book *book)
 {
     int i;
 
-    if(book == NULL)
+    if(books_scan_processing || book == NULL)
         return -1;
     for(i = 0; i < book_count; ++i) {
         if(book == &books[i])
@@ -931,6 +947,8 @@ int crazypod_books_recent_index(void)
     int result = -1;
     int i;
 
+    if(books_scan_processing)
+        return -1;
     for(i = 0; i < book_count; ++i) {
         if(recent_sequences[i] > best) {
             best = recent_sequences[i];
@@ -944,6 +962,8 @@ int crazypod_books_recent_count(void)
 {
     int count = 0;
     int i;
+    if(books_scan_processing)
+        return 0;
     for(i = 0; i < book_count; ++i) {
         if(recent_sequences[i] > 0)
             ++count;
@@ -957,6 +977,8 @@ int crazypod_books_recent_at(int position)
     int rank;
     int result = -1;
 
+    if(books_scan_processing || position < 0)
+        return -1;
     for(rank = 0; rank <= position; ++rank) {
         uint32_t best = 0;
         int i;
@@ -979,6 +1001,8 @@ int crazypod_books_favorite_count(void)
 {
     int count = 0;
     int i;
+    if(books_scan_processing)
+        return 0;
     for(i = 0; i < book_count; ++i) {
         if(books[i].favorite)
             ++count;
@@ -990,6 +1014,8 @@ int crazypod_books_favorite_at(int position)
 {
     int visible = 0;
     int i;
+    if(books_scan_processing || position < 0)
+        return -1;
     for(i = 0; i < book_count; ++i) {
         if(books[i].favorite && visible++ == position)
             return i;

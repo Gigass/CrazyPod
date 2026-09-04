@@ -19,6 +19,8 @@
 #include "../features/music/crazypod_music_feature.h"
 #include "../features/notes/crazypod_notes_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
+#include "../features/photos/crazypod_photos_feature.h"
+#include "../features/customize/crazypod_customize_feature.h"
 #include "../navigation/crazypod_alpha_jump.h"
 #include "../navigation/crazypod_input_event.h"
 #include "../navigation/crazypod_remote_multitap.h"
@@ -621,6 +623,8 @@ void crazypod_app_input_cancel_pending(void)
     clear_remote_down_hold(false);
     remote_home_select_pending = false;
     remote_home_select_held = false;
+    crazypod_photos_feature_cancel_input();
+    crazypod_customize_feature_clear_input_holds();
 }
 
 int crazypod_app_input_wait_ticks(long now)

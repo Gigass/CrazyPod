@@ -469,6 +469,12 @@ void crazypod_photos_feature_reset_controller(void)
     crazypod_photo_controller_reset();
 }
 
+void crazypod_photos_feature_cancel_input(void)
+{
+    crazypod_photo_controller_cancel_select();
+    crazypod_photo_controller_cancel_wheel();
+}
+
 void crazypod_photos_feature_open_detail(int zoom_percent)
 {
     crazypod_photo_controller_open_detail(zoom_percent);

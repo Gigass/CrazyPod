@@ -315,8 +315,11 @@ cleanup:
     game_audio_stop();
     crazypod_gameboy_close();
     mixer_set_frequency(old_frequency);
-    if(!crazypod_audio_reserve_acquire())
-        panicf("audio reserve after gameboy");
+    /* Exiting a game must remain recoverable even when the heap is
+     * fragmented by the emulator.  The audio reserve is opportunistic here;
+     * a later music start can report the resource failure without killing
+     * the whole UI. */
+    (void)crazypod_audio_reserve_acquire();
     if(!started && (old_audio_state & AUDIO_STATUS_PLAY)) {
         audio_play(old_elapsed, old_offset);
         if(old_audio_state & AUDIO_STATUS_PAUSE)

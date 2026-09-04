@@ -139,6 +139,15 @@ int closedir(DIR *directory) { (void)directory; return 0; }
 bool dir_exists(const char *path) { (void)path; return true; }
 int mkdir(const char *path) { (void)path; return 0; }
 time_t gb_test_time(time_t *value) { (void)value; return now; }
+struct tm *get_time(void)
+{
+    static struct tm calendar;
+    struct tm *value = gmtime(&now);
+
+    if(value != NULL)
+        calendar = *value;
+    return &calendar;
+}
 
 int core_alloc_ex(size_t size, struct buflib_callbacks *ops)
 {

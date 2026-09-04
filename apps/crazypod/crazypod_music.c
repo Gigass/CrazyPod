@@ -105,6 +105,7 @@ static unsigned catalog_epoch;
 static unsigned search_cache_generation;
 static long scan_stack[(DEFAULT_STACK_SIZE + 0x3000) / sizeof(long)];
 static struct mutex catalog_mutex;
+static struct mutex catalog_io_mutex;
 static struct event_queue favorite_save_queue;
 static long favorite_save_stack[
     FAVORITE_SAVE_STACK_SIZE / sizeof(long)];
@@ -380,9 +381,11 @@ static bool music_cache_load(void)
 static bool music_cache_save(unsigned expected_epoch)
 {
     struct music_cache_header header;
-    bool complete;
+    bool complete = false;
+    bool saved = false;
     int fd;
 
+    mutex_lock(&catalog_io_mutex);
     mkdir(CRAZYPOD_STATE_DIRECTORY);
     mkdir(CRAZYPOD_CACHE_DIRECTORY);
     memset(&header, 0, sizeof(header));
@@ -400,12 +403,12 @@ static bool music_cache_save(unsigned expected_epoch)
 
     wait_for_scan_resume();
     if(scan_abort_requested)
-        return false;
+        goto out;
     remove(CRAZYPOD_MUSIC_CACHE_TEMP);
     fd = open(CRAZYPOD_MUSIC_CACHE_TEMP,
               O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)
-        return false;
+        goto out;
     complete =
         write_exact_while_scanning(fd, &header, sizeof(header)) &&
         write_exact_while_scanning(
@@ -432,9 +435,12 @@ static bool music_cache_save(unsigned expected_epoch)
     mutex_unlock(&catalog_mutex);
     if(!complete) {
         remove(CRAZYPOD_MUSIC_CACHE_TEMP);
-        return false;
+        goto out;
     }
-    return true;
+    saved = true;
+out:
+    mutex_unlock(&catalog_io_mutex);
+    return saved;
 }
 
 static void wait_for_scan_resume(void)
@@ -1287,6 +1293,7 @@ void crazypod_music_init(void)
     unsigned int thread_id;
 
     mutex_init(&catalog_mutex);
+    mutex_init(&catalog_io_mutex);
     queue_init(&favorite_save_queue, false);
     thread_id = create_thread(
         favorite_save_thread, favorite_save_stack,
@@ -1652,6 +1659,10 @@ crazypod_music_scan_failure_reason(void)
 void crazypod_music_invalidate_catalog(void)
 {
     mutex_lock(&catalog_mutex);
+    /* Abort an in-flight save before touching its transaction files. The
+     * cache writer checks this flag again while committing, so invalidation
+     * never waits behind a full-library write on the UI thread. */
+    scan_abort_requested = true;
     ++catalog_epoch;
     catalog_ready = false;
     catalog_validation =

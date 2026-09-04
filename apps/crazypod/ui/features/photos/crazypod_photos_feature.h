@@ -92,6 +92,7 @@ void crazypod_photos_feature_render_preview(
 void crazypod_photos_feature_prefetch_preview(
     const struct route_state *state);
 void crazypod_photos_feature_reset_controller(void);
+void crazypod_photos_feature_cancel_input(void);
 void crazypod_photos_feature_open_detail(int zoom_percent);
 
 #endif

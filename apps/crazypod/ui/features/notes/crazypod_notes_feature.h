@@ -63,6 +63,7 @@ void crazypod_notes_feature_begin_editor(
 void crazypod_notes_feature_load_reader(uint32_t id);
 bool crazypod_notes_feature_editor_dirty(void);
 void crazypod_notes_feature_service_editor(void);
+void crazypod_notes_feature_save_draft(void);
 uint32_t crazypod_notes_feature_commit_editor(void);
 bool crazypod_notes_feature_draft_available(void);
 struct crazypod_notes_confirmation_result

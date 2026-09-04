@@ -18,6 +18,25 @@ struct event_queue {
     int unused;
 };
 
+struct mutex {
+    int unused;
+};
+
+static inline void mutex_init(struct mutex *mutex)
+{
+    (void)mutex;
+}
+
+static inline void mutex_lock(struct mutex *mutex)
+{
+    (void)mutex;
+}
+
+static inline void mutex_unlock(struct mutex *mutex)
+{
+    (void)mutex;
+}
+
 static inline void queue_init(struct event_queue *queue, bool unique)
 {
     (void)queue;

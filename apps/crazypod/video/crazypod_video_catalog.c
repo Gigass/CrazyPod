@@ -473,7 +473,6 @@ void crazypod_video_catalog_refresh(void)
             (void)save_catalog(scan_entries, scan_count);
         }
     }
-    mutex_unlock(&catalog_io_mutex);
     if(!refresh_abort_requested) {
         mutex_lock(&catalog_mutex);
         memcpy(entries, scan_entries,
@@ -485,6 +484,7 @@ void crazypod_video_catalog_refresh(void)
         entry_count = scan_count;
         mutex_unlock(&catalog_mutex);
     }
+    mutex_unlock(&catalog_io_mutex);
 }
 
 void crazypod_video_catalog_cancel_refresh(void)
@@ -581,15 +581,23 @@ bool crazypod_video_catalog_update_playback(
 
 bool crazypod_video_catalog_delete(int index)
 {
-    const char *path;
+    char path[MAX_PATH];
     size_t path_length;
+    int entry_index;
 
+    /* Refresh and save both use this lock before touching the catalog. Keep
+     * deletion in that same order so a refresh cannot publish a just-deleted
+     * file back into the UI. */
+    mutex_lock(&catalog_io_mutex);
     mutex_lock(&catalog_mutex);
     if(index < 0 || index >= entry_count) {
         mutex_unlock(&catalog_mutex);
+        mutex_unlock(&catalog_io_mutex);
         return false;
     }
-    path = entries[index].path;
+    snprintf(path, sizeof(path), "%s", entries[index].path);
+    mutex_unlock(&catalog_mutex);
+
     path_length = strlen(path);
     if(strncmp(path, VIDEO_DIRECTORY "/",
                sizeof(VIDEO_DIRECTORY)) != 0 ||
@@ -598,15 +606,28 @@ bool crazypod_video_catalog_delete(int index)
         strcmp(path + path_length - 3, "/..") == 0) ||
        !crazypod_video_catalog_path_supported(path) ||
        remove(path) < 0) {
-        mutex_unlock(&catalog_mutex);
+        mutex_unlock(&catalog_io_mutex);
         return false;
     }
-    if(index + 1 < entry_count)
-        memmove(&entries[index], &entries[index + 1],
-                (size_t)(entry_count - index - 1) * sizeof(entries[0]));
-    --entry_count;
-    memset(&entries[entry_count], 0, sizeof(entries[0]));
+
+    mutex_lock(&catalog_mutex);
+    entry_index = -1;
+    for(index = 0; index < entry_count; ++index) {
+        if(strcmp(entries[index].path, path) == 0) {
+            entry_index = index;
+            break;
+        }
+    }
+    if(entry_index >= 0) {
+        if(entry_index + 1 < entry_count)
+            memmove(&entries[entry_index], &entries[entry_index + 1],
+                    (size_t)(entry_count - entry_index - 1) *
+                    sizeof(entries[0]));
+        --entry_count;
+        memset(&entries[entry_count], 0, sizeof(entries[0]));
+    }
     mutex_unlock(&catalog_mutex);
+    mutex_unlock(&catalog_io_mutex);
     return true;
 }
 

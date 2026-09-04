@@ -73,7 +73,8 @@ struct mpeg_settings settings = {
 #define CRAZYPOD_VIDEO_CATALOG_REFRESH 1
 #define CRAZYPOD_VIDEO_CATALOG_SAVE 2
 #define CRAZYPOD_VIDEO_CATALOG_SAVE_DEBOUNCE (HZ / 2)
-#define CRAZYPOD_VIDEO_CATALOG_STACK_SIZE (DEFAULT_STACK_SIZE + 0x1000)
+/* Directory recursion keeps one MAX_PATH child buffer per level. */
+#define CRAZYPOD_VIDEO_CATALOG_STACK_SIZE (DEFAULT_STACK_SIZE + 0x4000)
 
 static enum crazypod_video_result last_video_result = CRAZYPOD_VIDEO_OK;
 static int video_audio_buffer_handle;
@@ -93,6 +94,19 @@ static long video_catalog_stack[
     CRAZYPOD_VIDEO_CATALOG_STACK_SIZE / sizeof(long)];
 
 static void schedule_video_catalog_save(void);
+
+static void wait_for_video_catalog_idle(void)
+{
+    bool active;
+
+    do {
+        mutex_lock(&video_controls_mutex);
+        active = videos_catalog_refreshing || videos_refresh_queued;
+        mutex_unlock(&video_controls_mutex);
+        if(active)
+            yield();
+    } while(active);
+}
 
 static void video_catalog_thread(void)
 {
@@ -675,6 +689,12 @@ bool crazypod_video_delete(int index)
         return false;
     crazypod_video_poster_suspend();
     crazypod_video_poster_wait_idle();
+    /* Do not hold the UI on the catalog I/O lock while a media scan is
+     * walking /Videos. Let the worker observe cancellation and finish its
+     * state transition before removing the selected file. */
+    crazypod_video_catalog_cancel_refresh();
+    wait_for_video_catalog_idle();
+    crazypod_video_catalog_reset_refresh_cancel();
     deleted = crazypod_video_catalog_delete(index);
     if(deleted) {
         schedule_video_catalog_save();
@@ -997,8 +1017,11 @@ cleanup:
     else
         crazypod_video_engine_close();
     video_engine_release_audio_buffer();
-    if(!crazypod_audio_reserve_acquire())
-        panicf("audio reserve after video");
+    /* The reserve protects the normal player from a large video buffer.  A
+     * fragmented heap must not turn a video exit into a firmware panic; the
+     * next music start will report its own resource failure if recovery is
+     * still impossible. */
+    (void)crazypod_audio_reserve_acquire();
     if(!engine_started && resume_audio) {
         audio_play(resume_elapsed, resume_offset);
         if(resume_paused)
