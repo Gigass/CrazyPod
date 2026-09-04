@@ -3,7 +3,7 @@
 
 #include "lvgl.h"
 
-#include "../../../crazypod_music.h"
+#include "../../crazypod_music.h"
 
 struct crazypod_playback_host {
     void (*render)(bool transition);
