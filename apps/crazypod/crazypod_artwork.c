@@ -227,8 +227,6 @@ static int artwork_prime_total;
 static int artwork_prime_persisted;
 static int artwork_prime_order_handle;
 static uint32_t *artwork_prime_order;
-static bool artwork_prime_release_pending;
-static bool artwork_prime_restart_pending;
 static struct artwork_candidate
     artwork_candidates[CRAZYPOD_ARTWORK_CANDIDATE_COUNT];
 static struct artwork_directory_cache artwork_track_directory;
@@ -1182,35 +1180,6 @@ static void artwork_prime_order_release(void)
     artwork_prime_order = NULL;
 }
 
-static void artwork_prime_cleanup_deferred(void)
-{
-    bool release = false;
-    bool restart = false;
-
-    mutex_lock(&artwork_mutex);
-    if(!artwork_prime_processing) {
-        release = artwork_prime_release_pending;
-        restart = artwork_prime_restart_pending &&
-            !artwork_suspended &&
-            !artwork_storage_suspended &&
-            !artwork_lock_suspended;
-        artwork_prime_release_pending = false;
-        if(restart)
-            artwork_prime_restart_pending = false;
-        if(release) {
-            artwork_prime_next = 0;
-            artwork_prime_completed = 0;
-            artwork_prime_total = 0;
-            artwork_prime_failed = false;
-        }
-    }
-    mutex_unlock(&artwork_mutex);
-    if(release)
-        artwork_prime_order_release();
-    if(restart)
-        crazypod_artwork_prime_library();
-}
-
 static uint32_t artwork_library_key(void)
 {
     uint32_t hash = 2166136261u;
@@ -1636,7 +1605,6 @@ static void artwork_thread(void)
             }
             yield();
         }
-        artwork_prime_cleanup_deferred();
     }
 }
 
@@ -1731,8 +1699,6 @@ void crazypod_artwork_init(void)
     artwork_prime_persisted = 0;
     artwork_prime_order_handle = 0;
     artwork_prime_order = NULL;
-    artwork_prime_release_pending = false;
-    artwork_prime_restart_pending = false;
     memset(&artwork_track_directory, 0,
            sizeof(artwork_track_directory));
     memset(&artwork_parent_directory, 0,
@@ -1757,18 +1723,6 @@ void crazypod_artwork_prime_library(void)
     int album_index;
 
     crazypod_artwork_cancel_library_prime();
-    mutex_lock(&artwork_mutex);
-    if(artwork_prime_processing) {
-        artwork_prime_restart_pending = true;
-        mutex_unlock(&artwork_mutex);
-        return;
-    }
-    if(artwork_suspended || artwork_storage_suspended ||
-       artwork_lock_suspended) {
-        mutex_unlock(&artwork_mutex);
-        return;
-    }
-    mutex_unlock(&artwork_mutex);
     if(total > 0 &&
        (size_t)total <= SIZE_MAX / sizeof(*artwork_prime_order)) {
         artwork_prime_order_handle = core_alloc(
@@ -1886,35 +1840,57 @@ void crazypod_artwork_cancel_library_prime(void)
 
     mutex_lock(&artwork_mutex);
     artwork_prime_active = false;
-    processing = artwork_prime_processing;
-    if(processing)
-        artwork_prime_release_pending = true;
+    mutex_unlock(&artwork_mutex);
+    do {
+        mutex_lock(&artwork_mutex);
+        processing = artwork_prime_processing;
+        mutex_unlock(&artwork_mutex);
+        if(processing)
+            yield();
+    } while(processing);
+    mutex_lock(&artwork_mutex);
     next_index = artwork_prime_next;
     total = artwork_prime_total;
     mutex_unlock(&artwork_mutex);
     (void)artwork_progress_save(next_index, total);
-    if(!processing) {
-        mutex_lock(&artwork_mutex);
-        artwork_prime_next = 0;
-        artwork_prime_completed = 0;
-        artwork_prime_total = 0;
-        artwork_prime_failed = false;
-        mutex_unlock(&artwork_mutex);
-        artwork_prime_order_release();
-    }
+    mutex_lock(&artwork_mutex);
+    artwork_prime_next = 0;
+    artwork_prime_completed = 0;
+    artwork_prime_total = 0;
+    artwork_prime_failed = false;
+    mutex_unlock(&artwork_mutex);
+    artwork_prime_order_release();
 }
 
 void crazypod_artwork_cancel_product_requests(void)
 {
+    bool busy;
     bool wake = false;
+    int prime_next;
+    int prime_total;
     int slot_index;
 
     /* Home only owns the capsule slot. Stop after the current decode so
      * stale preview/CoverFlow requests cannot continue disk work there. */
-    crazypod_artwork_cancel_library_prime();
     mutex_lock(&artwork_mutex);
     artwork_suspended = true;
+    artwork_prime_active = false;
     mutex_unlock(&artwork_mutex);
+
+    do {
+        mutex_lock(&artwork_mutex);
+        busy = artwork_worker_decoding ||
+            artwork_prime_processing;
+        mutex_unlock(&artwork_mutex);
+        if(busy)
+            yield();
+    } while(busy);
+
+    mutex_lock(&artwork_mutex);
+    prime_next = artwork_prime_next;
+    prime_total = artwork_prime_total;
+    mutex_unlock(&artwork_mutex);
+    (void)artwork_progress_save(prime_next, prime_total);
 
     mutex_lock(&artwork_mutex);
     for(slot_index = 0;
@@ -2003,9 +1979,9 @@ int crazypod_artwork_library_prime_total(void)
 
 static void artwork_apply_suspension(void)
 {
+    bool busy;
     bool suspended;
     bool wake = false;
-    bool restart = false;
 
     mutex_lock(&artwork_mutex);
     suspended = artwork_storage_suspended ||
@@ -2013,23 +1989,25 @@ static void artwork_apply_suspension(void)
     /* Keep the worker gated throughout both transition directions. */
     artwork_suspended = true;
     mutex_unlock(&artwork_mutex);
-    if(suspended)
+    if(suspended) {
+        do {
+            mutex_lock(&artwork_mutex);
+            busy = artwork_worker_decoding ||
+                artwork_prime_processing;
+            mutex_unlock(&artwork_mutex);
+            if(busy)
+                yield();
+        } while(busy);
         return;
+    }
     mutex_lock(&artwork_mutex);
     if(!artwork_storage_suspended &&
        !artwork_lock_suspended) {
         artwork_suspended = false;
-        if(artwork_prime_restart_pending &&
-           !artwork_prime_processing) {
-            artwork_prime_restart_pending = false;
-            restart = true;
-        }
         artwork_wake_queued = true;
         wake = true;
     }
     mutex_unlock(&artwork_mutex);
-    if(restart)
-        crazypod_artwork_prime_library();
     if(wake)
         queue_post(&artwork_queue, CRAZYPOD_ARTWORK_WAKE, 0);
 }
@@ -2040,16 +2018,6 @@ void crazypod_artwork_suspend(void)
     artwork_storage_suspended = true;
     mutex_unlock(&artwork_mutex);
     artwork_apply_suspension();
-    while(true) {
-        bool busy;
-
-        mutex_lock(&artwork_mutex);
-        busy = artwork_worker_decoding || artwork_prime_processing;
-        mutex_unlock(&artwork_mutex);
-        if(!busy)
-            break;
-        yield();
-    }
     artwork_track_directory.valid = false;
     artwork_parent_directory.valid = false;
 }

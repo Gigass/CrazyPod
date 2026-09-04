@@ -203,35 +203,34 @@ static void play_selected_track(struct route_state *state)
     switch(state->route) {
     case MUSIC_ROUTE_ALL:
     case MUSIC_ROUTE_SONGS:
-        started = crazypod_playback_select_music_async(
-            CRAZYPOD_SCOPE_ALL, 0, state->selected, NULL);
+        started = crazypod_music_play(
+            CRAZYPOD_SCOPE_ALL, 0, state->selected);
         break;
     case MUSIC_ROUTE_PLAYLIST_SONGS:
-        started = crazypod_playback_select_music_async(
+        started = crazypod_music_play(
             CRAZYPOD_SCOPE_PLAYLIST,
-            state->group, state->selected, NULL);
+            state->group, state->selected);
         break;
     case MUSIC_ROUTE_ARTIST_SONGS:
-        started = crazypod_playback_select_music_async(
+        started = crazypod_music_play(
             CRAZYPOD_SCOPE_ARTIST,
-            state->group, state->selected, NULL);
+            state->group, state->selected);
         break;
     case MUSIC_ROUTE_ALBUM_SONGS:
-        started = crazypod_playback_select_music_async(
+        started = crazypod_music_play(
             CRAZYPOD_SCOPE_ALBUM,
-            state->group, state->selected, NULL);
+            state->group, state->selected);
         break;
     case MUSIC_ROUTE_QUEUE:
         if(state->selected >= 0 &&
            state->selected < crazypod_queue_count()) {
-            crazypod_playback_select_async(state->selected);
+            playlist_start(state->selected, 0, 0);
             started = true;
         }
         break;
     case MUSIC_ROUTE_SEARCH_RESULTS:
-        started = crazypod_playback_select_music_async(
-            CRAZYPOD_SCOPE_SEARCH, 0, state->selected,
-            crazypod_music_search_query());
+        started = crazypod_music_play_search(
+            crazypod_music_search_query(), state->selected);
         break;
     default:
         break;
@@ -477,10 +476,10 @@ static void reset_open_note_reader(uint32_t id)
     open_note_reader(id);
 }
 
-static bool play_music_track_async(int library_index)
+static bool play_music_track(int library_index)
 {
-    bool started = crazypod_playback_select_music_async(
-        CRAZYPOD_SCOPE_ALL, 0, library_index, NULL);
+    bool started = crazypod_music_play(
+        CRAZYPOD_SCOPE_ALL, 0, library_index);
 
     if(started) {
         crazypod_state_forget_resume();
@@ -515,7 +514,7 @@ static bool activate_music(
                 crazypod_route_actions_request_now_playing,
             .show_now_actions =
                 crazypod_now_playing_overlay_show_actions,
-            .play_track = play_music_track_async,
+            .play_track = play_music_track,
         };
 
         return crazypod_music_feature_activate(

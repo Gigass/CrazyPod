@@ -539,8 +539,7 @@ void crazypod_playback_toggle(void)
 
     if(crazypod_queue_count() <= 0) {
         if(crazypod_music_track_count() > 0)
-            crazypod_playback_select_music_async(
-                CRAZYPOD_SCOPE_ALL, 0, 0, NULL);
+            crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0);
         crazypod_state_forget_resume();
         crazypod_state_mark_dirty();
         return;
