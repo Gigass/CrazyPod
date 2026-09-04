@@ -265,6 +265,7 @@ int main(void)
     feed_packet(volume_down_press, sizeof(volume_down_press), true);
     feed_packet(release, sizeof(release), true);
     handle_posted_packet();
+    handle_posted_packet();
     assert(remote_control_rx() == BUTTON_RC_VOL_DOWN);
     assert(remote_control_rx() == BUTTON_RC_VOL_DOWN);
     assert(remote_control_rx() == BUTTON_NONE);
@@ -306,9 +307,15 @@ int main(void)
     feed_packet(identify_legacy_rf,
                 sizeof(identify_legacy_rf), true);
     handle_posted_packet();
-    assert(slept_ticks == HZ / 3);
-    assert_transmit_frame_at(0, begin_transmission,
-                             sizeof(begin_transmission));
+    assert(slept_ticks == 0);
+    assert(transmitted_length == 0);
+    current_tick += HZ / 3;
+    feed_packet(request_name, sizeof(request_name), true);
+    handle_posted_packet();
+    index = (int)assert_transmit_frame_at(
+        0, name_response, sizeof(name_response));
+    assert_transmit_frame_at(
+        (size_t)index, begin_transmission, sizeof(begin_transmission));
 
     reset_transport_capture();
     feed_packet(identify_rf_transmitter,
@@ -407,7 +414,8 @@ int main(void)
     assert(posted_count == 1);
     feed_packet(request_name, sizeof(request_name), true);
     assert(posted_count == 1);
-    handle_posted_packet();
+    while(posted_count > 0)
+        handle_posted_packet();
     assert(transmitted_length == 8 * (sizeof(name_response) + 4));
     crazypod_iap_simple_get_diagnostics(&after);
     assert(after.received_frames == before.received_frames + 8);

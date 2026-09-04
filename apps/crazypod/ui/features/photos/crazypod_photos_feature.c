@@ -24,6 +24,11 @@ static unsigned video_generation_seen;
 int crazypod_photos_feature_item_count(
     const struct route_state *state)
 {
+    if(state->route != PHOTOS_ROUTE_MENU &&
+       state->route != PHOTOS_ROUTE_DETAIL &&
+       (crazypod_photos_catalog_refreshing() ||
+        crazypod_videos_catalog_refreshing()))
+        return 0;
     switch(state->route) {
     case PHOTOS_ROUTE_MENU:
         return 4;
@@ -124,6 +129,11 @@ enum crazypod_menu_icon crazypod_photos_feature_item_icon(
     };
 
     if(index < 0)
+        return CRAZYPOD_MENU_ICON_NONE;
+    if((crazypod_photos_catalog_refreshing() ||
+        crazypod_videos_catalog_refreshing()) &&
+       state->route != PHOTOS_ROUTE_MENU &&
+       state->route != PHOTOS_ROUTE_DETAIL)
         return CRAZYPOD_MENU_ICON_NONE;
     switch(state->route) {
     case PHOTOS_ROUTE_MENU:

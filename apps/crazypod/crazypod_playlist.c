@@ -452,7 +452,8 @@ static bool queue_replace(const char *const *paths, int count,
 
     for(i = 0; i < count; ++i) {
         copy_path(queue_paths[i], paths[i]);
-        copy_path(original_paths[i], paths[i]);
+        if(queue_shuffle)
+            copy_path(original_paths[i], paths[i]);
     }
 
     queue_length = count;
@@ -603,6 +604,10 @@ static void queue_set_shuffle_locked(bool enabled)
     copy_path(current, queue_paths[queue_index]);
 
     if(enabled) {
+        if(!queue_shuffle) {
+            for(i = 0; i < queue_length; ++i)
+                copy_path(original_paths[i], queue_paths[i]);
+        }
         for(i = queue_length - 1; i > 0; --i) {
             int candidate = (int)(next_random() % (uint32_t)(i + 1));
             char temporary[MAX_PATH];

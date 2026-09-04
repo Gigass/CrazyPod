@@ -36,8 +36,13 @@ struct photo_catalog_header {
 
 static struct crazypod_photo_catalog_entry
     entries[CRAZYPOD_PHOTO_MAX_FILES];
+static struct crazypod_photo_catalog_entry
+    scan_entries[CRAZYPOD_PHOTO_MAX_FILES];
 static int entry_count;
 static int favorites;
+static struct mutex catalog_mutex;
+static struct mutex catalog_io_mutex;
+static volatile bool refresh_abort_requested;
 
 static uint32_t checksum_update(uint32_t hash, const void *data, size_t size)
 {
@@ -51,7 +56,8 @@ static uint32_t checksum_update(uint32_t hash, const void *data, size_t size)
 }
 
 static uint32_t catalog_checksum(
-    const struct photo_catalog_header *source)
+    const struct photo_catalog_header *source,
+    const struct crazypod_photo_catalog_entry *catalog)
 {
     struct photo_catalog_header header = *source;
     uint32_t hash = 2166136261u;
@@ -59,7 +65,7 @@ static uint32_t catalog_checksum(
     header.checksum = 0;
     hash = checksum_update(hash, &header, sizeof(header));
     return checksum_update(
-        hash, entries,
+        hash, catalog,
         (size_t)header.count * sizeof(entries[0]));
 }
 
@@ -160,12 +166,14 @@ static int compare_entries(
     return path_order > 0 ? -1 : path_order < 0 ? 1 : 0;
 }
 
-static void insert_entry(const char *path, const struct dirinfo *info)
+static void insert_entry(
+    const char *path, const struct dirinfo *info,
+    struct crazypod_photo_catalog_entry *catalog, int *count)
 {
     struct crazypod_photo_catalog_entry entry;
     int position;
 
-    if(entry_count >= CRAZYPOD_PHOTO_MAX_FILES)
+    if(*count >= CRAZYPOD_PHOTO_MAX_FILES)
         return;
     memset(&entry, 0, sizeof(entry));
     snprintf(entry.path, sizeof(entry.path), "%s", path);
@@ -181,28 +189,32 @@ static void insert_entry(const char *path, const struct dirinfo *info)
     entry.ctime_tenth = info->ctime_tenth > 199
         ? 199 : (uint8_t)info->ctime_tenth;
     entry.key = crazypod_photo_catalog_key(entry.path);
-    position = entry_count;
+    position = *count;
     while(position > 0 &&
-          compare_entries(&entry, &entries[position - 1]) < 0) {
-        entries[position] = entries[position - 1];
+          compare_entries(&entry, &catalog[position - 1]) < 0) {
+        catalog[position] = catalog[position - 1];
         --position;
     }
-    entries[position] = entry;
-    ++entry_count;
+    catalog[position] = entry;
+    ++(*count);
 }
 
-static void scan_directory(const char *path, int depth)
+static void scan_directory(
+    const char *path, int depth,
+    struct crazypod_photo_catalog_entry *catalog, int *count)
 {
     DIR *directory;
     struct DIRENT *entry;
 
-    if(depth > PHOTO_DIRECTORY_DEPTH ||
-       entry_count >= CRAZYPOD_PHOTO_MAX_FILES)
+    if(refresh_abort_requested ||
+       depth > PHOTO_DIRECTORY_DEPTH ||
+       *count >= CRAZYPOD_PHOTO_MAX_FILES)
         return;
     directory = opendir(path);
     if(directory == NULL)
         return;
-    while(entry_count < CRAZYPOD_PHOTO_MAX_FILES &&
+    while(!refresh_abort_requested &&
+          *count < CRAZYPOD_PHOTO_MAX_FILES &&
           (entry = readdir(directory)) != NULL) {
         struct dirinfo info;
         char child[MAX_PATH];
@@ -216,31 +228,33 @@ static void scan_directory(const char *path, int depth)
         info = dir_get_info(directory, entry);
         if(info.attribute & ATTR_DIRECTORY) {
             if(directory_supported(entry->d_name))
-                scan_directory(child, depth + 1);
+                scan_directory(child, depth + 1, catalog, count);
         }
         else if(crazypod_photo_catalog_path_supported(child))
-            insert_entry(child, &info);
-        if((entry_count & 15) == 0)
+            insert_entry(child, &info, catalog, count);
+        if((*count & 15) == 0)
             yield();
     }
     closedir(directory);
 }
 
-static void load_favorites(void)
+static void load_favorites(
+    struct crazypod_photo_catalog_entry *catalog,
+    int catalog_count, int *favorite_count)
 {
     char line[MAX_PATH];
     int fd;
     int used = 0;
 
-    favorites = 0;
+    *favorite_count = 0;
     fd = open(PHOTO_FAVORITES_PATH, O_RDONLY);
     if(fd < 0)
         return;
     while(true) {
         char character;
-        ssize_t count = read(fd, &character, 1);
+        ssize_t read_count = read(fd, &character, 1);
 
-        if(count <= 0)
+        if(read_count <= 0)
             character = '\n';
         if(character == '\r')
             continue;
@@ -252,24 +266,25 @@ static void load_favorites(void)
             int index;
 
             line[used] = '\0';
-            for(index = 0; index < entry_count; ++index) {
-                if(strcmp(entries[index].path, line) == 0) {
-                    if(!entries[index].favorite) {
-                        entries[index].favorite = true;
-                        ++favorites;
+            for(index = 0; index < catalog_count; ++index) {
+                if(strcmp(catalog[index].path, line) == 0) {
+                    if(!catalog[index].favorite) {
+                        catalog[index].favorite = true;
+                        ++(*favorite_count);
                     }
                     break;
                 }
             }
         }
         used = 0;
-        if(count <= 0)
+        if(read_count <= 0)
             break;
     }
     close(fd);
 }
 
-static bool save_favorites(void)
+static bool save_favorites(
+    const struct crazypod_photo_catalog_entry *catalog, int count)
 {
     bool complete = true;
     int fd;
@@ -280,12 +295,12 @@ static bool save_favorites(void)
               O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)
         return false;
-    for(index = 0; index < entry_count; ++index) {
-        if(!entries[index].favorite)
+    for(index = 0; index < count; ++index) {
+        if(!catalog[index].favorite)
             continue;
         complete =
-            write_exact(fd, entries[index].path,
-                        strlen(entries[index].path)) &&
+            write_exact(fd, catalog[index].path,
+                        strlen(catalog[index].path)) &&
             write_exact(fd, "\n", 1);
         if(!complete)
             break;
@@ -329,7 +344,7 @@ static bool load_catalog(void)
             fd, entries,
             (size_t)header.count * sizeof(entries[0]));
     close(fd);
-    if(!valid || header.checksum != catalog_checksum(&header))
+    if(!valid || header.checksum != catalog_checksum(&header, entries))
         return false;
     for(index = 0; index < header.count; ++index) {
         if(memchr(entries[index].path, '\0',
@@ -345,11 +360,12 @@ static bool load_catalog(void)
         entries[index].favorite = false;
     }
     entry_count = (int)header.count;
-    load_favorites();
+    load_favorites(entries, entry_count, &favorites);
     return true;
 }
 
-static bool save_catalog(void)
+static bool save_catalog(
+    const struct crazypod_photo_catalog_entry *catalog, int count)
 {
     struct photo_catalog_header header;
     bool complete;
@@ -361,8 +377,8 @@ static bool save_catalog(void)
     header.magic = PHOTO_CATALOG_MAGIC;
     header.version = PHOTO_CATALOG_VERSION;
     header.entry_size = sizeof(entries[0]);
-    header.count = (uint32_t)entry_count;
-    header.checksum = catalog_checksum(&header);
+    header.count = (uint32_t)count;
+    header.checksum = catalog_checksum(&header, catalog);
     remove(PHOTO_CATALOG_TMP);
     fd = open(PHOTO_CATALOG_TMP,
               O_WRONLY | O_CREAT | O_TRUNC, 0666);
@@ -371,8 +387,8 @@ static bool save_catalog(void)
     complete =
         write_exact(fd, &header, sizeof(header)) &&
         write_exact(
-            fd, entries,
-            (size_t)entry_count * sizeof(entries[0]));
+            fd, catalog,
+            (size_t)count * sizeof(entries[0]));
     close(fd);
     if(!complete ||
        rename(PHOTO_CATALOG_TMP, PHOTO_CATALOG_PATH) < 0) {
@@ -390,33 +406,102 @@ bool crazypod_photo_catalog_init(void)
     entry_count = 0;
     favorites = 0;
     memset(entries, 0, sizeof(entries));
+    mutex_init(&catalog_mutex);
+    mutex_init(&catalog_io_mutex);
     return load_catalog();
 }
 
 void crazypod_photo_catalog_refresh(void)
 {
-    entry_count = 0;
-    favorites = 0;
-    memset(entries, 0, sizeof(entries));
-    scan_directory(PHOTO_DIRECTORY, 0);
-    load_favorites();
-    (void)save_catalog();
+    int scan_count = 0;
+    int scan_favorites = 0;
+
+    mutex_lock(&catalog_io_mutex);
+    if(refresh_abort_requested) {
+        mutex_unlock(&catalog_io_mutex);
+        return;
+    }
+    memset(scan_entries, 0, sizeof(scan_entries));
+    scan_directory(PHOTO_DIRECTORY, 0, scan_entries, &scan_count);
+    if(!refresh_abort_requested) {
+        load_favorites(scan_entries, scan_count, &scan_favorites);
+        if(!refresh_abort_requested) {
+            (void)save_favorites(scan_entries, scan_count);
+            (void)save_catalog(scan_entries, scan_count);
+        }
+    }
+    mutex_unlock(&catalog_io_mutex);
+    if(!refresh_abort_requested) {
+        mutex_lock(&catalog_mutex);
+        memcpy(entries, scan_entries,
+               (size_t)scan_count * sizeof(entries[0]));
+        if(scan_count < CRAZYPOD_PHOTO_MAX_FILES)
+            memset(&entries[scan_count], 0,
+                   (size_t)(CRAZYPOD_PHOTO_MAX_FILES - scan_count) *
+                   sizeof(entries[0]));
+        entry_count = scan_count;
+        favorites = scan_favorites;
+        mutex_unlock(&catalog_mutex);
+    }
+}
+
+void crazypod_photo_catalog_cancel_refresh(void)
+{
+    refresh_abort_requested = true;
+}
+
+void crazypod_photo_catalog_reset_refresh_cancel(void)
+{
+    refresh_abort_requested = false;
+}
+
+bool crazypod_photo_catalog_save(void)
+{
+    bool saved;
+    int count;
+
+    mutex_lock(&catalog_io_mutex);
+    mutex_lock(&catalog_mutex);
+    count = entry_count;
+    memcpy(scan_entries, entries,
+           (size_t)count * sizeof(entries[0]));
+    mutex_unlock(&catalog_mutex);
+    saved = !refresh_abort_requested &&
+        save_favorites(scan_entries, count) &&
+        save_catalog(scan_entries, count);
+    mutex_unlock(&catalog_io_mutex);
+    return saved;
 }
 
 void crazypod_photo_catalog_invalidate(void)
 {
+    refresh_abort_requested = true;
+    mutex_lock(&catalog_io_mutex);
+    mutex_lock(&catalog_mutex);
     remove(PHOTO_CATALOG_TMP);
     remove(PHOTO_CATALOG_PATH);
+    mutex_unlock(&catalog_mutex);
+    mutex_unlock(&catalog_io_mutex);
 }
 
 int crazypod_photo_catalog_count(void)
 {
-    return entry_count;
+    int count;
+
+    mutex_lock(&catalog_mutex);
+    count = entry_count;
+    mutex_unlock(&catalog_mutex);
+    return count;
 }
 
 int crazypod_photo_catalog_favorite_count(void)
 {
-    return favorites;
+    int count;
+
+    mutex_lock(&catalog_mutex);
+    count = favorites;
+    mutex_unlock(&catalog_mutex);
+    return count;
 }
 
 int crazypod_photo_catalog_favorite_index(int favorite_index)
@@ -425,47 +510,81 @@ int crazypod_photo_catalog_favorite_index(int favorite_index)
 
     if(favorite_index < 0)
         return -1;
+    mutex_lock(&catalog_mutex);
     for(index = 0; index < entry_count; ++index) {
-        if(entries[index].favorite && favorite_index-- == 0)
+        if(entries[index].favorite && favorite_index-- == 0) {
+            mutex_unlock(&catalog_mutex);
             return index;
+        }
     }
+    mutex_unlock(&catalog_mutex);
     return -1;
 }
 
 const struct crazypod_photo_catalog_entry *
 crazypod_photo_catalog_get(int index)
 {
-    return index >= 0 && index < entry_count ? &entries[index] : NULL;
+    const struct crazypod_photo_catalog_entry *entry = NULL;
+
+    mutex_lock(&catalog_mutex);
+    if(index >= 0 && index < entry_count)
+        entry = &entries[index];
+    mutex_unlock(&catalog_mutex);
+    return entry;
+}
+
+bool crazypod_photo_catalog_copy(
+    int index, struct crazypod_photo_catalog_entry *entry)
+{
+    bool copied = false;
+
+    if(entry == NULL)
+        return false;
+    mutex_lock(&catalog_mutex);
+    if(index >= 0 && index < entry_count) {
+        *entry = entries[index];
+        copied = true;
+    }
+    mutex_unlock(&catalog_mutex);
+    return copied;
 }
 
 const char *crazypod_photo_catalog_name(int index)
 {
-    const struct crazypod_photo_catalog_entry *entry =
-        crazypod_photo_catalog_get(index);
+    static char name[MAX_PATH];
+    const struct crazypod_photo_catalog_entry *entry;
     const char *slash;
 
-    if(entry == NULL)
-        return "";
+    mutex_lock(&catalog_mutex);
+    if(index < 0 || index >= entry_count) {
+        name[0] = '\0';
+        mutex_unlock(&catalog_mutex);
+        return name;
+    }
+    entry = &entries[index];
     slash = strrchr(entry->path, '/');
-    return slash != NULL ? slash + 1 : entry->path;
+    snprintf(name, sizeof(name), "%s",
+             slash != NULL ? slash + 1 : entry->path);
+    mutex_unlock(&catalog_mutex);
+    return name;
 }
 
 bool crazypod_photo_catalog_toggle_favorite(int index)
 {
     struct crazypod_photo_catalog_entry *entry;
-    bool previous;
+    bool favorite;
 
+    mutex_lock(&catalog_mutex);
     if(index < 0 || index >= entry_count)
-        return false;
-    entry = &entries[index];
-    previous = entry->favorite;
-    entry->favorite = !previous;
-    favorites += previous ? -1 : 1;
-    if(!save_favorites()) {
-        entry->favorite = previous;
-        favorites += previous ? 1 : -1;
+    {
+        mutex_unlock(&catalog_mutex);
         return false;
     }
+    entry = &entries[index];
+    favorite = entry->favorite;
+    entry->favorite = !favorite;
+    favorites += favorite ? -1 : 1;
+    mutex_unlock(&catalog_mutex);
     return true;
 }
 
@@ -475,8 +594,11 @@ bool crazypod_photo_catalog_delete(int index)
     size_t path_length;
     bool was_favorite;
 
-    if(index < 0 || index >= entry_count)
+    mutex_lock(&catalog_mutex);
+    if(index < 0 || index >= entry_count) {
+        mutex_unlock(&catalog_mutex);
         return false;
+    }
     path = entries[index].path;
     path_length = strlen(path);
     if(strncmp(path, PHOTO_DIRECTORY "/",
@@ -485,8 +607,10 @@ bool crazypod_photo_catalog_delete(int index)
        (path_length >= 3 &&
         strcmp(path + path_length - 3, "/..") == 0) ||
        !crazypod_photo_catalog_path_supported(path) ||
-       remove(path) < 0)
+       remove(path) < 0) {
+        mutex_unlock(&catalog_mutex);
         return false;
+    }
     was_favorite = entries[index].favorite;
     if(index + 1 < entry_count)
         memmove(&entries[index], &entries[index + 1],
@@ -495,8 +619,7 @@ bool crazypod_photo_catalog_delete(int index)
     memset(&entries[entry_count], 0, sizeof(entries[0]));
     if(was_favorite)
         --favorites;
-    if(!save_favorites() || !save_catalog())
-        crazypod_photo_catalog_invalidate();
+    mutex_unlock(&catalog_mutex);
     return true;
 }
 

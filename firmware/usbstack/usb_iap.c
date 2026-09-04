@@ -289,6 +289,17 @@ static struct Platform platform;
 static struct timeout  tick_tmo;
 static bool            iap_ctx_mutex_initialized = false;
 
+static void process_deferred_sink_switch(void) {
+    bool pending;
+    struct IAPContext* ctx = _iap_acquire_ctx(true);
+
+    pending = ctx->platform->sink_switch_pending;
+    ctx->platform->sink_switch_pending = false;
+    _iap_release_ctx();
+    if(pending)
+        check_act(mixer_switch_sink(PCM_SINK_IAP), );
+}
+
 struct IAPContext* _iap_acquire_ctx(bool lock) {
     static struct IAPContext ctx;
     if(lock) {
@@ -408,6 +419,7 @@ void usb_iap_init_connection(void) {
         ERROR("failed to claim albumart slot");
     }
     platform.control_pending = false;
+    platform.sink_switch_pending = false;
 
     /* register timer */
     timeout_register(&tick_tmo, tick_callback, HZ / 10, 0);
@@ -570,6 +582,7 @@ static bool control_request_if_class(struct usb_ctrlrequest* req, void* reqdata,
             struct IAPContext* ctx = _iap_acquire_ctx(true);
             const bool         ret = iap_feed_hid_report(ctx, reqdata, req->wLength);
             _iap_release_ctx();
+            process_deferred_sink_switch();
 
             check_act(ret, return false);
             usb_drv_control_response(USB_CONTROL_ACK, NULL, 0);
@@ -656,6 +669,7 @@ void usb_iap_notify_event(intptr_t data) {
         if(plt->control_pending) {
             /* waiting for playback begins */
             _iap_release_ctx();
+            process_deferred_sink_switch();
             return;
         }
 
@@ -683,6 +697,7 @@ void usb_iap_notify_event(intptr_t data) {
 
         check_act(iap_periodic_tick(ctx), );
         _iap_release_ctx();
+        process_deferred_sink_switch();
     } break;
     }
 }

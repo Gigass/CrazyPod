@@ -163,7 +163,7 @@ fill_frame:
 
         if (chan->size == 0)
         {
-            if (chan->play_cbs->get_more)
+            if (chan->play_cbs && chan->play_cbs->get_more)
             {
                 chan->play_cbs->get_more(&chan->start, &chan->size);
                 ALIGN_AUDIOBUF(chan->start, chan->size);
@@ -488,13 +488,23 @@ void mixer_channel_stop(enum pcm_mixer_channel channel)
 /* Switch playback sink */
 bool mixer_switch_sink(enum pcm_sink_ids sink)
 {
-    if(pcm_current_sink() == sink)
-        return true;
+    bool switched;
 
-    if(!pcm_switch_sink(sink))
+    pcm_play_lock();
+    if(pcm_current_sink() == sink)
+    {
+        pcm_play_unlock();
+        return true;
+    }
+
+    switched = pcm_switch_sink(sink);
+    if(!switched) {
+        pcm_play_unlock();
         return false;
+    }
 
     mixer_handle_sampr_change(SAMPR_NUM(pcm_get_frequency()));
+    pcm_play_unlock();
     return true;
 }
 

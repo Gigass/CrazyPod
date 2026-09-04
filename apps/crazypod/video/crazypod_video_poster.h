@@ -8,6 +8,7 @@
 void crazypod_video_poster_init(void);
 void crazypod_video_poster_reset(void);
 void crazypod_video_poster_suspend(void);
+void crazypod_video_poster_wait_idle(void);
 void crazypod_video_poster_resume(void);
 const lv_image_dsc_t *crazypod_video_poster_get(int index);
 unsigned crazypod_video_poster_generation(void);

@@ -40,11 +40,17 @@
 #define SEEK_MAX_STEP_PERCENT 3
 #define SEEK_MIN_STEP_MS 500u
 #define PLAYBACK_COMMAND_STACK_SIZE (DEFAULT_STACK_SIZE + 0x1000)
-#define LOCK_METADATA_WARM_STACK_SIZE (DEFAULT_STACK_SIZE + 0x800)
+/* Font prewarming walks the runtime-font/cache path and keeps several
+ * metadata snapshots alive at once.  The default firmware stack is only
+ * 0x400 bytes on non-hosted targets, so the small extra stack used here can
+ * overflow on the first track transition.  Keep this in line with the
+ * tagcache worker's background stack budget. */
+#define LOCK_METADATA_WARM_STACK_SIZE (DEFAULT_STACK_SIZE + 0x4000)
 #define LOCK_METADATA_WARM_EVENT 1
 #define LOCK_TITLE_FONT_SIZE 15
 #define LOCK_ARTIST_FONT_SIZE 12
 #define LOCK_ALBUM_FONT_SIZE 10
+#define PLAYBACK_SEARCH_QUERY_SIZE 64
 
 enum crazypod_playback_command {
     CRAZYPOD_PLAYBACK_COMMAND_PAUSE = 1,
@@ -53,6 +59,15 @@ enum crazypod_playback_command {
     CRAZYPOD_PLAYBACK_COMMAND_NEXT,
     CRAZYPOD_PLAYBACK_COMMAND_PREVIOUS,
     CRAZYPOD_PLAYBACK_COMMAND_SELECT,
+    CRAZYPOD_PLAYBACK_COMMAND_SELECT_MUSIC,
+    CRAZYPOD_PLAYBACK_COMMAND_SYNC_PLAY_STATE,
+};
+
+struct crazypod_music_selection_request {
+    enum crazypod_music_scope scope;
+    int group_index;
+    int selected_index;
+    char query[PLAYBACK_SEARCH_QUERY_SIZE];
 };
 
 struct crazypod_lock_playback_cache {
@@ -81,6 +96,10 @@ static long lock_metadata_warm_stack[
     LOCK_METADATA_WARM_STACK_SIZE / sizeof(long)];
 static bool lock_metadata_warm_thread_started;
 static struct crazypod_lock_playback_cache lock_playback;
+static struct crazypod_music_selection_request music_selection;
+static bool music_selection_pending;
+static bool play_state_command_queued;
+static bool stop_command_queued;
 
 static struct {
     struct crazypod_playback_host host;
@@ -310,6 +329,9 @@ static void playback_command_thread(void)
             audio_resume();
             break;
         case CRAZYPOD_PLAYBACK_COMMAND_STOP:
+            mutex_lock(&lock_playback_mutex);
+            stop_command_queued = false;
+            mutex_unlock(&lock_playback_mutex);
             audio_stop();
             crazypod_state_forget_resume();
             crazypod_state_mark_dirty();
@@ -327,6 +349,44 @@ static void playback_command_thread(void)
                 crazypod_state_mark_dirty();
             }
             break;
+        case CRAZYPOD_PLAYBACK_COMMAND_SELECT_MUSIC:
+        {
+            struct crazypod_music_selection_request request;
+            bool started;
+
+            mutex_lock(&lock_playback_mutex);
+            request = music_selection;
+            music_selection_pending = false;
+            mutex_unlock(&lock_playback_mutex);
+            started = request.scope == CRAZYPOD_SCOPE_ALL ||
+                request.scope == CRAZYPOD_SCOPE_ARTIST ||
+                request.scope == CRAZYPOD_SCOPE_ALBUM ||
+                request.scope == CRAZYPOD_SCOPE_PLAYLIST
+                    ? crazypod_music_play(
+                        request.scope, request.group_index,
+                        request.selected_index)
+                    : crazypod_music_play_search(
+                        request.query, request.selected_index);
+            if(started) {
+                crazypod_state_forget_resume();
+                crazypod_state_mark_dirty();
+            }
+            break;
+        }
+        case CRAZYPOD_PLAYBACK_COMMAND_SYNC_PLAY_STATE:
+        {
+            bool playing;
+
+            mutex_lock(&lock_playback_mutex);
+            playing = lock_playback.requested_playing != 0;
+            play_state_command_queued = false;
+            mutex_unlock(&lock_playback_mutex);
+            if(playing)
+                audio_resume();
+            else
+                audio_pause();
+            break;
+        }
         default:
             continue;
         }
@@ -394,6 +454,10 @@ void crazypod_playback_initialize(void)
     lock_playback = (struct crazypod_lock_playback_cache){0};
     lock_playback.requested_queue_index = -1;
     lock_playback.requested_playing = -1;
+    memset(&music_selection, 0, sizeof(music_selection));
+    music_selection_pending = false;
+    play_state_command_queued = false;
+    stop_command_queued = false;
     if(!lock_metadata_warm_thread_started) {
         unsigned int thread_id;
 
@@ -475,7 +539,8 @@ void crazypod_playback_toggle(void)
 
     if(crazypod_queue_count() <= 0) {
         if(crazypod_music_track_count() > 0)
-            crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0);
+            crazypod_playback_select_music_async(
+                CRAZYPOD_SCOPE_ALL, 0, 0, NULL);
         crazypod_state_forget_resume();
         crazypod_state_mark_dirty();
         return;
@@ -637,6 +702,7 @@ static uint32_t cached_lock_elapsed(const char *path, bool playing)
 void crazypod_playback_toggle_async(void)
 {
     bool playing;
+    bool post = false;
 
     mutex_lock(&lock_playback_mutex);
     playing = lock_playback.requested_playing >= 0
@@ -644,22 +710,30 @@ void crazypod_playback_toggle_async(void)
         : (audio_status() & (AUDIO_STATUS_PLAY | AUDIO_STATUS_PAUSE)) ==
             AUDIO_STATUS_PLAY;
     lock_playback.requested_playing = !playing;
+    if(!play_state_command_queued) {
+        play_state_command_queued = true;
+        post = true;
+    }
     mutex_unlock(&lock_playback_mutex);
-    queue_post(
-        &playback_command_queue,
-        playing ? CRAZYPOD_PLAYBACK_COMMAND_PAUSE
-                : CRAZYPOD_PLAYBACK_COMMAND_RESUME,
-        0);
+    if(post)
+        queue_post(&playback_command_queue,
+                   CRAZYPOD_PLAYBACK_COMMAND_SYNC_PLAY_STATE, 0);
 }
 
 void crazypod_playback_stop_async(void)
 {
+    bool post = false;
+
     mutex_lock(&lock_playback_mutex);
     lock_playback.requested_playing = false;
+    if(!stop_command_queued) {
+        stop_command_queued = true;
+        post = true;
+    }
     mutex_unlock(&lock_playback_mutex);
-    queue_post(
-        &playback_command_queue,
-        CRAZYPOD_PLAYBACK_COMMAND_STOP, 0);
+    if(post)
+        queue_post(&playback_command_queue,
+                   CRAZYPOD_PLAYBACK_COMMAND_STOP, 0);
 }
 
 void crazypod_playback_next_async(void)
@@ -730,6 +804,37 @@ void crazypod_playback_select_async(int queue_index)
     queue_post(
         &playback_command_queue,
         CRAZYPOD_PLAYBACK_COMMAND_SELECT, queue_index);
+}
+
+bool crazypod_playback_select_music_async(
+    enum crazypod_music_scope scope, int group_index,
+    int selected_index, const char *query)
+{
+    bool post = false;
+
+    if(!playback_command_thread_started)
+        return false;
+    if(scope != CRAZYPOD_SCOPE_ALL &&
+       scope != CRAZYPOD_SCOPE_ARTIST &&
+       scope != CRAZYPOD_SCOPE_ALBUM &&
+       scope != CRAZYPOD_SCOPE_PLAYLIST &&
+       scope != CRAZYPOD_SCOPE_SEARCH)
+        return false;
+    mutex_lock(&lock_playback_mutex);
+    music_selection.scope = scope;
+    music_selection.group_index = group_index;
+    music_selection.selected_index = selected_index;
+    snprintf(music_selection.query, sizeof(music_selection.query),
+             "%s", query != NULL ? query : "");
+    if(!music_selection_pending) {
+        music_selection_pending = true;
+        post = true;
+    }
+    mutex_unlock(&lock_playback_mutex);
+    if(post)
+        queue_post(&playback_command_queue,
+                   CRAZYPOD_PLAYBACK_COMMAND_SELECT_MUSIC, 0);
+    return true;
 }
 
 void crazypod_playback_refresh_lock_screen(void)

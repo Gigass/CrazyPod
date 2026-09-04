@@ -3,6 +3,8 @@
 
 #include "lvgl.h"
 
+#include "../../../crazypod_music.h"
+
 struct crazypod_playback_host {
     void (*render)(bool transition);
 };
@@ -24,6 +26,9 @@ void crazypod_playback_stop_async(void);
 void crazypod_playback_next_async(void);
 void crazypod_playback_previous_or_restart_async(void);
 void crazypod_playback_select_async(int queue_index);
+bool crazypod_playback_select_music_async(
+    enum crazypod_music_scope scope, int group_index,
+    int selected_index, const char *query);
 void crazypod_playback_refresh_lock_screen(void);
 void crazypod_playback_request_refresh_after_unlock(
     uint32_t present_sequence, bool animate_capsule);

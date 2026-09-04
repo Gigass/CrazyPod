@@ -9,6 +9,8 @@
 
 #include "dir.h"
 #include "file.h"
+#include "kernel.h"
+#include "panic.h"
 #include "rbunicode.h"
 
 #include "crazypod_books.h"
@@ -30,6 +32,8 @@
 #define BOOKS_SCAN_DEPTH 6
 #define BOOK_PAGE_INPUT_SIZE 1536
 #define BOOK_ENCODING_SAMPLE_SIZE 4096
+#define BOOKS_SCAN_EVENT 1
+#define BOOKS_SCAN_STACK_SIZE (DEFAULT_STACK_SIZE + 0x1000)
 
 enum book_text_encoding {
     BOOK_TEXT_ENCODING_UNKNOWN,
@@ -91,6 +95,31 @@ static unsigned reader_max_lines = 8;
 static unsigned reader_max_line_width = 42;
 static crazypod_epub_layout_width_fn reader_measure_width;
 static void *reader_measure_context;
+static struct event_queue books_scan_queue;
+static long books_scan_stack[
+    BOOKS_SCAN_STACK_SIZE / sizeof(long)];
+static bool books_scan_worker_started;
+static volatile bool books_scan_processing;
+static volatile bool books_scan_abort_requested;
+
+static void books_scan_thread(void)
+{
+    struct queue_event event;
+
+    while(true) {
+        queue_wait(&books_scan_queue, &event);
+        if(event.id != BOOKS_SCAN_EVENT)
+            continue;
+        if(!books_scan_abort_requested)
+            crazypod_books_scan();
+        else {
+            books_scan_loaded = false;
+            books_scan_dirty = true;
+            books_scan_abort_requested = false;
+        }
+        books_scan_processing = false;
+    }
+}
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 {
@@ -728,12 +757,14 @@ static void scan_directory(const char *path, int depth)
     DIR *directory;
     struct DIRENT *entry;
 
-    if(depth > BOOKS_SCAN_DEPTH || book_count >= BOOKS_MAX)
+    if(books_scan_abort_requested ||
+       depth > BOOKS_SCAN_DEPTH || book_count >= BOOKS_MAX)
         return;
     directory = opendir(path);
     if(directory == NULL)
         return;
-    while((entry = readdir(directory)) != NULL &&
+    while(!books_scan_abort_requested &&
+          (entry = readdir(directory)) != NULL &&
           book_count < BOOKS_MAX) {
         struct dirinfo info;
         enum crazypod_book_format format;
@@ -747,6 +778,7 @@ static void scan_directory(const char *path, int depth)
             scan_directory(child, depth + 1);
         else if(book_format(child, &format))
             add_book(child, &info, format);
+        yield();
     }
     closedir(directory);
 }
@@ -756,7 +788,19 @@ void crazypod_books_init(void)
     static struct books_state_disk loaded;
     bool migrate_legacy = false;
     int fd;
+    unsigned int thread_id;
 
+    queue_init(&books_scan_queue, false);
+    thread_id = create_thread(
+        books_scan_thread, books_scan_stack, sizeof(books_scan_stack), 0,
+        "crazypod books"
+        IF_PRIO(, PRIORITY_BACKGROUND)
+        IF_COP(, CPU));
+    if(thread_id == 0)
+        panicf("books scan thread");
+    books_scan_worker_started = true;
+    books_scan_processing = false;
+    books_scan_abort_requested = false;
     mkdir(BOOKS_DIRECTORY);
     reset_book_catalog();
     books_scan_loaded = false;
@@ -809,11 +853,40 @@ void crazypod_books_init(void)
 
 void crazypod_books_scan(void)
 {
+    if(books_scan_abort_requested) {
+        books_scan_loaded = false;
+        books_scan_dirty = true;
+        books_scan_abort_requested = false;
+        return;
+    }
     reset_book_catalog();
     scan_directory(BOOKS_DIRECTORY, 0);
+    if(books_scan_abort_requested) {
+        books_scan_loaded = false;
+        books_scan_dirty = true;
+        books_scan_abort_requested = false;
+        return;
+    }
     books_scan_loaded = true;
     books_scan_dirty = false;
     (void)books_catalog_save();
+}
+
+bool crazypod_books_scan_async(void)
+{
+    if(!books_scan_worker_started)
+        return false;
+    if(books_scan_processing)
+        return true;
+    books_scan_abort_requested = false;
+    books_scan_processing = true;
+    queue_post(&books_scan_queue, BOOKS_SCAN_EVENT, 0);
+    return true;
+}
+
+bool crazypod_books_scan_busy(void)
+{
+    return books_scan_processing;
 }
 
 bool crazypod_books_scan_needed(void)
@@ -823,6 +896,7 @@ bool crazypod_books_scan_needed(void)
 
 void crazypod_books_invalidate_scan(void)
 {
+    books_scan_abort_requested = true;
     books_scan_dirty = true;
     remove(BOOKS_CATALOG_TEMP);
     remove(BOOKS_CATALOG_PATH);
@@ -1304,7 +1378,10 @@ bool crazypod_book_delete(int index)
             break;
         }
     }
-    crazypod_books_scan();
+    books_scan_loaded = false;
+    books_scan_dirty = true;
+    if(!crazypod_books_scan_async())
+        crazypod_books_scan();
     return state_save();
 }
 

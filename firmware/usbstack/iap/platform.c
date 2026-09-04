@@ -498,7 +498,10 @@ IAPBool iap_platform_on_acc_samprs_received(struct IAPContext* iap_ctx, struct I
         has_48k |= sample_rate == SAMPR_48;
     }
     check_act(has_44k && has_48k, return iap_false, "accessory lacks mandatory freq support: 44k=%d 48k=%d", has_44k, has_48k);
-    check_act(mixer_switch_sink(PCM_SINK_IAP), return false);
+    /* The callback runs under iap_ctx_mutex.  Sink changes can enter the
+     * audio callback, which may ask for the same context again.  Defer the
+     * transition until the USB control/tick caller releases that mutex. */
+    iap_ctx->platform->sink_switch_pending = true;
     return iap_true;
 }
 

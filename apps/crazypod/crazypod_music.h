@@ -47,6 +47,7 @@ enum crazypod_music_scope {
     CRAZYPOD_SCOPE_ARTIST,
     CRAZYPOD_SCOPE_ALBUM,
     CRAZYPOD_SCOPE_PLAYLIST,
+    CRAZYPOD_SCOPE_SEARCH,
 };
 
 enum crazypod_music_catalog_validation {
@@ -96,6 +97,7 @@ enum crazypod_music_catalog_validation
 crazypod_music_catalog_validation(void);
 bool crazypod_music_take_catalog_stale(void);
 void crazypod_music_cancel_scan(void);
+void crazypod_music_wait_for_scan_idle(void);
 bool crazypod_music_is_scanning(void);
 unsigned crazypod_music_scan_generation(void);
 bool crazypod_music_catalog_ready(void);

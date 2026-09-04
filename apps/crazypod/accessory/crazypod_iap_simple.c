@@ -29,6 +29,8 @@
 #define CRAZYPOD_IAP_RX_SLOTS 8
 #define CRAZYPOD_IAP_REMOTE_STATE_SLOTS 16
 #define CRAZYPOD_IAP_TX_MAX 64
+#define CRAZYPOD_IAP_TX_WAIT_TICKS (HZ / 5)
+#define CRAZYPOD_IAP_FRAMES_PER_EVENT 2
 #define CRAZYPOD_IAP_PACKET_EVENT \
     MAKE_SYS_EVENT(SYS_EVENT_CLS_PRIVATE, 0x35)
 #define CRAZYPOD_IAP_BUTTON_TIMEOUT_TICKS 3
@@ -93,6 +95,8 @@ static unsigned char auth_max_section;
 static uint32_t accessory_lingoes;
 static volatile bool dock_connected;
 static volatile bool dock_connected_pending;
+static bool legacy_response_pending;
+static long legacy_response_due;
 #ifdef CRAZYPOD_IAP_DIAGNOSTICS
 static bool raw_capture_initialized;
 static unsigned int raw_capture_records;
@@ -104,10 +108,17 @@ int iap_repeatbtn;
 
 static void crazypod_iap_serial_tx(const unsigned char *buffer, int length)
 {
+    long deadline = current_tick + CRAZYPOD_IAP_TX_WAIT_TICKS;
+    bool ready;
     int index;
 
     for(index = 0; index < length; ++index) {
-        while(!tx_rdy()) {
+        while(!(ready = tx_rdy()) &&
+              TIME_BEFORE(current_tick, deadline))
+            yield();
+        if(!ready) {
+            ++diagnostics.uart_tx_timeouts;
+            return;
         }
         tx_writec(buffer[index]);
     }
@@ -278,13 +289,8 @@ static void handle_general(const unsigned char *payload, uint16_t length)
     switch(command) {
         case 0x01: /* Identify (legacy) */
             if(length >= 3 && payload[2] == 0x05) {
-                static const unsigned char begin_transmission[] = {
-                    0x05, 0x02
-                };
-
-                sleep(HZ / 3);
-                send_packet(begin_transmission,
-                            sizeof(begin_transmission));
+                legacy_response_pending = true;
+                legacy_response_due = current_tick + HZ / 3;
             }
             break;
 
@@ -836,6 +842,8 @@ void iap_reset_state(IF_IAP_MP_NONVOID(int port))
     accessory_lingoes = 0;
     dock_connected = false;
     dock_connected_pending = false;
+    legacy_response_pending = false;
+    legacy_response_due = 0;
     restore_irq(irq_level);
     iap_bitrate_set(iap_rate_setting);
 }
@@ -877,6 +885,15 @@ void iap_malloc(void)
 
 void iap_periodic(void)
 {
+    static const unsigned char begin_transmission[] = {
+        0x05, 0x02
+    };
+
+    if(legacy_response_pending &&
+       !TIME_BEFORE(current_tick, legacy_response_due)) {
+        legacy_response_pending = false;
+        send_packet(begin_transmission, sizeof(begin_transmission));
+    }
 }
 
 void iap_report_rx_error(unsigned char error)
@@ -897,8 +914,9 @@ void iap_report_rx_error(unsigned char error)
 static void service_received_frames(void)
 {
     struct crazypod_iap_slot slot;
+    unsigned int serviced = 0;
 
-    while(true) {
+    while(serviced < CRAZYPOD_IAP_FRAMES_PER_EVENT) {
         int irq_level = disable_irq_save();
 
         if(rx_slot_count == 0) {
@@ -915,12 +933,15 @@ static void service_received_frames(void)
         capture_raw_frame(slot.payload, slot.length);
 #endif
         handle_packet(slot.payload, slot.length);
+        ++serviced;
     }
+    button_queue_post(CRAZYPOD_IAP_PACKET_EVENT, 0);
 }
 
 void iap_handlepkt(void)
 {
     service_received_frames();
+    iap_periodic();
 }
 
 bool crazypod_iap_simple_handle_event(long event, intptr_t data)
@@ -929,6 +950,7 @@ bool crazypod_iap_simple_handle_event(long event, intptr_t data)
     if(event != CRAZYPOD_IAP_PACKET_EVENT)
         return false;
     service_received_frames();
+    iap_periodic();
     return true;
 }
 

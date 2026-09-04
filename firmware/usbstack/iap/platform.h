@@ -35,6 +35,7 @@ struct Platform {
     struct IAPAllocResult            malloc_results[4]; /* allow up to 4 mallocs */
     struct IAPPlatformPendingControl pending_control;
     bool                             control_pending;
+    bool                             sink_switch_pending;
 
     int aa_slot;
 };

@@ -44,5 +44,6 @@ unsigned crazypod_photo_generation(void);
 unsigned crazypod_photo_thumbnail_generation(void);
 unsigned crazypod_photo_view_generation(void);
 bool crazypod_photos_busy(void);
+bool crazypod_photos_catalog_refreshing(void);
 
 #endif

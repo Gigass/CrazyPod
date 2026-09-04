@@ -14,6 +14,7 @@
 
 static struct crazypod_books_workflow_host workflow_host;
 static bool metadata_ready;
+static bool metadata_scan_waiting;
 static lv_obj_t *progress_fill;
 static lv_obj_t *progress_label;
 static lv_obj_t *percent_label;
@@ -36,6 +37,7 @@ void crazypod_books_workflow_reset_view(void)
 void crazypod_books_workflow_invalidate_metadata(void)
 {
     metadata_ready = false;
+    metadata_scan_waiting = false;
     crazypod_book_session_reset();
 }
 
@@ -139,6 +141,10 @@ void crazypod_books_workflow_ensure_metadata(void)
 {
     bool scan_needed = crazypod_books_scan_needed();
 
+    if(crazypod_books_scan_busy()) {
+        metadata_scan_waiting = true;
+        return;
+    }
     if(metadata_ready && !scan_needed)
         return;
     if(!scan_needed) {
@@ -149,9 +155,22 @@ void crazypod_books_workflow_ensure_metadata(void)
         NULL, CP_TR("Loading Library"),
         CP_TR("Scanning Books folder"));
     update_progress(12, CP_TR("Scanning Books folder"), NULL);
+    if(crazypod_books_scan_async()) {
+        metadata_scan_waiting = true;
+        return;
+    }
     crazypod_books_scan();
     metadata_ready = true;
     update_progress(100, CP_TR("Library ready"), NULL);
+}
+
+bool crazypod_books_workflow_service(void)
+{
+    if(!metadata_scan_waiting || crazypod_books_scan_busy())
+        return false;
+    metadata_scan_waiting = false;
+    metadata_ready = !crazypod_books_scan_needed();
+    return metadata_ready;
 }
 
 void crazypod_books_workflow_apply_font_size(int value)

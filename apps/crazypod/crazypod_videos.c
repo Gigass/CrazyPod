@@ -70,6 +70,10 @@ struct mpeg_settings settings = {
 #define CRAZYPOD_VIDEO_CLOCK_CHECK_SECONDS 2u
 #define CRAZYPOD_VIDEO_CONTROLS_TIMEOUT (5 * HZ)
 #define CRAZYPOD_VIDEO_REQUIRED_THREAD_SLOTS 3u
+#define CRAZYPOD_VIDEO_CATALOG_REFRESH 1
+#define CRAZYPOD_VIDEO_CATALOG_SAVE 2
+#define CRAZYPOD_VIDEO_CATALOG_SAVE_DEBOUNCE (HZ / 2)
+#define CRAZYPOD_VIDEO_CATALOG_STACK_SIZE (DEFAULT_STACK_SIZE + 0x1000)
 
 static enum crazypod_video_result last_video_result = CRAZYPOD_VIDEO_OK;
 static int video_audio_buffer_handle;
@@ -80,7 +84,76 @@ static bool videos_storage_suspended;
 static bool videos_lock_suspended;
 static bool videos_route_suspended;
 static bool videos_refresh_pending;
+static bool videos_refresh_queued;
+static bool videos_catalog_refreshing;
+static bool videos_catalog_save_queued;
 static struct mutex video_controls_mutex;
+static struct event_queue video_catalog_queue;
+static long video_catalog_stack[
+    CRAZYPOD_VIDEO_CATALOG_STACK_SIZE / sizeof(long)];
+
+static void schedule_video_catalog_save(void);
+
+static void video_catalog_thread(void)
+{
+    struct queue_event event;
+
+    while(true) {
+        queue_wait(&video_catalog_queue, &event);
+        if(event.id == CRAZYPOD_VIDEO_CATALOG_REFRESH) {
+            bool resume;
+            bool cancelled;
+
+            mutex_lock(&video_controls_mutex);
+            cancelled = videos_storage_suspended ||
+                videos_lock_suspended || videos_route_suspended;
+            videos_refresh_queued = false;
+            mutex_unlock(&video_controls_mutex);
+            if(!cancelled) {
+                crazypod_video_poster_suspend();
+                crazypod_video_poster_wait_idle();
+                crazypod_video_catalog_refresh();
+                crazypod_video_poster_reset();
+            }
+            mutex_lock(&video_controls_mutex);
+            videos_catalog_refreshing = false;
+            resume = !videos_storage_suspended &&
+                !videos_lock_suspended && !videos_route_suspended;
+            if(cancelled || !resume)
+                videos_refresh_pending = true;
+            mutex_unlock(&video_controls_mutex);
+            if(resume)
+                crazypod_video_poster_resume();
+        }
+        else if(event.id == CRAZYPOD_VIDEO_CATALOG_SAVE) {
+            bool save;
+
+            sleep(CRAZYPOD_VIDEO_CATALOG_SAVE_DEBOUNCE > 0
+                      ? CRAZYPOD_VIDEO_CATALOG_SAVE_DEBOUNCE : 1);
+            mutex_lock(&video_controls_mutex);
+            save = videos_catalog_save_queued;
+            videos_catalog_save_queued = false;
+            mutex_unlock(&video_controls_mutex);
+            if(save)
+                (void)crazypod_video_catalog_save();
+        }
+    }
+}
+
+static void schedule_video_catalog_save(void)
+{
+    bool post = false;
+
+    mutex_lock(&video_controls_mutex);
+    if(!videos_catalog_save_queued) {
+        videos_catalog_save_queued = true;
+        post = true;
+    }
+    mutex_unlock(&video_controls_mutex);
+    if(post)
+        queue_post(&video_catalog_queue,
+                   CRAZYPOD_VIDEO_CATALOG_SAVE, 0);
+}
 
 static struct {
     const char *title;
@@ -367,8 +440,18 @@ static uint32_t seek_target_ms(int direction)
 void crazypod_videos_init(void)
 {
     bool catalog_loaded;
+    unsigned int thread_id;
 
     mutex_init(&video_controls_mutex);
+    queue_init(&video_catalog_queue, false);
+    thread_id = create_thread(
+        video_catalog_thread, video_catalog_stack,
+        sizeof(video_catalog_stack), 0,
+        "crazypod video catalog"
+        IF_PRIO(, PRIORITY_BACKGROUND)
+        IF_COP(, CPU));
+    if(thread_id == 0)
+        panicf("video catalog thread");
     crazypod_video_engine_set_host(&video_session_host);
     videos_storage_suspended = false;
     videos_lock_suspended = false;
@@ -377,47 +460,94 @@ void crazypod_videos_init(void)
     crazypod_video_poster_suspend();
     catalog_loaded = crazypod_video_catalog_init();
     videos_refresh_pending = !catalog_loaded;
+    videos_refresh_queued = false;
+    videos_catalog_refreshing = false;
+    videos_catalog_save_queued = false;
 }
 
 void crazypod_videos_refresh(void)
 {
+    bool post = false;
+
+    mutex_lock(&video_controls_mutex);
     if(videos_storage_suspended || videos_lock_suspended ||
        videos_route_suspended) {
         videos_refresh_pending = true;
+        mutex_unlock(&video_controls_mutex);
+        return;
+    }
+    if(videos_refresh_queued || videos_catalog_refreshing) {
+        mutex_unlock(&video_controls_mutex);
         return;
     }
     videos_refresh_pending = false;
-    crazypod_video_poster_suspend();
-    crazypod_video_catalog_refresh();
-    crazypod_video_poster_reset();
+    videos_refresh_queued = true;
+    videos_catalog_refreshing = true;
+    post = true;
+    mutex_unlock(&video_controls_mutex);
+    if(post) {
+        crazypod_video_catalog_reset_refresh_cancel();
+        queue_post(&video_catalog_queue,
+                   CRAZYPOD_VIDEO_CATALOG_REFRESH, 0);
+    }
 }
 
 void crazypod_videos_ensure_catalog(void)
 {
-    if(videos_refresh_pending &&
-       !videos_storage_suspended &&
-       !videos_lock_suspended &&
-       !videos_route_suspended)
+    bool refresh;
+
+    mutex_lock(&video_controls_mutex);
+    refresh = videos_refresh_pending &&
+        !videos_storage_suspended && !videos_lock_suspended &&
+        !videos_route_suspended;
+    mutex_unlock(&video_controls_mutex);
+    if(refresh)
         crazypod_videos_refresh();
 }
 
 void crazypod_videos_suspend(void)
 {
+    mutex_lock(&video_controls_mutex);
     videos_storage_suspended = true;
+    mutex_unlock(&video_controls_mutex);
+    crazypod_video_catalog_cancel_refresh();
     crazypod_video_poster_suspend();
+    crazypod_video_poster_wait_idle();
+    while(true) {
+        bool active;
+
+        mutex_lock(&video_controls_mutex);
+        active = videos_catalog_refreshing || videos_refresh_queued;
+        mutex_unlock(&video_controls_mutex);
+        if(!active)
+            break;
+        yield();
+    }
+    crazypod_video_catalog_reset_refresh_cancel();
+    mutex_lock(&video_controls_mutex);
+    videos_catalog_save_queued = false;
+    mutex_unlock(&video_controls_mutex);
+    (void)crazypod_video_catalog_save();
 }
 
 void crazypod_videos_resume(void)
 {
+    mutex_lock(&video_controls_mutex);
     videos_storage_suspended = false;
     videos_refresh_pending = true;
+    mutex_unlock(&video_controls_mutex);
 }
 
 void crazypod_videos_set_lock_suspended(bool suspended)
 {
+    mutex_lock(&video_controls_mutex);
     if(videos_lock_suspended == suspended)
+    {
+        mutex_unlock(&video_controls_mutex);
         return;
+    }
     videos_lock_suspended = suspended;
+    mutex_unlock(&video_controls_mutex);
     if(suspended) {
         crazypod_video_poster_suspend();
         return;
@@ -430,9 +560,14 @@ void crazypod_videos_set_lock_suspended(bool suspended)
 
 void crazypod_videos_set_route_suspended(bool suspended)
 {
+    mutex_lock(&video_controls_mutex);
     if(videos_route_suspended == suspended)
+    {
+        mutex_unlock(&video_controls_mutex);
         return;
+    }
     videos_route_suspended = suspended;
+    mutex_unlock(&video_controls_mutex);
     if(suspended) {
         crazypod_video_poster_suspend();
         return;
@@ -445,7 +580,9 @@ void crazypod_videos_set_route_suspended(bool suspended)
 
 void crazypod_videos_invalidate_catalog(void)
 {
+    mutex_lock(&video_controls_mutex);
     videos_refresh_pending = true;
+    mutex_unlock(&video_controls_mutex);
     crazypod_video_catalog_invalidate();
 }
 
@@ -456,34 +593,44 @@ int crazypod_video_count(void)
 
 const char *crazypod_video_path(int index)
 {
-    const struct crazypod_video_catalog_entry *entry =
-        crazypod_video_catalog_get(index);
+    static char path[MAX_PATH];
+    struct crazypod_video_catalog_entry entry;
 
-    return entry != NULL ? entry->path : "";
+    if(!crazypod_video_catalog_copy(index, &entry)) {
+        path[0] = '\0';
+        return path;
+    }
+    snprintf(path, sizeof(path), "%s", entry.path);
+    return path;
 }
 
 const char *crazypod_video_name(int index)
 {
-    const struct crazypod_video_catalog_entry *entry =
-        crazypod_video_catalog_get(index);
+    static char name[MAX_PATH];
+    struct crazypod_video_catalog_entry entry;
 
-    return entry != NULL ? entry->name : "";
+    if(!crazypod_video_catalog_copy(index, &entry)) {
+        name[0] = '\0';
+        return name;
+    }
+    snprintf(name, sizeof(name), "%s", entry.name);
+    return name;
 }
 
 uint32_t crazypod_video_resume_seconds(int index)
 {
-    const struct crazypod_video_catalog_entry *entry =
-        crazypod_video_catalog_get(index);
+    struct crazypod_video_catalog_entry entry;
 
-    return entry != NULL ? entry->resume_ticks / TS_SECOND : 0;
+    return crazypod_video_catalog_copy(index, &entry)
+        ? entry.resume_ticks / TS_SECOND : 0;
 }
 
 uint32_t crazypod_video_duration_seconds(int index)
 {
-    const struct crazypod_video_catalog_entry *entry =
-        crazypod_video_catalog_get(index);
+    struct crazypod_video_catalog_entry entry;
 
-    return entry != NULL ? entry->duration_ticks / TS_SECOND : 0;
+    return crazypod_video_catalog_copy(index, &entry)
+        ? entry.duration_ticks / TS_SECOND : 0;
 }
 
 const lv_image_dsc_t *crazypod_video_poster(int index)
@@ -498,21 +645,46 @@ unsigned crazypod_video_generation(void)
 
 bool crazypod_videos_busy(void)
 {
-    return crazypod_video_poster_busy();
+    bool refreshing;
+
+    mutex_lock(&video_controls_mutex);
+    refreshing = videos_catalog_refreshing || videos_refresh_queued;
+    mutex_unlock(&video_controls_mutex);
+    return refreshing || crazypod_video_poster_busy();
+}
+
+bool crazypod_videos_catalog_refreshing(void)
+{
+    bool refreshing;
+
+    mutex_lock(&video_controls_mutex);
+    refreshing = videos_catalog_refreshing || videos_refresh_queued;
+    mutex_unlock(&video_controls_mutex);
+    return refreshing;
 }
 
 bool crazypod_video_delete(int index)
 {
     bool deleted;
+    bool suspended;
 
-    if(videos_storage_suspended || videos_lock_suspended)
+    mutex_lock(&video_controls_mutex);
+    suspended = videos_storage_suspended || videos_lock_suspended;
+    mutex_unlock(&video_controls_mutex);
+    if(suspended)
         return false;
     crazypod_video_poster_suspend();
+    crazypod_video_poster_wait_idle();
     deleted = crazypod_video_catalog_delete(index);
-    if(deleted)
+    if(deleted) {
+        schedule_video_catalog_save();
         crazypod_video_poster_reset();
-    if(videos_storage_suspended || videos_lock_suspended ||
-       videos_route_suspended)
+    }
+    mutex_lock(&video_controls_mutex);
+    suspended = videos_storage_suspended || videos_lock_suspended ||
+        videos_route_suspended;
+    mutex_unlock(&video_controls_mutex);
+    if(suspended)
         crazypod_video_poster_suspend();
     else
         crazypod_video_poster_resume();
@@ -539,7 +711,8 @@ static enum crazypod_video_result map_engine_result(
 
 enum crazypod_video_result crazypod_video_play(int index)
 {
-    const struct crazypod_video_catalog_entry *video;
+    struct crazypod_video_catalog_entry video_storage;
+    const struct crazypod_video_catalog_entry *video = &video_storage;
     enum crazypod_video_result result = CRAZYPOD_VIDEO_OK;
     uint32_t duration_ms = 0;
     uint32_t resume_ms = 0;
@@ -582,8 +755,7 @@ enum crazypod_video_result crazypod_video_play(int index)
         current_tick + simulator_dump_seconds * HZ;
 #endif
 
-    video = crazypod_video_catalog_get(index);
-    if(video == NULL) {
+    if(!crazypod_video_catalog_copy(index, &video_storage)) {
         last_video_result = CRAZYPOD_VIDEO_INVALID_FILE;
         return last_video_result;
     }
@@ -817,8 +989,9 @@ cleanup:
         else
             next_resume_ticks = 0;
         crazypod_video_engine_close();
-        crazypod_video_catalog_update_playback(
-            index, next_resume_ticks, duration_ticks);
+        if(crazypod_video_catalog_update_playback(
+               index, next_resume_ticks, duration_ticks))
+            schedule_video_catalog_save();
         crazypod_video_poster_mark_changed();
     }
     else

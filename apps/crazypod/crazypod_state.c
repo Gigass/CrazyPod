@@ -36,6 +36,9 @@
 #define STATE_SAVE_INTERVAL (30 * HZ)
 #define STATE_SAVE_RETRY_INTERVAL (30 * HZ)
 #define STATE_SAVE_MAX_RETRY_SHIFT 3
+#define STATE_SAVE_EVENT 1
+#define STATE_SAVE_DEBOUNCE (HZ / 2)
+#define STATE_SAVE_THREAD_STACK_SIZE (DEFAULT_STACK_SIZE + 0x800)
 #define CRAZYPOD_EQ_GAIN_MIN (-240)
 #define CRAZYPOD_EQ_GAIN_MAX 240
 #define CRAZYPOD_EQ_Q_MIN 1
@@ -580,6 +583,22 @@ static uint32_t saved_queue_count;
 static bool saved_queue_snapshot_valid;
 static unsigned state_save_failures;
 static bool state_dirty;
+static unsigned state_change_generation;
+static struct mutex state_save_mutex;
+static struct event_queue state_save_queue;
+static long state_save_stack[
+    STATE_SAVE_THREAD_STACK_SIZE / sizeof(long)];
+static bool state_save_worker_started;
+static bool state_save_pending;
+
+static void state_save_now(bool force);
+
+static void mark_state_dirty(void)
+{
+    state_dirty = true;
+    ++state_change_generation;
+}
+
 static bool reduce_motion;
 static bool lyrics_mode = true;
 static bool read_ipod_music = true;
@@ -611,6 +630,40 @@ static void state_save_failed(void)
 {
     if(state_save_failures <= STATE_SAVE_MAX_RETRY_SHIFT)
         ++state_save_failures;
+}
+
+static void state_save_thread(void)
+{
+    struct queue_event event;
+
+    while(true) {
+        queue_wait(&state_save_queue, &event);
+        if(event.id != STATE_SAVE_EVENT)
+            continue;
+        sleep(STATE_SAVE_DEBOUNCE > 0 ? STATE_SAVE_DEBOUNCE : 1);
+        mutex_lock(&state_save_mutex);
+        if(state_save_pending) {
+            state_save_pending = false;
+            state_save_now(false);
+        }
+        mutex_unlock(&state_save_mutex);
+    }
+}
+
+static void state_save_worker_init(void)
+{
+    unsigned int thread_id;
+
+    if(state_save_worker_started)
+        return;
+    mutex_init(&state_save_mutex);
+    queue_init(&state_save_queue, false);
+    thread_id = create_thread(
+        state_save_thread, state_save_stack, sizeof(state_save_stack), 0,
+        "crazypod state"
+        IF_PRIO(, PRIORITY_BACKGROUND)
+        IF_COP(, CPU));
+    state_save_worker_started = thread_id != 0;
 }
 
 static uint32_t state_checksum(const struct crazypod_state_disk *state)
@@ -1215,12 +1268,12 @@ static void apply_runtime_settings(void)
      * to the supported "always on" value before applying them. */
     if(global_settings.backlight_timeout < 0) {
         global_settings.backlight_timeout = 0;
-        state_dirty = true;
+        mark_state_dirty();
     }
 #if CONFIG_CHARGING
     if(global_settings.backlight_timeout_plugged < 0) {
         global_settings.backlight_timeout_plugged = 0;
-        state_dirty = true;
+        mark_state_dirty();
     }
 #endif
     sound_set_volume(global_status.volume);
@@ -1337,6 +1390,8 @@ void crazypod_state_load(void)
     int fd;
     bool migrated;
 
+    state_save_worker_init();
+
     resume_elapsed = 0;
     last_saved_elapsed = 0;
     last_save_tick = current_tick;
@@ -1421,7 +1476,7 @@ void crazypod_state_load(void)
 
 void crazypod_state_mark_dirty(void)
 {
-    state_dirty = true;
+    mark_state_dirty();
 }
 
 bool crazypod_state_reduce_motion(void)
@@ -1434,7 +1489,7 @@ void crazypod_state_set_reduce_motion(bool enabled)
     if(reduce_motion == enabled)
         return;
     reduce_motion = enabled;
-    state_dirty = true;
+    mark_state_dirty();
 }
 
 bool crazypod_state_lyrics_mode(void)
@@ -1447,7 +1502,7 @@ void crazypod_state_set_lyrics_mode(bool enabled)
     if(lyrics_mode == enabled)
         return;
     lyrics_mode = enabled;
-    state_dirty = true;
+    mark_state_dirty();
 }
 
 bool crazypod_state_read_ipod_music(void)
@@ -1460,7 +1515,7 @@ void crazypod_state_set_read_ipod_music(bool enabled)
     if(read_ipod_music == enabled)
         return;
     read_ipod_music = enabled;
-    state_dirty = true;
+    mark_state_dirty();
 }
 
 enum crazypod_headphone_popup_style
@@ -1477,14 +1532,14 @@ void crazypod_state_set_headphone_popup_style(
        headphone_popup_style == style)
         return;
     headphone_popup_style = style;
-    state_dirty = true;
+    mark_state_dirty();
 }
 
 void crazypod_state_forget_resume(void)
 {
     resume_elapsed = 0;
     last_saved_elapsed = 0;
-    state_dirty = true;
+    mark_state_dirty();
 }
 
 unsigned long crazypod_state_take_resume_elapsed(void)
@@ -1534,21 +1589,25 @@ static bool save_queue(uint32_t *hash_out, uint32_t *count_out)
     return true;
 }
 
-void crazypod_state_save(bool force)
+static void state_save_now(bool force)
 {
     struct crazypod_state_disk state;
     struct mp3entry *id3;
     uint32_t queue_hash;
     uint32_t queue_count;
     unsigned long elapsed;
+    unsigned save_state_generation;
+    unsigned save_queue_generation;
     int fd;
     int i;
     bool success;
 
     id3 = audio_current_track();
     elapsed = id3 != NULL ? id3->elapsed : resume_elapsed;
+    save_state_generation = state_change_generation;
+    save_queue_generation = crazypod_queue_generation();
     if(!force && !state_dirty &&
-       crazypod_queue_generation() == saved_queue_generation &&
+       save_queue_generation == saved_queue_generation &&
        elapsed / 30000 == last_saved_elapsed / 30000) {
         last_save_tick = current_tick;
         return;
@@ -1556,7 +1615,7 @@ void crazypod_state_save(bool force)
 
     last_save_attempt_tick = current_tick;
     if(saved_queue_snapshot_valid &&
-       crazypod_queue_generation() == saved_queue_generation) {
+       save_queue_generation == saved_queue_generation) {
         queue_hash = saved_queue_hash;
         queue_count = saved_queue_count;
     }
@@ -1643,14 +1702,44 @@ void crazypod_state_save(bool force)
         return;
     }
 
+    if(state_change_generation != save_state_generation ||
+       crazypod_queue_generation() != save_queue_generation) {
+        state_dirty = true;
+        return;
+    }
+
     state_save_failures = 0;
     state_dirty = false;
     last_saved_elapsed = elapsed;
     last_save_tick = current_tick;
-    saved_queue_generation = crazypod_queue_generation();
+    saved_queue_generation = save_queue_generation;
     saved_queue_hash = queue_hash;
     saved_queue_count = queue_count;
     saved_queue_snapshot_valid = true;
+}
+
+void crazypod_state_save(bool force)
+{
+    bool post = false;
+
+    if(force || !state_save_worker_started) {
+        if(state_save_worker_started)
+            mutex_lock(&state_save_mutex);
+        state_save_pending = false;
+        state_save_now(force);
+        if(state_save_worker_started)
+            mutex_unlock(&state_save_mutex);
+        return;
+    }
+
+    mutex_lock(&state_save_mutex);
+    if(!state_save_pending) {
+        state_save_pending = true;
+        post = true;
+    }
+    mutex_unlock(&state_save_mutex);
+    if(post)
+        queue_post(&state_save_queue, STATE_SAVE_EVENT, 0);
 }
 
 void crazypod_state_tick(void)

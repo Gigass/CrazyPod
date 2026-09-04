@@ -372,6 +372,7 @@ void crazypod_system_prompts_usb_connected(intptr_t data)
     crazypod_photos_suspend();
     crazypod_videos_suspend();
     crazypod_music_cancel_scan();
+    crazypod_music_wait_for_scan_idle();
     crazypod_music_require_catalog_validation();
     crazypod_photos_invalidate_catalog();
     crazypod_videos_invalidate_catalog();

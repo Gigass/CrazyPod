@@ -37,6 +37,7 @@ static struct {
     bool toolbar_visible;
     long toolbar_hide_tick;
 } reader_view;
+static void (*books_render_route)(bool transition);
 
 #define READER_TOOLBAR_VISIBLE_TICKS (2 * HZ)
 
@@ -90,6 +91,11 @@ static void reload_reader_page(void)
 int crazypod_books_feature_item_count(
     const struct route_state *state)
 {
+    if(crazypod_books_scan_busy() &&
+       (state->route == BOOKS_ROUTE_RECENTS ||
+        state->route == BOOKS_ROUTE_LIBRARY ||
+        state->route == BOOKS_ROUTE_FAVORITES))
+        return 1;
     switch(state->route) {
     case BOOKS_ROUTE_MENU:
         return has_continue() ? 6 : 5;
@@ -175,6 +181,13 @@ bool crazypod_books_feature_item_title(
     const struct route_state *state, int index,
     const char **title)
 {
+    if(crazypod_books_scan_busy() &&
+       (state->route == BOOKS_ROUTE_RECENTS ||
+        state->route == BOOKS_ROUTE_LIBRARY ||
+        state->route == BOOKS_ROUTE_FAVORITES)) {
+        *title = CP_TR("Loading Library");
+        return true;
+    }
     switch(state->route) {
     case BOOKS_ROUTE_MENU: {
         static const char *const titles[] = {
@@ -331,6 +344,11 @@ bool crazypod_books_feature_activate(
     const struct route_state *state,
     const struct crazypod_books_activation_host *host)
 {
+    if(crazypod_books_scan_busy() &&
+       (state->route == BOOKS_ROUTE_RECENTS ||
+        state->route == BOOKS_ROUTE_LIBRARY ||
+        state->route == BOOKS_ROUTE_FAVORITES))
+        return true;
     const struct crazypod_books_action action =
         crazypod_books_actions_activate(state);
 
@@ -419,6 +437,15 @@ int crazypod_books_feature_reader_wait_ticks(
 bool crazypod_books_feature_service_reader(
     const struct route_state *state, long now)
 {
+    if(state != NULL &&
+       (state->route == BOOKS_ROUTE_RECENTS ||
+        state->route == BOOKS_ROUTE_LIBRARY ||
+        state->route == BOOKS_ROUTE_FAVORITES) &&
+       crazypod_books_workflow_service()) {
+        if(books_render_route != NULL)
+            books_render_route(false);
+        return false;
+    }
     if(state == NULL || state->route != BOOKS_ROUTE_READER ||
        !reader_view.toolbar_visible ||
        reader_view.toolbar_hide_tick == 0 ||
@@ -514,6 +541,7 @@ void crazypod_books_feature_render_preview(
 void crazypod_books_feature_configure_runtime(
     const struct crazypod_books_runtime_host *host)
 {
+    books_render_route = host->render_route;
     const struct crazypod_books_workflow_host internal = {
         .parent = host->parent,
         .metadata_font = host->metadata_font,
