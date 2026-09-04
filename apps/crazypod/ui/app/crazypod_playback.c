@@ -16,6 +16,7 @@
 
 #include "../../crazypod_artwork.h"
 #include "../../crazypod_coverflow.h"
+#include "../../crazypod_l10n.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_playlist.h"
 #include "../../crazypod_runtime_font.h"
