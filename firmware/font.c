@@ -533,7 +533,10 @@ int font_load_ex( const char *path, size_t buf_size, int glyphs )
         }
     }
     if ( open_slot == -1 )
+    {
+        close(fd);
         return -1;
+    }
     font_id = open_slot;
     size_t path_bufsz = MAX(path_len + 1, 64); /* enough size for common case */
     /* allocate mem */
@@ -542,6 +545,7 @@ int font_load_ex( const char *path, size_t buf_size, int glyphs )
                      &buflibops );
     if ( handle <= 0 )
     {
+        close(fd);
         return -1;
     }
     struct buflib_alloc_data *pdata;

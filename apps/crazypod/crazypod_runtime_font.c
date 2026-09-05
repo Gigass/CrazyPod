@@ -21,6 +21,9 @@
 /* Shell faces and a certified theme's faces/line-height variants coexist. */
 #define CRAZYPOD_RUNTIME_FONT_MAX 48
 #define CRAZYPOD_ASSET_FONT_MAX 4
+#if MAXUSERFONTS < CRAZYPOD_RUNTIME_FONT_MAX + CRAZYPOD_ASSET_FONT_MAX + 12
+#error "Rockbox font capacity must cover CrazyPod and the Rockbox UI"
+#endif
 #define CRAZYPOD_FONT_COVERAGE_BYTES 8192
 #define CRAZYPOD_FONT_HEADER_SIZE 36
 #define CRAZYPOD_FONT_LONG_OFFSET_THRESHOLD 0xffdb
@@ -574,6 +577,7 @@ static const lv_font_t *semantic_font_resolve(
             record_error(
                 "font fallback load failed", family_value, size,
                 weight, line_height, path);
+            font_unload(available->font_id);
             memset(available, 0, sizeof(*available));
             return NULL;
         }
