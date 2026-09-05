@@ -436,6 +436,12 @@ void crazypod_notes_feature_service_editor(void)
     crazypod_notes_controller_service();
 }
 
+void crazypod_notes_feature_save_draft(void)
+{
+    if(crazypod_notes_controller_dirty())
+        crazypod_notes_controller_save_draft();
+}
+
 uint32_t crazypod_notes_feature_commit_editor(void)
 {
     return crazypod_notes_controller_commit();

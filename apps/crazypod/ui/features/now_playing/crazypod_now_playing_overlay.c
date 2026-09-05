@@ -1589,7 +1589,8 @@ void crazypod_now_playing_overlay_activate(void)
     if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE) {
         if(now_queue_selected >= 0 &&
            now_queue_selected < crazypod_queue_count()) {
-            playlist_start(now_queue_selected, 0, 0);
+            if(overlay_host.select_queue_item != NULL)
+                overlay_host.select_queue_item(now_queue_selected);
             crazypod_state_forget_resume();
             crazypod_state_mark_dirty();
             dismiss_now_overlay(true);

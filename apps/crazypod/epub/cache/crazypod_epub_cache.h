@@ -15,20 +15,29 @@
 #endif
 
 #define CRAZYPOD_EPUB_CHAPTER_MAX 128
+#define CRAZYPOD_EPUB_IMAGE_MAX 128
 
 struct crazypod_epub_cache_chapter {
     uint32_t offset;
     char title[96];
 };
 
+struct crazypod_epub_cache_image {
+    uint32_t offset;
+    char path[MAX_PATH];
+};
+
 struct crazypod_epub_cache_book {
     uint32_t text_size;
     uint32_t chapter_count;
+    uint32_t image_count;
     char title[96];
     char author[96];
     char cover_path[MAX_PATH];
     struct crazypod_epub_cache_chapter
         chapters[CRAZYPOD_EPUB_CHAPTER_MAX];
+    struct crazypod_epub_cache_image
+        images[CRAZYPOD_EPUB_IMAGE_MAX];
 };
 
 struct crazypod_epub_cache_info {

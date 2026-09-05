@@ -40,6 +40,9 @@
 #define CRAZYPOD_FAVORITES_TEMP \
     CRAZYPOD_STATE_DIRECTORY "/favorites.tmp"
 #define CRAZYPOD_FAVORITES_NAME CP_TR("My Favorites")
+#define FAVORITE_SAVE_EVENT 1
+#define FAVORITE_SAVE_DEBOUNCE (HZ / 2)
+#define FAVORITE_SAVE_STACK_SIZE (DEFAULT_STACK_SIZE + 0x800)
 #define CRAZYPOD_MUSIC_CACHE_MAGIC 0x43504d4cu
 #define CRAZYPOD_MUSIC_CACHE_VERSION 7u
 
@@ -102,11 +105,37 @@ static unsigned catalog_epoch;
 static unsigned search_cache_generation;
 static long scan_stack[(DEFAULT_STACK_SIZE + 0x3000) / sizeof(long)];
 static struct mutex catalog_mutex;
+static struct mutex catalog_io_mutex;
+static struct event_queue favorite_save_queue;
+static long favorite_save_stack[
+    FAVORITE_SAVE_STACK_SIZE / sizeof(long)];
+static bool favorite_save_worker_started;
+static bool favorite_save_pending;
 
 static void wait_for_scan_resume(void);
 static int compare_track_order(const struct crazypod_track *left,
                                const struct crazypod_track *right);
 static void load_favorites(void);
+static bool save_favorites(void);
+
+static void favorite_save_thread(void)
+{
+    struct queue_event event;
+
+    while(true) {
+        queue_wait(&favorite_save_queue, &event);
+        if(event.id != FAVORITE_SAVE_EVENT)
+            continue;
+        sleep(FAVORITE_SAVE_DEBOUNCE > 0 ? FAVORITE_SAVE_DEBOUNCE : 1);
+        mutex_lock(&catalog_mutex);
+        if(favorite_save_pending) {
+            favorite_save_pending = false;
+            if(catalog_ready)
+                (void)save_favorites();
+        }
+        mutex_unlock(&catalog_mutex);
+    }
+}
 
 static uint32_t checksum_update(uint32_t hash, const void *data, size_t size)
 {
@@ -352,9 +381,11 @@ static bool music_cache_load(void)
 static bool music_cache_save(unsigned expected_epoch)
 {
     struct music_cache_header header;
-    bool complete;
+    bool complete = false;
+    bool saved = false;
     int fd;
 
+    mutex_lock(&catalog_io_mutex);
     mkdir(CRAZYPOD_STATE_DIRECTORY);
     mkdir(CRAZYPOD_CACHE_DIRECTORY);
     memset(&header, 0, sizeof(header));
@@ -372,12 +403,12 @@ static bool music_cache_save(unsigned expected_epoch)
 
     wait_for_scan_resume();
     if(scan_abort_requested)
-        return false;
+        goto out;
     remove(CRAZYPOD_MUSIC_CACHE_TEMP);
     fd = open(CRAZYPOD_MUSIC_CACHE_TEMP,
               O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)
-        return false;
+        goto out;
     complete =
         write_exact_while_scanning(fd, &header, sizeof(header)) &&
         write_exact_while_scanning(
@@ -404,9 +435,12 @@ static bool music_cache_save(unsigned expected_epoch)
     mutex_unlock(&catalog_mutex);
     if(!complete) {
         remove(CRAZYPOD_MUSIC_CACHE_TEMP);
-        return false;
+        goto out;
     }
-    return true;
+    saved = true;
+out:
+    mutex_unlock(&catalog_io_mutex);
+    return saved;
 }
 
 static void wait_for_scan_resume(void)
@@ -1256,7 +1290,19 @@ static int compare_track_order(const struct crazypod_track *left,
 
 void crazypod_music_init(void)
 {
+    unsigned int thread_id;
+
     mutex_init(&catalog_mutex);
+    mutex_init(&catalog_io_mutex);
+    queue_init(&favorite_save_queue, false);
+    thread_id = create_thread(
+        favorite_save_thread, favorite_save_stack,
+        sizeof(favorite_save_stack), 0,
+        "crazypod favorites"
+        IF_PRIO(, PRIORITY_BACKGROUND)
+        IF_COP(, CPU));
+    favorite_save_worker_started = thread_id != 0;
+    favorite_save_pending = false;
     crazypod_music_storage_release(&catalog_storage);
     crazypod_music_storage_init(&catalog_storage);
     track_count = 0;
@@ -1564,12 +1610,24 @@ bool crazypod_music_take_catalog_stale(void)
 
 void crazypod_music_cancel_scan(void)
 {
-    if(!scanning && !validating)
-        return;
+    /* Cancellation is a request, not a UI barrier.  The worker checks this
+     * flag before and during every directory/file operation and owns its
+     * temporary storage until it publishes the result. */
+    if(scanning || validating)
+        scan_abort_requested = true;
+}
 
-    scan_abort_requested = true;
-    while(scanning || validating)
-        yield();
+void crazypod_music_wait_for_scan_idle(void)
+{
+    bool active;
+
+    do {
+        mutex_lock(&catalog_mutex);
+        active = scanning || validating;
+        mutex_unlock(&catalog_mutex);
+        if(active)
+            yield();
+    } while(active);
 }
 
 bool crazypod_music_is_scanning(void)
@@ -1601,6 +1659,10 @@ crazypod_music_scan_failure_reason(void)
 void crazypod_music_invalidate_catalog(void)
 {
     mutex_lock(&catalog_mutex);
+    /* Abort an in-flight save before touching its transaction files. The
+     * cache writer checks this flag again while committing, so invalidation
+     * never waits behind a full-library write on the UI thread. */
+    scan_abort_requested = true;
     ++catalog_epoch;
     catalog_ready = false;
     catalog_validation =
@@ -1856,13 +1918,12 @@ bool crazypod_music_toggle_favorite(const char *path)
 {
     int track_index;
     int position;
-    bool existed;
+    bool post = false;
     bool changed = false;
 
     mutex_lock(&catalog_mutex);
     track_index = catalog_ready && path != NULL
         ? find_track_by_path(path) : -1;
-    existed = favorites_playlist_exists;
     if(track_index < 0)
         goto out;
     position = favorite_position(track_index);
@@ -1872,12 +1933,6 @@ bool crazypod_music_toggle_favorite(const char *path)
         favorite_track_indices[favorite_track_count++] =
             (uint32_t)track_index;
         refresh_favorites_playlist();
-        if(!save_favorites()) {
-            --favorite_track_count;
-            favorites_playlist_exists = existed;
-            refresh_favorites_playlist();
-            goto out;
-        }
         favorites_playlist_exists = true;
     }
     else {
@@ -1890,24 +1945,19 @@ bool crazypod_music_toggle_favorite(const char *path)
                 favorite_track_indices[next + 1];
         --favorite_track_count;
         refresh_favorites_playlist();
-        if(!save_favorites()) {
-            for(next = favorite_track_count;
-                next > position;
-                --next)
-                favorite_track_indices[next] =
-                    favorite_track_indices[next - 1];
-            favorite_track_indices[position] =
-                (uint32_t)track_index;
-            favorites_playlist_exists = existed;
-            ++favorite_track_count;
-            refresh_favorites_playlist();
-            goto out;
-        }
     }
     refresh_favorites_playlist();
+    if(favorite_save_worker_started && !favorite_save_pending) {
+        favorite_save_pending = true;
+        post = true;
+    }
+    else if(!favorite_save_worker_started)
+        (void)save_favorites();
     changed = true;
 out:
     mutex_unlock(&catalog_mutex);
+    if(post)
+        queue_post(&favorite_save_queue, FAVORITE_SAVE_EVENT, 0);
     return changed;
 }
 

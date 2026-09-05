@@ -69,6 +69,39 @@ static void run_cartridge(bool color)
     assert(!crazypod_gameboy_core_frame(0, true));
 }
 
+static void run_mbc2(void)
+{
+    /* MBC2 RAM stores only the low nibble and mirrors every 0x200 bytes. */
+    static const uint8_t program[] = {
+        0x31, 0xfe, 0xff,
+        0x3e, 0x0a, 0xea, 0x00, 0x00, /* enable MBC2 RAM */
+        0x3e, 0xab, 0xea, 0x00, 0xa0, /* write low nibble */
+        0xfa, 0x00, 0xa0, 0xea, 0x00, 0xc0, /* read back */
+        0x18, 0xfe
+    };
+    struct crazypod_gameboy_cartridge cart;
+    unsigned frame;
+
+    memset(rom_data, 0, sizeof(rom_data));
+    memset(save_ram, 0xff, sizeof(save_ram));
+    rom_data[0x100] = 0xc3;
+    rom_data[0x101] = 0x50;
+    rom_data[0x102] = 0x01;
+    rom_data[0x147] = 0x06;
+    rom_data[0x149] = 0;
+    memcpy(rom_data + 0x150, program, sizeof(program));
+    assert(crazypod_gameboy_cartridge_probe(
+        rom_data, sizeof(rom_data), sizeof(rom_data), &cart));
+    assert(cart.mapper == 2 && cart.battery && cart.ram_size == 512);
+    assert(crazypod_gameboy_core_open(
+        rom_data, sizeof(rom_data), save_ram, audio));
+    for(frame = 0; frame < 8; ++frame)
+        assert(crazypod_gameboy_core_frame(0, false));
+    assert(save_ram[0] == 0x0b);
+    assert(save_ram[0x200] == 0xff);
+    crazypod_gameboy_core_close();
+}
+
 int main(void)
 {
     struct crazypod_gameboy_cartridge cart;
@@ -80,6 +113,7 @@ int main(void)
     assert(!crazypod_gameboy_path_supported(NULL));
     run_cartridge(false);
     run_cartridge(true);
+    run_mbc2();
     assert(audio_samples > 0);
     /* An illegal opcode stops before subsequent SRAM writes execute. */
     rom_data[0x150] = 0xd3;
@@ -99,6 +133,15 @@ int main(void)
     rom_data[0x147] = 0xfc;
     assert(!crazypod_gameboy_cartridge_probe(
         rom_data, sizeof(rom_data), sizeof(rom_data), &cart));
+    rom_data[0x147] = 1;
+    rom_data[0x149] = 1;
+    assert(crazypod_gameboy_cartridge_probe(
+        rom_data, sizeof(rom_data), sizeof(rom_data), &cart));
+    assert(cart.ram_size == 2048);
+    rom_data[0x148] = 0x52;
+    assert(crazypod_gameboy_cartridge_probe(
+        rom_data, sizeof(rom_data), 72u * 16u * 1024u, &cart));
+    assert(cart.rom_size == 72u * 16u * 1024u);
     puts("Game Boy core: GB/GBC boot, SRAM, input, RTC and validation pass");
     return 0;
 }

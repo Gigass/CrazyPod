@@ -787,11 +787,6 @@
         "apps/crazypod/crazypod_epub.c:746"
       ]
     },
-    "Book ready": {
-      "locations": [
-        "apps/crazypod/crazypod_epub.c:674"
-      ]
-    },
     "Bookmarks": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:149"
@@ -1996,6 +1991,11 @@
     "Home, menu and lock pictures": {
       "locations": [
         "apps/crazypod/ui/features/customize/crazypod_customize_preview.c:132"
+      ]
+    },
+    "Image unavailable": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_screen.c:369"
       ]
     },
     "I": {
@@ -4539,7 +4539,7 @@
         "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
       ]
     },
-    "Unsupported or damaged GB/GBC ROM": {
+    "Unsupported or damaged Game Boy ROM": {
       "locations": [
         "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
         "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
@@ -4569,10 +4569,12 @@
         "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c"
       ]
     },
-    "GB / GBC": {
+    "Game Boy": {
       "keepEnglish": true,
       "locations": [
-        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c"
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c",
+        "apps/crazypod/ui/features/miniapps/crazypod_miniapps_feature.c",
+        "apps/crazypod/ui/shell/crazypod_app_catalog.c"
       ]
     }
   }

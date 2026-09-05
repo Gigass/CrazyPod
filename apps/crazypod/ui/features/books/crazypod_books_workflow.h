@@ -23,6 +23,7 @@ void crazypod_books_workflow_configure(
 void crazypod_books_workflow_reset_view(void);
 void crazypod_books_workflow_invalidate_metadata(void);
 void crazypod_books_workflow_ensure_metadata(void);
+bool crazypod_books_workflow_service(void);
 void crazypod_books_workflow_apply_font_size(int value);
 void crazypod_books_workflow_begin_reader(
     int index, uint32_t offset);

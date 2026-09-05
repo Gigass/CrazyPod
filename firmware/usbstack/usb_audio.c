@@ -931,6 +931,10 @@ static void playback_audio_get_more(const void **start, size_t *size)
     restore_irq(oldlevel);
 }
 
+static const struct mixer_play_cbs playback_audio_mixer_cbs = {
+    .get_more = playback_audio_get_more,
+};
+
 static void __attribute__((unused)) usb_audio_start_playback(void)
 {
 #ifdef HAVE_PCM_CODEC_IDLE
@@ -1908,7 +1912,7 @@ void usb_audio_transfer_complete(int ep, int dir, int status, int length)
     if (restart)
     {
         mixer_channel_play_data(PCM_MIXER_CHAN_USBAUDIO,
-                                playback_audio_get_more, NULL, 0);
+                                &playback_audio_mixer_cbs, NULL, 0);
     }
 
     /* The mixer took its own reservation while the startup reservation kept
@@ -2005,7 +2009,9 @@ bool usb_audio_fast_transfer_complete(int ep, int dir, int status, int length)
             playback_restart_pending = true;
             defer_restart = true;
 #else
-            mixer_channel_play_data(PCM_MIXER_CHAN_USBAUDIO, playback_audio_get_more, NULL, 0);
+            mixer_channel_play_data(
+                PCM_MIXER_CHAN_USBAUDIO,
+                &playback_audio_mixer_cbs, NULL, 0);
 #endif
         }
         restore_irq(oldlevel);

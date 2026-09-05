@@ -77,7 +77,7 @@ void mixer_channel_play_data(int channel, const struct mixer_play_cbs *callbacks
                              const void *data, size_t size)
 {
     assert(channel == 0 && locks > 0 && data != NULL && size > 0);
-    pcm_callback = callbacks->get_more;
+    pcm_callback = callbacks != NULL ? callbacks->get_more : NULL;
 }
 void mixer_channel_stop(int channel) { assert(channel == 0); pcm_callback = NULL; }
 void mixer_channel_set_amplitude(int channel, unsigned amplitude)

@@ -240,13 +240,36 @@ bool crazypod_epub_extract_attribute(
     size_t name_length = strlen(name);
 
     while(cursor < end) {
-        const char *match = strstr(cursor, name);
+        const char *match = cursor;
         const char *value;
         char quote;
         size_t length;
 
+        while(match < end &&
+              crazypod_epub_ascii_lower((unsigned char)*match) !=
+              crazypod_epub_ascii_lower((unsigned char)name[0]))
+            ++match;
         if(match == NULL || match >= end)
             return false;
+        if(match + name_length > end) {
+            cursor = match + 1;
+            continue;
+        }
+        {
+            size_t i;
+
+            for(i = 0; i < name_length; ++i) {
+                if(crazypod_epub_ascii_lower(
+                       (unsigned char)match[i]) !=
+                   crazypod_epub_ascii_lower(
+                       (unsigned char)name[i]))
+                    break;
+            }
+            if(i != name_length) {
+                cursor = match + 1;
+                continue;
+            }
+        }
         if(match > start &&
            ((match[-1] >= 'A' && match[-1] <= 'Z') ||
             (match[-1] >= 'a' && match[-1] <= 'z') ||

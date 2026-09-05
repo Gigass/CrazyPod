@@ -416,6 +416,8 @@ static void close_product(void)
     if(crazypod_coverflow_active())
         crazypod_coverflow_leave();
     crazypod_app_launcher_cancel_pending();
+    crazypod_notes_feature_save_draft();
+    crazypod_organizer_feature_pause_workout(current_tick);
     crazypod_music_library_leave(current_tick);
     crazypod_artwork_cancel_product_requests();
     if(crazypod_miniapps_feature_is_open()) {
@@ -475,6 +477,10 @@ static void dock_connected(void)
         return;
     if(crazypod_lock_screen_is_locked())
         return;
+    /* Dock insertion is an external route change.  Do not let a button
+     * gesture that started in the previous product continue on Now Playing.
+     */
+    crazypod_app_input_cancel_pending();
     backlight_on();
     crazypod_app_launcher_open_now_playing();
 }

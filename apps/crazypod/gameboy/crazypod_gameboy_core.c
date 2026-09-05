@@ -18,11 +18,13 @@ static int16_t samples[2048];
 static void (*submit_audio)(const int16_t *, size_t);
 static bool running;
 static bool draw_frame;
+static unsigned rtc_frame_phase;
 
 void die(char *message, ...)
 {
     (void)message;
     running = false;
+    rtc_frame_phase = 0;
 }
 
 int rockboy_pcm_submit(void)
@@ -71,7 +73,9 @@ bool crazypod_gameboy_core_open(
     mbc.batt = cart.battery;
     mbc.romsize = cart.rom_size / 16384;
     /* A safe scratch bank also covers writes by RAM-less cartridges. */
-    mbc.ramsize = cart.ram_size > 0 ? cart.ram_size / 8192 : 1;
+    mbc.ramsize = cart.ram_size > 0 ?
+        (cart.ram_size + 8191) / 8192 : 1;
+    mbc.ram_bytes = (int)cart.ram_size;
     mbc.rombank = 1;
     hw.cgb = cart.color;
     rtc.batt = cart.clock;
@@ -113,7 +117,13 @@ bool crazypod_gameboy_core_frame(uint8_t buttons, bool render)
     cpu_emulate(2280);
     while(running && R_LY > 0 && R_LY < 144 && ++steps < 2048)
         cpu_emulate(cpu.lcdc > 0 ? cpu.lcdc : 1);
-    rtc_tick();
+    /* 70224 dots are one emulated frame.  Convert the nominal 59.7275 Hz
+     * frame rate to the RTC's 60 Hz tick without accumulating drift. */
+    rtc_frame_phase += 70224u * 60u;
+    while(rtc_frame_phase >= 4194304u) {
+        rtc_tick();
+        rtc_frame_phase -= 4194304u;
+    }
     sound_mix();
     if(!(R_LCDC & 0x80))
         cpu_emulate(32832);
@@ -132,6 +142,7 @@ const uint16_t *crazypod_gameboy_core_pixels(void)
 void crazypod_gameboy_core_close(void)
 {
     running = false;
+    rtc_frame_phase = 0;
     submit_audio = NULL;
     pcm.buf = NULL;
     rom.bank = NULL;

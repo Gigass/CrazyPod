@@ -17,6 +17,7 @@ struct crazypod_iap_diagnostics {
     uint32_t uart_parity_errors;
     uint32_t uart_frame_errors;
     uint32_t uart_breaks;
+    uint32_t uart_tx_timeouts;
 };
 
 bool crazypod_iap_simple_handle_event(long event, intptr_t data);

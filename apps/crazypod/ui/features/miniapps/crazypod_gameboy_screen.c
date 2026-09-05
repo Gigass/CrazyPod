@@ -107,7 +107,7 @@ static void draw_menu(int selected, bool save_failed)
     int i;
 
     memset(target, 0, LCD_WIDTH * LCD_HEIGHT * sizeof(*target));
-    crazypod_lcd_draw_text(CP_TR("GB / GBC"), 18, 16, 304, 0xffffff);
+    crazypod_lcd_draw_text(CP_TR("Game Boy"), 18, 16, 304, 0xffffff);
     for(i = 0; i < 4; ++i) {
         if(i == selected)
             crazypod_lcd_draw_text(">", 18, 54 + 28 * i, 34, 0x69bfff);
@@ -157,14 +157,18 @@ const char *crazypod_gameboy_screen_error(
     switch(result) {
     case CRAZYPOD_GAMEBOY_OK: return "";
     case CRAZYPOD_GAMEBOY_BAD_ROM:
-        return CP_TR("Unsupported or damaged GB/GBC ROM");
+        return CP_TR("Unsupported or damaged Game Boy ROM");
+    case CRAZYPOD_GAMEBOY_ROM_IO_ERROR:
+        return CP_TR("Game Boy ROM could not be read");
     case CRAZYPOD_GAMEBOY_NO_MEMORY:
         return CP_TR("Not enough memory for this game");
     case CRAZYPOD_GAMEBOY_BAD_SAVE:
         return CP_TR("Game save is damaged; original preserved");
     case CRAZYPOD_GAMEBOY_CORE_ERROR:
         return CP_TR("Game emulation stopped");
-    default: return CP_TR("Game file or save could not be written/read");
+    case CRAZYPOD_GAMEBOY_IO_ERROR:
+        return CP_TR("Game save could not be read or written");
+    default: return CP_TR("Game file error");
     }
 }
 
@@ -315,8 +319,11 @@ cleanup:
     game_audio_stop();
     crazypod_gameboy_close();
     mixer_set_frequency(old_frequency);
-    if(!crazypod_audio_reserve_acquire())
-        panicf("audio reserve after gameboy");
+    /* Exiting a game must remain recoverable even when the heap is
+     * fragmented by the emulator.  The audio reserve is opportunistic here;
+     * a later music start can report the resource failure without killing
+     * the whole UI. */
+    (void)crazypod_audio_reserve_acquire();
     if(!started && (old_audio_state & AUDIO_STATUS_PLAY)) {
         audio_play(old_elapsed, old_offset);
         if(old_audio_state & AUDIO_STATUS_PAUSE)

@@ -34,6 +34,7 @@
 #include "crazypod_app_launcher.h"
 #include "crazypod_choice_coordinator.h"
 #include "crazypod_menu_preview.h"
+#include "crazypod_playback.h"
 #include "crazypod_route_actions.h"
 
 #define PREVIEW_SETTLE_TICKS \
@@ -48,6 +49,10 @@ static bool overlay_transition;
 static bool overlay_failed;
 static enum crazypod_app_id reorder_preferred =
     CRAZYPOD_APP_INVALID;
+
+static bool queue_music_selection(
+    enum crazypod_music_scope scope, int group_index,
+    int selected_index, const char *query, bool *deferred);
 
 static struct route_state *current_route(void)
 {
@@ -198,45 +203,55 @@ void crazypod_route_actions_pop(void)
 static void play_selected_track(struct route_state *state)
 {
     bool started = false;
+    bool deferred = false;
 
     switch(state->route) {
     case MUSIC_ROUTE_ALL:
     case MUSIC_ROUTE_SONGS:
-        started = crazypod_music_play(
-            CRAZYPOD_SCOPE_ALL, 0, state->selected);
+        started = queue_music_selection(
+            CRAZYPOD_SCOPE_ALL, 0, state->selected, NULL,
+            &deferred);
         break;
     case MUSIC_ROUTE_PLAYLIST_SONGS:
-        started = crazypod_music_play(
+        started = queue_music_selection(
             CRAZYPOD_SCOPE_PLAYLIST,
-            state->group, state->selected);
+            state->group, state->selected, NULL, &deferred);
         break;
     case MUSIC_ROUTE_ARTIST_SONGS:
-        started = crazypod_music_play(
+        started = queue_music_selection(
             CRAZYPOD_SCOPE_ARTIST,
-            state->group, state->selected);
+            state->group, state->selected, NULL, &deferred);
         break;
     case MUSIC_ROUTE_ALBUM_SONGS:
-        started = crazypod_music_play(
+        started = queue_music_selection(
             CRAZYPOD_SCOPE_ALBUM,
-            state->group, state->selected);
+            state->group, state->selected, NULL, &deferred);
         break;
     case MUSIC_ROUTE_QUEUE:
         if(state->selected >= 0 &&
            state->selected < crazypod_queue_count()) {
-            playlist_start(state->selected, 0, 0);
+            if(crazypod_playback_commands_ready()) {
+                crazypod_playback_select_async(state->selected);
+                deferred = true;
+            }
+            else
+                playlist_start(state->selected, 0, 0);
             started = true;
         }
         break;
     case MUSIC_ROUTE_SEARCH_RESULTS:
-        started = crazypod_music_play_search(
-            crazypod_music_search_query(), state->selected);
+        started = queue_music_selection(
+            CRAZYPOD_SCOPE_SEARCH, 0, state->selected,
+            crazypod_music_search_query(), &deferred);
         break;
     default:
         break;
     }
-    if(started) {
+    if(started && !deferred) {
         crazypod_state_forget_resume();
         crazypod_state_mark_dirty();
+    }
+    if(started) {
         crazypod_route_actions_request_now_playing();
     }
     else {
@@ -350,7 +365,7 @@ static void persist_main_menu(
         next = 0;
     crazypod_desktop_set_selected(next, false);
     crazypod_state_mark_dirty();
-    crazypod_state_save(true);
+    crazypod_state_save(false);
 }
 
 enum crazypod_app_id crazypod_route_actions_selected_app(void)
@@ -475,6 +490,40 @@ static void reset_open_note_reader(uint32_t id)
     open_note_reader(id);
 }
 
+static bool queue_music_selection(
+    enum crazypod_music_scope scope, int group_index,
+    int selected_index, const char *query, bool *deferred)
+{
+    *deferred = false;
+    if(crazypod_playback_commands_ready()) {
+        *deferred = true;
+        return crazypod_playback_select_music_async(
+            scope, group_index, selected_index, query);
+    }
+    return scope == CRAZYPOD_SCOPE_SEARCH
+        ? crazypod_music_play_search(query, selected_index)
+        : crazypod_music_play(scope, group_index, selected_index);
+}
+
+static bool play_music_track(int library_index)
+{
+    bool started;
+    bool deferred;
+
+    started = queue_music_selection(
+        CRAZYPOD_SCOPE_ALL, 0, library_index, NULL, &deferred);
+
+    if(started && !deferred) {
+        crazypod_state_forget_resume();
+        crazypod_state_mark_dirty();
+    }
+    if(!started)
+        crazypod_notification_show(
+            CRAZYPOD_NOTIFICATION_ERROR,
+            CP_TR("No track available"));
+    return started;
+}
+
 static bool activate_music(
     struct route_state *state, long now)
 {
@@ -497,6 +546,7 @@ static bool activate_music(
                 crazypod_route_actions_request_now_playing,
             .show_now_actions =
                 crazypod_now_playing_overlay_show_actions,
+            .play_track = play_music_track,
         };
 
         return crazypod_music_feature_activate(

@@ -40,6 +40,7 @@ bool crazypod_photo_controller_take_pan_render(void);
 void crazypod_photo_controller_note_direction(long now);
 
 void crazypod_photo_controller_begin_select(bool valid, long now);
+void crazypod_photo_controller_cancel_select(void);
 void crazypod_photo_controller_release_select(
     bool *activate, bool *remove_progress);
 enum crazypod_photo_controller_event crazypod_photo_controller_tick(

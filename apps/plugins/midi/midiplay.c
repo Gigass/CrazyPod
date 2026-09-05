@@ -490,6 +490,10 @@ static void get_more(const void** start, size_t* size)
     *size = samples_in_buf*sizeof(int32_t);
 }
 
+static const struct mixer_play_cbs mixer_cbs = {
+    .get_more = get_more,
+};
+
 static int midimain(const void * filename)
 {
     int a, notes_used, vol;
@@ -578,7 +582,8 @@ static int midimain(const void * filename)
 #endif
 
     rb->pcmbuf_fade(false, true);
-    rb->mixer_channel_play_data(PCM_MIXER_CHAN_PLAYBACK, get_more, NULL, 0);
+    rb->mixer_channel_play_data(
+        PCM_MIXER_CHAN_PLAYBACK, &mixer_cbs, NULL, 0);
 
     while (!quit)
     {
@@ -637,7 +642,8 @@ static int midimain(const void * filename)
 #endif
                 midi_debug("Rewind to %d:%02d\n", playing_time/60, playing_time%60);
                 if (is_playing)
-                    rb->mixer_channel_play_data(PCM_MIXER_CHAN_PLAYBACK, get_more, NULL, 0);
+                    rb->mixer_channel_play_data(
+                        PCM_MIXER_CHAN_PLAYBACK, &mixer_cbs, NULL, 0);
                 break;
             }
 
@@ -659,7 +665,8 @@ static int midimain(const void * filename)
 #endif
                 midi_debug("Skip to %d:%02d\n", playing_time/60, playing_time%60);
                 if (is_playing)
-                    rb->mixer_channel_play_data(PCM_MIXER_CHAN_PLAYBACK, get_more, NULL, 0);
+                    rb->mixer_channel_play_data(
+                        PCM_MIXER_CHAN_PLAYBACK, &mixer_cbs, NULL, 0);
                 break;
             }
 

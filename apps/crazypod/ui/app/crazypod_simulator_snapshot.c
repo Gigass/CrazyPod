@@ -686,6 +686,7 @@ static bool open_now_playing_theme_real_library(
     const char *id)
 {
     crazypod_music_cancel_scan();
+    crazypod_music_wait_for_scan_idle();
     crazypod_music_scan();
     if(crazypod_music_track_count() <= 0 ||
        !crazypod_music_play(CRAZYPOD_SCOPE_ALL, 0, 0))
@@ -705,6 +706,7 @@ static bool build_now_playing_theme_media_catalog(
     const struct crazypod_simulator_snapshot_host *host)
 {
     crazypod_music_cancel_scan();
+    crazypod_music_wait_for_scan_idle();
     crazypod_music_scan();
     return crazypod_music_track_count() >= 2 &&
         open_now_playing_theme_snapshot(host, NULL);

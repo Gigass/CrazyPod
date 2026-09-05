@@ -28,6 +28,7 @@
 #include "audio.h"
 #include "sound.h"
 #include "general.h"
+#include "panic.h"
 #include "pcm-internal.h"
 #include "pcm_mixer.h"
 
@@ -91,6 +92,10 @@ static struct pcm_sink* sinks[PCM_SINK_NUM] = {
 };
 static enum pcm_sink_ids cur_sink = PCM_SINK_BUILTIN;
 static struct mutex sink_mutex; /* protects sinks and cur_sink */
+/* mixer_start_pcm() can enter the PCM API while already holding this lock. */
+static unsigned int sink_lock_owner;
+static unsigned int sink_lock_depth;
+static struct pcm_sink *sink_lock_target;
 
 /* The registered callback function to ask for more mp3 data */
 volatile pcm_play_callback_type
@@ -144,6 +149,18 @@ bool pcm_play_dma_complete_callback(enum pcm_dma_status status,
 }
 #endif /* !HAVE_SW_VOLUME_CONTROL || PCM_SW_VOLUME_UNBUFFERED */
 
+/* Apply settings with sink_mutex already held. */
+static void pcm_apply_settings_locked(void)
+{
+    struct pcm_sink* sink = sinks[cur_sink];
+
+    if(sink->pending_freq != sink->configured_freq) {
+        logf(" sink->set_freq");
+        sink->ops.set_freq(sink->pending_freq);
+        sink->configured_freq = sink->pending_freq;
+    }
+}
+
 static bool pcm_play_data_start_int(const void *addr, size_t size,
                                     bool power_prepared)
 {
@@ -151,7 +168,8 @@ static bool pcm_play_data_start_int(const void *addr, size_t size,
 
     if ((addr && size) || pcm_get_more_int(&addr, &size))
     {
-        pcm_apply_settings();
+        /* pcm_play_data_start_int() is called with pcm_play_lock held. */
+        pcm_apply_settings_locked();
 #ifdef HAVE_PCM_CODEC_IDLE
         if (power_prepared)
             pcm_play_dma_commit_prepare();
@@ -274,13 +292,29 @@ bool pcm_is_playing(void)
  */
 
 void pcm_play_lock(void) {
+    unsigned int owner = thread_self();
+
+    if (sink_lock_depth > 0 && sink_lock_owner == owner) {
+        ++sink_lock_depth;
+        return;
+    }
+
     mutex_lock(&sink_mutex);
-    sinks[cur_sink]->ops.lock();
-    /* hold sink_mutex until pcm_play_unlock() */
+    sink_lock_target = sinks[cur_sink];
+    sink_lock_target->ops.lock();
+    sink_lock_owner = owner;
+    sink_lock_depth = 1;
 }
 
 void pcm_play_unlock(void) {
-    sinks[cur_sink]->ops.unlock();
+    if(sink_lock_owner != thread_self() || sink_lock_depth == 0)
+        panicf("pcm_play_unlock without matching lock");
+    if (--sink_lock_depth > 0)
+        return;
+
+    sink_lock_target->ops.unlock();
+    sink_lock_target = NULL;
+    sink_lock_owner = 0;
     mutex_unlock(&sink_mutex);
 }
 
@@ -332,12 +366,15 @@ const struct pcm_sink_caps* pcm_current_sink_caps(void)
 
 bool pcm_switch_sink(enum pcm_sink_ids sink)
 {
+    pcm_play_lock();
     logf("pcm_switch_sink %d to %d", cur_sink, sink);
     if(sink >= ARRAYLEN(sinks)) {
+        pcm_play_unlock();
         return false;
     }
 
     if(cur_sink == sink) {
+        pcm_play_unlock();
         return true;
     }
 #ifdef HAVE_PCM_CODEC_IDLE
@@ -352,10 +389,15 @@ bool pcm_switch_sink(enum pcm_sink_ids sink)
     struct pcm_sink* old_sink = sinks[cur_sink];
     /* update sink index */
     cur_sink = sink;
-    /* synchronize frequency */
+    /* synchronize frequency without dropping sink_mutex. */
     unsigned long cur_sampr = old_sink->caps.samprs[old_sink->pending_freq];
-    pcm_set_frequency(cur_sampr);
-    pcm_apply_settings();
+    int index = round_value_to_list32(
+        cur_sampr, sinks[cur_sink]->caps.samprs,
+        sinks[cur_sink]->caps.num_samprs, false);
+    if(cur_sampr != sinks[cur_sink]->caps.samprs[index])
+        index = sinks[cur_sink]->caps.default_freq;
+    sinks[cur_sink]->pending_freq = index;
+    pcm_apply_settings_locked();
     /* when playing, continue playing on new sink */
     if(pcm_playing) {
         old_sink->ops.stop();
@@ -377,6 +419,7 @@ bool pcm_switch_sink(enum pcm_sink_ids sink)
         }
     }
 
+    pcm_play_unlock();
     return true;
 }
 
@@ -494,12 +537,7 @@ void pcm_apply_settings(void)
     pcm_wait_for_init();
 
     mutex_lock(&sink_mutex);
-    struct pcm_sink* sink = sinks[cur_sink];
-    if(sink->pending_freq != sink->configured_freq) {
-        logf(" sink->set_freq");
-        sink->ops.set_freq(sink->pending_freq);
-        sink->configured_freq = sink->pending_freq;
-    }
+    pcm_apply_settings_locked();
     mutex_unlock(&sink_mutex);
 }
 

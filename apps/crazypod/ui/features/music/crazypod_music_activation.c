@@ -7,7 +7,6 @@
 #include <string.h>
 
 #include "../../../crazypod_music.h"
-#include "../../../crazypod_state.h"
 #include "../../presentation/crazypod_ui_text.h"
 #include "crazypod_music_activation.h"
 
@@ -150,14 +149,10 @@ crazypod_music_activation_execute(const struct route_state *state)
         int track_index =
             crazypod_music_podcast_track_index(state->selected);
 
-        if(track_index >= 0 &&
-           crazypod_music_play(
-               CRAZYPOD_SCOPE_ALL, 0, track_index)) {
-            crazypod_state_forget_resume();
-            crazypod_state_mark_dirty();
+        if(track_index >= 0) {
             return result(
-                CRAZYPOD_MUSIC_ACTIVATION_REQUEST_NOW_PLAYING,
-                state->route, -1);
+                CRAZYPOD_MUSIC_ACTIVATION_PLAY_PODCAST,
+                state->route, track_index);
         }
         return result(
             CRAZYPOD_MUSIC_ACTIVATION_NONE, state->route, -1);

@@ -20,6 +20,7 @@ static int memory_handle;
 static uint8_t *save_ram;
 static struct crazypod_gameboy_cartridge cartridge;
 static char save_path[MAX_PATH];
+static char legacy_save_path[MAX_PATH];
 static bool opened;
 
 static uint32_t read_u32(const uint8_t *p)
@@ -32,6 +33,52 @@ static void write_u32(uint8_t *p, uint32_t value)
 {
     p[0] = value; p[1] = value >> 8;
     p[2] = value >> 16; p[3] = value >> 24;
+}
+
+static bool read_exact(int fd, void *buffer, size_t size)
+{
+    uint8_t *cursor = buffer;
+
+    while(size > 0) {
+        ssize_t count = read(fd, cursor, size);
+        if(count <= 0)
+            return false;
+        cursor += count;
+        size -= (size_t)count;
+    }
+    return true;
+}
+
+static bool write_exact(int fd, const void *buffer, size_t size)
+{
+    const uint8_t *cursor = buffer;
+
+    while(size > 0) {
+        ssize_t count = write(fd, cursor, size);
+        if(count <= 0)
+            return false;
+        cursor += count;
+        size -= (size_t)count;
+    }
+    return true;
+}
+
+static bool make_legacy_save_path(const char *rom_path)
+{
+    const char *extension;
+    size_t length;
+
+    legacy_save_path[0] = '\0';
+    if(rom_path == NULL)
+        return false;
+    length = strlen(rom_path);
+    extension = strrchr(rom_path, '.');
+    if(extension == NULL || extension == rom_path || length + 1 >=
+       sizeof(legacy_save_path))
+        return false;
+    memcpy(legacy_save_path, rom_path, length + 1);
+    strcpy(legacy_save_path + (extension - rom_path), ".sav");
+    return true;
 }
 
 static int compare_games(const void *a, const void *b)
@@ -101,22 +148,31 @@ static enum crazypod_gameboy_result load_save(void)
 {
     uint8_t header[SAVE_HEADER_SIZE], digest[32];
     uint32_t clock[8], saved_at, now;
-    bool valid;
+    bool legacy = false, valid;
     int fd, i;
 
     if(!cartridge.battery && !cartridge.clock)
         return CRAZYPOD_GAMEBOY_OK;
     fd = open(save_path, O_RDONLY);
+    if(fd < 0 && errno == ENOENT && legacy_save_path[0] != '\0') {
+        fd = open(legacy_save_path, O_RDONLY);
+        legacy = fd >= 0;
+    }
     if(fd < 0)
         return errno == ENOENT ? CRAZYPOD_GAMEBOY_OK :
             CRAZYPOD_GAMEBOY_IO_ERROR;
+    if(legacy) {
+        valid = filesize(fd) == (off_t)cartridge.ram_size &&
+            read_exact(fd, save_ram, cartridge.ram_size);
+        close(fd);
+        return valid ? CRAZYPOD_GAMEBOY_OK : CRAZYPOD_GAMEBOY_BAD_SAVE;
+    }
     valid = filesize(fd) ==
         (off_t)(sizeof(header) + cartridge.ram_size) &&
-        read(fd, header, sizeof(header)) == (ssize_t)sizeof(header) &&
+        read_exact(fd, header, sizeof(header)) &&
         memcmp(header, "CPGBSV01", 8) == 0 &&
         read_u32(header + 8) == cartridge.ram_size &&
-        read(fd, save_ram, cartridge.ram_size) ==
-            (ssize_t)cartridge.ram_size;
+        read_exact(fd, save_ram, cartridge.ram_size);
     close(fd);
     if(!valid)
         return CRAZYPOD_GAMEBOY_BAD_SAVE;
@@ -146,13 +202,16 @@ enum crazypod_gameboy_result crazypod_gameboy_open(
 
     if(opened || index < 0 || index >= game_count)
         return CRAZYPOD_GAMEBOY_BAD_ROM;
+    legacy_save_path[0] = '\0';
     fd = open(games[index], O_RDONLY);
     if(fd < 0)
-        return CRAZYPOD_GAMEBOY_IO_ERROR;
+        return CRAZYPOD_GAMEBOY_ROM_IO_ERROR;
     size = filesize(fd);
-    if(size < 0 || read(fd, header, sizeof(header)) !=
-       (ssize_t)sizeof(header) ||
-       !crazypod_gameboy_cartridge_probe(
+    if(size < 0 || !read_exact(fd, header, sizeof(header))) {
+        close(fd);
+        return CRAZYPOD_GAMEBOY_ROM_IO_ERROR;
+    }
+    if(!crazypod_gameboy_cartridge_probe(
            header, sizeof(header), (size_t)size, &cartridge)) {
         close(fd);
         return CRAZYPOD_GAMEBOY_BAD_ROM;
@@ -168,11 +227,12 @@ enum crazypod_gameboy_result crazypod_gameboy_open(
     data = core_get_data(memory_handle);
     save_ram = data + cartridge.rom_size;
     memset(save_ram, 0xff, CRAZYPOD_GAMEBOY_RAM_MAX);
-    if(lseek(fd, 0, SEEK_SET) != 0 ||
-       read(fd, data, cartridge.rom_size) != (ssize_t)cartridge.rom_size) {
+    memcpy(data, header, sizeof(header));
+    if(!read_exact(fd, data + sizeof(header),
+                   cartridge.rom_size - sizeof(header))) {
         close(fd);
         crazypod_gameboy_close();
-        return CRAZYPOD_GAMEBOY_IO_ERROR;
+        return CRAZYPOD_GAMEBOY_ROM_IO_ERROR;
     }
     close(fd);
     crazypod_sha256_init(&hash);
@@ -183,6 +243,7 @@ enum crazypod_gameboy_result crazypod_gameboy_open(
         snprintf(save_path + sizeof(SAVE_DIRECTORY) + i * 2, 3,
                  "%02x", digest[i]);
     strcat(save_path, ".sav");
+    (void)make_legacy_save_path(games[index]);
     if(!crazypod_gameboy_core_open(data, cartridge.rom_size,
                                    save_ram, audio)) {
         crazypod_gameboy_close();
@@ -224,10 +285,8 @@ bool crazypod_gameboy_save(void)
     fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)
         return false;
-    success = write(fd, header, sizeof(header)) ==
-        (ssize_t)sizeof(header) &&
-        write(fd, save_ram, cartridge.ram_size) ==
-            (ssize_t)cartridge.ram_size;
+    success = write_exact(fd, header, sizeof(header)) &&
+        write_exact(fd, save_ram, cartridge.ram_size);
     if(fsync(fd) < 0)
         success = false;
     if(close(fd) < 0)

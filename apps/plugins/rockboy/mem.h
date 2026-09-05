@@ -22,6 +22,7 @@ struct mbc
     int rambank;
     int romsize;
     int ramsize;
+    int ram_bytes;
     int enableram;
     int batt;
     byte *rmap[0x10], *wmap[0x10];

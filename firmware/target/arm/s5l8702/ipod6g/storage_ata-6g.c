@@ -91,12 +91,17 @@ static uint32_t ata_dma_flags;
 static const int ata_retries = ATA_RETRIES;
 static const bool ata_error_srst = true;
 
-/* Cutting AUTOLDO is substantially more disruptive than gating the ATA
- * controller clock. CrazyPod retrofit builds keep this rail powered only
- * while music is actively playing. Use the playback state rather than the
- * lower-level PCM DMA state: codec-idle transitions can make PCM temporarily
- * appear stopped even though playback is still active. Paused/stopped audio
- * follows the normal deep-poweroff policy. */
+/* No ATA IDENTIFY field proves that an iPod storage device or adapter can
+ * tolerate removal of the platform AUTOLDO rail.  Keep Level 3 disabled
+ * until a platform-validated adapter profile supplies that authorization. */
+static const bool ata_platform_power_cut_capable = false;
+
+/* If a validated platform profile ever enables Level 3, cutting AUTOLDO is
+ * substantially more disruptive than gating the ATA controller clock.
+ * Use playback state rather than lower-level PCM DMA state: codec-idle
+ * transitions can make PCM temporarily appear stopped even though playback
+ * is still active. Paused/stopped audio follows the normal deep-poweroff
+ * policy. */
 static bool ata_deep_poweroff_inhibited(void)
 {
 #if !defined(BOOTLOADER) && \
@@ -1487,11 +1492,11 @@ int ata_event(long id, intptr_t data)
              TIME_BEFORE(current_tick,
                          ata_sleep_retry_not_before)))
         {
-            /* Phase 2: SSD deep sleep — cut AUTOLDO only after a
-             * successful/supported cache flush.  Forced SSD mode is also
-             * used for adapters whose identify data is incomplete; cutting
-             * power when FLUSH CACHE is unsupported can corrupt their FTL. */
-            if (ata_ssd_mode && ssd_flush_succeeded
+            /* Level 3 AUTOLDO removal requires explicit platform
+             * authorization and a successful flush; media type, ATA PM
+             * support, and user-selected SSD mode are not sufficient. */
+            if (ata_ssd_mode && ata_platform_power_cut_capable &&
+                ssd_flush_succeeded
                 && ata_clock_gated && !ata_powered
                 && !ssd_deep_asleep
                 && !ata_deep_poweroff_inhibited()
@@ -1501,7 +1506,8 @@ int ata_event(long id, intptr_t data)
                 mutex_lock(&ata_mutex);
                 ssd_deep_timeout =
                     is_backlight_on(true) ? 30 * HZ : 10 * HZ;
-                if (ata_ssd_mode && ssd_flush_succeeded
+                if (ata_ssd_mode && ata_platform_power_cut_capable &&
+                    ssd_flush_succeeded
                     && ata_clock_gated && !ata_powered
                     && !ssd_deep_asleep
                     && !ata_deep_poweroff_inhibited()

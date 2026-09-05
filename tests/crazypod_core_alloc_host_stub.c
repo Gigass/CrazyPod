@@ -11,6 +11,7 @@ struct test_core_block {
 };
 
 static struct test_core_block blocks[TEST_CORE_HANDLE_COUNT];
+static bool fail_next_alloc;
 
 static bool valid_handle(int handle)
 {
@@ -21,6 +22,11 @@ static bool valid_handle(int handle)
 int core_alloc(size_t size)
 {
     int handle;
+
+    if(fail_next_alloc) {
+        fail_next_alloc = false;
+        return -1;
+    }
 
     for(handle = 1; handle < TEST_CORE_HANDLE_COUNT; ++handle) {
         if(blocks[handle].data == NULL) {
@@ -95,4 +101,9 @@ int test_core_alloc_pin_count(void)
     for(handle = 1; handle < TEST_CORE_HANDLE_COUNT; ++handle)
         count += blocks[handle].pins;
     return count;
+}
+
+void test_core_alloc_fail_next(void)
+{
+    fail_next_alloc = true;
 }

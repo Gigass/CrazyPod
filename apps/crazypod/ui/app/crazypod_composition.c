@@ -129,6 +129,7 @@ static void configure_now_playing(void)
         .create_modal_underlay = now_overlay_underlay,
         .create_panel = now_overlay_panel,
         .notify = notify_feature_action,
+        .select_queue_item = crazypod_playback_select_async,
         .teardown_complete = now_overlay_teardown_complete,
         .render = now_overlay_render,
     };

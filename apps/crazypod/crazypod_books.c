@@ -9,10 +9,13 @@
 
 #include "dir.h"
 #include "file.h"
+#include "kernel.h"
+#include "panic.h"
 #include "rbunicode.h"
 
 #include "crazypod_books.h"
 #include "crazypod_epub.h"
+#include "epub/crazypod_epub_layout.h"
 
 #define BOOKS_DIRECTORY "/Books"
 #define BOOKS_STATE_DIRECTORY "/.crazypod/books"
@@ -29,11 +32,17 @@
 #define BOOKS_SCAN_DEPTH 6
 #define BOOK_PAGE_INPUT_SIZE 1536
 #define BOOK_ENCODING_SAMPLE_SIZE 4096
+#define BOOKS_SCAN_EVENT 1
+/* Each recursive directory frame owns a MAX_PATH child buffer. Keep the
+ * scanner in the same stack budget as Rockbox's tagcache worker. */
+#define BOOKS_SCAN_STACK_SIZE (DEFAULT_STACK_SIZE + 0x4000)
 
 enum book_text_encoding {
     BOOK_TEXT_ENCODING_UNKNOWN,
     BOOK_TEXT_ENCODING_UTF8,
     BOOK_TEXT_ENCODING_GBK,
+    BOOK_TEXT_ENCODING_UTF16LE,
+    BOOK_TEXT_ENCODING_UTF16BE,
 };
 
 struct book_progress_disk {
@@ -75,7 +84,7 @@ struct book_catalog_entry_disk {
 static struct crazypod_book books[BOOKS_MAX];
 static uint32_t recent_sequences[BOOKS_MAX];
 static unsigned char book_text_encodings[BOOKS_MAX];
-static bool book_utf8_bom[BOOKS_MAX];
+static unsigned char book_encoding_bom_size[BOOKS_MAX];
 static int book_count;
 static bool books_scan_loaded;
 static bool books_scan_dirty;
@@ -84,6 +93,36 @@ static struct books_state_disk persisted;
 static unsigned char page_input[BOOK_PAGE_INPUT_SIZE];
 static unsigned char page_utf8[BOOK_PAGE_INPUT_SIZE * 3 + 1];
 static unsigned char encoding_sample[BOOK_ENCODING_SAMPLE_SIZE];
+static unsigned reader_max_lines = 8;
+static unsigned reader_max_line_width = 42;
+static crazypod_epub_layout_width_fn reader_measure_width;
+static void *reader_measure_context;
+static struct event_queue books_scan_queue;
+static long books_scan_stack[
+    BOOKS_SCAN_STACK_SIZE / sizeof(long)];
+static struct mutex books_catalog_io_mutex;
+static bool books_scan_worker_started;
+static volatile bool books_scan_processing;
+static volatile bool books_scan_abort_requested;
+
+static void books_scan_thread(void)
+{
+    struct queue_event event;
+
+    while(true) {
+        queue_wait(&books_scan_queue, &event);
+        if(event.id != BOOKS_SCAN_EVENT)
+            continue;
+        if(!books_scan_abort_requested)
+            crazypod_books_scan();
+        else {
+            books_scan_loaded = false;
+            books_scan_dirty = true;
+            books_scan_abort_requested = false;
+        }
+        books_scan_processing = false;
+    }
+}
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
 {
@@ -95,6 +134,20 @@ static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
         hash *= 16777619u;
     }
     return hash;
+}
+
+static int font_size_index(int value)
+{
+    /* Older development builds wrote the displayed point size instead of
+     * the three-value setting index. Accept both forms so an old library
+     * file cannot silently force every reader page back to 14 pt. */
+    if(value == 12)
+        return 0;
+    if(value == 14)
+        return 1;
+    if(value == 16)
+        return 2;
+    return value >= 0 && value <= 2 ? value : 1;
 }
 
 static uint32_t path_hash(const char *path)
@@ -221,53 +274,135 @@ static bool gbk_valid(const unsigned char *data, size_t count,
     return true;
 }
 
-static enum book_text_encoding detect_text_encoding(int fd, bool *has_bom)
+static bool utf16_valid(const unsigned char *data, size_t count, bool le)
+{
+    size_t i = 0;
+
+    while(i + 1 < count) {
+        uint16_t value = le
+            ? (uint16_t)(data[i] | data[i + 1] << 8)
+            : (uint16_t)(data[i] << 8 | data[i + 1]);
+
+        if(value >= 0xd800 && value <= 0xdbff) {
+            uint16_t low;
+
+            if(i + 3 >= count)
+                return true;
+            low = le
+                ? (uint16_t)(data[i + 2] | data[i + 3] << 8)
+                : (uint16_t)(data[i + 2] << 8 | data[i + 3]);
+            if(low < 0xdc00 || low > 0xdfff)
+                return false;
+            i += 4;
+        }
+        else if(value >= 0xdc00 && value <= 0xdfff) {
+            return false;
+        }
+        else {
+            i += 2;
+        }
+    }
+    return i == count;
+}
+
+static bool utf16_likely(const unsigned char *data, size_t count, bool *le)
+{
+    size_t pairs = count / 2;
+    size_t little_zeroes = 0;
+    size_t big_zeroes = 0;
+    size_t i;
+
+    if(pairs < 2)
+        return false;
+    for(i = 0; i < pairs; ++i) {
+        if(data[i * 2 + 1] == 0)
+            ++little_zeroes;
+        if(data[i * 2] == 0)
+            ++big_zeroes;
+    }
+    if(little_zeroes >= (pairs + 2) / 3 &&
+       little_zeroes > big_zeroes) {
+        *le = true;
+        return true;
+    }
+    if(big_zeroes >= (pairs + 2) / 3 &&
+       big_zeroes > little_zeroes) {
+        *le = false;
+        return true;
+    }
+    return false;
+}
+
+static enum book_text_encoding detect_text_encoding(
+    int fd, unsigned char *bom_size)
 {
     size_t sample_count = 0;
-    bool found_high_byte = false;
-    bool at_file_start = true;
+    bool le;
 
-    *has_bom = false;
+    *bom_size = 0;
     if(lseek(fd, 0, SEEK_SET) < 0)
-        return BOOK_TEXT_ENCODING_UTF8;
+        return BOOK_TEXT_ENCODING_UNKNOWN;
     while(sample_count < sizeof(encoding_sample)) {
         ssize_t count = read(fd, encoding_sample + sample_count,
                              sizeof(encoding_sample) - sample_count);
-        size_t i;
 
         if(count <= 0)
             break;
-        if(at_file_start && count >= 3 &&
-           encoding_sample[0] == 0xef &&
-           encoding_sample[1] == 0xbb &&
-           encoding_sample[2] == 0xbf) {
-            *has_bom = true;
-            return BOOK_TEXT_ENCODING_UTF8;
-        }
-        at_file_start = false;
-        if(!found_high_byte) {
-            for(i = 0; i < (size_t)count; ++i) {
-                if(encoding_sample[i] >= 0x80)
-                    break;
-            }
-            if(i == (size_t)count) {
-                sample_count = 0;
-                continue;
-            }
-            memmove(encoding_sample, encoding_sample + i,
-                    (size_t)count - i);
-            sample_count = (size_t)count - i;
-            found_high_byte = true;
-        } else {
-            sample_count += (size_t)count;
+        sample_count += (size_t)count;
+    }
+    if(sample_count >= 2 && encoding_sample[0] == 0xff &&
+       encoding_sample[1] == 0xfe) {
+        *bom_size = 2;
+        return BOOK_TEXT_ENCODING_UTF16LE;
+    }
+    if(sample_count >= 2 && encoding_sample[0] == 0xfe &&
+       encoding_sample[1] == 0xff) {
+        *bom_size = 2;
+        return BOOK_TEXT_ENCODING_UTF16BE;
+    }
+    if(sample_count >= 3 && encoding_sample[0] == 0xef &&
+       encoding_sample[1] == 0xbb && encoding_sample[2] == 0xbf) {
+        *bom_size = 3;
+        return BOOK_TEXT_ENCODING_UTF8;
+    }
+    if(utf16_likely(encoding_sample, sample_count, &le) &&
+       utf16_valid(encoding_sample, sample_count, le))
+        return le ? BOOK_TEXT_ENCODING_UTF16LE
+                  : BOOK_TEXT_ENCODING_UTF16BE;
+    if(utf8_valid(encoding_sample, sample_count, true))
+        return BOOK_TEXT_ENCODING_UTF8;
+    if(gbk_valid(encoding_sample, sample_count, true))
+        return BOOK_TEXT_ENCODING_GBK;
+    return BOOK_TEXT_ENCODING_UNKNOWN;
+}
+
+static size_t complete_utf16_bytes(
+    const unsigned char *data, size_t count, bool le)
+{
+    size_t complete = count & ~(size_t)1;
+    size_t i;
+
+    if(complete < 2)
+        return complete;
+    for(i = 0; i + 1 < complete; i += 2) {
+        uint16_t value = le
+            ? (uint16_t)(data[i] | data[i + 1] << 8)
+            : (uint16_t)(data[i] << 8 | data[i + 1]);
+
+        if(value >= 0xd800 && value <= 0xdbff) {
+            uint16_t low;
+
+            if(i + 3 >= complete)
+                return i;
+            low = le
+                ? (uint16_t)(data[i + 2] | data[i + 3] << 8)
+                : (uint16_t)(data[i + 2] << 8 | data[i + 3]);
+            if(low < 0xdc00 || low > 0xdfff)
+                return i;
+            i += 2;
         }
     }
-    if(!found_high_byte)
-        return BOOK_TEXT_ENCODING_UTF8;
-    if(!utf8_valid(encoding_sample, sample_count, true) &&
-       gbk_valid(encoding_sample, sample_count, true))
-        return BOOK_TEXT_ENCODING_GBK;
-    return BOOK_TEXT_ENCODING_UTF8;
+    return complete;
 }
 
 static uint32_t align_gbk_offset(int fd, uint32_t target)
@@ -341,21 +476,6 @@ static uint32_t align_gbk_offset(int fd, uint32_t target)
     return position;
 }
 
-static size_t utf8_character_bytes(const unsigned char *data,
-                                   size_t count, size_t offset)
-{
-    unsigned char value = data[offset];
-    size_t bytes = 1;
-
-    if((value & 0xe0) == 0xc0)
-        bytes = 2;
-    else if((value & 0xf0) == 0xe0)
-        bytes = 3;
-    else if((value & 0xf8) == 0xf0)
-        bytes = 4;
-    return offset + bytes <= count ? bytes : 0;
-}
-
 static size_t complete_gbk_bytes(const unsigned char *data, size_t count)
 {
     size_t i = 0;
@@ -370,72 +490,6 @@ static size_t complete_gbk_bytes(const unsigned char *data, size_t count)
         }
     }
     return i;
-}
-
-static size_t paginate_text(const unsigned char *utf8, size_t utf8_count,
-                            const unsigned char *source, size_t source_count,
-                            bool source_is_gbk, bool markdown,
-                            char *text, size_t size,
-                            int max_lines, int max_line_units)
-{
-    size_t input = 0;
-    size_t source_input = 0;
-    size_t output = 0;
-    int visual_lines = 1;
-    int line_units = 0;
-
-    while(input < utf8_count && source_input < source_count &&
-          output + 1 < size) {
-        unsigned char value = utf8[input];
-        size_t character_bytes =
-            utf8_character_bytes(utf8, utf8_count, input);
-        size_t source_bytes = character_bytes;
-        int units;
-
-        if(character_bytes == 0)
-            break;
-        if(source_is_gbk) {
-            source_bytes = source[source_input] < 0x80 ? 1 : 2;
-            if(source_input + source_bytes > source_count)
-                break;
-        }
-        if(markdown && (value == '#' || value == '*' || value == '`')) {
-            input += character_bytes;
-            source_input += source_bytes;
-            continue;
-        }
-        if(value == '\r') {
-            input += character_bytes;
-            source_input += source_bytes;
-            continue;
-        }
-        if(value == '\n') {
-            if(visual_lines >= max_lines)
-                break;
-            text[output++] = '\n';
-            input += character_bytes;
-            source_input += source_bytes;
-            ++visual_lines;
-            line_units = 0;
-            continue;
-        }
-        if(output + character_bytes >= size)
-            break;
-        units = value < 0x80 ? 1 : 2;
-        if(line_units + units > max_line_units) {
-            if(visual_lines >= max_lines)
-                break;
-            ++visual_lines;
-            line_units = 0;
-        }
-        memcpy(text + output, utf8 + input, character_bytes);
-        output += character_bytes;
-        input += character_bytes;
-        source_input += source_bytes;
-        line_units += units;
-    }
-    text[output] = '\0';
-    return source_input;
 }
 
 static bool state_save(void)
@@ -577,7 +631,7 @@ static void reset_book_catalog(void)
     memset(books, 0, sizeof(books));
     memset(recent_sequences, 0, sizeof(recent_sequences));
     memset(book_text_encodings, 0, sizeof(book_text_encodings));
-    memset(book_utf8_bom, 0, sizeof(book_utf8_bom));
+    memset(book_encoding_bom_size, 0, sizeof(book_encoding_bom_size));
     book_count = 0;
     active_epub_index = -1;
 }
@@ -603,6 +657,11 @@ static bool books_catalog_save(void)
     int i;
     bool success;
 
+    /* Serialize every writer with USB invalidation and with the lazy EPUB
+     * metadata save. The catalog uses one temporary pathname, so protecting
+     * only the final rename would still let one writer delete another's
+     * temporary file after a failed publish. */
+    mutex_lock(&books_catalog_io_mutex);
     memset(&header, 0, sizeof(header));
     header.magic = BOOKS_CATALOG_MAGIC;
     header.version = BOOKS_CATALOG_VERSION;
@@ -619,8 +678,10 @@ static bool books_catalog_save(void)
     mkdir(BOOKS_STATE_DIRECTORY);
     fd = open(BOOKS_CATALOG_TEMP,
               O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if(fd < 0)
+    if(fd < 0) {
+        mutex_unlock(&books_catalog_io_mutex);
         return false;
+    }
     success = write_exact(fd, &header, sizeof(header));
     for(i = 0; success && i < book_count; ++i) {
         catalog_entry_from_book(&entry, &books[i]);
@@ -629,8 +690,10 @@ static bool books_catalog_save(void)
     if(fsync(fd) < 0)
         success = false;
     close(fd);
-    if(!success || rename(BOOKS_CATALOG_TEMP,
-                          BOOKS_CATALOG_PATH) < 0) {
+    success = success && !books_scan_abort_requested &&
+        rename(BOOKS_CATALOG_TEMP, BOOKS_CATALOG_PATH) == 0;
+    mutex_unlock(&books_catalog_io_mutex);
+    if(!success) {
         remove(BOOKS_CATALOG_TEMP);
         return false;
     }
@@ -706,12 +769,14 @@ static void scan_directory(const char *path, int depth)
     DIR *directory;
     struct DIRENT *entry;
 
-    if(depth > BOOKS_SCAN_DEPTH || book_count >= BOOKS_MAX)
+    if(books_scan_abort_requested ||
+       depth > BOOKS_SCAN_DEPTH || book_count >= BOOKS_MAX)
         return;
     directory = opendir(path);
     if(directory == NULL)
         return;
-    while((entry = readdir(directory)) != NULL &&
+    while(!books_scan_abort_requested &&
+          (entry = readdir(directory)) != NULL &&
           book_count < BOOKS_MAX) {
         struct dirinfo info;
         enum crazypod_book_format format;
@@ -725,6 +790,7 @@ static void scan_directory(const char *path, int depth)
             scan_directory(child, depth + 1);
         else if(book_format(child, &format))
             add_book(child, &info, format);
+        yield();
     }
     closedir(directory);
 }
@@ -734,7 +800,20 @@ void crazypod_books_init(void)
     static struct books_state_disk loaded;
     bool migrate_legacy = false;
     int fd;
+    unsigned int thread_id;
 
+    mutex_init(&books_catalog_io_mutex);
+    queue_init(&books_scan_queue, false);
+    thread_id = create_thread(
+        books_scan_thread, books_scan_stack, sizeof(books_scan_stack), 0,
+        "crazypod books"
+        IF_PRIO(, PRIORITY_BACKGROUND)
+        IF_COP(, CPU));
+    if(thread_id == 0)
+        panicf("books scan thread");
+    books_scan_worker_started = true;
+    books_scan_processing = false;
+    books_scan_abort_requested = false;
     mkdir(BOOKS_DIRECTORY);
     reset_book_catalog();
     books_scan_loaded = false;
@@ -755,6 +834,12 @@ void crazypod_books_init(void)
            loaded.count <= BOOKS_MAX &&
            loaded.checksum == state_checksum(&loaded)) {
             persisted = loaded;
+            if(persisted.font_size != (uint32_t)font_size_index(
+                   (int)persisted.font_size)) {
+                persisted.font_size = (uint32_t)font_size_index(
+                    (int)persisted.font_size);
+                migrate_legacy = true;
+            }
             if(persisted.version == BOOKS_VERSION_LEGACY) {
                 uint32_t i;
 
@@ -781,11 +866,40 @@ void crazypod_books_init(void)
 
 void crazypod_books_scan(void)
 {
+    if(books_scan_abort_requested) {
+        books_scan_loaded = false;
+        books_scan_dirty = true;
+        books_scan_abort_requested = false;
+        return;
+    }
     reset_book_catalog();
     scan_directory(BOOKS_DIRECTORY, 0);
+    if(books_scan_abort_requested) {
+        books_scan_loaded = false;
+        books_scan_dirty = true;
+        books_scan_abort_requested = false;
+        return;
+    }
     books_scan_loaded = true;
     books_scan_dirty = false;
     (void)books_catalog_save();
+}
+
+bool crazypod_books_scan_async(void)
+{
+    if(!books_scan_worker_started)
+        return false;
+    if(books_scan_processing)
+        return true;
+    books_scan_abort_requested = false;
+    books_scan_processing = true;
+    queue_post(&books_scan_queue, BOOKS_SCAN_EVENT, 0);
+    return true;
+}
+
+bool crazypod_books_scan_busy(void)
+{
+    return books_scan_processing;
 }
 
 bool crazypod_books_scan_needed(void)
@@ -795,26 +909,30 @@ bool crazypod_books_scan_needed(void)
 
 void crazypod_books_invalidate_scan(void)
 {
+    mutex_lock(&books_catalog_io_mutex);
+    books_scan_abort_requested = true;
     books_scan_dirty = true;
     remove(BOOKS_CATALOG_TEMP);
     remove(BOOKS_CATALOG_PATH);
+    mutex_unlock(&books_catalog_io_mutex);
 }
 
 int crazypod_books_count(void)
 {
-    return book_count;
+    return books_scan_processing ? 0 : book_count;
 }
 
 const struct crazypod_book *crazypod_book_get(int index)
 {
-    return index >= 0 && index < book_count ? &books[index] : NULL;
+    return !books_scan_processing && index >= 0 && index < book_count
+        ? &books[index] : NULL;
 }
 
 int crazypod_book_index(const struct crazypod_book *book)
 {
     int i;
 
-    if(book == NULL)
+    if(books_scan_processing || book == NULL)
         return -1;
     for(i = 0; i < book_count; ++i) {
         if(book == &books[i])
@@ -829,6 +947,8 @@ int crazypod_books_recent_index(void)
     int result = -1;
     int i;
 
+    if(books_scan_processing)
+        return -1;
     for(i = 0; i < book_count; ++i) {
         if(recent_sequences[i] > best) {
             best = recent_sequences[i];
@@ -842,6 +962,8 @@ int crazypod_books_recent_count(void)
 {
     int count = 0;
     int i;
+    if(books_scan_processing)
+        return 0;
     for(i = 0; i < book_count; ++i) {
         if(recent_sequences[i] > 0)
             ++count;
@@ -855,6 +977,8 @@ int crazypod_books_recent_at(int position)
     int rank;
     int result = -1;
 
+    if(books_scan_processing || position < 0)
+        return -1;
     for(rank = 0; rank <= position; ++rank) {
         uint32_t best = 0;
         int i;
@@ -877,6 +1001,8 @@ int crazypod_books_favorite_count(void)
 {
     int count = 0;
     int i;
+    if(books_scan_processing)
+        return 0;
     for(i = 0; i < book_count; ++i) {
         if(books[i].favorite)
             ++count;
@@ -888,6 +1014,8 @@ int crazypod_books_favorite_at(int position)
 {
     int visible = 0;
     int i;
+    if(books_scan_processing || position < 0)
+        return -1;
     for(i = 0; i < book_count; ++i) {
         if(books[i].favorite && visible++ == position)
             return i;
@@ -928,18 +1056,12 @@ bool crazypod_book_read_page(int index, uint32_t offset,
     size_t utf8_count;
     size_t source_count;
     size_t consumed;
-    bool source_is_gbk = false;
+    enum book_text_encoding source_encoding = BOOK_TEXT_ENCODING_UTF8;
     ssize_t count;
-    int max_lines;
-    int max_line_units;
     int fd;
 
     if(text == NULL || size == 0 || book == NULL)
         return false;
-    max_lines = crazypod_books_font_size() == 0 ? 13 :
-                crazypod_books_font_size() == 2 ? 10 : 11;
-    max_line_units = crazypod_books_font_size() == 0 ? 46 :
-                     crazypod_books_font_size() == 2 ? 37 : 41;
     source_path = book->path;
     if(book->format == CRAZYPOD_BOOK_EPUB) {
         if(book->content_size == 0) {
@@ -954,6 +1076,7 @@ bool crazypod_book_read_page(int index, uint32_t offset,
         else
             crazypod_epub_text_path(
                 book->path, epub_path, sizeof(epub_path));
+        active_epub_index = index;
         source_path = epub_path;
     }
     if(offset >= book->content_size)
@@ -964,15 +1087,32 @@ bool crazypod_book_read_page(int index, uint32_t offset,
     if(book->format != CRAZYPOD_BOOK_EPUB) {
         if(book_text_encodings[index] == BOOK_TEXT_ENCODING_UNKNOWN) {
             book_text_encodings[index] =
-                detect_text_encoding(fd, &book_utf8_bom[index]);
+                detect_text_encoding(fd, &book_encoding_bom_size[index]);
             if(book_text_encodings[index] == BOOK_TEXT_ENCODING_GBK &&
                offset > 0)
                 offset = align_gbk_offset(fd, offset);
         }
-        source_is_gbk =
-            book_text_encodings[index] == BOOK_TEXT_ENCODING_GBK;
-        if(!source_is_gbk && book_utf8_bom[index] && offset < 3)
-            offset = 3;
+        source_encoding = book_text_encodings[index];
+        if(source_encoding == BOOK_TEXT_ENCODING_UNKNOWN) {
+            close(fd);
+            snprintf(text, size,
+                     "Unknown text encoding. Supported: UTF-8, GBK, UTF-16.");
+            if(next_offset != NULL)
+                *next_offset = book->content_size;
+            return true;
+        }
+        if((source_encoding == BOOK_TEXT_ENCODING_UTF8 &&
+            book_encoding_bom_size[index] == 3) ||
+           ((source_encoding == BOOK_TEXT_ENCODING_UTF16LE ||
+             source_encoding == BOOK_TEXT_ENCODING_UTF16BE) &&
+            book_encoding_bom_size[index] == 2)) {
+            if(offset < book_encoding_bom_size[index])
+                offset = book_encoding_bom_size[index];
+        }
+        if((source_encoding == BOOK_TEXT_ENCODING_UTF16LE ||
+            source_encoding == BOOK_TEXT_ENCODING_UTF16BE) &&
+           (offset & 1) != 0)
+            --offset;
     }
     if(lseek(fd, offset, SEEK_SET) < 0) {
         if(fd >= 0)
@@ -984,7 +1124,7 @@ bool crazypod_book_read_page(int index, uint32_t offset,
     if(count <= 0)
         return false;
     source_count = (size_t)count;
-    if(source_is_gbk) {
+    if(source_encoding == BOOK_TEXT_ENCODING_GBK) {
         unsigned char *end;
 
         source_count = complete_gbk_bytes(page_input, source_count);
@@ -995,13 +1135,38 @@ bool crazypod_book_read_page(int index, uint32_t offset,
                             (int)(sizeof(page_utf8) - 1));
         utf8 = page_utf8;
         utf8_count = (size_t)(end - page_utf8);
-    } else {
+    }
+    else if(source_encoding == BOOK_TEXT_ENCODING_UTF16LE ||
+            source_encoding == BOOK_TEXT_ENCODING_UTF16BE) {
+        unsigned char *end;
+
+        source_count = complete_utf16_bytes(
+            page_input, source_count,
+            source_encoding == BOOK_TEXT_ENCODING_UTF16LE);
+        if(source_count == 0)
+            return false;
+        end = utf16decode(
+            page_input, page_utf8, (int)(source_count / 2),
+            (int)(sizeof(page_utf8) - 1),
+            source_encoding == BOOK_TEXT_ENCODING_UTF16LE);
+        utf8 = page_utf8;
+        utf8_count = (size_t)(end - page_utf8);
+    }
+    else {
         utf8_count = source_count;
     }
-    consumed = paginate_text(
-        utf8, utf8_count, page_input, source_count, source_is_gbk,
+    consumed = crazypod_epub_layout_page_with_measure_encoding(
+        utf8, utf8_count, page_input, source_count,
+        source_encoding == BOOK_TEXT_ENCODING_GBK
+            ? CRAZYPOD_EPUB_SOURCE_GBK
+            : source_encoding == BOOK_TEXT_ENCODING_UTF16LE
+                ? CRAZYPOD_EPUB_SOURCE_UTF16LE
+                : source_encoding == BOOK_TEXT_ENCODING_UTF16BE
+                    ? CRAZYPOD_EPUB_SOURCE_UTF16BE
+                    : CRAZYPOD_EPUB_SOURCE_UTF8,
         book->format == CRAZYPOD_BOOK_MARKDOWN, text, size,
-        max_lines, max_line_units);
+        reader_max_lines, reader_max_line_width,
+        reader_measure_width, reader_measure_context);
     if(next_offset != NULL)
         *next_offset = offset + (uint32_t)consumed;
     return true;
@@ -1072,9 +1237,34 @@ static bool prepare_epub_book(int index)
     if(title[0] != '\0')
         snprintf(book->title, sizeof(book->title), "%s", title);
     book->details_loaded = true;
+    /* Cache invalidation must not erase reading progress or bookmarks.  A
+     * valid old offset remains the best available position after a rebuild;
+     * the reader clamps only offsets that are outside the new text. */
     if(book->content_size != previous_content_size)
         (void)books_catalog_save();
     return true;
+}
+
+bool crazypod_book_page_image(int index, uint32_t offset,
+                              char *path, size_t path_size)
+{
+    struct crazypod_book *book =
+        index >= 0 && index < book_count ? &books[index] : NULL;
+    static char prepared_path[MAX_PATH];
+    uint32_t prepared_size;
+
+    if(path == NULL || path_size == 0 || book == NULL ||
+       book->format != CRAZYPOD_BOOK_EPUB)
+        return false;
+    if(active_epub_index != index) {
+        if(!crazypod_epub_prepare(
+               book->path, book->size, book->mtime,
+               prepared_path, sizeof(prepared_path), &prepared_size))
+            return false;
+        book->content_size = prepared_size;
+        active_epub_index = index;
+    }
+    return crazypod_epub_image_get(offset, path, path_size);
 }
 
 bool crazypod_book_probe(int index)
@@ -1214,13 +1404,30 @@ bool crazypod_book_delete(int index)
             break;
         }
     }
-    crazypod_books_scan();
+    books_scan_loaded = false;
+    books_scan_dirty = true;
+    if(!crazypod_books_scan_async())
+        crazypod_books_scan();
     return state_save();
 }
 
 int crazypod_books_font_size(void)
 {
-    return persisted.font_size <= 2 ? (int)persisted.font_size : 1;
+    return font_size_index((int)persisted.font_size);
+}
+
+void crazypod_books_set_reader_layout(
+    unsigned max_lines, unsigned max_line_width,
+    crazypod_epub_layout_width_fn measure_width, void *context)
+{
+    if(max_lines == 0)
+        max_lines = 1;
+    if(max_line_width == 0)
+        max_line_width = 1;
+    reader_max_lines = max_lines;
+    reader_max_line_width = max_line_width;
+    reader_measure_width = measure_width;
+    reader_measure_context = context;
 }
 
 int crazypod_books_theme(void)
@@ -1230,6 +1437,7 @@ int crazypod_books_theme(void)
 
 bool crazypod_books_set_font_size(int value)
 {
+    value = font_size_index(value);
     if(value < 0 || value > 2)
         return false;
     persisted.font_size = (uint32_t)value;

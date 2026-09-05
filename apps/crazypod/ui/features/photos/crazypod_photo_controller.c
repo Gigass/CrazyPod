@@ -2,6 +2,8 @@
 
 #ifdef IPOD_6G
 
+#include <stddef.h>
+
 #include "../../../crazypod_photos.h"
 #include "crazypod_photo_controller.h"
 
@@ -91,6 +93,14 @@ void crazypod_photo_controller_begin_select(bool valid, long now)
     model.select_long_handled = false;
     model.select_holding = valid;
     model.select_hold_start = now;
+    model.select_hold_percent = -1;
+}
+
+void crazypod_photo_controller_cancel_select(void)
+{
+    model.select_holding = false;
+    model.select_long_handled = true;
+    model.select_hold_start = 0;
     model.select_hold_percent = -1;
 }
 

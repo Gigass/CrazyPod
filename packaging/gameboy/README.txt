@@ -1,7 +1,7 @@
-CrazyPod GB / GBC
+CrazyPod Game Boy
 
 Place your legally obtained .gb / .gbc ROMs in /MiniApps/Games,
-/MiniApps/Games/GB or /MiniApps/Games/GBC. Open the GB / GBC desktop icon.
+/MiniApps/Games/GB or /MiniApps/Games/GBC. Open the Game Boy desktop icon.
 Re-enter the app to refresh.
 Keep .cpk apps directly in /MiniApps.
 Up to 128 ROMs are listed. ZIP and GBA files are not supported.

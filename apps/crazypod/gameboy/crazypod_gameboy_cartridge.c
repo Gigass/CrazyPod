@@ -18,15 +18,32 @@ bool crazypod_gameboy_cartridge_probe(
     const uint8_t *header, size_t header_size, size_t file_size,
     struct crazypod_gameboy_cartridge *cart)
 {
-    static const unsigned ram_sizes[] = { 0, 8192, 8192, 32768,
-                                         131072, 65536 };
+    static const size_t rom_sizes[] = {
+        32u * 1024u, 64u * 1024u, 128u * 1024u, 256u * 1024u,
+        512u * 1024u, 1024u * 1024u, 2u * 1024u * 1024u,
+        4u * 1024u * 1024u, 8u * 1024u * 1024u
+    };
+    static const unsigned ram_sizes[] = {
+        0, 2048, 8192, 32768, 131072, 65536
+    };
+    unsigned rom_code;
     unsigned type;
 
     if(header == NULL || cart == NULL || header_size < 0x150 ||
-       header[0x148] > 8 || header[0x149] > 5)
+       header[0x149] > 5)
         return false;
     memset(cart, 0, sizeof(*cart));
-    cart->rom_size = (size_t)32768 << header[0x148];
+    rom_code = header[0x148];
+    if(rom_code <= 8)
+        cart->rom_size = rom_sizes[rom_code];
+    else if(rom_code == 0x52)
+        cart->rom_size = 72u * 16u * 1024u;
+    else if(rom_code == 0x53)
+        cart->rom_size = 80u * 16u * 1024u;
+    else if(rom_code == 0x54)
+        cart->rom_size = 96u * 16u * 1024u;
+    else
+        return false;
     if(file_size != cart->rom_size ||
        file_size > CRAZYPOD_GAMEBOY_ROM_MAX)
         return false;
@@ -42,7 +59,8 @@ bool crazypod_gameboy_cartridge_probe(
         break;
     case 0x05: case 0x06:
         cart->mapper = 2;
-        cart->ram_size = 8192;
+        /* MBC2 contains 512 four-bit RAM cells, not an external SRAM. */
+        cart->ram_size = 512;
         break;
     case 0x0f: case 0x10: case 0x11: case 0x12: case 0x13:
         cart->mapper = 4;

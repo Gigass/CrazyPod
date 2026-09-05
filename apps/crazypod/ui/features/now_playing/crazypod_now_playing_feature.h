@@ -26,6 +26,7 @@ struct crazypod_now_playing_overlay_host {
         lv_obj_t *parent, int x, int y,
         int width, int height, void *context);
     void (*notify)(const char *message, bool success);
+    void (*select_queue_item)(int index);
     void (*teardown_complete)(void *context);
     void (*render)(void *context);
     void *context;
