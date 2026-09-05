@@ -221,6 +221,20 @@ int main(void)
     files[save_index].size = 12;
     assert(crazypod_gameboy_open(0, NULL) == CRAZYPOD_GAMEBOY_BAD_SAVE);
     assert(handles == 0 && allocation == NULL);
+    /* A standard raw .sav next to the ROM is imported on first launch. */
+    strcpy(files[3].path, "/MiniApps/Games/GBC/renamed.sav");
+    files[3].size = 8192;
+    memcpy(files[3].data, saved + 80, 8192);
+    files[save_index].path[0] = '\0';
+    crazypod_gameboy_scan();
+    assert(crazypod_gameboy_open(0, NULL) == CRAZYPOD_GAMEBOY_OK);
+    assert(allocation[32768] == 0x42);
+    crazypod_gameboy_close();
+    /* A truncated ROM is an I/O failure, not an invalid cartridge header. */
+    files[0].size = 100;
+    assert(crazypod_gameboy_open(0, NULL) ==
+           CRAZYPOD_GAMEBOY_ROM_IO_ERROR);
+    assert(handles == 0 && allocation == NULL);
     puts("Game Boy storage: save/RTC reload, rename, failure preservation pass");
     return 0;
 }

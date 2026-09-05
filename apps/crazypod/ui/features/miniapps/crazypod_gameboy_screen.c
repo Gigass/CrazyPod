@@ -158,13 +158,17 @@ const char *crazypod_gameboy_screen_error(
     case CRAZYPOD_GAMEBOY_OK: return "";
     case CRAZYPOD_GAMEBOY_BAD_ROM:
         return CP_TR("Unsupported or damaged Game Boy ROM");
+    case CRAZYPOD_GAMEBOY_ROM_IO_ERROR:
+        return CP_TR("Game Boy ROM could not be read");
     case CRAZYPOD_GAMEBOY_NO_MEMORY:
         return CP_TR("Not enough memory for this game");
     case CRAZYPOD_GAMEBOY_BAD_SAVE:
         return CP_TR("Game save is damaged; original preserved");
     case CRAZYPOD_GAMEBOY_CORE_ERROR:
         return CP_TR("Game emulation stopped");
-    default: return CP_TR("Game file or save could not be written/read");
+    case CRAZYPOD_GAMEBOY_IO_ERROR:
+        return CP_TR("Game save could not be read or written");
+    default: return CP_TR("Game file error");
     }
 }
 

@@ -15,6 +15,32 @@ struct mbc mbc IBSS_ATTR;
 struct rom rom IBSS_ATTR;
 struct ram ram;
 
+#ifdef CRAZYPOD_GAMEBOY_CORE
+static int ram_is_direct(void)
+{
+    return mbc.type != MBC_MBC2 && mbc.ram_bytes >= 8192;
+}
+
+static int ram_address(int address)
+{
+    if(mbc.type == MBC_MBC2)
+        return address & 0x01FF;
+    if(mbc.ram_bytes == 2048)
+        return address & 0x07FF;
+    return address & 0x1FFF;
+}
+#else
+static int ram_is_direct(void)
+{
+    return 1;
+}
+
+static int ram_address(int address)
+{
+    return address & 0x1FFF;
+}
+#endif
+
 
 /*
  * In order to make reads and writes efficient, we keep tables
@@ -59,7 +85,7 @@ void mem_updatemap(void)
         map[0x9] = lcd.vbank[R_VBK & 1] - 0x8000;
     }
 
-    if (mbc.enableram && !(rtc.sel&8))
+    if (mbc.enableram && !(rtc.sel&8) && ram_is_direct())
     {
         map[0xA] = ram.sbank[mbc.rambank] - 0xA000;
         map[0xB] = ram.sbank[mbc.rambank] - 0xA000;
@@ -75,7 +101,7 @@ void mem_updatemap(void)
     map[0x0] = map[0x1] = map[0x2] = map[0x3] = NULL;
     map[0x4] = map[0x5] = map[0x6] = map[0x7] = NULL;
     map[0x8] = map[0x9] = NULL;
-    if (mbc.enableram && !(rtc.sel&8))
+    if (mbc.enableram && !(rtc.sel&8) && ram_is_direct())
     {
         map[0xA] = ram.sbank[mbc.rambank] - 0xA000;
         map[0xB] = ram.sbank[mbc.rambank] - 0xA000;
@@ -326,6 +352,8 @@ static void mbc_write(int a, byte b)
         if ((a & 0xE100) == 0x2100)
         {
             mbc.rombank = b & 0x0F;
+            if(mbc.rombank == 0)
+                mbc.rombank = 1;
             break;
         }
         break;
@@ -425,8 +453,10 @@ static void mbc_write(int a, byte b)
 		}
 		break;
 	}
-    mbc.rombank &= (mbc.romsize - 1);
-    mbc.rambank &= (mbc.ramsize - 1);
+    if(mbc.romsize > 0)
+        mbc.rombank %= mbc.romsize;
+    if(mbc.ramsize > 0)
+        mbc.rambank %= mbc.ramsize;
     mem_updatemap();
 }
 
@@ -462,7 +492,10 @@ void mem_write(int a, byte b)
             rtc_write(b);
             break;
         }
-        ram.sbank[mbc.rambank][a & 0x1FFF] = b;
+        if(mbc.type == MBC_MBC2)
+            ram.sbank[0][ram_address(a)] = b & 0x0F;
+        else
+            ram.sbank[mbc.rambank][ram_address(a)] = b;
         break;
     case 0xC:
         if ((a & 0xF000) == 0xC000)
@@ -530,7 +563,9 @@ byte mem_read(int a)
 			return 0xFF;
 		if (rtc.sel&8)
 			return rtc.regs[rtc.sel&7];
-		return ram.sbank[mbc.rambank][a & 0x1FFF];
+		if(mbc.type == MBC_MBC2)
+			return 0xF0 | ram.sbank[0][ram_address(a)];
+		return ram.sbank[mbc.rambank][ram_address(a)];
     case 0xC:
         if ((a & 0xF000) == 0xC000)
             return ram.ibank[0][a & 0x0FFF];
