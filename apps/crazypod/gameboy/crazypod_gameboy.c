@@ -34,6 +34,34 @@ static void write_u32(uint8_t *p, uint32_t value)
     p[2] = value >> 16; p[3] = value >> 24;
 }
 
+static bool read_exact(int fd, void *buffer, size_t size)
+{
+    uint8_t *cursor = buffer;
+
+    while(size > 0) {
+        ssize_t count = read(fd, cursor, size);
+        if(count <= 0)
+            return false;
+        cursor += count;
+        size -= (size_t)count;
+    }
+    return true;
+}
+
+static bool write_exact(int fd, const void *buffer, size_t size)
+{
+    const uint8_t *cursor = buffer;
+
+    while(size > 0) {
+        ssize_t count = write(fd, cursor, size);
+        if(count <= 0)
+            return false;
+        cursor += count;
+        size -= (size_t)count;
+    }
+    return true;
+}
+
 static int compare_games(const void *a, const void *b)
 {
     return strcmp((const char *)a, (const char *)b);
@@ -112,11 +140,10 @@ static enum crazypod_gameboy_result load_save(void)
             CRAZYPOD_GAMEBOY_IO_ERROR;
     valid = filesize(fd) ==
         (off_t)(sizeof(header) + cartridge.ram_size) &&
-        read(fd, header, sizeof(header)) == (ssize_t)sizeof(header) &&
+        read_exact(fd, header, sizeof(header)) &&
         memcmp(header, "CPGBSV01", 8) == 0 &&
         read_u32(header + 8) == cartridge.ram_size &&
-        read(fd, save_ram, cartridge.ram_size) ==
-            (ssize_t)cartridge.ram_size;
+        read_exact(fd, save_ram, cartridge.ram_size);
     close(fd);
     if(!valid)
         return CRAZYPOD_GAMEBOY_BAD_SAVE;
@@ -150,8 +177,7 @@ enum crazypod_gameboy_result crazypod_gameboy_open(
     if(fd < 0)
         return CRAZYPOD_GAMEBOY_IO_ERROR;
     size = filesize(fd);
-    if(size < 0 || read(fd, header, sizeof(header)) !=
-       (ssize_t)sizeof(header) ||
+    if(size < 0 || !read_exact(fd, header, sizeof(header)) ||
        !crazypod_gameboy_cartridge_probe(
            header, sizeof(header), (size_t)size, &cartridge)) {
         close(fd);
@@ -168,8 +194,9 @@ enum crazypod_gameboy_result crazypod_gameboy_open(
     data = core_get_data(memory_handle);
     save_ram = data + cartridge.rom_size;
     memset(save_ram, 0xff, CRAZYPOD_GAMEBOY_RAM_MAX);
-    if(lseek(fd, 0, SEEK_SET) != 0 ||
-       read(fd, data, cartridge.rom_size) != (ssize_t)cartridge.rom_size) {
+    memcpy(data, header, sizeof(header));
+    if(!read_exact(fd, data + sizeof(header),
+                   cartridge.rom_size - sizeof(header))) {
         close(fd);
         crazypod_gameboy_close();
         return CRAZYPOD_GAMEBOY_IO_ERROR;
@@ -224,10 +251,8 @@ bool crazypod_gameboy_save(void)
     fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)
         return false;
-    success = write(fd, header, sizeof(header)) ==
-        (ssize_t)sizeof(header) &&
-        write(fd, save_ram, cartridge.ram_size) ==
-            (ssize_t)cartridge.ram_size;
+    success = write_exact(fd, header, sizeof(header)) &&
+        write_exact(fd, save_ram, cartridge.ram_size);
     if(fsync(fd) < 0)
         success = false;
     if(close(fd) < 0)

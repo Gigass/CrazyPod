@@ -18,6 +18,7 @@ static struct test_file {
 } files[8];
 static uint8_t *allocation;
 static bool fail_allocate, fail_write, fail_sync, fail_rename;
+static size_t max_read, max_write;
 static int file_count, handles;
 static time_t now = 1700000000;
 struct buflib_callbacks buflib_ops_locked;
@@ -55,6 +56,8 @@ ssize_t gb_test_read(int fd, void *data, size_t size)
     struct test_file *file = &files[fd];
     if(size > file->size - file->position)
         size = file->size - file->position;
+    if(max_read > 0 && size > max_read)
+        size = max_read;
     memcpy(data, file->data + file->position, size);
     file->position += size;
     return size;
@@ -65,6 +68,8 @@ ssize_t gb_test_write(int fd, const void *data, size_t size)
     struct test_file *file = &files[fd];
     if(fail_write)
         return -1;
+    if(max_write > 0 && size > max_write)
+        size = max_write;
     assert(file->position + size <= sizeof(file->data));
     memcpy(file->data + file->position, data, size);
     file->position += size;
@@ -199,12 +204,15 @@ int main(void)
     strcpy(files[0].path, "/MiniApps/Games/GBC/renamed.GBC");
     crazypod_gameboy_scan();
     now += 120;
+    max_read = 13;
     assert(crazypod_gameboy_open(0, NULL) == CRAZYPOD_GAMEBOY_OK);
     assert(allocation[32768] == 0x42);
     crazypod_gameboy_core_clock_export(clock);
     assert(clock[0] == 4 && clock[2] == 2 && clock[3] == 3);
+    max_write = 37;
     assert(crazypod_gameboy_save());
     crazypod_gameboy_close();
+    max_read = max_write = 0;
     /* Corrupt or truncated saves are refused without overwriting them. */
     files[save_index].data[80] ^= 1;
     assert(crazypod_gameboy_open(0, NULL) == CRAZYPOD_GAMEBOY_BAD_SAVE);
