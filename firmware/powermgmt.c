@@ -598,8 +598,11 @@ static inline void charging_algorithm_step(void)
     {
     case CHARGER_PLUGGED:
     case CHARGER:
-        charge_state = CHARGING;
-        break;
+        if (charging_state()) {
+            charge_state = CHARGING;
+            break;
+        }
+    /* Fallthrough */
     case CHARGER_UNPLUGGED:
     case NO_CHARGER:
         charge_state = DISCHARGING;

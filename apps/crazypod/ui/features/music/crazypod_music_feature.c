@@ -385,6 +385,12 @@ bool crazypod_music_feature_activate(
     else if(action.kind ==
             CRAZYPOD_MUSIC_ACTIVATION_SHOW_NOW_ACTIONS)
         host->show_now_actions();
+    else if(action.kind ==
+            CRAZYPOD_MUSIC_ACTIVATION_PLAY_PODCAST) {
+        if(host->play_track != NULL &&
+           host->play_track(action.group))
+            host->request_now_playing();
+    }
     return true;
 }
 

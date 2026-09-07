@@ -18,6 +18,24 @@ static int16_t samples[2048];
 static void (*submit_audio)(const int16_t *, size_t);
 static bool running;
 static bool draw_frame;
+static unsigned rtc_frame_phase;
+
+static bool is_mbc1_multicart(const uint8_t *data, size_t size)
+{
+    static const uint8_t nintendo_logo[48] = {
+        0xce, 0xed, 0x66, 0x66, 0xcc, 0x0d, 0x00, 0x0b,
+        0x03, 0x73, 0x00, 0x83, 0x00, 0x0c, 0x00, 0x0d,
+        0x00, 0x08, 0x11, 0x1f, 0x88, 0x89, 0x00, 0x0e,
+        0xdc, 0xcc, 0x6e, 0xe6, 0xdd, 0xdd, 0xd9, 0x99,
+        0xbb, 0xbb, 0x67, 0x63, 0x6e, 0x0e, 0xec, 0xcc,
+        0xdd, 0xdc, 0x99, 0x9f, 0xbb, 0xb9, 0x33, 0x3e
+    };
+    const size_t bank_16_header = 16u * 16384u + 0x104u;
+
+    return size == 1024u * 1024u &&
+        memcmp(data + bank_16_header, nintendo_logo,
+               sizeof(nintendo_logo)) == 0;
+}
 
 void die(char *message, ...)
 {
@@ -51,6 +69,7 @@ bool crazypod_gameboy_core_open(
     struct crazypod_gameboy_cartridge cart;
 
     running = false;
+    rtc_frame_phase = 0;
     if(save_ram == NULL ||
        !crazypod_gameboy_cartridge_probe(data, size, size, &cart))
         return false;
@@ -71,8 +90,13 @@ bool crazypod_gameboy_core_open(
     mbc.batt = cart.battery;
     mbc.romsize = cart.rom_size / 16384;
     /* A safe scratch bank also covers writes by RAM-less cartridges. */
-    mbc.ramsize = cart.ram_size > 0 ? cart.ram_size / 8192 : 1;
+    mbc.ramsize = cart.ram_size > 0 ?
+        (cart.ram_size + 8191) / 8192 : 1;
+    mbc.ram_bytes = (int)cart.ram_size;
     mbc.rombank = 1;
+    mbc.mbc1_multicart = cart.mapper == MBC_MBC1 &&
+        is_mbc1_multicart(data, size);
+    mbc.mbc30 = cart.mbc30;
     hw.cgb = cart.color;
     rtc.batt = cart.clock;
     pcm.hz = 44100;
@@ -113,7 +137,13 @@ bool crazypod_gameboy_core_frame(uint8_t buttons, bool render)
     cpu_emulate(2280);
     while(running && R_LY > 0 && R_LY < 144 && ++steps < 2048)
         cpu_emulate(cpu.lcdc > 0 ? cpu.lcdc : 1);
-    rtc_tick();
+    /* 70224 dots are one emulated frame.  Convert the nominal 59.7275 Hz
+     * frame rate to the RTC's 60 Hz tick without accumulating drift. */
+    rtc_frame_phase += 70224u * 60u;
+    while(rtc_frame_phase >= 4194304u) {
+        rtc_tick();
+        rtc_frame_phase -= 4194304u;
+    }
     sound_mix();
     if(!(R_LCDC & 0x80))
         cpu_emulate(32832);
@@ -132,6 +162,7 @@ const uint16_t *crazypod_gameboy_core_pixels(void)
 void crazypod_gameboy_core_close(void)
 {
     running = false;
+    rtc_frame_phase = 0;
     submit_audio = NULL;
     pcm.buf = NULL;
     rom.bank = NULL;
@@ -144,17 +175,26 @@ void crazypod_gameboy_core_clock_export(uint32_t clock[8])
 {
     clock[0] = rtc.d; clock[1] = rtc.h; clock[2] = rtc.m;
     clock[3] = rtc.s; clock[4] = rtc.t; clock[5] = rtc.stop;
-    clock[6] = rtc.carry; clock[7] = 0;
+    clock[6] = rtc.carry; clock[7] = rtc_frame_phase;
 }
 
 bool crazypod_gameboy_core_clock_import(const uint32_t clock[8])
 {
     if(clock[0] > 511 || clock[1] > 23 || clock[2] > 59 ||
-       clock[3] > 59 || clock[4] > 59 || clock[5] > 1 || clock[6] > 1)
+       clock[3] > 59 || clock[4] > 59 || clock[5] > 1 || clock[6] > 1 ||
+       clock[7] >= 4194304u)
         return false;
     rtc.d = clock[0]; rtc.h = clock[1]; rtc.m = clock[2];
     rtc.s = clock[3]; rtc.t = clock[4]; rtc.stop = clock[5];
     rtc.carry = clock[6];
+    rtc_frame_phase = clock[7];
+    rtc.regs[0] = rtc.s;
+    rtc.regs[1] = rtc.m;
+    rtc.regs[2] = rtc.h;
+    rtc.regs[3] = rtc.d;
+    rtc.regs[4] = (rtc.d >> 8) | (rtc.stop << 6) | (rtc.carry << 7);
+    rtc.regs[5] = rtc.regs[6] = rtc.regs[7] = 0xff;
+    rtc.latch = 0;
     return true;
 }
 

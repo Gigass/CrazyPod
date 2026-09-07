@@ -24,14 +24,20 @@ struct hw hw IBSS_ATTR;
 
 void hw_interrupt(byte i, byte mask)
 {
+#ifndef CRAZYPOD_GAMEBOY_CORE
     byte oldif = R_IF;
+#endif
     i &= 0x1F & mask;
     R_IF |= i & (hw.ilines ^ i);
 
+#ifdef CRAZYPOD_GAMEBOY_CORE
+    if (R_IF & R_IE) cpu.halt = 0;
+#else
     /* FIXME - is this correct? not sure the docs understand... */
     if ((R_IF & (R_IF ^ oldif) & R_IE) && cpu.ime) cpu.halt = 0;
     /* if ((i & (hw.ilines ^ i) & R_IE) && cpu.ime) cpu.halt = 0; */
     /* if ((i & R_IE) && cpu.ime) cpu.halt = 0; */
+#endif
     
     hw.ilines &= ~mask;
     hw.ilines |= i;
@@ -174,4 +180,14 @@ void hw_reset(void)
     R_SVBK = 0x01;
     R_HDMA5 = 0xFF;
     R_VBK = 0xFE;
+#ifdef CRAZYPOD_GAMEBOY_CORE
+    /* Match the fixed I/O state visible after the CGB boot ROM. */
+    R_P1 = 0xCF;
+    R_SC = hw.cgb ? 0x7F : 0x7E;
+    R_TAC = 0x00;
+    R_IF = 0x01;
+    R_KEY1 = 0x00;
+    R_SVBK = hw.cgb ? 0x00 : 0x01;
+    R_HDMA1 = R_HDMA2 = R_HDMA3 = R_HDMA4 = 0xFF;
+#endif
 }

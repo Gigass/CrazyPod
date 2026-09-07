@@ -18,12 +18,17 @@ struct crazypod_photo_catalog_entry {
 
 bool crazypod_photo_catalog_init(void);
 void crazypod_photo_catalog_refresh(void);
+void crazypod_photo_catalog_cancel_refresh(void);
+void crazypod_photo_catalog_reset_refresh_cancel(void);
+bool crazypod_photo_catalog_save(void);
 void crazypod_photo_catalog_invalidate(void);
 int crazypod_photo_catalog_count(void);
 int crazypod_photo_catalog_favorite_count(void);
 int crazypod_photo_catalog_favorite_index(int favorite_index);
 const struct crazypod_photo_catalog_entry *
 crazypod_photo_catalog_get(int index);
+bool crazypod_photo_catalog_copy(
+    int index, struct crazypod_photo_catalog_entry *entry);
 const char *crazypod_photo_catalog_name(int index);
 bool crazypod_photo_catalog_toggle_favorite(int index);
 bool crazypod_photo_catalog_delete(int index);

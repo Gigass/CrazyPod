@@ -80,9 +80,12 @@
 #define USB_MAX_CURRENT 500
 #endif
 
-/* Configuration 2 is reserved for the audio/iAP accessory profile. */
-#if defined(USB_ENABLE_AUDIO) || defined(USB_ENABLE_IAP_HID) || \
-    defined(USB_ENABLE_IAP)
+/* CrazyPod's accessory configuration is provided by the class drivers
+ * below.  This fork uses USB_ENABLE_IAP_HID; upstream uses USB_ENABLE_IAP.
+ * Keep each provider explicit and tie the count to the feature graph rather
+ * than a target special case, so disabling them does not advertise config 2. */
+#if defined(USB_ENABLE_AUDIO) || defined(USB_ENABLE_IAP) || \
+    defined(USB_ENABLE_IAP_HID)
 #define NUM_CONFIGS 2
 #else
 #define NUM_CONFIGS 1

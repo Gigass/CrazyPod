@@ -22,8 +22,16 @@ struct mbc
     int rambank;
     int romsize;
     int ramsize;
+    int ram_bytes;
     int enableram;
     int batt;
+#ifdef CRAZYPOD_GAMEBOY_CORE
+    int rombank0;
+    int rombank_low;
+    int rombank_high;
+    int mbc1_multicart;
+    int mbc30;
+#endif
     byte *rmap[0x10], *wmap[0x10];
 };
 

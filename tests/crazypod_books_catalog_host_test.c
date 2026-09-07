@@ -184,6 +184,17 @@ unsigned char *iso_decode_ex(
     return target;
 }
 
+unsigned char *utf16decode(
+    const unsigned char *source, unsigned char *target,
+    int count, int target_size, bool le)
+{
+    (void)source;
+    (void)count;
+    (void)target_size;
+    (void)le;
+    return target;
+}
+
 void crazypod_epub_set_progress_callback(
     crazypod_epub_progress_callback callback, void *context)
 {
@@ -223,6 +234,15 @@ bool crazypod_epub_prepare(
     if(text_size != NULL)
         *text_size = 900;
     return true;
+}
+
+bool crazypod_epub_image_get(
+    uint32_t offset, char *path, size_t path_size)
+{
+    (void)offset;
+    if(path != NULL && path_size > 0)
+        path[0] = '\0';
+    return false;
 }
 
 void crazypod_epub_text_path(

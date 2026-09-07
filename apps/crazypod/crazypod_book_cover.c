@@ -11,6 +11,7 @@
 #include "src/misc/cache/instance/lv_image_cache.h"
 
 #include "crazypod_book_cover.h"
+#include "crazypod_book_png.h"
 #include "crazypod_books.h"
 #include "crazypod_image.h"
 
@@ -66,6 +67,7 @@ static bool decode_cover(const char *path, struct book_cover_slot *slot,
                          int max_width, int max_height)
 {
     struct bitmap bitmap;
+    struct crazypod_book_png_info png_info;
     fb_data *decode_buffer;
     size_t pixel_bytes =
         BOOK_COVER_WIDTH * BOOK_COVER_HEIGHT * sizeof(fb_data);
@@ -73,22 +75,39 @@ static bool decode_cover(const char *path, struct book_cover_slot *slot,
     int decode_handle;
     int result;
     int row;
+    bool is_png = extension_is(path, ".png");
 
     if(!extension_is(path, ".jpg") &&
        !extension_is(path, ".jpeg") &&
-       !extension_is(path, ".bmp"))
+       !extension_is(path, ".bmp") && !is_png)
         return false;
+    if(is_png) {
+        if(!crazypod_book_png_inspect(path, &png_info))
+            return false;
+        decode_bytes = png_info.workspace_size;
+    }
     decode_handle = core_alloc_ex(
         decode_bytes, &buflib_ops_locked);
     if(decode_handle < 0)
         return false;
     decode_buffer = core_get_data(decode_handle);
+    crazypod_image_decode_lock();
+    if(is_png) {
+        int width;
+        int height;
+
+        result = crazypod_book_png_decode(
+            path, max_width, max_height, slot->pixels,
+            &width, &height, decode_buffer, decode_bytes) ? 0 : -1;
+        crazypod_image_decode_unlock();
+        core_free(decode_handle);
+        return result == 0 && crazypod_image_configure_rgb565(
+            &slot->descriptor, slot->pixels, width, height);
+    }
     memset(&bitmap, 0, sizeof(bitmap));
     bitmap.width = max_width;
     bitmap.height = max_height;
     bitmap.data = (unsigned char *)decode_buffer;
-
-    crazypod_image_decode_lock();
     if(extension_is(path, ".jpg") ||
        extension_is(path, ".jpeg"))
         result = read_jpeg_file(

@@ -1,7 +1,7 @@
-CrazyPod GB / GBC
+CrazyPod Game Boy
 
 Place your legally obtained .gb / .gbc ROMs in /MiniApps/Games,
-/MiniApps/Games/GB or /MiniApps/Games/GBC. Open the GB / GBC desktop icon.
+/MiniApps/Games/GB or /MiniApps/Games/GBC. Open the Game Boy desktop icon.
 Re-enter the app to refresh.
 Keep .cpk apps directly in /MiniApps.
 Up to 128 ROMs are listed. ZIP and GBA files are not supported.
@@ -35,10 +35,13 @@ HOLD, USB connection and system shutdown also attempt to save and exit.
 On a normal save failure, the game stays in memory: choose Save and exit
 again to retry. A corrupt save is refused and is never overwritten.
 Do not disconnect power while saving. Back up /.crazypod/gameboy/ with
-your other user data. Saves from other emulators are not imported.
+your other user data. On first launch, a same-name raw .sav beside the ROM
+is imported when its SRAM size matches. Emulator-specific RTC sidecars are
+not imported.
 
 Core: Rockboy / gnuboy, reused under the repository's GPL license.
-Supported mapper families: ROM, MBC1, MBC2, MBC3, MBC5 (including rumble
-carts, without physical rumble). Camera, MBC6/7, HuC and other special
-cartridges, link cable and GBA are not supported. Compatibility and speed
-vary by game; real iPod validation is required before a release.
+Supported mapper families: ROM, MBC1/MBC1M, MBC2, MBC3/MBC30 and MBC5
+(including rumble carts, without physical rumble). Camera, MBC6/7, HuC and
+other special cartridges, link cable and GBA are not supported.
+Compatibility and speed vary by game; real iPod validation is required
+before a release.

@@ -24,6 +24,7 @@ struct crazypod_gameboy_cartridge {
     bool battery;
     bool clock;
     bool color;
+    bool mbc30;
 };
 
 /* Buffers remain owned by the caller until close. SRAM is preloaded and

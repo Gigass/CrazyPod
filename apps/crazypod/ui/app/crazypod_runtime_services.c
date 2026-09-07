@@ -198,8 +198,12 @@ void crazypod_runtime_services_tick(
          state->route == DIY_ROUTE_WALLPAPER_FILES ||
          state->route == DIY_ROUTE_WALLPAPER_CROP);
     bool videos_route = routed &&
-        state->route >= PHOTOS_ROUTE_MENU &&
-        state->route <= PHOTOS_ROUTE_DETAIL;
+        (state->route == PHOTOS_ROUTE_VIDEOS ||
+         state->route == PHOTOS_ROUTE_DELETE_VIDEOS ||
+         state->route == PHOTOS_ROUTE_DELETE_VIDEO_CONFIRM ||
+         (state->route == PHOTOS_ROUTE_MENU && state->selected == 1) ||
+         (state->route == PHOTOS_ROUTE_DELETE_MENU &&
+          state->selected == 1));
     bool miniapp_active = !locked && routed &&
         ((state->route == MINIAPP_ROUTE_VIEW &&
           crazypod_miniapps_feature_is_open()) ||

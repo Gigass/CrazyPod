@@ -26,6 +26,7 @@ cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-books-stubs" \
     -I"$repo_root/apps/crazypod" \
     "$repo_root/apps/crazypod/crazypod_books.c" \
+    "$repo_root/apps/crazypod/epub/crazypod_epub_layout.c" \
     "$repo_root/tests/crazypod_books_catalog_host_test.c" \
     -o "$test_root/crazypod_books_catalog_host_test"
 
@@ -143,6 +144,16 @@ cc -std=c99 -Wall -Wextra -Werror \
 "$test_root/crazypod_image_host_test"
 
 cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-image-stubs" \
+    -I"$repo_root/apps/crazypod" \
+    -I"$repo_root/apps/crazypod/ui/features/photos" \
+    "$repo_root/apps/crazypod/ui/features/photos/crazypod_photo_controller.c" \
+    "$repo_root/tests/crazypod_photo_controller_host_test.c" \
+    -o "$test_root/crazypod_photo_controller_host_test"
+
+"$test_root/crazypod_photo_controller_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-playlist-stubs" \
     -I"$repo_root/apps/crazypod" \
     "$repo_root/tests/crazypod_core_alloc_host_stub.c" \
@@ -189,3 +200,4 @@ cc -std=c99 -Wall -Wextra -Werror \
 
 python3 "$repo_root/tests/test-crazypod-menu-icons.py"
 python3 "$repo_root/tests/test-crazypod-photo-cache-policy.py"
+python3 "$repo_root/tests/test-crazypod-book-reader.py"

@@ -22,7 +22,7 @@
 #define EPUB_XML_SIZE 65536
 #define EPUB_MANIFEST_MAX 128
 #define EPUB_CHAPTER_MAX CRAZYPOD_EPUB_CHAPTER_MAX
-#define EPUB_EXTRACT_MAX (EPUB_MANIFEST_MAX + 4)
+#define EPUB_EXTRACT_MAX (EPUB_MANIFEST_MAX * 2 + 4)
 
 struct epub_manifest_item {
     char id[64];
@@ -48,8 +48,21 @@ static char epub_title[96];
 static char epub_author[96];
 static char epub_cover_source[MAX_PATH];
 static char epub_extract_entries[EPUB_EXTRACT_MAX][MAX_PATH];
+static struct crazypod_epub_cache_image epub_images[
+    CRAZYPOD_EPUB_IMAGE_MAX];
+static char epub_image_sources[CRAZYPOD_EPUB_IMAGE_MAX][MAX_PATH];
+static int epub_image_count;
+static uint32_t epub_cache_hash;
 static crazypod_epub_progress_callback epub_progress_callback;
 static void *epub_progress_context;
+
+struct epub_text_image_context {
+    const char *root;
+    char directory[MAX_PATH];
+    uint32_t base_offset;
+};
+static bool append_epub_image(const char *source, uint32_t offset,
+                              void *context);
 static void report_prepare_progress(int percent, const char *stage)
 {
     if(epub_progress_callback != NULL)
@@ -435,12 +448,18 @@ static bool build_epub_text(const char *root, const char *opf_path,
                             const char *temporary)
 {
     char opf_directory[MAX_PATH];
+    struct epub_text_image_context image_context = {
+        .root = root,
+    };
     const char *cursor;
     int output_fd;
     bool wrote = false;
 
     epub_chapter_count = 0;
+    epub_image_count = 0;
     memset(epub_chapters, 0, sizeof(epub_chapters));
+    memset(epub_images, 0, sizeof(epub_images));
+    memset(epub_image_sources, 0, sizeof(epub_image_sources));
     if(!read_text_file(opf_path))
         return false;
     parse_manifest();
@@ -471,7 +490,14 @@ static bool build_epub_text(const char *root, const char *opf_path,
                 if(wrote && !write_exact(output_fd, "\n\n", 2))
                     break;
                 chapter_offset = lseek(output_fd, 0, SEEK_CUR);
-                if(crazypod_epub_html_append_text(chapter, output_fd)) {
+                image_context.base_offset = chapter_offset >= 0
+                    ? (uint32_t)chapter_offset : 0;
+                crazypod_epub_directory_of(
+                    image_context.directory,
+                    sizeof(image_context.directory), chapter);
+                if(crazypod_epub_html_append_rich_text_with_images(
+                       chapter, output_fd, append_epub_image,
+                       &image_context)) {
                     if(epub_chapter_count < EPUB_CHAPTER_MAX) {
                         struct crazypod_epub_cache_chapter *entry =
                             &epub_chapters[epub_chapter_count++];
@@ -519,8 +545,8 @@ static bool prepare_epub_resources(const char *epub_path,
     for(i = 0; i < manifest_count && count < EPUB_EXTRACT_MAX; ++i) {
         char resolved[MAX_PATH];
 
-        if(!manifest[i].readable &&
-           !manifest[i].navigation)
+        if(!manifest[i].readable && !manifest[i].navigation &&
+           !manifest[i].image)
             continue;
         if(crazypod_epub_resolve_href(resolved, sizeof(resolved),
                         extract_root, opf_directory,
@@ -658,26 +684,30 @@ bool crazypod_epub_prepare(const char *epub_path,
     off_t size;
     bool success = false;
 
-    report_prepare_progress(5, CP_TR("Checking book cache"));
     crazypod_epub_cache_ensure_directory();
     crazypod_epub_cache_paths(epub_path, &paths);
+    epub_cache_hash = hash;
     snprintf(text_path, text_path_size, "%s", paths.text);
     if(crazypod_epub_cache_load_book(
            epub_path, source_size, source_mtime, paths.text,
            paths.metadata, &cache_book)) {
         epub_chapter_count = (int)cache_book.chapter_count;
+        epub_image_count = (int)cache_book.image_count;
         memcpy(epub_chapters, cache_book.chapters, sizeof(epub_chapters));
+        memcpy(epub_images, cache_book.images, sizeof(epub_images));
         snprintf(epub_title, sizeof(epub_title), "%s", cache_book.title);
         snprintf(epub_author, sizeof(epub_author), "%s", cache_book.author);
         snprintf(epub_cover_source, sizeof(epub_cover_source),
                  "%s", cache_book.cover_path);
         if(text_size != NULL)
             *text_size = cache_book.text_size;
-        report_prepare_progress(100, CP_TR("Book ready"));
         return true;
     }
 
+    report_prepare_progress(5, CP_TR("Checking book cache"));
     report_prepare_progress(12, CP_TR("Clearing temporary files"));
+    epub_cache_hash = hash;
+    crazypod_epub_cache_remove(epub_path);
     crazypod_epub_extraction_remove_tree(paths.extract_root);
     report_prepare_progress(15, CP_TR("Opening EPUB package"));
     mkdir(paths.extract_root);
@@ -716,6 +746,8 @@ bool crazypod_epub_prepare(const char *epub_path,
              "%s", epub_title);
     snprintf(cache_book.author, sizeof(cache_book.author),
              "%s", epub_author);
+    cache_book.image_count = (uint32_t)epub_image_count;
+    memcpy(cache_book.images, epub_images, sizeof(cache_book.images));
     crazypod_epub_cover_persist(
         hash, paths.extract_root, epub_cover_source,
         cache_book.cover_path, sizeof(cache_book.cover_path));
@@ -750,6 +782,113 @@ done:
     return success;
 }
 
+static const char *epub_image_extension(const char *path)
+{
+    const char *dot;
+
+    if(path == NULL)
+        return NULL;
+    dot = strrchr(path, '.');
+    if(dot == NULL)
+        return NULL;
+    if(crazypod_epub_ascii_equal(dot, ".jpg"))
+        return ".jpg";
+    if(crazypod_epub_ascii_equal(dot, ".jpeg"))
+        return ".jpeg";
+    if(crazypod_epub_ascii_equal(dot, ".bmp"))
+        return ".bmp";
+    if(crazypod_epub_ascii_equal(dot, ".png"))
+        return ".png";
+    /* Keep unsupported resources in the cache so the reader can show an
+     * image placeholder instead of silently removing an EPUB image. */
+    if(crazypod_epub_ascii_equal(dot, ".gif"))
+        return ".gif";
+    if(crazypod_epub_ascii_equal(dot, ".webp"))
+        return ".webp";
+    return NULL;
+}
+
+static bool persist_epub_image(
+    uint32_t hash, unsigned image_index, const char *source,
+    char *output, size_t output_size)
+{
+    const char *extension = epub_image_extension(source);
+    char temporary[MAX_PATH];
+    unsigned char buffer[1024];
+    int input;
+    int output_fd;
+    ssize_t count;
+    bool success = false;
+
+    if(extension == NULL || source == NULL || source[0] == '\0' ||
+       snprintf(output, output_size,
+                EPUB_CACHE_DIRECTORY "/%08lx.image%03u%s",
+                (unsigned long)hash, image_index, extension) >=
+           (int)output_size ||
+       snprintf(temporary, sizeof(temporary), "%s.tmp", output) >=
+           (int)sizeof(temporary))
+        return false;
+    input = open(source, O_RDONLY);
+    if(input < 0)
+        return false;
+    output_fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if(output_fd < 0) {
+        close(input);
+        return false;
+    }
+    while((count = read(input, buffer, sizeof(buffer))) > 0) {
+        if(!write_exact(output_fd, buffer, (size_t)count))
+            break;
+    }
+    success = count == 0 && fsync(output_fd) >= 0;
+    close(input);
+    close(output_fd);
+    if(!success || rename(temporary, output) < 0) {
+        remove(temporary);
+        return false;
+    }
+    return true;
+}
+
+static bool append_epub_image(const char *source, uint32_t offset,
+                              void *context)
+{
+    struct epub_text_image_context *image_context = context;
+    char resolved[MAX_PATH];
+    char persisted[MAX_PATH];
+    int i;
+
+    if(image_context == NULL || source == NULL || source[0] == '\0' ||
+       epub_image_count >= CRAZYPOD_EPUB_IMAGE_MAX ||
+       !crazypod_epub_resolve_href(
+           resolved, sizeof(resolved), image_context->root,
+           image_context->directory, source) ||
+       epub_image_extension(resolved) == NULL || !file_exists(resolved))
+        return false;
+    for(i = 0; i < epub_image_count; ++i) {
+        if(strcmp(epub_image_sources[i], resolved) == 0)
+            break;
+    }
+    if(i == epub_image_count) {
+        if(!persist_epub_image(
+               epub_cache_hash, (unsigned)i, resolved,
+               persisted, sizeof(persisted)))
+            return false;
+        snprintf(epub_image_sources[i], sizeof(epub_image_sources[i]),
+                 "%s", resolved);
+        snprintf(epub_images[i].path, sizeof(epub_images[i].path),
+                 "%s", persisted);
+    }
+    epub_images[epub_image_count].offset =
+        image_context->base_offset + offset;
+    if(i != epub_image_count)
+        snprintf(epub_images[epub_image_count].path,
+                 sizeof(epub_images[epub_image_count].path),
+                 "%s", epub_images[i].path);
+    ++epub_image_count;
+    return true;
+}
+
 void crazypod_epub_text_path(const char *epub_path,
                              char *text_path,
                              size_t text_path_size)
@@ -765,6 +904,23 @@ void crazypod_epub_text_path(const char *epub_path,
 int crazypod_epub_chapter_count(void)
 {
     return epub_chapter_count;
+}
+
+bool crazypod_epub_image_get(uint32_t offset, char *path, size_t path_size)
+{
+    uint32_t i;
+
+    if(path == NULL || path_size == 0)
+        return false;
+    for(i = 0; i < cache_book.image_count &&
+               i < CRAZYPOD_EPUB_IMAGE_MAX; ++i) {
+        if(cache_book.images[i].offset == offset) {
+            snprintf(path, path_size, "%s", cache_book.images[i].path);
+            return path[0] != '\0' && file_exists(path);
+        }
+    }
+    path[0] = '\0';
+    return false;
 }
 
 bool crazypod_epub_chapter_get(int index, char *title,

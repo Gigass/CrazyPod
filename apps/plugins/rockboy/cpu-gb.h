@@ -25,6 +25,9 @@ struct cpu
     int ime, ima;
     unsigned int speed;
     unsigned int halt;
+#ifdef CRAZYPOD_GAMEBOY_CORE
+    unsigned int halt_bug;
+#endif
     unsigned int div;
     int tim;
     int lcdc;

@@ -1,13 +1,13 @@
-# GB / GBC 游戏
+# Game Boy 游戏
 
-CrazyPod 的入口为桌面上的独立 **GB / GBC** 图标。游戏模拟功能独立于
+CrazyPod 的入口为桌面上的独立 **Game Boy** 图标。游戏模拟功能独立于
 Mini App 原生包加载器，不需要安装 `.cpk`。
 
 ## 放置游戏
 
 将合法获取的 `.gb`、`.gbc` ROM 放入设备的 `/MiniApps/Games` 文件夹，
 也可以放在 `/MiniApps/Games/GB`、`/MiniApps/Games/GBC` 中。
-重新进入 GB / GBC 列表即会扫描。
+重新进入 Game Boy 列表即会扫描。
 最多列出 128 个文件；不递归扫描其他目录，不解压 ZIP，不支持 GBA。
 固件和测试均不附带商业游戏或 Nintendo 启动 ROM。
 
@@ -47,13 +47,15 @@ HOLD 锁定、USB 连接、系统关机或重启事件也会尝试保存并退�
 正常退出时若保存失败，会停留在暂停菜单并保留内存，可再次选择保存重试。
 系统强制退出或断电仍可能丢失本次进度；不要在保存过程中断开电源。
 
-请备份整个 `/.crazypod/gameboy/`。当前不导入其他模拟器的 `.sav`，
-也没有即时存档、联机、作弊码或实体震动支持。
+请备份整个 `/.crazypod/gameboy/`。首次启动时，如果 CrazyPod 存档尚不存在，
+可导入 ROM 旁边同名且大小完全匹配的原始 `.sav`。这里只导入 SRAM，
+不导入其他模拟器的 RTC 附加数据；当前也没有即时存档、联机、作弊码或
+实体震动支持。
 
 ## 支持范围与验证
 
-复用仓库的 Rockboy / gnuboy 核心，支持普通 ROM 及 MBC1、MBC2、MBC3、
-MBC5 系列卡带。带震动的 MBC5 卡带按无实体震动运行。
+复用仓库的 Rockboy / gnuboy 核心，支持普通 ROM 及 MBC1、MBC1M、MBC2、
+MBC3、MBC30、MBC5 系列卡带。带震动的 MBC5 卡带按无实体震动运行。
 Camera、MBC6/7、HuC 等特殊卡带会被拒绝。
 标准 ROM 大小上限为 8 MiB；不保证所有游戏兼容或在真机上满速。
 

@@ -40,7 +40,7 @@ const char *crazypod_miniapps_feature_title(
     const struct route_state *state)
 {
     if(state->route == GAMEBOY_ROUTE_LIBRARY)
-        return "GB / GBC";
+        return CP_TR("Game Boy");
     if(state->route == MINIAPP_ROUTE_VIEW) {
         const struct crazypod_miniapp_metadata *metadata =
             crazypod_miniapps_metadata(state->group);
@@ -124,7 +124,7 @@ bool crazypod_miniapps_feature_render_gameboy_preview(
     crazypod_ui_widget_box(console, 57, 82, 12, 12, 6, 0x8c344b, 255);
     crazypod_ui_widget_box(console, 71, 70, 12, 12, 6, 0x8c344b, 255);
     crazypod_preview_make_caption(
-        parent, "GB / GBC", &lv_font_montserrat_16,
+        parent, CP_TR("Game Boy"), &lv_font_montserrat_16,
         state->route == GAMEBOY_ROUTE_LIBRARY
             ? crazypod_gameboy_title(state->selected)
             : CP_TR("Add .gb or .gbc files to /MiniApps/Games"),

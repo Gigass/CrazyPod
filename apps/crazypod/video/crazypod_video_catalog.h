@@ -18,10 +18,15 @@ struct crazypod_video_catalog_entry {
 
 bool crazypod_video_catalog_init(void);
 void crazypod_video_catalog_refresh(void);
+void crazypod_video_catalog_cancel_refresh(void);
+void crazypod_video_catalog_reset_refresh_cancel(void);
+bool crazypod_video_catalog_save(void);
 void crazypod_video_catalog_invalidate(void);
 int crazypod_video_catalog_count(void);
 const struct crazypod_video_catalog_entry *
 crazypod_video_catalog_get(int index);
+bool crazypod_video_catalog_copy(
+    int index, struct crazypod_video_catalog_entry *entry);
 bool crazypod_video_catalog_path_supported(const char *path);
 bool crazypod_video_catalog_update_playback(
     int index, uint32_t resume_ticks, uint32_t duration_ticks);

@@ -164,7 +164,7 @@ void crazypod_video_poster_init(void)
     queue_init(&poster_queue, false);
     if(create_thread(poster_thread, poster_stack, sizeof(poster_stack), 0,
                      "crazypod video posters"
-                     IF_PRIO(, PRIORITY_USER_INTERFACE)
+                     IF_PRIO(, PRIORITY_BACKGROUND)
                      IF_COP(, CPU)) == 0)
         panicf("video poster thread");
 }
@@ -183,11 +183,15 @@ void crazypod_video_poster_reset(void)
 
 void crazypod_video_poster_suspend(void)
 {
-    bool active;
-
     mutex_lock(&poster_mutex);
     suspended = true;
     mutex_unlock(&poster_mutex);
+}
+
+void crazypod_video_poster_wait_idle(void)
+{
+    bool active;
+
     do {
         mutex_lock(&poster_mutex);
         active = decoding;
@@ -209,25 +213,24 @@ void crazypod_video_poster_resume(void)
 
 const lv_image_dsc_t *crazypod_video_poster_get(int index)
 {
-    const struct crazypod_video_catalog_entry *entry =
-        crazypod_video_catalog_get(index);
+    struct crazypod_video_catalog_entry entry;
     const lv_image_dsc_t *result = NULL;
     bool changed = false;
 
-    if(entry == NULL)
+    if(!crazypod_video_catalog_copy(index, &entry))
         return NULL;
     mutex_lock(&poster_mutex);
     if(slot.decoded_index == index &&
        slot.decoded_serial == slot.request_serial &&
        slot.valid &&
-       strcmp(slot.requested_path, entry->poster_path) == 0) {
+       strcmp(slot.requested_path, entry.poster_path) == 0) {
         result = &slot.descriptor[slot.active_bank];
     }
     else if(slot.requested_index != index ||
-            strcmp(slot.requested_path, entry->poster_path) != 0) {
+            strcmp(slot.requested_path, entry.poster_path) != 0) {
         slot.requested_index = index;
         snprintf(slot.requested_path, sizeof(slot.requested_path),
-                 "%s", entry->poster_path);
+                 "%s", entry.poster_path);
         ++slot.request_serial;
         slot.pending = true;
         slot.valid = false;

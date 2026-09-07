@@ -1876,6 +1876,7 @@ void crazypod_artwork_cancel_product_requests(void)
     artwork_suspended = true;
     artwork_prime_active = false;
     mutex_unlock(&artwork_mutex);
+
     do {
         mutex_lock(&artwork_mutex);
         busy = artwork_worker_decoding ||

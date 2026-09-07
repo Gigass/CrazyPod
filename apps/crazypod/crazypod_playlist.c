@@ -422,11 +422,34 @@ static bool queue_replace(const char *const *paths, int count,
     char selected[MAX_PATH];
     bool previous_shuffle;
     uint32_t previous_shuffle_state;
+    bool previous_audio_active;
+    bool previous_audio_paused;
+    unsigned long previous_elapsed = 0;
+    unsigned long previous_offset = 0;
+    bool previous_queue_started;
     bool start_playback;
     int i;
 
     if(count < 0 || (count > 0 && paths == NULL))
         return false;
+    for(i = 0; i < count; ++i) {
+        if(paths[i] == NULL || paths[i][0] != '/')
+            return false;
+    }
+    {
+        int status = audio_status();
+        struct mp3entry *id3 = audio_current_track();
+
+        previous_audio_active = (status & AUDIO_STATUS_PLAY) != 0;
+        previous_audio_paused = (status & AUDIO_STATUS_PAUSE) != 0;
+        if(previous_audio_active && id3 != NULL) {
+            previous_elapsed = id3->elapsed;
+            previous_offset = id3->offset;
+        }
+    }
+    queue_lock();
+    previous_queue_started = queue_started && queue_length > 0;
+    queue_unlock();
     audio_stop();
     queue_lock();
     previous_shuffle = queue_shuffle;
@@ -444,6 +467,13 @@ static bool queue_replace(const char *const *paths, int count,
             global_settings.playlist_shuffle = previous_shuffle;
         }
         queue_unlock();
+        if(previous_audio_active && previous_queue_started) {
+            audio_play(previous_elapsed, previous_offset);
+            if(previous_audio_paused)
+                audio_pause();
+            else
+                audio_resume();
+        }
         return false;
     }
     queue_length = 0;
@@ -452,7 +482,8 @@ static bool queue_replace(const char *const *paths, int count,
 
     for(i = 0; i < count; ++i) {
         copy_path(queue_paths[i], paths[i]);
-        copy_path(original_paths[i], paths[i]);
+        if(queue_shuffle)
+            copy_path(original_paths[i], paths[i]);
     }
 
     queue_length = count;
@@ -603,6 +634,10 @@ static void queue_set_shuffle_locked(bool enabled)
     copy_path(current, queue_paths[queue_index]);
 
     if(enabled) {
+        if(!queue_shuffle) {
+            for(i = 0; i < queue_length; ++i)
+                copy_path(original_paths[i], queue_paths[i]);
+        }
         for(i = queue_length - 1; i > 0; --i) {
             int candidate = (int)(next_random() % (uint32_t)(i + 1));
             char temporary[MAX_PATH];

@@ -17,6 +17,7 @@
 #define ICON_HEIGHT 160
 #define ICON_ROW_BYTES (ICON_WIDTH * 4)
 #define ICON_BYTES (ICON_ROW_BYTES * ICON_HEIGHT)
+#define GAMEBOY_ICON_INDEX (CRAZYPOD_ICON_COUNT - 1)
 
 struct icon_slot {
     uint8_t premultiplied[ICON_BYTES] CACHEALIGN_AT_LEAST_ATTR(16);
@@ -38,8 +39,93 @@ static const char *const app_paths[CRAZYPOD_ICON_COUNT] = {
     "music", "podcasts", "mini_apps", "shuffle",
     "screen_lock", "photos", "diy", "fitness", "books", "notes",
     "clock", "contacts", "calendar", "stopwatch",
-    "extras", "settings", "mini_apps"
+    "extras", "settings", "gameboy"
 };
+
+static void set_icon_pixel(struct icon_slot *slot, int x, int y,
+                           unsigned red, unsigned green, unsigned blue,
+                           unsigned alpha)
+{
+    uint8_t *pixel;
+
+    if(x < 0 || x >= ICON_WIDTH || y < 0 || y >= ICON_HEIGHT)
+        return;
+    pixel = slot->premultiplied +
+        (size_t)(y * ICON_WIDTH + x) * 4;
+    pixel[0] = (uint8_t)((blue * alpha + 128) / 255);
+    pixel[1] = (uint8_t)((green * alpha + 128) / 255);
+    pixel[2] = (uint8_t)((red * alpha + 128) / 255);
+    pixel[3] = (uint8_t)alpha;
+}
+
+static bool inside_round_rect(int x, int y,
+                              int left, int top, int right, int bottom,
+                              int radius)
+{
+    int nearest_x = x < left + radius ? left + radius :
+        x >= right - radius ? right - radius - 1 : x;
+    int nearest_y = y < top + radius ? top + radius :
+        y >= bottom - radius ? bottom - radius - 1 : y;
+    int dx = x - nearest_x;
+    int dy = y - nearest_y;
+
+    return dx * dx + dy * dy <= radius * radius;
+}
+
+static void fill_round_rect(struct icon_slot *slot,
+                            int left, int top, int right, int bottom,
+                            int radius, unsigned red, unsigned green,
+                            unsigned blue)
+{
+    int x, y;
+
+    for(y = top; y < bottom; ++y) {
+        for(x = left; x < right; ++x) {
+            if(inside_round_rect(x, y, left, top, right, bottom, radius))
+                set_icon_pixel(slot, x, y, red, green, blue, 255);
+        }
+    }
+}
+
+static void fill_circle(struct icon_slot *slot, int center_x, int center_y,
+                        int radius, unsigned red, unsigned green,
+                        unsigned blue)
+{
+    int x, y;
+
+    for(y = center_y - radius; y <= center_y + radius; ++y) {
+        for(x = center_x - radius; x <= center_x + radius; ++x) {
+            int dx = x - center_x;
+            int dy = y - center_y;
+
+            if(dx * dx + dy * dy <= radius * radius)
+                set_icon_pixel(slot, x, y, red, green, blue, 255);
+        }
+    }
+}
+
+/* Keep the independent Game Boy entry visually distinct when a theme does
+ * not ship a dedicated 160px asset. The simple silhouette also scales well
+ * on the native desktop. */
+static void make_gameboy_icon(struct icon_slot *slot)
+{
+    memset(slot->premultiplied, 0, sizeof(slot->premultiplied));
+    fill_round_rect(slot, 12, 8, 148, 152, 25, 71, 91, 52);
+    fill_round_rect(slot, 20, 16, 140, 144, 18, 172, 188, 149);
+    fill_round_rect(slot, 34, 30, 126, 79, 6, 30, 43, 34);
+    fill_round_rect(slot, 41, 37, 119, 72, 3, 154, 174, 125);
+    fill_round_rect(slot, 47, 92, 83, 119, 3, 42, 48, 42);
+    fill_round_rect(slot, 58, 84, 72, 128, 3, 42, 48, 42);
+    fill_circle(slot, 108, 102, 10, 137, 48, 63);
+    fill_circle(slot, 128, 117, 10, 137, 48, 63);
+    fill_round_rect(slot, 98, 132, 128, 136, 2, 80, 92, 69);
+    fill_round_rect(slot, 133, 132, 138, 136, 2, 80, 92, 69);
+    slot->image.pixels = slot->premultiplied;
+    slot->image.width = ICON_WIDTH;
+    slot->image.height = ICON_HEIGHT;
+    slot->image.stride = ICON_ROW_BYTES;
+    slot->valid = true;
+}
 
 static uint16_t read_le16(const uint8_t *value)
 {
@@ -156,8 +242,12 @@ void crazypod_icons_load_theme(int theme)
         snprintf(path, sizeof(path),
                  "/.rockbox/crazypod/icons/%s/%s.bmp",
                  theme_paths[theme], app_paths[i]);
-        if(!load_icon(&slots[i], path))
-            complete = false;
+        if(!load_icon(&slots[i], path)) {
+            if(i == GAMEBOY_ICON_INDEX)
+                make_gameboy_icon(&slots[i]);
+            else
+                complete = false;
+        }
     }
     if(complete)
         loaded_theme = theme;

@@ -9,7 +9,8 @@ enum crazypod_gameboy_result {
     CRAZYPOD_GAMEBOY_NO_MEMORY,
     CRAZYPOD_GAMEBOY_IO_ERROR,
     CRAZYPOD_GAMEBOY_BAD_SAVE,
-    CRAZYPOD_GAMEBOY_CORE_ERROR
+    CRAZYPOD_GAMEBOY_CORE_ERROR,
+    CRAZYPOD_GAMEBOY_ROM_IO_ERROR
 };
 
 /* Scan /MiniApps/Games and its GB/GBC subdirectories; at most 128 entries. */

@@ -245,6 +245,9 @@ void cpu_reset(void)
 #endif
     cpu.speed = 0;
     cpu.halt = 0;
+#ifdef CRAZYPOD_GAMEBOY_CORE
+    cpu.halt_bug = 0;
+#endif
     cpu.div = 0;
     cpu.tim = 0;
     cpu.lcdc = 40;
@@ -265,7 +268,23 @@ void cpu_reset(void)
     E=LB(acc);
     HL = 0x014D;
 
+#ifdef CRAZYPOD_GAMEBOY_CORE
+    if (hw.cgb)
+    {
+        A = 0x11;
+        F = 0x80;
+        B = 0x00;
+        C = 0x00;
+        D = 0xFF;
+        E = 0x56;
+        H = 0x00;
+        L = 0x0D;
+    }
+    else if (rom.bank && rom.bank[0][0x014D] == 0)
+        F = 0x80;
+#else
     if (hw.cgb) A = 0x11;
+#endif
 #ifdef DYNAREC
     for(i=0;i<(1<<HASH_SIGNIFICANT_LOWER_BITS);i++)
         address_map[i]=0;
@@ -334,7 +353,11 @@ static int cpu_idle(int max)
 {
     int cnt, unit;
 
+#ifdef CRAZYPOD_GAMEBOY_CORE
+    if (!cpu.halt) return 0;
+#else
     if (!(cpu.halt && IME)) return 0;
+#endif
 	if (R_IF & R_IE)
 	{
 		cpu.halt = 0;
@@ -418,7 +441,17 @@ next:
 #ifdef DYNAREC
     if(PC&0x8000) {
 #endif
+#ifdef CRAZYPOD_GAMEBOY_CORE
+    if(cpu.halt_bug)
+    {
+        op = readb(PC);
+        cpu.halt_bug = 0;
+    }
+    else
+        op = FETCH;
+#else
     op = FETCH;
+#endif
     clen = cycles_table[op];
 
     switch(op)
@@ -908,7 +941,14 @@ next:
         break;
             
     case 0x76: /* HALT */
+#ifdef CRAZYPOD_GAMEBOY_CORE
+        if(!IME && (IF & IE))
+            cpu.halt_bug = 1;
+        else
+            cpu.halt = 1;
+#else
         cpu.halt = 1;
+#endif
         break;
 
     case 0xCB: /* CB prefix */

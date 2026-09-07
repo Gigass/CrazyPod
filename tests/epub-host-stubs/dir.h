@@ -7,6 +7,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 #define DIRENT dirent
 #define ATTR_DIRECTORY 1
@@ -33,7 +36,11 @@ static inline struct dirinfo dir_get_info(
 
 static inline int host_test_mkdir(const char *path)
 {
+#ifdef _WIN32
+    return _mkdir(path);
+#else
     return mkdir(path, 0777);
+#endif
 }
 
 static inline int dir_exists(const char *path)

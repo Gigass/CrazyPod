@@ -2,6 +2,7 @@
 
 #ifdef IPOD_6G
 
+#include "audio.h"
 #include "backlight.h"
 #include "button.h"
 #include "file.h"
@@ -26,7 +27,9 @@
 #include "../features/customize/crazypod_customize_feature.h"
 #include "../features/miniapps/crazypod_miniapps_feature.h"
 #include "../features/music/crazypod_music_feature.h"
+#include "../features/notes/crazypod_notes_feature.h"
 #include "../features/now_playing/crazypod_now_playing_feature.h"
+#include "../features/organizer/crazypod_organizer_feature.h"
 #include "../presentation/crazypod_overlay_glass.h"
 #include "../presentation/crazypod_popup_motion.h"
 #include "../presentation/crazypod_preview_motion.h"
@@ -116,11 +119,14 @@ static void dismissed(void)
 static void execute(enum shutdown_type type)
 {
     (void)crazypod_screen_recording_stop(prompts.host.now());
+    crazypod_notes_feature_save_draft();
+    crazypod_organizer_feature_pause_workout(prompts.host.now());
     if(crazypod_miniapps_feature_is_open()) {
         crazypod_miniapps_feature_reset_input();
         crazypod_miniapps_feature_close();
     }
     crazypod_state_save(true);
+    audio_stop();
     shutdown_hw(type);
 }
 
@@ -370,6 +376,7 @@ void crazypod_system_prompts_usb_connected(intptr_t data)
     crazypod_photos_suspend();
     crazypod_videos_suspend();
     crazypod_music_cancel_scan();
+    crazypod_music_wait_for_scan_idle();
     crazypod_music_require_catalog_validation();
     crazypod_photos_invalidate_catalog();
     crazypod_videos_invalidate_catalog();

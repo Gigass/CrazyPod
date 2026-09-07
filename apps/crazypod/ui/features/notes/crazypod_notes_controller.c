@@ -43,7 +43,22 @@ static char *active_text(size_t **cursor, size_t *capacity)
 
 void crazypod_notes_controller_refresh_draft(void)
 {
-    draft_available = crazypod_note_draft_load(&editor);
+    struct crazypod_note_draft loaded;
+
+    if(crazypod_notes_controller_dirty())
+        crazypod_notes_controller_save_draft();
+    draft_available = crazypod_note_draft_load(&loaded);
+    if(draft_available)
+        editor = loaded;
+    else
+        memset(&editor, 0, sizeof(editor));
+    baseline = editor;
+    title_cursor = strlen(editor.title);
+    body_cursor = strlen(editor.body);
+    body_active = false;
+    draft_save_pending = false;
+    reader_body[0] = '\0';
+    query[0] = '\0';
 }
 
 bool crazypod_notes_controller_draft_available(void)

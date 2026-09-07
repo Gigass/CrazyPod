@@ -54,7 +54,12 @@ struct video_catalog_header {
 
 static struct crazypod_video_catalog_entry
     entries[CRAZYPOD_VIDEO_MAX_FILES];
+static struct crazypod_video_catalog_entry
+    scan_entries[CRAZYPOD_VIDEO_MAX_FILES];
 static int entry_count;
+static struct mutex catalog_mutex;
+static struct mutex catalog_io_mutex;
+static volatile bool refresh_abort_requested;
 
 static uint32_t checksum_update(uint32_t hash, const void *data, size_t size)
 {
@@ -146,12 +151,14 @@ static void disk_entry_from_catalog(
     disk_entry->duration_ticks = entry->duration_ticks;
 }
 
-static void insert_entry(const char *path, const struct dirinfo *info)
+static void insert_entry(
+    const char *path, const struct dirinfo *info,
+    struct crazypod_video_catalog_entry *catalog, int *count)
 {
     struct crazypod_video_catalog_entry entry;
     int position;
 
-    if(entry_count >= CRAZYPOD_VIDEO_MAX_FILES)
+    if(*count >= CRAZYPOD_VIDEO_MAX_FILES)
         return;
     memset(&entry, 0, sizeof(entry));
     snprintf(entry.path, sizeof(entry.path), "%s", path);
@@ -159,23 +166,26 @@ static void insert_entry(const char *path, const struct dirinfo *info)
     name_from_path(entry.name, sizeof(entry.name), path);
     entry.size = info->size;
     entry.mtime = info->mtime;
-    position = entry_count;
+    position = *count;
     while(position > 0 &&
-          compare_entries(&entry, &entries[position - 1]) < 0) {
-        entries[position] = entries[position - 1];
+          compare_entries(&entry, &catalog[position - 1]) < 0) {
+        catalog[position] = catalog[position - 1];
         --position;
     }
-    entries[position] = entry;
-    ++entry_count;
+    catalog[position] = entry;
+    ++(*count);
 }
 
-static void scan_directory(const char *path, int depth)
+static void scan_directory(
+    const char *path, int depth,
+    struct crazypod_video_catalog_entry *catalog, int *count)
 {
     DIR *directory;
     struct dirent *entry;
 
-    if(depth > VIDEO_DIRECTORY_DEPTH ||
-       entry_count >= CRAZYPOD_VIDEO_MAX_FILES)
+    if(refresh_abort_requested ||
+       depth > VIDEO_DIRECTORY_DEPTH ||
+       *count >= CRAZYPOD_VIDEO_MAX_FILES)
         return;
     directory = opendir(path);
     if(directory == NULL) {
@@ -185,7 +195,8 @@ static void scan_directory(const char *path, int depth)
 #endif
         return;
     }
-    while(entry_count < CRAZYPOD_VIDEO_MAX_FILES &&
+    while(!refresh_abort_requested &&
+          *count < CRAZYPOD_VIDEO_MAX_FILES &&
           (entry = readdir(directory)) != NULL) {
         struct dirinfo info = dir_get_info(directory, entry);
         char child[MAX_PATH];
@@ -196,13 +207,13 @@ static void scan_directory(const char *path, int depth)
            (int)sizeof(child))
             continue;
         if(info.attribute & ATTR_DIRECTORY)
-            scan_directory(child, depth + 1);
+            scan_directory(child, depth + 1, catalog, count);
         else if(crazypod_video_catalog_path_supported(child)) {
 #ifdef SIMULATOR
             if(getenv("CRAZYPOD_SIM_VIDEO_DIAGNOSTICS") != NULL)
                 fprintf(stderr, "CrazyPod video catalog: found %s\n", child);
 #endif
-            insert_entry(child, &info);
+            insert_entry(child, &info, catalog, count);
         }
         yield();
     }
@@ -210,20 +221,22 @@ static void scan_directory(const char *path, int depth)
 }
 
 static int index_for_path(
+    const struct crazypod_video_catalog_entry *catalog, int count,
     const char *path, uint32_t size, uint32_t mtime)
 {
     int index;
 
-    for(index = 0; index < entry_count; ++index) {
-        if(entries[index].size == size &&
-           entries[index].mtime == mtime &&
-           strcmp(entries[index].path, path) == 0)
+    for(index = 0; index < count; ++index) {
+        if(catalog[index].size == size &&
+           catalog[index].mtime == mtime &&
+           strcmp(catalog[index].path, path) == 0)
             return index;
     }
     return -1;
 }
 
-static void load_state(void)
+static void load_state(
+    struct crazypod_video_catalog_entry *catalog, int count)
 {
     struct video_resume_file_header header;
     int fd = open(VIDEO_STATE_PATH, O_RDONLY);
@@ -249,16 +262,18 @@ static void load_state(void)
                   sizeof(disk_entry.path)) == NULL)
             continue;
         index = index_for_path(
-            disk_entry.path, disk_entry.size, disk_entry.mtime);
+            catalog, count, disk_entry.path,
+            disk_entry.size, disk_entry.mtime);
         if(index >= 0) {
-            entries[index].resume_ticks = disk_entry.resume_ticks;
-            entries[index].duration_ticks = disk_entry.duration_ticks;
+            catalog[index].resume_ticks = disk_entry.resume_ticks;
+            catalog[index].duration_ticks = disk_entry.duration_ticks;
         }
     }
     close(fd);
 }
 
-static bool save_state(void)
+static bool save_state(
+    const struct crazypod_video_catalog_entry *catalog, int count)
 {
     struct video_resume_file_header header;
     int fd;
@@ -272,19 +287,19 @@ static bool save_state(void)
     header.magic = VIDEO_STATE_MAGIC;
     header.version = VIDEO_STATE_VERSION;
     header.entry_size = sizeof(struct video_resume_disk_entry);
-    header.count = (uint32_t)entry_count;
+    header.count = (uint32_t)count;
     complete = write_exact(fd, &header, sizeof(header));
-    for(index = 0; complete && index < entry_count; ++index) {
+    for(index = 0; complete && index < count; ++index) {
         struct video_resume_disk_entry disk_entry;
 
         memset(&disk_entry, 0, sizeof(disk_entry));
-        memcpy(disk_entry.path, entries[index].path,
+        memcpy(disk_entry.path, catalog[index].path,
                sizeof(disk_entry.path));
         disk_entry.path[sizeof(disk_entry.path) - 1] = '\0';
-        disk_entry.size = entries[index].size;
-        disk_entry.mtime = entries[index].mtime;
-        disk_entry.resume_ticks = entries[index].resume_ticks;
-        disk_entry.duration_ticks = entries[index].duration_ticks;
+        disk_entry.size = catalog[index].size;
+        disk_entry.mtime = catalog[index].mtime;
+        disk_entry.resume_ticks = catalog[index].resume_ticks;
+        disk_entry.duration_ticks = catalog[index].duration_ticks;
         complete = write_exact(fd, &disk_entry, sizeof(disk_entry));
     }
     if(complete)
@@ -302,7 +317,8 @@ static bool save_state(void)
 }
 
 static uint32_t catalog_checksum(
-    const struct video_catalog_header *source)
+    const struct video_catalog_header *source,
+    const struct crazypod_video_catalog_entry *catalog)
 {
     struct video_catalog_header header = *source;
     struct video_resume_disk_entry disk_entry;
@@ -312,7 +328,7 @@ static uint32_t catalog_checksum(
     header.checksum = 0;
     hash = checksum_update(hash, &header, sizeof(header));
     for(index = 0; index < (int)header.count; ++index) {
-        disk_entry_from_catalog(&disk_entry, &entries[index]);
+        disk_entry_from_catalog(&disk_entry, &catalog[index]);
         hash = checksum_update(
             hash, &disk_entry, sizeof(disk_entry));
     }
@@ -389,7 +405,8 @@ static bool load_catalog(void)
     return true;
 }
 
-static bool save_catalog(void)
+static bool save_catalog(
+    const struct crazypod_video_catalog_entry *catalog, int count)
 {
     struct video_catalog_header header;
     struct video_resume_disk_entry disk_entry;
@@ -403,16 +420,16 @@ static bool save_catalog(void)
     header.magic = VIDEO_CATALOG_MAGIC;
     header.version = VIDEO_CATALOG_VERSION;
     header.entry_size = sizeof(disk_entry);
-    header.count = (uint32_t)entry_count;
-    header.checksum = catalog_checksum(&header);
+    header.count = (uint32_t)count;
+    header.checksum = catalog_checksum(&header, catalog);
     remove(VIDEO_CATALOG_TMP);
     fd = open(VIDEO_CATALOG_TMP,
               O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)
         return false;
     complete = write_exact(fd, &header, sizeof(header));
-    for(index = 0; complete && index < entry_count; ++index) {
-        disk_entry_from_catalog(&disk_entry, &entries[index]);
+    for(index = 0; complete && index < count; ++index) {
+        disk_entry_from_catalog(&disk_entry, &catalog[index]);
         complete = write_exact(
             fd, &disk_entry, sizeof(disk_entry));
     }
@@ -434,53 +451,153 @@ bool crazypod_video_catalog_init(void)
     mkdir(VIDEO_CACHE_DIRECTORY);
     entry_count = 0;
     memset(entries, 0, sizeof(entries));
+    mutex_init(&catalog_mutex);
+    mutex_init(&catalog_io_mutex);
     return load_catalog();
 }
 
 void crazypod_video_catalog_refresh(void)
 {
-    entry_count = 0;
-    memset(entries, 0, sizeof(entries));
-    scan_directory(VIDEO_DIRECTORY, 0);
-    load_state();
-    (void)save_catalog();
+    int scan_count = 0;
+
+    mutex_lock(&catalog_io_mutex);
+    if(refresh_abort_requested) {
+        mutex_unlock(&catalog_io_mutex);
+        return;
+    }
+    memset(scan_entries, 0, sizeof(scan_entries));
+    scan_directory(VIDEO_DIRECTORY, 0, scan_entries, &scan_count);
+    if(!refresh_abort_requested) {
+        load_state(scan_entries, scan_count);
+        if(!refresh_abort_requested) {
+            (void)save_catalog(scan_entries, scan_count);
+        }
+    }
+    if(!refresh_abort_requested) {
+        mutex_lock(&catalog_mutex);
+        memcpy(entries, scan_entries,
+               (size_t)scan_count * sizeof(entries[0]));
+        if(scan_count < CRAZYPOD_VIDEO_MAX_FILES)
+            memset(&entries[scan_count], 0,
+                   (size_t)(CRAZYPOD_VIDEO_MAX_FILES - scan_count) *
+                   sizeof(entries[0]));
+        entry_count = scan_count;
+        mutex_unlock(&catalog_mutex);
+    }
+    mutex_unlock(&catalog_io_mutex);
+}
+
+void crazypod_video_catalog_cancel_refresh(void)
+{
+    refresh_abort_requested = true;
+}
+
+void crazypod_video_catalog_reset_refresh_cancel(void)
+{
+    refresh_abort_requested = false;
+}
+
+bool crazypod_video_catalog_save(void)
+{
+    bool saved;
+    int count;
+
+    mutex_lock(&catalog_io_mutex);
+    mutex_lock(&catalog_mutex);
+    count = entry_count;
+    memcpy(scan_entries, entries,
+           (size_t)count * sizeof(entries[0]));
+    mutex_unlock(&catalog_mutex);
+    saved = !refresh_abort_requested &&
+        save_state(scan_entries, count) &&
+        save_catalog(scan_entries, count);
+    mutex_unlock(&catalog_io_mutex);
+    return saved;
 }
 
 void crazypod_video_catalog_invalidate(void)
 {
+    refresh_abort_requested = true;
+    mutex_lock(&catalog_io_mutex);
+    mutex_lock(&catalog_mutex);
     remove(VIDEO_CATALOG_TMP);
     remove(VIDEO_CATALOG_PATH);
+    mutex_unlock(&catalog_mutex);
+    mutex_unlock(&catalog_io_mutex);
 }
 
 int crazypod_video_catalog_count(void)
 {
-    return entry_count;
+    int count;
+
+    mutex_lock(&catalog_mutex);
+    count = entry_count;
+    mutex_unlock(&catalog_mutex);
+    return count;
 }
 
 const struct crazypod_video_catalog_entry *
 crazypod_video_catalog_get(int index)
 {
-    return index >= 0 && index < entry_count ? &entries[index] : NULL;
+    const struct crazypod_video_catalog_entry *entry = NULL;
+
+    mutex_lock(&catalog_mutex);
+    if(index >= 0 && index < entry_count)
+        entry = &entries[index];
+    mutex_unlock(&catalog_mutex);
+    return entry;
+}
+
+bool crazypod_video_catalog_copy(
+    int index, struct crazypod_video_catalog_entry *entry)
+{
+    bool copied = false;
+
+    if(entry == NULL)
+        return false;
+    mutex_lock(&catalog_mutex);
+    if(index >= 0 && index < entry_count) {
+        *entry = entries[index];
+        copied = true;
+    }
+    mutex_unlock(&catalog_mutex);
+    return copied;
 }
 
 bool crazypod_video_catalog_update_playback(
     int index, uint32_t resume_ticks, uint32_t duration_ticks)
 {
+    mutex_lock(&catalog_mutex);
     if(index < 0 || index >= entry_count)
+    {
+        mutex_unlock(&catalog_mutex);
         return false;
+    }
     entries[index].resume_ticks = resume_ticks;
     entries[index].duration_ticks = duration_ticks;
-    return save_state() && save_catalog();
+    mutex_unlock(&catalog_mutex);
+    return true;
 }
 
 bool crazypod_video_catalog_delete(int index)
 {
-    const char *path;
+    char path[MAX_PATH];
     size_t path_length;
+    int entry_index;
 
-    if(index < 0 || index >= entry_count)
+    /* Refresh and save both use this lock before touching the catalog. Keep
+     * deletion in that same order so a refresh cannot publish a just-deleted
+     * file back into the UI. */
+    mutex_lock(&catalog_io_mutex);
+    mutex_lock(&catalog_mutex);
+    if(index < 0 || index >= entry_count) {
+        mutex_unlock(&catalog_mutex);
+        mutex_unlock(&catalog_io_mutex);
         return false;
-    path = entries[index].path;
+    }
+    snprintf(path, sizeof(path), "%s", entries[index].path);
+    mutex_unlock(&catalog_mutex);
+
     path_length = strlen(path);
     if(strncmp(path, VIDEO_DIRECTORY "/",
                sizeof(VIDEO_DIRECTORY)) != 0 ||
@@ -488,15 +605,29 @@ bool crazypod_video_catalog_delete(int index)
        (path_length >= 3 &&
         strcmp(path + path_length - 3, "/..") == 0) ||
        !crazypod_video_catalog_path_supported(path) ||
-       remove(path) < 0)
+       remove(path) < 0) {
+        mutex_unlock(&catalog_io_mutex);
         return false;
-    if(index + 1 < entry_count)
-        memmove(&entries[index], &entries[index + 1],
-                (size_t)(entry_count - index - 1) * sizeof(entries[0]));
-    --entry_count;
-    memset(&entries[entry_count], 0, sizeof(entries[0]));
-    if(!save_state() || !save_catalog())
-        crazypod_video_catalog_invalidate();
+    }
+
+    mutex_lock(&catalog_mutex);
+    entry_index = -1;
+    for(index = 0; index < entry_count; ++index) {
+        if(strcmp(entries[index].path, path) == 0) {
+            entry_index = index;
+            break;
+        }
+    }
+    if(entry_index >= 0) {
+        if(entry_index + 1 < entry_count)
+            memmove(&entries[entry_index], &entries[entry_index + 1],
+                    (size_t)(entry_count - entry_index - 1) *
+                    sizeof(entries[0]));
+        --entry_count;
+        memset(&entries[entry_count], 0, sizeof(entries[0]));
+    }
+    mutex_unlock(&catalog_mutex);
+    mutex_unlock(&catalog_io_mutex);
     return true;
 }
 

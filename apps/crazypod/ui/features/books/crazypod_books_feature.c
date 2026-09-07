@@ -5,6 +5,7 @@
 #ifdef IPOD_6G
 
 #include "kernel.h"
+#include "lcd.h"
 
 #include "../../../crazypod_books.h"
 #include "crazypod_book_session.h"
@@ -36,12 +37,65 @@ static struct {
     bool toolbar_visible;
     long toolbar_hide_tick;
 } reader_view;
+static void (*books_render_route)(bool transition);
 
 #define READER_TOOLBAR_VISIBLE_TICKS (2 * HZ)
+
+static void configure_reader_layout_for_size(
+    bool toolbar_visible, unsigned size)
+{
+    const lv_font_t *font;
+
+    if(size == 0)
+        size = 14;
+    font = crazypod_books_screen_reader_font(size);
+    unsigned line_height =
+        crazypod_books_screen_reader_line_height(size) +
+        CRAZYPOD_BOOKS_READER_LINE_SPACE;
+    unsigned content_height = toolbar_visible
+        ? CRAZYPOD_BOOKS_READER_TOOLBAR_TOP -
+          CRAZYPOD_BOOKS_READER_TOP -
+          CRAZYPOD_BOOKS_READER_BOTTOM_MARGIN
+        : (unsigned)LCD_HEIGHT - CRAZYPOD_BOOKS_READER_TOP -
+          CRAZYPOD_BOOKS_READER_BOTTOM_MARGIN;
+    unsigned max_lines = content_height / line_height;
+    unsigned max_line_width = (unsigned)LCD_WIDTH -
+        CRAZYPOD_BOOKS_READER_MARGIN * 2u;
+
+    if(max_lines == 0)
+        max_lines = 1;
+    if(max_line_width == 0)
+        max_line_width = 1;
+    crazypod_books_set_reader_layout(
+        max_lines, max_line_width,
+        crazypod_books_screen_measure_width, (void *)font);
+}
+
+static void configure_reader_layout(bool toolbar_visible)
+{
+    unsigned size = crazypod_books_screen_reader_size(
+        crazypod_books_font_size());
+
+    configure_reader_layout_for_size(toolbar_visible, size);
+}
+
+static void reload_reader_page(void)
+{
+    int index = crazypod_book_session_index();
+    uint32_t offset = crazypod_book_session_offset();
+
+    if(index >= 0 && crazypod_book_session_has_text())
+        (void)crazypod_book_session_load(index, offset);
+}
 
 int crazypod_books_feature_item_count(
     const struct route_state *state)
 {
+    if(crazypod_books_scan_busy() &&
+       (state->route == BOOKS_ROUTE_RECENTS ||
+        state->route == BOOKS_ROUTE_LIBRARY ||
+        state->route == BOOKS_ROUTE_FAVORITES))
+        return 1;
     switch(state->route) {
     case BOOKS_ROUTE_MENU:
         return has_continue() ? 6 : 5;
@@ -127,6 +181,13 @@ bool crazypod_books_feature_item_title(
     const struct route_state *state, int index,
     const char **title)
 {
+    if(crazypod_books_scan_busy() &&
+       (state->route == BOOKS_ROUTE_RECENTS ||
+        state->route == BOOKS_ROUTE_LIBRARY ||
+        state->route == BOOKS_ROUTE_FAVORITES)) {
+        *title = CP_TR("Loading Library");
+        return true;
+    }
     switch(state->route) {
     case BOOKS_ROUTE_MENU: {
         static const char *const titles[] = {
@@ -283,6 +344,11 @@ bool crazypod_books_feature_activate(
     const struct route_state *state,
     const struct crazypod_books_activation_host *host)
 {
+    if(crazypod_books_scan_busy() &&
+       (state->route == BOOKS_ROUTE_RECENTS ||
+        state->route == BOOKS_ROUTE_LIBRARY ||
+        state->route == BOOKS_ROUTE_FAVORITES))
+        return true;
     const struct crazypod_books_action action =
         crazypod_books_actions_activate(state);
 
@@ -302,7 +368,8 @@ bool crazypod_books_feature_activate(
         host->pop();
         break;
     case CRAZYPOD_BOOKS_ACTION_BEGIN_READER:
-        crazypod_books_workflow_begin_reader(
+        crazypod_books_feature_enter_reader(0);
+        crazypod_books_feature_begin_reader(
             action.book_index, action.offset);
         break;
     case CRAZYPOD_BOOKS_ACTION_SHOW_FONT_SIZE:
@@ -348,6 +415,8 @@ void crazypod_books_feature_enter_reader(long now)
     reader_view.toolbar_visible = true;
     reader_view.toolbar_hide_tick =
         now + READER_TOOLBAR_VISIBLE_TICKS;
+    configure_reader_layout(true);
+    reload_reader_page();
 }
 
 int crazypod_books_feature_reader_wait_ticks(
@@ -368,6 +437,15 @@ int crazypod_books_feature_reader_wait_ticks(
 bool crazypod_books_feature_service_reader(
     const struct route_state *state, long now)
 {
+    if(state != NULL &&
+       (state->route == BOOKS_ROUTE_RECENTS ||
+        state->route == BOOKS_ROUTE_LIBRARY ||
+        state->route == BOOKS_ROUTE_FAVORITES) &&
+       crazypod_books_workflow_service()) {
+        if(books_render_route != NULL)
+            books_render_route(false);
+        return false;
+    }
     if(state == NULL || state->route != BOOKS_ROUTE_READER ||
        !reader_view.toolbar_visible ||
        reader_view.toolbar_hide_tick == 0 ||
@@ -375,6 +453,8 @@ bool crazypod_books_feature_service_reader(
         return false;
     reader_view.toolbar_visible = false;
     reader_view.toolbar_hide_tick = 0;
+    configure_reader_layout(false);
+    reload_reader_page();
     return true;
 }
 
@@ -461,6 +541,7 @@ void crazypod_books_feature_render_preview(
 void crazypod_books_feature_configure_runtime(
     const struct crazypod_books_runtime_host *host)
 {
+    books_render_route = host->render_route;
     const struct crazypod_books_workflow_host internal = {
         .parent = host->parent,
         .metadata_font = host->metadata_font,
@@ -488,12 +569,16 @@ void crazypod_books_feature_invalidate_metadata(void)
 
 void crazypod_books_feature_apply_font_size(int value)
 {
+    configure_reader_layout_for_size(
+        reader_view.toolbar_visible,
+        crazypod_books_screen_reader_size(value));
     crazypod_books_workflow_apply_font_size(value);
 }
 
 void crazypod_books_feature_begin_reader(
     int index, uint32_t offset)
 {
+    configure_reader_layout(true);
     crazypod_books_workflow_begin_reader(index, offset);
 }
 

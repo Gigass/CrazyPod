@@ -31,6 +31,7 @@ bool crazypod_epub_chapter_get(int index, char *title,
 void crazypod_epub_book_info(char *title, size_t title_size,
                              char *author, size_t author_size,
                              char *cover_path, size_t cover_path_size);
+bool crazypod_epub_image_get(uint32_t offset, char *path, size_t path_size);
 void crazypod_epub_remove_cache(const char *epub_path);
 
 #endif
