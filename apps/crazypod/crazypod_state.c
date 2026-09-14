@@ -582,7 +582,14 @@ static unsigned state_save_failures;
 static bool state_dirty;
 static bool reduce_motion;
 static bool lyrics_mode = true;
-static bool read_ipod_music = true;
+/*
+ * Off by default. A second-hand iPod usually carries a previous owner's
+ * iTunes library under the hidden /iPod_Control/Music, and scanning it costs
+ * a long first run and, worse, a pinned catalog entry per track: several
+ * thousand of them take megabytes out of an arena that on a 32 MiB unit the
+ * audio buffer is already competing for. Opt in, rather than out.
+ */
+static bool read_ipod_music;
 static enum crazypod_headphone_popup_style headphone_popup_style;
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
@@ -1349,7 +1356,7 @@ void crazypod_state_load(void)
     state_dirty = false;
     reduce_motion = false;
     lyrics_mode = true;
-    read_ipod_music = true;
+    read_ipod_music = false;
     headphone_popup_style =
         CRAZYPOD_HEADPHONE_POPUP_WIRED_EARBUDS;
     crazypod_language_set(CRAZYPOD_LANGUAGE_ENGLISH);

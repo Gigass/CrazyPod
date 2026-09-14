@@ -63,8 +63,9 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
 
 - Recursively scans `/Music` and, when Settings → Playback → Original iPod
   Music is enabled, `/iPod_Control/Music` for formats supported by the bundled
-  Rockbox codecs. Fresh installs enable this setting; upgrades from V1.0 keep
-  the previous disabled behavior until the user enables it.
+  Rockbox codecs. The setting is off by default: a second-hand iPod usually
+  carries a previous owner's iTunes library there, and every track it finds
+  holds memory the audio buffer competes for.
 - Builds artist, album, song, M3U/M3U8 playlist, and persistent `My Favorites`
   views from local metadata.
 - Sorts Latin and CJK metadata through one collation key. Fast wheel movement
