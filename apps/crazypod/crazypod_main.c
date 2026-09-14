@@ -223,7 +223,20 @@ static void crazypod_platform_init(void)
     crazypod_ui_usb_prompt_init();
     usb_start_monitoring();
 #endif
+#if defined(CPU_PP)
+    /*
+     * Keep the boost. CPUFREQ_NORMAL is 30 MHz on PortalPlayer against 80 MHz
+     * boosted, where the 6G idles at 54 MHz, and the product UI composites
+     * every frame in software with no accelerator. Unboosted, the UI thread
+     * saturates the CPU: background work such as the library scan crawls, and
+     * the button queue stops draining, so the wheel driver coalesces several
+     * steps into each event the UI finally reads. This costs battery life and
+     * wants replacing with boosting around UI activity once frame times on
+     * the hardware are known.
+     */
+#else
     cpu_boost(false);
+#endif
 }
 
 int main(void) NORETURN_ATTR;
