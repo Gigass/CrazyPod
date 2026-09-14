@@ -183,9 +183,15 @@ make -C utils/ipodpatcher \
   CROSS=i686-w64-mingw32- WINDRES=windres ipodpatcher.exe
 ```
 
-The executable carries a `requireAdministrator` manifest, so it raises a UAC
-prompt rather than needing an elevated shell. On Windows the device argument
-is the `PhysicalDrive` **number** alone, not a path (`main.c` expands it):
+Run it from a Command Prompt started with "Run as administrator". The
+executable carries a `requireAdministrator` manifest, and launching it from an
+ordinary prompt makes Windows relaunch it elevated in a **new console that
+closes as it exits**, so the command appears to return instantly with no
+output at all - not even the version banner `main()` prints before it parses
+arguments. An already-elevated console keeps the output.
+
+On Windows the device argument is the `PhysicalDrive` **number** alone, not a
+path (`main.c` expands it):
 
 ```bat
 ipodpatcher.exe --scan
