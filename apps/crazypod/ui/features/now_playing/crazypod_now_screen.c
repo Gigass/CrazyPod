@@ -14,6 +14,7 @@
 
 #include "../../../crazypod_lyrics.h"
 #include "../../../crazypod_playlist.h"
+#include "../../../crazypod_state.h"
 #include "../../presentation/crazypod_glass_sampler.h"
 #include "../../presentation/crazypod_marquee.h"
 #include "../../presentation/crazypod_ui_widgets.h"
@@ -552,6 +553,10 @@ void crazypod_now_screen_tick_wave(long now, bool active, bool blocked)
                    CRAZYPOD_NOW_WAVE_FRAME_TICKS))
         return;
     now_view.wave_tick = now;
+    /* The wave draws with phase 0 under Reduce Motion, so once it shows
+     * the playing state there is nothing new to draw ten times a second. */
+    if(crazypod_state_reduce_motion() && now_view.wave_playing)
+        return;
     now_view.wave_playing = true;
     wave_phase = (wave_phase + 1) & 0x7fff;
     lv_obj_invalidate(now_view.wave_surface);

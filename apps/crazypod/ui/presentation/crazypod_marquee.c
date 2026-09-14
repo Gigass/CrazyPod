@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+#include "../../crazypod_state.h"
 #include "crazypod_marquee.h"
 
 #define CRAZYPOD_MARQUEE_SPEED 30
@@ -22,7 +23,9 @@ static lv_label_long_mode_t marquee_mode(
     lv_point_t text_size;
     int32_t content_width;
 
-    if(!active)
+    /* A circular scroll re-renders its row for as long as it is on
+     * screen; Reduce Motion trades it for an ellipsis. */
+    if(!active || crazypod_state_reduce_motion())
         return LV_LABEL_LONG_MODE_DOTS;
     text = lv_label_get_text(label);
     font = lv_obj_get_style_text_font(label, LV_PART_MAIN);

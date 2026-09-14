@@ -14,7 +14,6 @@
 #define CRAZYPOD_PREVIEW_PART_COUNT 20
 #define CRAZYPOD_PREVIEW_ENTER_DURATION_MS 380
 #define CRAZYPOD_PREVIEW_EXIT_DURATION_MS 180
-#define CRAZYPOD_PREVIEW_REDUCED_DURATION_MS 80
 #define CRAZYPOD_PREVIEW_PART_TIME_NUMERATOR 3
 #define CRAZYPOD_PREVIEW_PART_TIME_DENOMINATOR 2
 
@@ -57,7 +56,6 @@ static lv_obj_t *menu_preview_content;
 static struct menu_preview_scene menu_preview_scene;
 static bool menu_preview_media_deferred;
 static bool menu_preview_media_refresh_pending;
-static bool menu_preview_motion_reduced;
 static long menu_preview_media_due;
 static enum menu_preview_motion_phase menu_preview_motion_phase;
 static enum crazypod_preview_motion_profile menu_preview_motion_profile;
@@ -255,14 +253,9 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
 
     if(menu_preview_motion_phase == MENU_PREVIEW_MOTION_ENTERING) {
         int content_raw_progress = menu_preview_clamp_progress(
-            elapsed * 1024 /
-            (menu_preview_motion_reduced
-                ? CRAZYPOD_PREVIEW_REDUCED_DURATION_MS
-                : CRAZYPOD_PREVIEW_ENTER_DURATION_MS));
+            elapsed * 1024 / CRAZYPOD_PREVIEW_ENTER_DURATION_MS);
         int content_position_progress =
-            menu_preview_motion_reduced
-                ? menu_preview_ease_out(content_raw_progress)
-                : menu_preview_back_out(content_raw_progress);
+            menu_preview_back_out(content_raw_progress);
         int content_opacity_progress =
             menu_preview_smooth_step(content_raw_progress);
 
@@ -282,8 +275,6 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
             (lv_opa_t)menu_preview_lerp(
                 0, LV_OPA_COVER, content_opacity_progress),
             0);
-        if(menu_preview_motion_reduced)
-            return;
 
         for(index = 0; index < menu_preview_scene.part_count; ++index) {
             struct menu_preview_motion_part *part =
@@ -325,9 +316,7 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
         }
     }
     else if(menu_preview_motion_phase == MENU_PREVIEW_MOTION_EXITING) {
-        int duration = menu_preview_motion_reduced
-            ? CRAZYPOD_PREVIEW_REDUCED_DURATION_MS
-            : CRAZYPOD_PREVIEW_EXIT_DURATION_MS;
+        int duration = CRAZYPOD_PREVIEW_EXIT_DURATION_MS;
         int progress = menu_preview_ease_in(
             menu_preview_clamp_progress(elapsed * 1024 / duration));
         int raw_progress = menu_preview_clamp_progress(
@@ -349,8 +338,6 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
             (lv_opa_t)menu_preview_lerp(
                 LV_OPA_COVER, 0, progress),
             0);
-        if(menu_preview_motion_reduced)
-            return;
 
         for(index = 0; index < menu_preview_scene.part_count; ++index) {
             struct menu_preview_motion_part *part =
@@ -391,6 +378,28 @@ static bool menu_preview_motion_active(void)
     return menu_preview_motion_phase != MENU_PREVIEW_MOTION_IDLE;
 }
 
+static void finish_menu_preview_entrance(void)
+{
+    menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
+    settle_menu_preview_scene(&menu_preview_scene);
+    if(menu_preview_media_deferred) {
+        menu_preview_media_deferred = false;
+        menu_preview_media_refresh_pending = true;
+        menu_preview_media_due = motion_host.now() + 1;
+    }
+}
+
+static void finish_menu_preview_exit(lv_obj_t *content)
+{
+    menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
+    if(lv_obj_is_valid(content))
+        lv_obj_delete(content);
+    menu_preview_content = NULL;
+    memset(&menu_preview_scene, 0, sizeof(menu_preview_scene));
+    if(motion_host.can_render())
+        motion_host.render(true);
+}
+
 static void menu_preview_timeline_completed(lv_anim_t *animation)
 {
     lv_obj_t *content = lv_anim_get_user_data(animation);
@@ -399,25 +408,12 @@ static void menu_preview_timeline_completed(lv_anim_t *animation)
 
     if(content == NULL || content != menu_preview_content)
         return;
-    menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
-    if(completed_phase == MENU_PREVIEW_MOTION_ENTERING) {
-        settle_menu_preview_scene(&menu_preview_scene);
-        if(menu_preview_media_deferred) {
-            menu_preview_media_deferred = false;
-            menu_preview_media_refresh_pending = true;
-            menu_preview_media_due = motion_host.now() + 1;
-        }
-        return;
-    }
-    if(completed_phase != MENU_PREVIEW_MOTION_EXITING)
-        return;
-
-    if(lv_obj_is_valid(content))
-        lv_obj_delete(content);
-    menu_preview_content = NULL;
-    memset(&menu_preview_scene, 0, sizeof(menu_preview_scene));
-    if(motion_host.can_render())
-        motion_host.render(true);
+    if(completed_phase == MENU_PREVIEW_MOTION_ENTERING)
+        finish_menu_preview_entrance();
+    else if(completed_phase == MENU_PREVIEW_MOTION_EXITING)
+        finish_menu_preview_exit(content);
+    else
+        menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
 }
 
 static bool start_menu_preview_timeline(int duration)
@@ -484,29 +480,35 @@ static void reset_menu_preview_root(void)
 static void start_menu_preview_scene_entrance(void)
 {
     bool reduced = motion_host.reduced_motion();
-    int duration = reduced
-        ? CRAZYPOD_PREVIEW_REDUCED_DURATION_MS : 0;
+    int duration = CRAZYPOD_PREVIEW_ENTER_DURATION_MS;
     int index;
 
     if(menu_preview_content == NULL)
         return;
-    if(!reduced) {
-        duration = CRAZYPOD_PREVIEW_ENTER_DURATION_MS;
-        for(index = 0; index < menu_preview_scene.part_count; ++index) {
-            struct menu_preview_motion_part *part =
-                &menu_preview_scene.parts[index];
-            int part_end = menu_preview_scaled_part_time(
-                part->enter_delay +
-                (part->enter_duration > 0
-                    ? part->enter_duration
-                    : CRAZYPOD_PREVIEW_ENTER_DURATION_MS));
+    if(reduced) {
+        /*
+         * Reduce Motion is a cut. The reduced timeline used to fade and
+         * slide the whole pane over 80 ms, which on a slow target meant
+         * two or three full re-renders of a layer-composited pane per
+         * wheel step and read as stutter, not as a faster UI.
+         */
+        lv_anim_delete(menu_preview_content, menu_preview_timeline_anim);
+        finish_menu_preview_entrance();
+        return;
+    }
+    for(index = 0; index < menu_preview_scene.part_count; ++index) {
+        struct menu_preview_motion_part *part =
+            &menu_preview_scene.parts[index];
+        int part_end = menu_preview_scaled_part_time(
+            part->enter_delay +
+            (part->enter_duration > 0
+                ? part->enter_duration
+                : CRAZYPOD_PREVIEW_ENTER_DURATION_MS));
 
-            if(part_end > duration)
-                duration = part_end;
-        }
+        if(part_end > duration)
+            duration = part_end;
     }
     motion_host.boost((duration * HZ + 999) / 1000 + HZ / 10);
-    menu_preview_motion_reduced = reduced;
     menu_preview_motion_phase = MENU_PREVIEW_MOTION_ENTERING;
     if(!start_menu_preview_timeline(duration)) {
         menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
@@ -517,13 +519,15 @@ static void start_menu_preview_scene_entrance(void)
 static void start_menu_preview_scene_exit(void)
 {
     bool reduced = motion_host.reduced_motion();
-    int duration = reduced
-        ? CRAZYPOD_PREVIEW_REDUCED_DURATION_MS
-        : CRAZYPOD_PREVIEW_EXIT_DURATION_MS;
+    int duration = CRAZYPOD_PREVIEW_EXIT_DURATION_MS;
     if(menu_preview_content == NULL)
         return;
+    if(reduced) {
+        lv_anim_delete(menu_preview_content, menu_preview_timeline_anim);
+        finish_menu_preview_exit(menu_preview_content);
+        return;
+    }
     motion_host.boost((duration * HZ + 999) / 1000 + HZ / 10);
-    menu_preview_motion_reduced = reduced;
     menu_preview_motion_phase = MENU_PREVIEW_MOTION_EXITING;
     if(!start_menu_preview_timeline(duration)) {
         menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
