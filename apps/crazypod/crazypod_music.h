@@ -97,6 +97,23 @@ crazypod_music_catalog_validation(void);
 bool crazypod_music_take_catalog_stale(void);
 void crazypod_music_cancel_scan(void);
 bool crazypod_music_is_scanning(void);
+
+/*
+ * A snapshot of the scan as it runs, for the iPod Video bring-up: the loading
+ * screen otherwise cannot say whether the scan is progressing, suspended,
+ * finished, or stopped, and they look identical from outside.
+ */
+struct crazypod_music_scan_progress {
+    bool scanning;
+    bool suspended;
+    bool aborting;
+    bool ready;
+    int tracks_seen;
+    int failure;
+    int validation;
+};
+void crazypod_music_scan_progress(
+    struct crazypod_music_scan_progress *out);
 unsigned crazypod_music_scan_generation(void);
 bool crazypod_music_catalog_ready(void);
 enum crazypod_music_scan_failure

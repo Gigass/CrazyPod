@@ -1611,6 +1611,22 @@ void crazypod_music_invalidate_catalog(void)
     remove(CRAZYPOD_MUSIC_CACHE_PATH);
 }
 
+void crazypod_music_scan_progress(
+    struct crazypod_music_scan_progress *out)
+{
+    if(out == NULL)
+        return;
+    /* Deliberately unlocked: this only reports progress, and taking
+     * catalog_mutex here would block on whatever the scan is doing. */
+    out->scanning = scanning;
+    out->suspended = scan_suspended;
+    out->aborting = scan_abort_requested;
+    out->ready = catalog_ready;
+    out->tracks_seen = (int)track_count;
+    out->failure = (int)scan_failure;
+    out->validation = (int)catalog_validation;
+}
+
 void crazypod_music_set_scan_suspended(bool suspended)
 {
     scan_suspended = suspended;
