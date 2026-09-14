@@ -98,12 +98,49 @@ void __attribute__((weak,naked)) undef_instr_handler(void)
 void NORETURN_ATTR UIE(unsigned int pc, unsigned int num)
 {
 #if defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
-    char report[96];
+    /* Linker-provided bounds: everything executable lives below _edata, and
+     * DRAM is mapped up to _end. */
+    extern char _edata[];
+    extern char _end[];
+    char report[192];
+    unsigned long banked[2] = { 0, 0 };  /* interrupted mode's sp, lr */
+    unsigned long code_limit = (unsigned long)_edata;
+    unsigned long sp;
+    unsigned int frames[4];
+    unsigned int nframes = 0;
+    int len;
+    unsigned int i;
+
+    /* The faulting mode's banked sp/lr still describe the interrupted code,
+     * so a wild branch can be traced back to whoever made the call. */
+    asm volatile(
+        "stmia  %0, {sp, lr}^ \n"
+        "nop                  \n"
+        : : "r"(banked) : "memory");
+
+    /* Walk the interrupted stack for anything that could be a return
+     * address. Only read where DRAM is known to be mapped, so a garbage sp
+     * cannot fault us again and lose the report entirely. */
+    sp = banked[0];
+    if(sp >= 0x1000 && (sp & 3) == 0 && sp < (unsigned long)_end) {
+        unsigned long addr;
+        for(addr = sp; addr + 4 <= sp + 512 && nframes < 4; addr += 4) {
+            unsigned long value = *(volatile unsigned long *)addr;
+
+            if(value >= 0x100 && value < code_limit && (value & 3) == 0)
+                frames[nframes++] = (unsigned int)value;
+        }
+    }
 
     /* On dual-core targets say which core faulted: a fault on the COP
      * points at shared kernel state rather than at the UI thread. */
-    snprintf(report, sizeof(report), "%s\nPC %08x" IF_COP("\nCORE %d"),
-             uiename[num], pc IF_COP(, CURRENT_CORE));
+    len = snprintf(report, sizeof(report),
+                   "%s\nPC %08x" IF_COP("\nCORE %d") "\nLR %08lx\nSP %08lx",
+                   uiename[num], pc IF_COP(, CURRENT_CORE),
+                   banked[1], sp);
+    for(i = 0; i < nframes && len > 0 && (size_t)len < sizeof(report); i++)
+        len += snprintf(report + len, sizeof(report) - len,
+                        "%s%08x", i == 0 ? "\nSTACK " : " ", frames[i]);
     crazypod_lcd_show_panic(report);
 #else
     /* safe guard variable - we call backtrace() only on first
