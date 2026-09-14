@@ -297,30 +297,25 @@ bool crazypod_music_library_update(void)
         validation == CRAZYPOD_MUSIC_VALIDATION_FAILED)) {
         begin_artwork_preparation();
     }
-#ifdef IPOD_VIDEO
     /*
-     * iPod Video bring-up only: the scan can hang, suspend or stop without
-     * the screen changing, so report the state it is actually in. Remove once
-     * the scan is understood on this target.
+     * Show how far the scan has got. A large library on slow storage takes
+     * long enough that a fixed caption is indistinguishable from a hang, and
+     * the result is only cached once a scan runs to completion, so a user who
+     * gives up never gets past this screen.
      */
     if(library.loading && !library.artwork_preparing &&
        library.loading_detail != NULL) {
-        struct crazypod_music_scan_progress progress_state;
-        char state[64];
+        struct crazypod_music_scan_progress scan_state;
 
-        crazypod_music_scan_progress(&progress_state);
-        snprintf(state, sizeof(state),
-                 "scan%d susp%d abrt%d rdy%d trk%d fail%d val%d",
-                 progress_state.scanning ? 1 : 0,
-                 progress_state.suspended ? 1 : 0,
-                 progress_state.aborting ? 1 : 0,
-                 progress_state.ready ? 1 : 0,
-                 progress_state.tracks_seen,
-                 progress_state.failure,
-                 progress_state.validation);
-        CP_LV_LABEL_SET_TEXT(library.loading_detail, state);
+        crazypod_music_scan_progress(&scan_state);
+        if(scan_state.scanning && scan_state.tracks_seen > 0) {
+            char progress[48];
+
+            snprintf(progress, sizeof(progress),
+                     CP_FMT("%d local tracks"), scan_state.tracks_seen);
+            CP_LV_LABEL_SET_TEXT(library.loading_detail, progress);
+        }
     }
-#endif
     if(library.artwork_preparing) {
         if(library.loading_detail != NULL) {
             char progress[48];
