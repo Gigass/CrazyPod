@@ -152,8 +152,10 @@ static bool notes_index_write_file(
 {
     int fd;
     bool success;
-    struct notes_index_disk index = *source;
+    /* ~10.7 KiB, and reached from boot on the 8 KiB main stack. */
+    static struct notes_index_disk index;
 
+    index = *source;
     mkdir("/.crazypod");
     mkdir(NOTES_DIRECTORY);
     notes_index_prepare(&index);
@@ -372,7 +374,8 @@ static bool notes_transaction_read(
 static bool notes_index_matches(
     const struct notes_index_disk *expected)
 {
-    struct notes_index_disk current;
+    /* ~10.7 KiB, and reached from boot on the 8 KiB main stack. */
+    static struct notes_index_disk current;
 
     return notes_index_read(NOTES_INDEX_PATH, &current) &&
         memcmp(&current, expected, sizeof(current)) == 0;
@@ -380,7 +383,13 @@ static bool notes_index_matches(
 
 static void notes_transaction_recover(void)
 {
-    struct notes_transaction_disk transaction;
+    /* A notes_index_disk carries NOTES_MAX note_disk entries and this record
+     * holds two of them, so keeping it on the stack costs over 21 KiB. Boot
+     * reaches here from crazypod_platform_init() on the main thread, whose
+     * stack is 8 KiB, so it cannot live there. Like index_state and
+     * draft_work, this module is only entered from one thread at a time, and
+     * the record is dead once this function returns. */
+    static struct notes_transaction_disk transaction;
     bool committed;
     bool body_ready;
 
@@ -424,7 +433,9 @@ static int note_slot(uint32_t id)
 
 void crazypod_notes_init(void)
 {
-    struct notes_index_disk loaded;
+    /* Another ~10.7 KiB that must stay off the main thread's stack; see
+     * notes_transaction_recover(). */
+    static struct notes_index_disk loaded;
 
     notes_transaction_recover();
     notes_reset();
