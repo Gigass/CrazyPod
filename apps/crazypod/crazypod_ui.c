@@ -951,6 +951,19 @@ void crazypod_ui_run(void)
             }
 #endif
         }
+        /*
+         * Background work runs at PRIORITY_BACKGROUND while this thread is
+         * PRIORITY_USER_INTERFACE, and the scheduler picks strictly by
+         * priority, so a UI thread that never blocks starves it outright -
+         * no amount of CPU boost changes that, because boosting scales both
+         * threads alike. Once a frame costs more than its budget the
+         * schedulers above keep asking for a zero wait, which is exactly
+         * that case, so give up a tick whenever background work is pending.
+         */
+        if(wait_ticks <= 0 &&
+           (crazypod_music_is_scanning() || crazypod_artwork_busy() ||
+            crazypod_photos_busy() || crazypod_videos_busy()))
+            wait_ticks = 1;
         button = button_get_w_tmo(wait_ticks);
         process_lock_state();
         while(button != BUTTON_NONE && drained < 16) {
