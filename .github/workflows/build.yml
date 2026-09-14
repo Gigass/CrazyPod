@@ -11,8 +11,19 @@ permissions:
 
 jobs:
   hardware:
-    name: iPod 6G firmware
+    name: ${{ matrix.label }} firmware
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: ipod6g
+            label: iPod 6G
+            package: CrazyPod-6G.zip
+          # Bring-up target: compiles and packages, not hardware certified.
+          - target: ipodvideo
+            label: iPod Video (5G)
+            package: CrazyPod-5G.zip
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -42,11 +53,12 @@ jobs:
         shell: bash
         run: make -C tools convttf
 
-      - name: Build iPod 6G firmware
+      - name: Build ${{ matrix.label }} firmware
         shell: bash
         run: |
           set -o pipefail
-          if ! ./build-hw.sh 2>&1 | tee build-hw.log; then
+          if ! ./build-hw.sh --target "${{ matrix.target }}" 2>&1 \
+              | tee build-hw.log; then
             {
               echo '## Hardware build log (tail)'
               echo '```text'
@@ -56,22 +68,35 @@ jobs:
             exit 1
           fi
 
+      # The iPod Video installs its bootloader with ipodpatcher rather than
+      # the 6G's DFU/NOR path, so ship the bootloader image alongside the
+      # firmware. build-bootloader.sh covers the 6G NOR path only.
+      - name: Build iPod Video bootloader
+        if: matrix.target == 'ipodvideo'
+        shell: bash
+        run: |
+          mkdir -p build-bootloader-ipodvideo
+          cd build-bootloader-ipodvideo
+          ../tools/configure --target=ipodvideo --type=b
+          make -j"$(nproc)"
+
       - name: Upload hardware build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: crazypod-ipod6g-build-log
+          name: crazypod-${{ matrix.target }}-build-log
           if-no-files-found: warn
           path: build-hw.log
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: crazypod-ipod6g-firmware
+          name: crazypod-${{ matrix.target }}-firmware
           if-no-files-found: error
           path: |
-            build-hw-ipod6g/rockbox.ipod
-            build-hw-ipod6g/CrazyPod-6G.zip
+            build-hw-${{ matrix.target }}/rockbox.ipod
+            build-hw-${{ matrix.target }}/${{ matrix.package }}
+            build-bootloader-ipodvideo/bootloader-ipodvideo.ipod
             dist/miniapps/*.cpk
 
   simulator:
