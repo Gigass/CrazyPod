@@ -100,8 +100,13 @@ Set `CRAZYPOD_SIM_LANGUAGE` to `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `de`,
 `--firmware-only` builds `rockbox.ipod` alone, skipping the codecs, Mini App
 payloads, AOT fonts and the packaged zip. On a device that already has a full
 install only `rockbox.ipod` needs replacing, so this is the loop to use while
-iterating on firmware: it produces about 2 MB rather than several hundred. The
-"CrazyPod firmware only" workflow runs it and uploads just that file.
+iterating on firmware: it produces about 2 MB rather than several hundred.
+
+In CI it is the `firmware_only` input on the "CrazyPod build" workflow, which
+then uploads that file alone. It is an input rather than a workflow of its own
+because GitHub only offers a `workflow_dispatch` workflow in the Actions UI
+when its file exists on the default branch, so a workflow added on a feature
+branch is never visible there.
 
 `--target` selects the model; it defaults to `ipod6g`. The build directory,
 the packaged zip and the Mini App CPK payloads all follow the target:
