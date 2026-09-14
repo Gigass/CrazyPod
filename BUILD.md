@@ -230,9 +230,13 @@ running, the fullest and emptiest PCM buffer level and the lowest
 file-buffer fill seen in the window, how many times the LVGL timer handler
 ran and its worst and total time, the same for LVGL renders, the number of
 flushed strips and pixels, and the presenter's frame counts and deadline
-misses. The log stops itself at 512 KiB; delete the file to start over.
-Play music for a few minutes, then read the file from the iPod in disk mode
-to see where the time goes.
+misses, the render time split by LVGL draw task type, and the four most
+frequent invalidated screen areas with their counts. Lines are held in RAM
+and written only when the disk is already awake or the buffer fills, since
+waking a sleeping drive from the UI thread costs most of a second. The log
+stops itself at 512 KiB; delete the file to start over. Play music for a
+few minutes, then read the file from the iPod in disk mode to see where the
+time goes.
 
 The first log from a 30 GB unit showed why playback stuttered: Rockbox
 threads are cooperative, and one LVGL refresh took 200-600 ms at the idle

@@ -381,9 +381,21 @@ static void render_thread_cb(void * ptr)
 }
 #endif
 
+#if defined(IPOD_VIDEO) && !defined(SIMULATOR)
+/* CrazyPod bring-up: attribute render time to draw task types. */
+void crazypod_perf_log_draw_begin(void);
+void crazypod_perf_log_draw_end(int type);
+#define CRAZYPOD_DRAW_BEGIN() crazypod_perf_log_draw_begin()
+#define CRAZYPOD_DRAW_END(type) crazypod_perf_log_draw_end(type)
+#else
+#define CRAZYPOD_DRAW_BEGIN() do {} while(0)
+#define CRAZYPOD_DRAW_END(type) do {} while(0)
+#endif
+
 static void execute_drawing(lv_draw_task_t * t)
 {
     LV_PROFILER_DRAW_BEGIN;
+    CRAZYPOD_DRAW_BEGIN();
     /*Render the draw task*/
     switch(t->type) {
         case LV_DRAW_TASK_TYPE_FILL:
@@ -431,7 +443,7 @@ static void execute_drawing(lv_draw_task_t * t)
             break;
     }
 
-
+    CRAZYPOD_DRAW_END(t->type);
     LV_PROFILER_DRAW_END;
 }
 

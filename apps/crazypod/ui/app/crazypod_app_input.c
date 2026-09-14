@@ -112,7 +112,16 @@ static int wheel_step(intptr_t data, int maximum)
 {
     int step = 1;
 
-#ifdef HAVE_WHEEL_ACCELERATION
+#if defined(HAVE_WHEEL_ACCELERATION) && defined(CPU_PP)
+    /*
+     * The driver already folds every wheel click that arrived while the UI
+     * thread was busy into one event, and on the PP5022 a render takes
+     * long enough that an ordinary turn arrives as three or four clicks at
+     * once. Multiplying that by the velocity term as well turned a normal
+     * turn into a jump of a dozen items; take the click count as it is.
+     */
+    step = (int)(((unsigned int)data >> 24) & 0x7f);
+#elif defined(HAVE_WHEEL_ACCELERATION)
     step = button_apply_acceleration((unsigned int)data);
 #else
     (void)data;
