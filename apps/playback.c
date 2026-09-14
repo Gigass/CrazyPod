@@ -1092,6 +1092,10 @@ static void audio_reset_buffer(void)
     int runtime_reserve_handle = -1;
     size_t runtime_headroom;
     unsigned int runtime_handle_count = 0;
+    /* Kept for the panic below: it has to say which of the arena, the floor
+     * and what buflib actually returned is the one that does not add up. */
+    size_t arena_before_reserve = 0;
+    size_t arena_after_reserve = 0;
 #endif
 
 #ifdef HAVE_CRAZYPOD_UI
@@ -1121,9 +1125,10 @@ static void audio_reset_buffer(void)
     }
     /* Fix the floor to what this arena can actually give before reserving
      * against it, so the reservation cannot leave less than the floor. */
-    crazypod_audio_buffer_set_arena(core_allocatable());
+    arena_before_reserve = core_allocatable();
+    crazypod_audio_buffer_set_arena(arena_before_reserve);
     runtime_headroom =
-        crazypod_audio_runtime_headroom(core_allocatable());
+        crazypod_audio_runtime_headroom(arena_before_reserve);
     if (runtime_headroom > 0)
         runtime_reserve_handle = core_alloc_ex(
             runtime_headroom, &buflib_ops_locked);
@@ -1146,6 +1151,7 @@ static void audio_reset_buffer(void)
         core_free(runtime_reserve_handle);
     while (runtime_handle_count > 0)
         core_free(runtime_handle_reserve[--runtime_handle_count]);
+    arena_after_reserve = core_allocatable();
 #endif
 
     if (audiobuf_handle > 0
@@ -1157,7 +1163,20 @@ static void audio_reset_buffer(void)
     else
     /* someone is abusing core_alloc_maximum(). Fix this evil guy instead of
      * trying to handle OOM without hope */
+#ifdef HAVE_CRAZYPOD_UI
+        panicf("%s(): OOM!\n"
+               "arena %lu\nfloor %lu\nhead %lu\n"
+               "got %lu\nfree %lu\nh %d",
+               __func__,
+               (unsigned long)arena_before_reserve,
+               (unsigned long)crazypod_audio_buffer_floor(),
+               (unsigned long)runtime_headroom,
+               (unsigned long)filebuflen,
+               (unsigned long)arena_after_reserve,
+               audiobuf_handle);
+#else
         panicf("%s(): OOM!\n", __func__);
+#endif
 }
 
 /* Set the buffer margin to begin rebuffering when 'seconds' from empty */
