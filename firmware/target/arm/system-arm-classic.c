@@ -102,7 +102,11 @@ void NORETURN_ATTR UIE(unsigned int pc, unsigned int num)
      * DRAM is mapped up to _end. */
     extern char _edata[];
     extern char _end[];
-    char report[192];
+    extern char stackbegin[];
+    char report[256];
+    unsigned long spsr = 0;
+    unsigned int code[2] = { 0, 0 };
+    bool have_code = false;
     unsigned long banked[2] = { 0, 0 };  /* interrupted mode's sp, lr */
     unsigned long code_limit = (unsigned long)_edata;
     unsigned long sp;
@@ -118,26 +122,54 @@ void NORETURN_ATTR UIE(unsigned int pc, unsigned int num)
         "nop                  \n"
         : : "r"(banked) : "memory");
 
+    /* SPSR carries the mode and Thumb bit of the interrupted code. Without it
+     * the sp/lr above cannot be trusted: they are the User/System banked pair,
+     * which is unrelated to the fault if it arrived from another mode. */
+    asm volatile("mrs %0, spsr" : "=r"(spsr));
+
+    /* A read is safe where DRAM is mapped, and in the region the main stack
+     * lives in, which is how IRAM-resident stacks are reached portably. */
+#define CRAZYPOD_PANIC_READABLE(a) \
+    ((a) >= 0x100 && \
+     ((a) < (unsigned long)_end || \
+      ((a) & 0xf0000000ul) == ((unsigned long)stackbegin & 0xf0000000ul)))
+
+    /* The words at the faulting address say what was actually executed. */
+    if(CRAZYPOD_PANIC_READABLE((unsigned long)pc)) {
+        const volatile unsigned int *at =
+            (const volatile unsigned int *)((unsigned long)pc & ~3ul);
+        code[0] = at[0];
+        code[1] = at[1];
+        have_code = true;
+    }
+
     /* Walk the interrupted stack for anything that could be a return
-     * address. Only read where DRAM is known to be mapped, so a garbage sp
-     * cannot fault us again and lose the report entirely. */
+     * address, so a wild branch can be tied back to a caller. */
     sp = banked[0];
-    if(sp >= 0x1000 && (sp & 3) == 0 && sp < (unsigned long)_end) {
+    if((sp & 3) == 0 && CRAZYPOD_PANIC_READABLE(sp)) {
         unsigned long addr;
         for(addr = sp; addr + 4 <= sp + 512 && nframes < 4; addr += 4) {
-            unsigned long value = *(volatile unsigned long *)addr;
+            unsigned long value;
 
+            if(!CRAZYPOD_PANIC_READABLE(addr))
+                break;
+            value = *(volatile unsigned long *)addr;
             if(value >= 0x100 && value < code_limit && (value & 3) == 0)
                 frames[nframes++] = (unsigned int)value;
         }
     }
+#undef CRAZYPOD_PANIC_READABLE
 
     /* On dual-core targets say which core faulted: a fault on the COP
      * points at shared kernel state rather than at the UI thread. */
     len = snprintf(report, sizeof(report),
-                   "%s\nPC %08x" IF_COP("\nCORE %d") "\nLR %08lx\nSP %08lx",
+                   "%s\nPC %08x" IF_COP("\nCORE %d")
+                   "\nSPSR %08lx\nLR %08lx\nSP %08lx",
                    uiename[num], pc IF_COP(, CURRENT_CORE),
-                   banked[1], sp);
+                   spsr, banked[1], sp);
+    if(have_code && len > 0 && (size_t)len < sizeof(report))
+        len += snprintf(report + len, sizeof(report) - len,
+                        "\nAT %08x %08x", code[0], code[1]);
     for(i = 0; i < nframes && len > 0 && (size_t)len < sizeof(report); i++)
         len += snprintf(report + len, sizeof(report) - len,
                         "%s%08x", i == 0 ? "\nSTACK " : " ", frames[i]);
