@@ -308,9 +308,23 @@ void crazypod_present_now(void)
         submitted = lcd_update_full_sync();
     else
 #endif
+#if defined(CPU_PP) && !defined(SIMULATOR)
+    /*
+     * PortalPlayer pushes pixels through the Broadcom video chip, and
+     * lcd_update_rect() takes a different path per width: a full-width rect
+     * is one address setup and one burst, while a narrower one repeats the
+     * address setup for every scanline, each ending in a busy-wait on the
+     * BCM. Widening the rect moves more pixels through an already optimal
+     * burst loop and removes all but one of those stalls, which is the better
+     * trade here. Targets without that penalty keep the tight rect.
+     */
+    lcd_update_rect(0, present_y1, LCD_WIDTH,
+                    present_y2 - present_y1 + 1);
+#else
         lcd_update_rect(present_x1, present_y1,
                         present_x2 - present_x1 + 1,
                         present_y2 - present_y1 + 1);
+#endif
     duration_us = crazypod_monotonic_usec() - started_us;
     if(!submitted) {
         ++present_diagnostics.sync_submit_failures;

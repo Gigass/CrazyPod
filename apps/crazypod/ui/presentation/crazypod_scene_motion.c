@@ -6,6 +6,9 @@
 #define PUSH_DURATION_MS 340
 #define POP_DURATION_MS 320
 #define REPLACE_DURATION_MS 280
+/* Matches the reduced duration the menu preview motion already uses, so the
+ * setting is consistent wherever it applies. */
+#define REDUCED_DURATION_MS 80
 #define EDGE_SHADOW_OPACITY 154
 
 static int clamp_progress(int progress)
@@ -43,6 +46,13 @@ static uint8_t opacity_between(int from, int to, int progress)
     if(value > 255)
         value = 255;
     return (uint8_t)value;
+}
+
+int crazypod_scene_motion_reduced_duration_ms(
+    enum crazypod_scene_motion_kind kind)
+{
+    return crazypod_scene_motion_duration_ms(kind) > 0
+        ? REDUCED_DURATION_MS : 0;
 }
 
 int crazypod_scene_motion_duration_ms(

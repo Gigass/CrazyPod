@@ -20,6 +20,13 @@ struct crazypod_scene_motion_layout {
     uint8_t edge_shadow_opacity;
 };
 
+/*
+ * Push, pop and replace are the most visible motion in the product, and they
+ * ignored Reduce Motion entirely: the setting reached the menu preview, the
+ * notifications and the lock screen, but not these.
+ */
+int crazypod_scene_motion_reduced_duration_ms(
+    enum crazypod_scene_motion_kind kind);
 int crazypod_scene_motion_duration_ms(
     enum crazypod_scene_motion_kind kind);
 void crazypod_scene_motion_layout(

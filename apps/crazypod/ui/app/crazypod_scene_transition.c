@@ -11,6 +11,7 @@
 #include "src/misc/cache/instance/lv_image_cache.h"
 
 #include "../../crazypod_frameclock.h"
+#include "../../crazypod_state.h"
 #include "../../crazypod_image.h"
 #include "../../platform/crazypod_platform_display.h"
 #include "../presentation/crazypod_scene_motion.h"
@@ -212,7 +213,9 @@ bool crazypod_scene_transition_commit(lv_obj_t *parent)
         &animation, 0, CRAZYPOD_SCENE_MOTION_PROGRESS_MAX);
     lv_anim_set_duration(
         &animation,
-        crazypod_scene_motion_duration_ms(transition.kind));
+        crazypod_state_reduce_motion()
+            ? crazypod_scene_motion_reduced_duration_ms(transition.kind)
+            : crazypod_scene_motion_duration_ms(transition.kind));
     lv_anim_set_path_cb(&animation, lv_anim_path_linear);
     lv_anim_set_completed_cb(&animation, transition_completed);
     lv_anim_set_early_apply(&animation, true);
