@@ -552,6 +552,16 @@ static unsigned int get_next_required_pcmbuf_chunks(void)
 {
     size_t size = MIN_BUFFER_SIZE;
 
+    /*
+     * BYTERATE is pcmbuf_sampr, which stays zero until the playback start
+     * path calls pcmbuf_update_frequency(). Sizing the buffer before anything
+     * has played therefore asks for zero chunks, and pcmbuf_init() then puts
+     * pcmbuf_descriptors one element past the end of the buffer - non-NULL,
+     * so init_buffer_state()'s check passes and it writes out of bounds.
+     * Never return nothing: one chunk is enough to be a valid buffer, and the
+     * real size is recomputed once the frequency is known.
+     */
+
 #ifdef HAVE_CROSSFADE
     if (crossfade_enable_request != CROSSFADE_ENABLE_OFF)
     {
@@ -561,7 +571,12 @@ static unsigned int get_next_required_pcmbuf_chunks(void)
     }
 #endif
 
-    logf("pcmbuf len: %lu", (unsigned long)(size / BYTERATE));
+    if (size < PCMBUF_CHUNK_SIZE)
+        return 1;
+    /* BYTERATE is the divisor and can be zero here, so only log a length
+     * once there is a frequency to express it in. */
+    if (BYTERATE > 0)
+        logf("pcmbuf len: %lu", (unsigned long)(size / BYTERATE));
     return size / PCMBUF_CHUNK_SIZE;
 }
 
@@ -572,8 +587,9 @@ static void init_buffer_state(void)
     chunk_ridx = chunk_widx = 0;
     pcmbuf_bytes_waiting = 0;
 
-    /* Reset first descriptor */
-    if (pcmbuf_descriptors)
+    /* Reset first descriptor. There must be one to reset: a zero count puts
+     * the pointer one past the end of the buffer rather than at NULL. */
+    if (pcmbuf_descriptors && pcmbuf_desc_count > 0)
         pcmbuf_descriptors->pos_key = 0;
 
     /* Clear change notification */
