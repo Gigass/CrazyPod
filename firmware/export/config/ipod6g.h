@@ -7,6 +7,9 @@
 /* For Rolo and boot loader */
 #define MODEL_NUMBER 71
 
+/* Build the CrazyPod LVGL product UI instead of the Rockbox app layer */
+#define HAVE_CRAZYPOD_UI
+
 #define MODEL_NAME   "Apple iPod Classic/6G"
 
 /* define this if you use an ATA controller */
@@ -267,6 +270,13 @@
 /* Disable iAP when LOGF_SERIAL is enabled to avoid conflicts */
 #ifndef LOGF_SERIAL
 #define IPOD_ACCESSORY_PROTOCOL
+
+/*
+ * CrazyPod's accessory stack targets the 6G transport: the serial iAP frame
+ * decoder and pmu_accessory_present(). The iPod Video docks over a different
+ * path, so the product feature stays 6G-only until it is ported.
+ */
+#define HAVE_CRAZYPOD_IAP
 #ifdef HAVE_PCM_CODEC_IDLE
 #define TARGET_EXTRA_THREADS 2 /* iAP + deferred codec power */
 #else

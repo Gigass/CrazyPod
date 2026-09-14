@@ -2,6 +2,7 @@
 #define __CONFIG_H__
 #include <stdint.h>
 #define IPOD_6G 1
+#define HAVE_CRAZYPOD_UI
 #define MEMORYSIZE 64
 #define __PCTOOL__ 1
 #define INIT_ATTR

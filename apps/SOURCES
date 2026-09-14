@@ -2,7 +2,7 @@ crazypod/crazypod_main.c
 crazypod/gameboy/crazypod_gameboy_cartridge.c
 crazypod/gameboy/crazypod_gameboy_core.c
 crazypod/gameboy/crazypod_gameboy.c
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#ifdef HAVE_CRAZYPOD_IAP
 crazypod/accessory/crazypod_iap_simple.c
 crazypod/accessory/crazypod_usb_iap.c
 #endif

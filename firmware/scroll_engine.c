@@ -33,7 +33,7 @@
 #include "lcd.h"
 #include "font.h"
 #if !defined(BOOTLOADER)
-#ifndef IPOD_6G
+#ifndef HAVE_CRAZYPOD_UI
 #include "misc.h"
 #include "settings.h"
 #endif

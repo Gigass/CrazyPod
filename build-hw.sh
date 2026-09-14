@@ -42,14 +42,32 @@ prepare_generated_headers() {
         -j1 "$builddir_unix/miniapps/miniapp.link"
 }
 
+# Every stack boundary the linker script exports must be 8-byte aligned.
+# Which symbols exist is target-specific: the s5l8702 script exports the
+# underscore-prefixed IRQ/FIQ boundaries, while the PortalPlayer script
+# names its exception stacks differently and adds per-core idle stacks.
+# Require the boundaries every target has, and check the rest when present.
+CRAZYPOD_REQUIRED_STACK_SYMBOLS='stackbegin stackend'
+CRAZYPOD_OPTIONAL_STACK_SYMBOLS='_stackbegin _stackend
+_irqstackbegin _irqstackend _fiqstackbegin _fiqstackend
+irq_stack fiq_stack cop_irq_stack cop_fiq_stack
+cpu_idlestackbegin cpu_idlestackend cop_idlestackbegin cop_idlestackend'
+
 verify_stack_alignment() {
-    for symbol in stackbegin _stackbegin stackend _stackend \
-        _irqstackbegin _irqstackend _fiqstackbegin _fiqstackend; do
-        address=$("${CROSS_COMPILE}nm" -n rockbox.elf |
+    symbols=$("${CROSS_COMPILE}nm" -n rockbox.elf)
+    for symbol in $CRAZYPOD_REQUIRED_STACK_SYMBOLS \
+        $CRAZYPOD_OPTIONAL_STACK_SYMBOLS; do
+        address=$(printf '%s\n' "$symbols" |
             awk -v target="$symbol" '$3 == target { print $1; exit }')
         if [ -z "$address" ]; then
-            echo "Error: missing stack symbol '$symbol' in rockbox.elf." >&2
-            exit 1
+            case " $CRAZYPOD_REQUIRED_STACK_SYMBOLS " in
+                *" $symbol "*)
+                    echo "Error: missing stack symbol" \
+                        "'$symbol' in rockbox.elf." >&2
+                    exit 1
+                    ;;
+            esac
+            continue
         fi
         if [ $((0x$address % 8)) -ne 0 ]; then
             echo "Error: stack symbol '$symbol' is not 8-byte aligned: 0x$address." >&2
@@ -89,24 +107,41 @@ while [ $# -gt 0 ]; do
             ;;
         -h|--help)
             cat <<'EOF'
-Usage: build-hw.sh [-i|--incremental]
+Usage: build-hw.sh [-i|--incremental] [--target ipod6g|ipodvideo]
 
-Builds CrazyPod exclusively for the Rockbox iPod 6G target.
+Builds CrazyPod for a Rockbox target that ships the product UI.
+Defaults to ipod6g. ipodvideo (iPod Classic 5G/5.5G "Video") is an
+unvalidated bring-up target: it compiles and packages, but has not been
+certified on hardware.
 
 Environment:
+  CRAZYPOD_TARGET=name    same as --target
   CRAZYPOD_INCREMENTAL=1  reuse the selected variant build directory
   CRAZYPOD_SKIP_DEP=1     skip make dep when make.dep exists
   CRAZYPOD_REPRO_DIAGNOSTICS=1
-                           build the one-shot harness in build-hw-ipod6g-repro/
+                          build the one-shot harness in
+                          build-hw-<target>-repro/
   CRAZYPOD_IAP_DIAGNOSTICS=1
-                           capture raw iAP frames in build-hw-ipod6g-iap/
+                          capture raw iAP frames in
+                          build-hw-<target>-iap/
   CROSS_COMPILE=prefix-   default arm-none-eabi-
   JOBS=N                  parallel job count
 EOF
             exit 0
             ;;
+        --target)
+            [ "$#" -ge 2 ] || {
+                echo "Error: --target needs a value." >&2
+                exit 2
+            }
+            CRAZYPOD_TARGET="$2"
+            shift
+            ;;
+        --target=*)
+            CRAZYPOD_TARGET="${1#--target=}"
+            ;;
         *)
-            echo "Error: CrazyPod supports only iPod 6G; unsupported argument '$1'." >&2
+            echo "Error: unsupported argument '$1'." >&2
             exit 2
             ;;
     esac
@@ -115,6 +150,21 @@ done
 
 CROSS_COMPILE="${CROSS_COMPILE:-arm-none-eabi-}"
 export CROSS_COMPILE
+CRAZYPOD_TARGET="${CRAZYPOD_TARGET:-ipod6g}"
+case "$CRAZYPOD_TARGET" in
+    ipod6g)
+        CRAZYPOD_TARGET_LABEL="iPod 6G"
+        CRAZYPOD_PACKAGE_NAME="CrazyPod-6G"
+        ;;
+    ipodvideo)
+        CRAZYPOD_TARGET_LABEL="iPod Video (5G)"
+        CRAZYPOD_PACKAGE_NAME="CrazyPod-5G"
+        ;;
+    *)
+        echo "Error: unknown CrazyPod target '$CRAZYPOD_TARGET'." >&2
+        exit 2
+        ;;
+esac
 CRAZYPOD_BUILD_DEFINES=""
 CRAZYPOD_BUILD_VARIANT="production"
 repro_diagnostics="${CRAZYPOD_REPRO_DIAGNOSTICS:-}"
@@ -164,29 +214,29 @@ test -f miniapps/themes/atelier-hifi/generated/app.c
 test -f miniapps/themes/signal-one/generated/app.c
 
 if [ "$CRAZYPOD_BUILD_VARIANT" = "repro" ]; then
-    BUILDDIR="build-hw-ipod6g-repro"
-    STAMP="crazypod hardware ipod6g lvgl repro"
+    BUILDDIR="build-hw-$CRAZYPOD_TARGET-repro"
+    STAMP="crazypod hardware $CRAZYPOD_TARGET lvgl repro"
 elif [ "$CRAZYPOD_BUILD_VARIANT" = "iap" ]; then
-    BUILDDIR="build-hw-ipod6g-iap"
-    STAMP="crazypod hardware ipod6g lvgl iap diagnostics"
+    BUILDDIR="build-hw-$CRAZYPOD_TARGET-iap"
+    STAMP="crazypod hardware $CRAZYPOD_TARGET lvgl iap diagnostics"
 else
-    BUILDDIR="build-hw-ipod6g"
-    STAMP="crazypod hardware ipod6g lvgl production"
+    BUILDDIR="build-hw-$CRAZYPOD_TARGET"
+    STAMP="crazypod hardware $CRAZYPOD_TARGET lvgl production"
 fi
 
 configure_build() {
-    ../tools/configure --target=ipod6g --type=n
+    ../tools/configure --target="$CRAZYPOD_TARGET" --type=n
     printf '%s\n' "$STAMP" > .crazypod_configure_stamp
 }
 
 if [ "$INCREMENTAL" -eq 0 ]; then
-    echo "CrazyPod: clean iPod 6G hardware build"
+    echo "CrazyPod: clean $CRAZYPOD_TARGET_LABEL hardware build"
     rm -rf "$BUILDDIR"
     mkdir "$BUILDDIR"
     cd "$BUILDDIR"
     configure_build
 else
-    echo "CrazyPod: incremental iPod 6G hardware build"
+    echo "CrazyPod: incremental $CRAZYPOD_TARGET_LABEL hardware build"
     mkdir -p "$BUILDDIR"
     cd "$BUILDDIR"
     if [ ! -f Makefile ] ||
@@ -230,27 +280,27 @@ SIGNAL_THEME_PACKAGE="now-playing-signal-$(node -p \
     "require('../miniapps/themes/signal-one/crazypod.config.json').manifest.version").cpk"
 node ../tools/miniapp-builder/src/cli.mjs build \
     ../miniapps/apps/game2048 \
-    --target ipod6g \
+    --target "$CRAZYPOD_TARGET" \
     --binary miniapps/apps/game2048/app.arm \
     --out "../dist/miniapps/$GAME2048_PACKAGE"
 node ../tools/miniapp-builder/src/cli.mjs build \
     ../miniapps/apps/capability-lab \
-    --target ipod6g \
+    --target "$CRAZYPOD_TARGET" \
     --binary miniapps/apps/capability-lab/app.arm \
     --out "../dist/miniapps/$CAPABILITY_LAB_PACKAGE"
 node ../tools/miniapp-builder/src/cli.mjs build \
     ../miniapps/apps/native-reference \
-    --target ipod6g \
+    --target "$CRAZYPOD_TARGET" \
     --binary miniapps/apps/native-reference/app.arm \
     --out "../dist/miniapps/$NATIVE_REFERENCE_PACKAGE"
 node ../tools/miniapp-builder/src/cli.mjs build \
     ../miniapps/themes/atelier-hifi \
-    --target ipod6g \
+    --target "$CRAZYPOD_TARGET" \
     --binary miniapps/themes/atelier-hifi/app.arm \
     --out "../dist/miniapps/$NOW_PLAYING_THEME_PACKAGE"
 node ../tools/miniapp-builder/src/cli.mjs build \
     ../miniapps/themes/signal-one \
-    --target ipod6g \
+    --target "$CRAZYPOD_TARGET" \
     --binary miniapps/themes/signal-one/app.arm \
     --out "../dist/miniapps/$SIGNAL_THEME_PACKAGE"
 
@@ -319,14 +369,15 @@ for codec in lib/rbcodec/codecs/*.codec; do
     esac
     cp "$codec" "$PACKAGE_DIR/.rockbox/codecs/"
 done
-rm -f CrazyPod-6G.zip
+rm -f "$CRAZYPOD_PACKAGE_NAME.zip"
 (
     cd "$PACKAGE_DIR"
-    zip -q -r "$PACKAGE_DIR/../CrazyPod-6G.zip" \
+    zip -q -r "$PACKAGE_DIR/../$CRAZYPOD_PACKAGE_NAME.zip" \
         .rockbox Music Podcasts Books Pictures Videos Contacts Calendars \
         MiniApps
 )
-mv "$PACKAGE_DIR/../CrazyPod-6G.zip" CrazyPod-6G.zip
+mv "$PACKAGE_DIR/../$CRAZYPOD_PACKAGE_NAME.zip" \
+    "$CRAZYPOD_PACKAGE_NAME.zip"
 
 echo "CrazyPod: built $(pwd)/rockbox.ipod"
-echo "CrazyPod: packaged $(pwd)/CrazyPod-6G.zip"
+echo "CrazyPod: packaged $(pwd)/$CRAZYPOD_PACKAGE_NAME.zip"

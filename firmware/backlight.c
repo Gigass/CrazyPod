@@ -22,7 +22,7 @@
  ****************************************************************************/
 #include "config.h"
 #if !defined(BOOTLOADER)
-#ifndef IPOD_6G
+#ifndef HAVE_CRAZYPOD_UI
 #include "settings.h"
 #include "action.h"
 #endif
@@ -43,7 +43,7 @@
 #include "lcd.h"
 #include "storage.h"
 #include "screendump.h"
-#if defined(IPOD_6G) && !defined(BOOTLOADER)
+#if defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
 #include "audio.h"
 #endif
 
@@ -514,7 +514,7 @@ static inline void do_backlight_off(void)
     /* Accelerate SSD sleep when backlight turns off — the deep sleep
      * timer in the storage driver uses backlight state as a gate. */
     if (storage_get_ssd_mode()
-#if defined(IPOD_6G) && !defined(BOOTLOADER)
+#if defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
         && !((audio_status() & AUDIO_STATUS_PLAY) != 0 &&
              (audio_status() & AUDIO_STATUS_PAUSE) == 0)
 #endif
@@ -715,7 +715,7 @@ void backlight_thread(void)
 #if defined(HAVE_LCD_SLEEP) /* bugfix ipod Video, 6G crashes if screen off at shutdown */
                 lcd_awake();
 #endif
-#ifndef IPOD_6G
+#ifndef HAVE_CRAZYPOD_UI
                 if (!global_settings.show_shutdown_message)
                     break;
 #endif

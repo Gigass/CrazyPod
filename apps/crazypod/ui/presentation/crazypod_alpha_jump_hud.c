@@ -2,7 +2,7 @@
 
 #include "../../crazypod_l10n.h"
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 
 #include "crazypod_alpha_jump_hud.h"
 #include "crazypod_ui_widgets.h"

@@ -30,7 +30,7 @@
 #include "settings.h"
 #include "sound.h"
 #include "usb_drv.h"
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_IAP
 #include "crazypod_usb_iap.h"
 #endif
 
@@ -112,7 +112,7 @@ IAPBool iap_platform_get_play_status(struct IAPContext* iap_ctx, struct IAPPlatf
 void iap_platform_control(struct IAPContext* iap_ctx, enum IAPPlatformControl control, struct IAPPlatformPendingControl pending) {
     struct Platform* plt = iap_ctx->platform;
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_IAP
     const int initial_audio_status = audio_status();
     bool may_start_playback = false;
     IAPBool ret = iap_true;
@@ -234,7 +234,7 @@ IAPBool iap_platform_get_power_status(struct IAPContext* iap_ctx, struct IAPPlat
 
 IAPBool iap_platform_get_shuffle_setting(struct IAPContext* iap_ctx, uint8_t* status) {
     (void)iap_ctx;
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_IAP
     *status = _iap_convert_shuffle_state(crazypod_usb_iap_shuffle());
 #else
     *status = _iap_convert_shuffle_state(global_settings.playlist_shuffle);
@@ -245,7 +245,7 @@ IAPBool iap_platform_get_shuffle_setting(struct IAPContext* iap_ctx, uint8_t* st
 IAPBool iap_platform_set_shuffle_setting(struct IAPContext* iap_ctx, uint8_t status) {
     (void)iap_ctx;
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_IAP
     if(status == IAPIPodStateShuffleSettingState_Tracks)
         crazypod_usb_iap_set_shuffle(true);
     else if(status == IAPIPodStateShuffleSettingState_Off)
@@ -272,7 +272,7 @@ IAPBool iap_platform_set_shuffle_setting(struct IAPContext* iap_ctx, uint8_t sta
 
 IAPBool iap_platform_get_repeat_setting(struct IAPContext* iap_ctx, uint8_t* status) {
     (void)iap_ctx;
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_IAP
     *status = _iap_convert_repeat_state(crazypod_usb_iap_repeat());
 #else
     *status = _iap_convert_repeat_state(global_settings.repeat_mode);
@@ -283,7 +283,7 @@ IAPBool iap_platform_get_repeat_setting(struct IAPContext* iap_ctx, uint8_t* sta
 IAPBool iap_platform_set_repeat_setting(struct IAPContext* iap_ctx, uint8_t status) {
     (void)iap_ctx;
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_IAP
     if(_iap_convert_repeat_state(crazypod_usb_iap_repeat()) == status)
         return iap_true;
 #else
@@ -303,7 +303,7 @@ IAPBool iap_platform_set_repeat_setting(struct IAPContext* iap_ctx, uint8_t stat
         [IAPIPodStateRepeatSettingState_All] = REPEAT_ALL,
     };
     check_act(status < ARRAY_SIZE(table), return iap_false);
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_IAP
     crazypod_usb_iap_set_repeat(table[status]);
 #else
     global_settings.repeat_mode = table[status];
@@ -344,7 +344,7 @@ IAPBool iap_platform_get_hold_switch_state(struct IAPContext* iap_ctx, IAPBool* 
 
 /* taken from iap-core.c */
 static void get_trackinfo(const unsigned int track, struct mp3entry* id3) {
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_IAP
     char path[MAX_PATH];
     if(crazypod_usb_iap_copy_track_path(track, path, sizeof(path)))
         get_metadata(id3, -1, path);
@@ -408,7 +408,7 @@ IAPBool iap_platform_get_indexed_track_info(struct IAPContext* iap_ctx, uint32_t
 
 IAPBool iap_platform_set_playing_track(struct IAPContext* iap_ctx, uint32_t index) {
     (void)iap_ctx;
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_IAP
     return crazypod_usb_iap_select_track(index);
 #else
     audio_skip((int)index - playlist_next(0));

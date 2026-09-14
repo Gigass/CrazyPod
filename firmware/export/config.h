@@ -1408,14 +1408,30 @@ Lyre prototype 1 */
 
 #endif /* HAVE_USBSTACK */
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 /*
  * The legacy UART accessory transport remains independent of the USB iAP
  * accessory profile. Generic USB audio/HID and the obsolete split iAP HID
  * driver stay disabled.
  */
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#ifdef HAVE_CRAZYPOD_IAP
 #define CRAZYPOD_IAP_SIMPLE_REMOTE
+#else
+/*
+ * Without the CrazyPod accessory stack there is no consumer for the USB iAP
+ * profile, and its platform layer is written against the Rockbox app layer
+ * this product replaces. Keep it out of the build.
+ */
+#undef USB_ENABLE_IAP
+/*
+ * The serial accessory hooks in the button and UART drivers call into the
+ * app-layer iAP core, which this product does not build. On the iPod targets
+ * the serial port exists only to carry that protocol, so it goes with it.
+ */
+#undef IPOD_ACCESSORY_PROTOCOL
+#ifdef IPOD_ARCH
+#undef HAVE_SERIAL
+#endif
 #endif
 #undef USB_ENABLE_AUDIO
 #undef USB_ENABLE_HID

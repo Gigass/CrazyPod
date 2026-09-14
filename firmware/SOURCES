@@ -361,7 +361,7 @@ libc/gmtime.c
 #endif /* CONFIG_PLATFORM || HAVE_ROCKBOX_C_LIBRARY */
 
 /* Display */
-#if defined(IPOD_6G) && !defined(BOOTLOADER)
+#if defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
 /* CrazyPod owns its RGB565 framebuffer and LVGL rendering path. */
 font_cache.c
 font.c
@@ -402,9 +402,9 @@ drivers/lcd-16bit.c
 drivers/lcd-24bit.c
 #endif /* LCD_DEPTH */
 common/diacritic.c
-#endif /* IPOD_6G */
+#endif /* HAVE_CRAZYPOD_UI */
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 crazypod_boot_logo.c
 #endif
 

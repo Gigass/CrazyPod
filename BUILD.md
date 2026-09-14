@@ -1,6 +1,10 @@
 # CrazyPod build guide
 
-CrazyPod supports one product target: iPod Classic 6G (`ipod6g`).
+CrazyPod's shipping product target is iPod Classic 6G (`ipod6g`).
+
+A second target, iPod Classic 5G/5.5G "Video" (`ipodvideo`), is under
+bring-up. It compiles, links and packages, but it has **not** been run on
+hardware. See "iPod Video bring-up target" below before using it.
 
 ## Prerequisites
 
@@ -93,8 +97,13 @@ Set `CRAZYPOD_SIM_LANGUAGE` to `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `de`,
 ./build-hw.sh --incremental
 ```
 
-The script rejects target arguments because no target other than `ipod6g` is
-supported.
+`--target` selects the model; it defaults to `ipod6g`. The build directory,
+the packaged zip and the Mini App CPK payloads all follow the target:
+
+```sh
+./build-hw.sh                        # build-hw-ipod6g/CrazyPod-6G.zip
+./build-hw.sh --target ipodvideo     # build-hw-ipodvideo/CrazyPod-5G.zip
+```
 
 Set Rockbox's build version explicitly for a tagged release. V1.0 was built
 with:
@@ -106,6 +115,45 @@ cp build-hw-ipod6g/CrazyPod-6G.zip \
 cp build-hw-ipod6g/rockbox.ipod \
   build-hw-ipod6g/CrazyPod-V1.0-iPod6G-rockbox.ipod
 ```
+
+## iPod Video bring-up target
+
+`ipodvideo` builds the same product UI against Rockbox's existing iPod
+Classic 5G/5.5G platform layer. Both models are 320x240 RGB565 at 160 DPI
+with the same click-wheel keypad, so no UI asset or layout differs.
+
+Targets that ship the product UI are listed in two places, which must stay
+in sync:
+
+- `HAVE_CRAZYPOD_UI` in `firmware/export/config/<model>.h`, which selects the
+  product code over the Rockbox app layer.
+- `CRAZYPOD_MODELS` in `tools/root.make`, which selects the LVGL, Mini App
+  and product build rules.
+
+What differs from the 6G, and how:
+
+| Area | 6G | iPod Video |
+| --- | --- | --- |
+| SoC | S5L8702, ARMv5, 216 MHz, single core | PP5022, ARMv4T, dual core |
+| RAM | 64 MiB | 64 MiB, or 32 MiB on 30 GB units (detected in `crt0-pp.S`) |
+| Coprocessor | none | `cop_main()` in `crazypod_main.c` releases the COP |
+| LCD present | TE/phase-synchronised `lcd_update_rect_*_sync()` | generic `lcd_update_rect()` |
+| Accessory | serial iAP plus USB iAP (`HAVE_CRAZYPOD_IAP`) | not ported; the feature is off |
+| Install | DFU plus `mks5lboot` | `bootloader-ipodvideo.ipod` via `ipodpatcher` |
+
+Build the 5G bootloader with stock Rockbox tooling; `build-bootloader.sh`
+covers the 6G NOR path only and does not apply here:
+
+```sh
+mkdir build-bl-ipodvideo && cd build-bl-ipodvideo
+../tools/configure --target=ipodvideo --type=b
+make
+```
+
+Not yet done: no hardware validation of any kind, no frame-time measurement
+on the slower CPU, no 32 MiB memory-budget check, and no accessory or
+inline-remote support. Treat a 5G build as a compile artifact, not firmware
+to install casually.
 
 ## Verification
 

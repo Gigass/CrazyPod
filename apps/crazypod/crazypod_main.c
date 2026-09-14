@@ -1,6 +1,6 @@
 #include "config.h"
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 
 #include "adc.h"
 #include "audio.h"
@@ -29,7 +29,7 @@
 #include "system.h"
 #include "usb.h"
 
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#ifdef HAVE_CRAZYPOD_IAP
 #include "iap.h"
 #endif
 
@@ -178,7 +178,7 @@ static void crazypod_platform_init(void)
 #endif
     backlight_on();
     button_init();
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#ifdef HAVE_CRAZYPOD_IAP
     iap_setup(0);
 #endif
 #ifdef HAVE_SERIAL
@@ -244,6 +244,26 @@ int main(void)
     thread_wait(ui_thread);
     panicf("CrazyPod UI stopped");
 }
+
+#ifdef CPU_PP
+void cop_main(void) NORETURN_ATTR;
+void cop_main(void)
+{
+    /* Entry point for the PortalPlayer coprocessor. crt0-pp.S branches here
+     * once the main core releases it. A kernel thread is set up on the COP
+     * and immediately destroyed for continuity; the core then idles until a
+     * thread is scheduled onto it - the codec thread, in practice.
+     *
+     * Bootloaders that never release the COP simply never reach this. */
+#if NUM_CORES > 1
+    system_init();
+    kernel_init();
+    /* not reached */
+#endif
+    while(1)
+        sleep_core(COP);
+}
+#endif /* CPU_PP */
 
 #endif
 

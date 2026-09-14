@@ -40,13 +40,13 @@
 #include "usb_core.h"
 #endif
 #include "logf.h"
-#ifndef IPOD_6G
+#ifndef HAVE_CRAZYPOD_UI
 #include "screendump.h"
 #endif
 #include "powermgmt.h"
 
 #ifndef BOOTLOADER
-#ifndef IPOD_6G
+#ifndef HAVE_CRAZYPOD_UI
 #include "misc.h"
 #include "gui/yesno.h"
 #include "settings.h"
@@ -59,7 +59,7 @@
 #include "usb-hiby-gadget.h"
 #endif
 
-#if defined(IPOD_ACCESSORY_PROTOCOL) && !defined(IPOD_6G)
+#if defined(IPOD_ACCESSORY_PROTOCOL) && !defined(HAVE_CRAZYPOD_UI)
 #include "iap.h"
 #endif
 
@@ -90,7 +90,7 @@ static int usb_mmc_countdown = 0;
 #ifndef USB_EXTRA_STACK
 #   define USB_EXTRA_STACK 0x0 /*Define in firmware/export/config/[target].h*/
 #endif
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 #define CRAZYPOD_USB_DUMP_STACK 0
 #else
 #define CRAZYPOD_USB_DUMP_STACK DUMP_BMP_LINESIZE
@@ -143,7 +143,7 @@ static void try_reboot(void)
 /* Screen dump */
 static inline bool usb_do_screendump(void)
 {
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
     return false;
 #else
     if(do_screendump_instead_of_usb)
@@ -208,7 +208,7 @@ static inline void usb_handle_hotswap(long id)
 static inline void usb_configure_drivers(int for_state)
 {
 #ifdef USB_ENABLE_AUDIO
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
     usb_audio = 0;
 #else
     // FIXME: doesn't seem to get set when loaded at boot...
@@ -237,7 +237,7 @@ static inline void usb_configure_drivers(int for_state)
 #ifdef USB_ENABLE_IAP
     /* Keep accessory configuration 2 enumerable in CrazyPod's charge mode;
      * mass storage remains disabled until the user explicitly chooses Data. */
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
     usb_core_enable_driver(USB_DRIVER_IAP, true);
 #else
     usb_core_enable_driver(USB_DRIVER_IAP, false);
@@ -489,7 +489,7 @@ static void NORETURN_ATTR usb_thread(void)
 
             usb_state = USB_POWERED;
 
-#if defined(IPOD_6G) && !defined(BOOTLOADER)
+#if defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
 #ifndef HAVE_USB_POWER
             int usb_mode = -1;
 #endif
@@ -497,7 +497,7 @@ static void NORETURN_ATTR usb_thread(void)
 #endif
 
 #ifdef HAVE_USB_POWER
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
             /* Ask CrazyPod before the DesignWare controller soft-connects.
              * Blocking after usb_stack_enable() lets the host send setup
              * packets while the app is still waiting for user input, which
@@ -507,14 +507,14 @@ static void NORETURN_ATTR usb_thread(void)
 #endif
 
             usb_stack_enable(true);
-#if !defined(BOOTLOADER) && !defined(IPOD_6G)
+#if !defined(BOOTLOADER) && !defined(HAVE_CRAZYPOD_UI)
 #ifndef HAVE_USB_POWER
             int usb_mode = -1;
 #endif
             send_event(SYS_EVENT_USB_INSERTED, &usb_mode);
 #endif
 #ifdef HAVE_USB_POWER
-#ifndef IPOD_6G
+#ifndef HAVE_CRAZYPOD_UI
             /* Power (charging-only) button */
             usb_power_only = usb_mode != USB_MODE_MASS_STORAGE;
             if(button_status() & ~USBPOWER_BTN_IGNORE) {
@@ -559,7 +559,7 @@ static void NORETURN_ATTR usb_thread(void)
             if(usb_state == USB_POWERED || usb_state == USB_INSERTED)
                 usb_stack_enable(false);
 
-#if defined(IPOD_ACCESSORY_PROTOCOL) && !defined(IPOD_6G)
+#if defined(IPOD_ACCESSORY_PROTOCOL) && !defined(HAVE_CRAZYPOD_UI)
             iap_reset_state(IF_IAP_MP(0));
 #endif
 

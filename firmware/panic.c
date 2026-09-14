@@ -25,7 +25,7 @@
 #include <string.h>
 #include "panic.h"
 #include "lcd.h"
-#if defined(IPOD_6G) && !defined(BOOTLOADER)
+#if defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
 #include "crazypod/crazypod_lcd.h"
 #else
 #include "font.h"
@@ -49,7 +49,7 @@ char panic_buf[128];
 static char panic_buf[128];
 #endif
 
-#if !defined(IPOD_6G) || defined(BOOTLOADER)
+#if !defined(HAVE_CRAZYPOD_UI) || defined(BOOTLOADER)
 #define LINECHARS (LCD_WIDTH/SYSFONT_WIDTH) - 2
 #endif
 
@@ -103,7 +103,7 @@ void panicf( const char *fmt, ...)
     vsnprintf( panic_buf, sizeof(panic_buf), fmt, ap );
     va_end( ap );
 
-#if defined(IPOD_6G) && !defined(BOOTLOADER)
+#if defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
 #if defined(HAVE_RB_BACKTRACE)
     (void)pc;
     (void)sp;

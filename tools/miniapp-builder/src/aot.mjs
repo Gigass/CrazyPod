@@ -1562,8 +1562,10 @@ function nativeManifest(source, target, fontSet) {
   if (!Array.isArray(fontSet)) {
     throw new TypeError("fontSet must be an array");
   }
-  if (!["simulator", "ipod6g"].includes(target)) {
-    throw new Error("native target must be simulator or ipod6g");
+  if (!["simulator", "ipod6g", "ipodvideo"].includes(target)) {
+    throw new Error(
+      "native target must be simulator, ipod6g or ipodvideo",
+    );
   }
   return {
     format: 5,

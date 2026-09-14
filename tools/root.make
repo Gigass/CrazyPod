@@ -9,6 +9,11 @@
 
 include $(TOOLSDIR)/functions.make
 
+# Targets that ship the CrazyPod LVGL product UI in place of the Rockbox
+# app layer. Keep in sync with HAVE_CRAZYPOD_UI in firmware/export/config/.
+CRAZYPOD_MODELS := ipod6g ipodvideo
+IS_CRAZYPOD := $(filter $(MODELNAME),$(CRAZYPOD_MODELS))
+
 DEFINES = -DROCKBOX -DMEMORYSIZE=$(MEMORYSIZE) $(TARGET) \
 	-DTARGET_ID=$(TARGET_ID) -DTARGET_NAME=\"$(MODELNAME)\" $(BUILDDATE) \
 	$(EXTRA_DEFINES) # <-- -DSIMULATOR or not
@@ -67,13 +72,13 @@ ifeq (,$(findstring checkwps,$(APP_TYPE)))
   ifeq (,$(findstring database,$(APP_TYPE)))
     ifeq (,$(findstring warble,$(APP_TYPE)))
       include $(FIRMDIR)/firmware.make
-      ifneq ($(MODELNAME),ipod6g)
+      ifeq (,$(IS_CRAZYPOD))
         include $(ROOTDIR)/apps/bitmaps/bitmaps.make
       endif
       ifeq (arch_arm,$(ARCH))
           # some targets don't use the unwarminder because they have the glibc backtrace
           ifeq (,$(filter sonynwz,$(APP_TYPE)))
-            ifneq ($(MODELNAME),ipod6g)
+            ifeq (,$(IS_CRAZYPOD))
             include $(ROOTDIR)/lib/unwarminder/unwarminder.make
             endif
           endif
@@ -86,7 +91,7 @@ ifeq (,$(findstring checkwps,$(APP_TYPE)))
       endif
       ifeq (,$(findstring bootloader,$(APPSDIR)))
         include $(ROOTDIR)/lib/tlsf/libtlsf.make
-        ifneq ($(MODELNAME),ipod6g)
+        ifeq (,$(IS_CRAZYPOD))
           include $(ROOTDIR)/lib/skin_parser/skin_parser.make
         else
           INCLUDES += -I$(ROOTDIR)/lib/skin_parser
@@ -134,7 +139,7 @@ else ifneq (,$(findstring warble,$(APP_TYPE)))
   include $(ROOTDIR)/lib/tlsf/libtlsf.make
   include $(ROOTDIR)/lib/rbcodec/rbcodec.make
 else # core
-  ifeq ($(MODELNAME),ipod6g)
+  ifneq (,$(IS_CRAZYPOD))
     include $(APPSDIR)/lang/lang.make
     include $(APPSDIR)/apps.make
     include $(ROOTDIR)/lib/rbcodec/rbcodec.make
@@ -257,7 +262,7 @@ clean::
 ifeq (,$(findstring bootloader,$(APPSDIR)))
 # not bootloader
 
-ifeq ($(MODELNAME),ipod6g)
+ifneq (,$(IS_CRAZYPOD))
 CORE_COMPILE_GENERATED_HEADERS := $(BUILDDIR)/lang/lang.h \
 	$(BUILDDIR)/lang_enum.h \
 	$(BUILDDIR)/lang/max_language_size.h \

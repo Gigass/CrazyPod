@@ -263,7 +263,7 @@ void _logf(const char *fmt, ...)
 
 void logf_panic_dump(int *y)
 {
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
     (void)y;
     DEBUGF("CrazyPod panic: logf buffer retained in memory\n");
 #else

@@ -1,6 +1,6 @@
 #include "config.h"
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 
 #include "backlight.h"
 #include "button.h"
@@ -264,7 +264,7 @@ static long remote_down_multitap_window_ticks(void)
 
 static void confirm_remote_down_hold(long now)
 {
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#ifdef HAVE_CRAZYPOD_IAP
     if(!remote_down_hold_active ||
        remote_down_hold_confirmed ||
        (long)(now - (remote_down_hold_start +

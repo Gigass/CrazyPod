@@ -2,5 +2,6 @@
 #define TEST_CRAZYPOD_PLAYLIST_CONFIG_H
 
 #define IPOD_6G 1
+#define HAVE_CRAZYPOD_UI
 
 #endif

@@ -2,7 +2,7 @@
 
 #include "crazypod_l10n.h"
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 
 #define CRAZYPOD_VIDEO_CORE 1
 

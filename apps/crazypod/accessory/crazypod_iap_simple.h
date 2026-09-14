@@ -6,7 +6,7 @@
 
 #include "config.h"
 
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#ifdef HAVE_CRAZYPOD_IAP
 struct crazypod_iap_diagnostics {
     uint32_t received_frames;
     uint32_t checksum_errors;

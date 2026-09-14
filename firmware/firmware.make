@@ -71,7 +71,7 @@ SVNVERSION:=$(shell VERSION='$(VERSION)' $(TOOLSDIR)/version.sh $(ROOTDIR))
 OLDSVNVERSION:=$(shell grep 'RBVERSION' $(BUILDDIR)/rbversion.h 2>/dev/null|cut -d '"' -f 2 || echo "NOREVISION")
 
 CORE_LIBS:=$(FIRMLIB)
-ifeq ($(MODELNAME),ipod6g)
+ifneq (,$(IS_CRAZYPOD))
 ifeq (,$(findstring -DBOOTLOADER,$(EXTRA_DEFINES)))
 CORE_LIBS += $(BUILDDIR)/lib/rbcodec/codecs/libmad-mpeg.a
 endif

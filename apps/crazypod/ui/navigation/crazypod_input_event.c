@@ -1,6 +1,6 @@
 #include "config.h"
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 
 #include "button.h"
 
@@ -8,7 +8,7 @@
 
 bool crazypod_input_button_is_remote(long button)
 {
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#ifdef HAVE_CRAZYPOD_IAP
     return (button & BUTTON_REMOTE) != 0;
 #else
     (void)button;
@@ -18,7 +18,7 @@ bool crazypod_input_button_is_remote(long button)
 
 long crazypod_input_translate_remote(long button)
 {
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#ifdef HAVE_CRAZYPOD_IAP
     long remote = button & BUTTON_REMOTE;
     long modifiers = button & (BUTTON_REL | BUTTON_REPEAT);
     long translated = BUTTON_NONE;

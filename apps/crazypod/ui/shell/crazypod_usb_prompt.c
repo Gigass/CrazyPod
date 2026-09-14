@@ -2,7 +2,7 @@
 
 #include "../../crazypod_l10n.h"
 
-#if defined(IPOD_6G) && defined(HAVE_USB_POWER) && !defined(USB_NONE)
+#if defined(HAVE_CRAZYPOD_UI) && defined(HAVE_USB_POWER) && !defined(USB_NONE)
 
 #include <string.h>
 

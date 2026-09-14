@@ -38,7 +38,7 @@
 /* limits for number of open descriptors - if you increase these values, make
    certain that the disk cache has enough available buffers */
 
-#if defined(IPOD_6G)
+#if defined(HAVE_CRAZYPOD_UI)
 /* Cached fonts retain one descriptor each; leave 32 for media and I/O. */
 #define MAX_OPEN_FILES  96
 #define MAX_OPEN_DIRS   32
@@ -96,7 +96,7 @@
  * volumes that would slow cache probing. IOC_MAP_NUM_ENTRIES is the number
  * for each map per volume. The buffers themselves are shared.
  */
-#if defined(IPOD_6G)
+#if defined(HAVE_CRAZYPOD_UI)
 /* Every open stream may retain a buffer, including internal streams. */
 #define DC_NUM_ENTRIES \
     (MAX_OPEN_FILES + MAX_OPEN_DIRS + AUX_FILEOBJS + 1)

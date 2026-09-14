@@ -1996,7 +1996,9 @@ fi
     bmp2rb_native="$rootdir/tools/bmp2rb -f 4"
     output="rockbox.ipod"
     appextra="recorder:gui:radio"
-    plugins="yes"
+    # CrazyPod replaces the Rockbox app layer the plugin set is built
+    # against, so the stock plugins cannot be built for this target.
+    plugins="no"
     bootoutput="bootloader-$modelname.ipod"
     # toolset is the tools within the tools directory that we build for
     # this particular target.

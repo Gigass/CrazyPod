@@ -16,7 +16,8 @@ function usage() {
   process.stdout.write(
     "Usage: crazypod <generate|build|test|install|dev> [project] [options]\n" +
     "  generate [project] --out FILE\n" +
-    "  build [project] [--target simulator|ipod6g] [--binary FILE]\n" +
+    "  build [project] [--target simulator|ipod6g|ipodvideo]" +
+    " [--binary FILE]\n" +
     "  test [project]\n" +
     "  install [project|CPK] IPOD_VOLUME\n" +
     "  dev [project]\n",

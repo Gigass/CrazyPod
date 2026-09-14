@@ -1,6 +1,6 @@
 #include "config.h"
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 
 #include <string.h>
 
@@ -10,7 +10,14 @@
 
 #include "crazypod_frameclock.h"
 
-#ifndef SIMULATOR
+/*
+ * The 6G panel driver exposes tearing-avoidance variants of
+ * lcd_update_rect(). Targets without them - the iPod Video panel has no
+ * equivalent TE/phase-synchronised path - present through the generic
+ * Rockbox update instead.
+ */
+#if defined(IPOD_6G) && !defined(SIMULATOR)
+#define CRAZYPOD_HAVE_LCD_FRAME_SYNC
 #include "lcd-s5l8702.h"
 #endif
 
@@ -286,7 +293,7 @@ void crazypod_present_now(void)
 
     full = crazypod_present_is_full();
     started_us = crazypod_monotonic_usec();
-#ifndef SIMULATOR
+#ifdef CRAZYPOD_HAVE_LCD_FRAME_SYNC
     if(present_sync == PRESENT_SYNC_HOME && !full)
         submitted = lcd_update_rect_frame_sync(
             present_x1, present_y1,

@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if defined(IPOD_6G) && defined(SIMULATOR)
+#if defined(HAVE_CRAZYPOD_UI) && defined(SIMULATOR)
 
 #include <errno.h>
 #include <stdio.h>

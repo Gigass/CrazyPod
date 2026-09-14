@@ -1,6 +1,6 @@
 #include "config.h"
 
-#if defined(IPOD_6G) && \
+#if defined(HAVE_CRAZYPOD_UI) && \
     (defined(SIMULATOR) || \
      defined(CRAZYPOD_REPRO_DIAGNOSTICS))
 

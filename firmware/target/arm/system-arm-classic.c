@@ -22,14 +22,14 @@
 #include "system.h"
 #include <stdio.h>
 #include "lcd.h"
-#if defined(IPOD_6G) && !defined(BOOTLOADER)
+#if defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
 #include "crazypod/crazypod_lcd.h"
 #else
 #include "font.h"
 #endif
 #include "gcc_extensions.h"
 
-#if !defined(IPOD_6G) && !defined(BOOTLOADER)
+#if !defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
 #include <get_sp.h>
 #include <backtrace.h>
 #endif
@@ -97,7 +97,7 @@ void __attribute__((weak,naked)) undef_instr_handler(void)
  */
 void NORETURN_ATTR UIE(unsigned int pc, unsigned int num)
 {
-#if defined(IPOD_6G) && !defined(BOOTLOADER)
+#if defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
     char report[96];
 
     snprintf(report, sizeof(report), "%s\nPC %08x",

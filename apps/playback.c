@@ -50,7 +50,7 @@
 #include "iap-usb.h"
 #include <stdio.h>
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 #include "crazypod/crazypod_audio_memory_policy.h"
 #include "crazypod/crazypod_audio_reserve.h"
 #endif
@@ -183,7 +183,7 @@ struct audio_resume_info
 static struct mutex id3_mutex SHAREDBSS_ATTR; /* (A,O)*/
 
 /** For album art support **/
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 #define MAX_MULTIPLE_AA 1
 #else
 #define MAX_MULTIPLE_AA SKINNABLE_SCREENS_COUNT
@@ -865,7 +865,7 @@ static int audiobuf_handle;
 #define AUDIO_BUFFER_RESERVE (256*1024)
 static size_t filebuflen;
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 static int runtime_handle_reserve[CRAZYPOD_RUNTIME_HANDLE_HEADROOM];
 #endif
 
@@ -984,7 +984,7 @@ static int shrink_callback(int handle, unsigned hints, void* start, size_t old_s
     size_t wanted_size = (hints & BUFLIB_SHRINK_SIZE_MASK);
     ssize_t size = (ssize_t)old_size - wanted_size;
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
     bool playback_active = (audio_status() & AUDIO_STATUS_PLAY) != 0;
 
     /* PLAY includes the paused state. Preserve the whole arena whenever a
@@ -1088,13 +1088,13 @@ static struct buflib_callbacks ops = {
 
 static void audio_reset_buffer(void)
 {
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
     int runtime_reserve_handle = -1;
     size_t runtime_headroom;
     unsigned int runtime_handle_count = 0;
 #endif
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
     crazypod_audio_reserve_release();
 #endif
 
@@ -1105,7 +1105,7 @@ static void audio_reset_buffer(void)
     }
     if (core_allocatable() < pcmbuf_size_reqd())
         talk_buffer_set_policy(TALK_BUFFER_LOOSE); /* back off voice buffer */
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
     /* core_alloc_maximum() otherwise consumes every remaining byte. Hold a
      * locked block and enough handles across that call, then free them to
      * leave a separate arena for all allocations that can occur after
@@ -1126,7 +1126,7 @@ static void audio_reset_buffer(void)
             runtime_headroom, &buflib_ops_locked);
 #endif
     audiobuf_handle = core_alloc_maximum(&filebuflen, &ops);
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
     if (audiobuf_handle > 0 &&
         !crazypod_audio_buffer_meets_floor(filebuflen))
     {
@@ -1146,7 +1146,7 @@ static void audio_reset_buffer(void)
 #endif
 
     if (audiobuf_handle > 0
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
         && crazypod_audio_buffer_meets_floor(filebuflen)
 #endif
        )

@@ -24,7 +24,7 @@
 
 #include "config.h"
 #include "kernel.h"
-#ifndef IPOD_6G
+#ifndef HAVE_CRAZYPOD_UI
 #include "screendump.h"
 #endif
 #include "thread.h"
@@ -74,7 +74,7 @@ void sim_thread(void)
                 break;
 
             case SIM_SCREENDUMP:
-#ifndef IPOD_6G
+#ifndef HAVE_CRAZYPOD_UI
                 screen_dump();
 #ifdef HAVE_REMOTE_LCD
                 remote_screen_dump();

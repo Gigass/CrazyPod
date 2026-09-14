@@ -3,7 +3,7 @@
 
 #include "config.h"
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 
 #include <stdbool.h>
 #include <stdint.h>

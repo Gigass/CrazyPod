@@ -1,6 +1,7 @@
 #ifndef CRAZYPOD_GAMEBOY_TEST_CONFIG_H
 #define CRAZYPOD_GAMEBOY_TEST_CONFIG_H
 #define IPOD_6G 1
+#define HAVE_CRAZYPOD_UI
 #ifndef MAX_PATH
 #define MAX_PATH 260
 #endif

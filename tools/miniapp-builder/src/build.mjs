@@ -62,7 +62,7 @@ export async function buildProject(
   }
   if (!nativeBinary) {
     throw new Error(
-      "ipod6g build requires --binary app.arm from the firmware toolchain",
+      `${target} build requires --binary app.arm from the firmware toolchain`,
     );
   }
   return packageNativeProject(project, {

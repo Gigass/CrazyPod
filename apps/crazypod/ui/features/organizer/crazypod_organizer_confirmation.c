@@ -1,6 +1,6 @@
 #include "config.h"
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 
 #include "../../../crazypod_organizer.h"
 #include "crazypod_activity_controller.h"

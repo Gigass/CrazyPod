@@ -1,6 +1,6 @@
 #include "config.h"
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 
 #include <string.h>
 
@@ -42,7 +42,7 @@ void crazypod_remote_multitap_reset(
 
 bool crazypod_remote_multitap_is_down(long button)
 {
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#ifdef HAVE_CRAZYPOD_IAP
     return (button & (BUTTON_RC_VOL_DOWN | BUTTON_RC_DOWN)) != 0;
 #else
     (void)button;
@@ -110,7 +110,7 @@ crazypod_remote_multitap_handle_down(
     struct crazypod_remote_multitap_state *state,
     long button, long now, long window_ticks)
 {
-#ifdef IPOD_ACCESSORY_PROTOCOL
+#ifdef HAVE_CRAZYPOD_IAP
     return crazypod_multitap_handle_button(
         state, button,
         BUTTON_RC_VOL_DOWN | BUTTON_RC_DOWN,

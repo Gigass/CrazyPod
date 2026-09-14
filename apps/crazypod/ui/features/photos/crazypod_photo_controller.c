@@ -1,6 +1,6 @@
 #include "config.h"
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 
 #include "../../../crazypod_photos.h"
 #include "crazypod_photo_controller.h"

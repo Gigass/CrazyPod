@@ -49,7 +49,7 @@ enum {
     FONT_SYSFIXED = -1, /* system fixed pitch font*/
     FONT_FIRSTUSERFONT = 0, /* first id for the user fonts */
 };
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 /* CrazyPod: 48 semantic faces (including fallbacks), 4 private faces,
  * and the existing 12 Rockbox font slots. */
 #define MAXUSERFONTS 64

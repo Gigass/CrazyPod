@@ -79,7 +79,7 @@ enum pcm_mixer_channel
 #ifndef HAVE_HARDWARE_BEEP
     PCM_MIXER_CHAN_BEEP,
 #endif
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
     PCM_MIXER_CHAN_MINIAPP_0,
     PCM_MIXER_CHAN_MINIAPP_1,
     PCM_MIXER_CHAN_MINIAPP_2,

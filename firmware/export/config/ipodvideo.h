@@ -9,18 +9,24 @@
 /* For Rolo and boot loader */
 #define MODEL_NUMBER 5
 
+/* Build the CrazyPod LVGL product UI instead of the Rockbox app layer */
+#define HAVE_CRAZYPOD_UI
+
 /* define this if you use an ATA controller */
 #define CONFIG_STORAGE STORAGE_ATA
 
 /* define this if the ATA controller and method of USB access support LBA48 */
 #define HAVE_LBA48
 
-/* define this if you have recording possibility */
-#define HAVE_RECORDING
+/*
+ * CrazyPod does not expose recording. Do not pull the Rockbox recording
+ * core and encoder codecs into the iPod Video firmware.
+ */
+//#define HAVE_RECORDING
 
 /* Define bitmask of input sources - recordable bitmask can be defined
    explicitly if different */
-#define INPUT_SRC_CAPS (SRC_CAP_LINEIN | SRC_CAP_FMRADIO)
+#define INPUT_SRC_CAPS 0
 
 /* define the bitmask of hardware sample rates */
 #define HW_SAMPR_CAPS   (SAMPR_CAP_48 | SAMPR_CAP_44 | SAMPR_CAP_32 | \
@@ -92,7 +98,12 @@
 #define CODEC_SIZE 0x100000
 
 /* The number of bytes reserved for loadable plugins */
-#define PLUGIN_BUFFER_SIZE 0x80000
+/*
+ * Native Mini App payloads load into the plugin buffer, so the iPod Video
+ * needs the same 3 MiB budget the 6G uses. On a 32 MiB unit this is taken
+ * out of the audio buffer, which shrinks to its 4 MiB floor accordingly.
+ */
+#define PLUGIN_BUFFER_SIZE 0x300000
 
 /* Define this if you have the WM8758 audio codec */
 #define HAVE_WM8758
@@ -168,10 +179,10 @@
 #define CURRENT_RECORD     35  /* FIXME: this needs adjusting */
 #endif
 
-/* Define Apple remote tuner */
-#define CONFIG_TUNER IPOD_REMOTE_TUNER
-#define HAVE_RDS_CAP
-#define CONFIG_RDS RDS_CFG_PUSH
+/* Define Apple remote tuner - unused while CrazyPod ships no radio UI */
+//#define CONFIG_TUNER IPOD_REMOTE_TUNER
+//#define HAVE_RDS_CAP
+//#define CONFIG_RDS RDS_CFG_PUSH
 
 /* Define this if you have a PortalPlayer PP5022 */
 #define CONFIG_CPU PP5022
@@ -206,7 +217,7 @@
 #define HAVE_USBSTACK
 #define USB_VENDOR_ID 0x05ac
 #define USB_PRODUCT_ID 0x1209
-#define HAVE_USB_HID_MOUSE
+//#define HAVE_USB_HID_MOUSE
 
 /* Define this if you have adjustable CPU frequency */
 #define HAVE_ADJUSTABLE_CPU_FREQ

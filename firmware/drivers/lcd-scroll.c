@@ -190,7 +190,7 @@ static void LCDFN(scroll_worker)(void)
     struct scroll_screen_info *si = &LCDFN(scroll_info);
     struct viewport *oldvp;
 
-#ifndef IPOD_6G
+#ifndef HAVE_CRAZYPOD_UI
     if (global_settings.disable_mainmenu_scrolling
         && get_current_activity() == ACTIVITY_MAINMENU) {
         /* No scrolling on the main menu if disabled

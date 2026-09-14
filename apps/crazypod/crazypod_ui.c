@@ -1,5 +1,5 @@
 #include "config.h"
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>

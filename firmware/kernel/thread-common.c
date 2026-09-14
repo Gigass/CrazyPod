@@ -41,11 +41,11 @@ struct core_entry *__cores[NUM_CORES] IBSS_ATTR;
 struct core_entry __cores[NUM_CORES] IBSS_ATTR;
 #endif
 
-#ifdef IPOD_6G
+#ifdef HAVE_CRAZYPOD_UI
 /* CrazyPod needs enough scheduler slots for its permanent workers and the
- * three-thread MPEG engine. Keeping every full thread_entry in the 48 KiB
- * IRAM makes that configuration impossible to link. The slot pointer table
- * stays in IRAM; the single-core S5L8702 entries live in normal DRAM. */
+ * three-thread MPEG engine. Keeping every full thread_entry in IRAM makes
+ * that configuration impossible to link on the targets this product runs
+ * on. The slot pointer table stays in IRAM; the entries live in DRAM. */
 static struct thread_entry __thread_entries[MAXTHREADS];
 #else
 static struct thread_entry __thread_entries[MAXTHREADS] IBSS_ATTR;
