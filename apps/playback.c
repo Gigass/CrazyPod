@@ -1135,10 +1135,21 @@ static void audio_reset_buffer(void)
 #endif
     audiobuf_handle = core_alloc_maximum(&filebuflen, &ops);
 #ifdef HAVE_CRAZYPOD_UI
-    if (audiobuf_handle > 0 &&
+    /*
+     * Retry when core_alloc_maximum() fails outright, not only when it
+     * returns too little. It sizes the request from buflib_allocatable(),
+     * which reports what compaction should be able to free up, then allocates
+     * exactly that - and compaction cannot move a pinned block, so with the
+     * track catalog pinned in the middle of the arena the request it makes of
+     * itself is larger than any contiguous run that exists and it returns -2.
+     * Releasing the reservation and asking for the floor instead succeeds,
+     * where before this went straight to the panic below.
+     */
+    if (audiobuf_handle <= 0 ||
         !crazypod_audio_buffer_meets_floor(filebuflen))
     {
-        audiobuf_handle = core_free(audiobuf_handle);
+        if (audiobuf_handle > 0)
+            audiobuf_handle = core_free(audiobuf_handle);
         if (runtime_reserve_handle > 0)
         {
             core_free(runtime_reserve_handle);
