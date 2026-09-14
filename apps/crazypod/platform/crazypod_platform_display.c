@@ -4,11 +4,13 @@
 
 #include <string.h>
 
+#include "kernel.h"
 #include "lcd.h"
 #include "system.h"
 
 #include "lvgl.h"
 
+#include "../crazypod_perf_log.h"
 #include "crazypod_platform_display.h"
 
 #define DRAW_ROWS 40
@@ -53,6 +55,17 @@ static void display_flush(
         destination += LCD_WIDTH;
         source += source_stride;
     }
+    crazypod_perf_log_flush((unsigned)width * (unsigned)height);
+#if defined(CPU_PP) && !defined(SIMULATOR)
+    /*
+     * Rockbox threads are cooperative: nothing else runs until this thread
+     * yields. A full render takes hundreds of milliseconds on the PP5022,
+     * long enough to drain the PCM buffer, so hand the CPU over between
+     * strips. The codec thread raises its own priority while the buffer is
+     * low and gets first pick here; lower-priority threads never do.
+     */
+    yield();
+#endif
     if(display_host.capture_desktop_native != NULL &&
        display_host.capture_desktop_native(area) &&
        display_host.capture_flush != NULL)

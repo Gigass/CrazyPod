@@ -818,6 +818,7 @@ void crazypod_ui_run(void)
         };
         display = crazypod_platform_display_init(
             rockbox_tick_ms, &display_host);
+        crazypod_perf_log_attach_display(display);
     }
     font_unload_all();
     (void)crazypod_runtime_font_init();
@@ -1111,6 +1112,16 @@ void crazypod_ui_run(void)
             keep_cpu_boosted(HZ / 10);
         if(crazypod_music_is_scanning() && !locked)
             keep_cpu_boosted(HZ / 10);
+#if defined(CPU_PP) && !defined(SIMULATOR)
+        /*
+         * The PP5022 idles at 30 MHz, where one LVGL refresh of a static
+         * screen measured 200-600 ms. Hold the 80 MHz clock while the
+         * screen is lit so the UI answers the wheel and the codec keeps
+         * its share; the backlight timeout releases it.
+         */
+        if(is_backlight_on(true))
+            keep_cpu_boosted(HZ / 2);
+#endif
         if(!(locked
              ? crazypod_lock_screen_motion_active()
              : (lv_anim_count_running() ||

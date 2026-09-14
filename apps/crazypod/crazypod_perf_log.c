@@ -12,6 +12,8 @@
 #include "pcmbuf.h"
 #include "system.h"
 
+#include "lvgl.h"
+
 #include "crazypod_frameclock.h"
 #include "crazypod_music.h"
 
@@ -26,13 +28,20 @@ static struct {
     bool stopped;
     bool header_written;
     unsigned lv_start_us;
+    unsigned render_start_us;
     /* Window accumulators, reset after every write. */
     unsigned lv_calls;
     unsigned lv_max_us;
     unsigned lv_total_us;
+    unsigned renders;
+    unsigned render_max_us;
+    unsigned render_total_us;
+    unsigned flushes;
+    unsigned flushed_pixels;
     unsigned samples;
     unsigned lowdata_samples;
     size_t pcm_free_min;
+    size_t pcm_free_max;
     size_t buffered_min;
     size_t useful_min;
     struct crazypod_present_diagnostics present_base;
@@ -42,6 +51,35 @@ static struct {
     .buffered_min = (size_t)-1,
     .useful_min = (size_t)-1,
 };
+
+static void render_event(lv_event_t *event)
+{
+    if(lv_event_get_code(event) == LV_EVENT_RENDER_START) {
+        perf.render_start_us = USEC_TIMER;
+    }
+    else {
+        unsigned elapsed = USEC_TIMER - perf.render_start_us;
+
+        perf.renders++;
+        perf.render_total_us += elapsed;
+        if(elapsed > perf.render_max_us)
+            perf.render_max_us = elapsed;
+    }
+}
+
+void crazypod_perf_log_attach_display(void *display)
+{
+    lv_display_add_event_cb(
+        display, render_event, LV_EVENT_RENDER_START, NULL);
+    lv_display_add_event_cb(
+        display, render_event, LV_EVENT_RENDER_READY, NULL);
+}
+
+void crazypod_perf_log_flush(unsigned pixels)
+{
+    perf.flushes++;
+    perf.flushed_pixels += pixels;
+}
 
 void crazypod_perf_log_lv_begin(void)
 {
@@ -63,9 +101,15 @@ static void reset_window(void)
     perf.lv_calls = 0;
     perf.lv_max_us = 0;
     perf.lv_total_us = 0;
+    perf.renders = 0;
+    perf.render_max_us = 0;
+    perf.render_total_us = 0;
+    perf.flushes = 0;
+    perf.flushed_pixels = 0;
     perf.samples = 0;
     perf.lowdata_samples = 0;
     perf.pcm_free_min = (size_t)-1;
+    perf.pcm_free_max = 0;
     perf.buffered_min = (size_t)-1;
     perf.useful_min = (size_t)-1;
     crazypod_present_get_diagnostics(&perf.present_base);
@@ -79,6 +123,8 @@ static void sample(void)
     perf.samples++;
     if(pcm_free < perf.pcm_free_min)
         perf.pcm_free_min = pcm_free;
+    if(pcm_free > perf.pcm_free_max)
+        perf.pcm_free_max = pcm_free;
     if(pcmbuf_is_lowdata())
         perf.lowdata_samples++;
     buffering_get_debugdata(&buffering);
@@ -106,22 +152,25 @@ static void write_line(long now)
     if(!perf.header_written) {
         fdprintf(fd,
             "# t=seconds st=audio_status boost=cpu_boost_counter "
-            "scan=music_scanning pcm=min_free/size low=lowdata_samples/samples "
+            "scan=music_scanning pcm=min_free/max_free/size "
+            "low=lowdata_samples/samples "
             "buf=min_buffered/min_useful/watermark "
-            "lv=calls/max_us/total_us pres=presents/full/misses/timeouts "
+            "lv=calls/max_us/total_us rend=renders/max_us/total_us "
+            "fl=flushes/pixels pres=presents/full/misses/timeouts "
             "pmax=max_present_us home=renders/timeouts wr=prev_write_us\n");
         perf.header_written = true;
     }
     crazypod_present_get_diagnostics(&present);
     buffering_get_debugdata(&buffering);
     fdprintf(fd,
-        "t=%ld st=%d boost=%d scan=%d pcm=%lu/%lu low=%u/%u "
-        "buf=%lu/%lu/%lu lv=%u/%u/%u pres=%lu/%lu/%lu/%lu pmax=%lu "
-        "home=%lu/%lu wr=%u\n",
+        "t=%ld st=%d boost=%d scan=%d pcm=%lu/%lu/%lu low=%u/%u "
+        "buf=%lu/%lu/%lu lv=%u/%u/%u rend=%u/%u/%u fl=%u/%u "
+        "pres=%lu/%lu/%lu/%lu pmax=%lu home=%lu/%lu wr=%u\n",
         now / HZ, audio_status(), get_cpu_boost_counter(),
         crazypod_music_is_scanning() ? 1 : 0,
         (unsigned long)(perf.pcm_free_min == (size_t)-1
             ? 0 : perf.pcm_free_min),
+        (unsigned long)perf.pcm_free_max,
         (unsigned long)pcmbuf_get_bufsize(),
         perf.lowdata_samples, perf.samples,
         (unsigned long)(perf.buffered_min == (size_t)-1
@@ -130,6 +179,8 @@ static void write_line(long now)
             ? 0 : perf.useful_min),
         (unsigned long)buffering.watermark,
         perf.lv_calls, perf.lv_max_us, perf.lv_total_us,
+        perf.renders, perf.render_max_us, perf.render_total_us,
+        perf.flushes, perf.flushed_pixels,
         (unsigned long)(present.presents - perf.present_base.presents),
         (unsigned long)(present.full_presents -
             perf.present_base.full_presents),

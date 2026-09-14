@@ -13,12 +13,24 @@
 #if defined(HAVE_CRAZYPOD_UI) && defined(CPU_PP) && !defined(SIMULATOR)
 #define CRAZYPOD_PERF_LOG
 
+/* display is the lv_display_t* to observe; typed void so the stub costs
+ * nothing on targets without the log. */
+void crazypod_perf_log_attach_display(void *display);
 void crazypod_perf_log_lv_begin(void);
 void crazypod_perf_log_lv_end(void);
+void crazypod_perf_log_flush(unsigned pixels);
 void crazypod_perf_log_tick(long now);
 #else
+static inline void crazypod_perf_log_attach_display(void *display)
+{
+    (void)display;
+}
 static inline void crazypod_perf_log_lv_begin(void) {}
 static inline void crazypod_perf_log_lv_end(void) {}
+static inline void crazypod_perf_log_flush(unsigned pixels)
+{
+    (void)pixels;
+}
 static inline void crazypod_perf_log_tick(long now) { (void)now; }
 #endif
 

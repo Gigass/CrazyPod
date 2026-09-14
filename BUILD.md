@@ -226,11 +226,19 @@ reversible.
 PortalPlayer builds append one line every ten seconds to
 `/.crazypod/perf.log` (`apps/crazypod/crazypod_perf_log.c`). Each line
 records the audio state, CPU boost count, whether the library scan is
-running, the lowest PCM and file-buffer fill seen in the window, how many
-times the LVGL timer handler ran and its worst and total time, and the
-presenter's frame counts and deadline misses. The log stops itself at
-512 KiB; delete the file to start over. Play music for a few minutes, then
-read the file from the iPod in disk mode to see where the time goes.
+running, the fullest and emptiest PCM buffer level and the lowest
+file-buffer fill seen in the window, how many times the LVGL timer handler
+ran and its worst and total time, the same for LVGL renders, the number of
+flushed strips and pixels, and the presenter's frame counts and deadline
+misses. The log stops itself at 512 KiB; delete the file to start over.
+Play music for a few minutes, then read the file from the iPod in disk mode
+to see where the time goes.
+
+The first log from a 30 GB unit showed why playback stuttered: Rockbox
+threads are cooperative, and one LVGL refresh took 200-600 ms at the idle
+30 MHz clock, during which the codec thread could not run. PortalPlayer
+builds therefore yield between render strips and hold the 80 MHz clock
+while the backlight is on.
 
 Not yet done: no 32 MiB memory-budget check under load and no accessory or
 inline-remote support. Boot, library scanning and playback have run on a
