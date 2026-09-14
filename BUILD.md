@@ -221,10 +221,21 @@ reset; to reach disk mode, reset and immediately hold SELECT+PLAY. Disk mode
 works with broken firmware installed, which is what makes the bootloader
 reversible.
 
-Not yet done: no hardware validation of any kind, no frame-time measurement
-on the slower CPU, no 32 MiB memory-budget check, and no accessory or
-inline-remote support. Treat a 5G build as a compile artifact, not firmware
-to install casually.
+### Performance log
+
+PortalPlayer builds append one line every ten seconds to
+`/.crazypod/perf.log` (`apps/crazypod/crazypod_perf_log.c`). Each line
+records the audio state, CPU boost count, whether the library scan is
+running, the lowest PCM and file-buffer fill seen in the window, how many
+times the LVGL timer handler ran and its worst and total time, and the
+presenter's frame counts and deadline misses. The log stops itself at
+512 KiB; delete the file to start over. Play music for a few minutes, then
+read the file from the iPod in disk mode to see where the time goes.
+
+Not yet done: no 32 MiB memory-budget check under load and no accessory or
+inline-remote support. Boot, library scanning and playback have run on a
+30 GB unit; playback still stutters and the UI is slow, which is what the
+performance log is for.
 
 ## Verification
 

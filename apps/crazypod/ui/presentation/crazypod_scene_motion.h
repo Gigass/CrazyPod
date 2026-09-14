@@ -21,12 +21,11 @@ struct crazypod_scene_motion_layout {
 };
 
 /*
- * Push, pop and replace are the most visible motion in the product, and they
- * ignored Reduce Motion entirely: the setting reached the menu preview, the
- * notifications and the lock screen, but not these.
+ * Push, pop and replace are the most visible motion in the product. With
+ * Reduce Motion on they do not run at all: the new scene is presented
+ * directly, because a shortened slide still costs the full-screen snapshots
+ * and per-frame composites that make it choppy on slow hardware.
  */
-int crazypod_scene_motion_reduced_duration_ms(
-    enum crazypod_scene_motion_kind kind);
 int crazypod_scene_motion_duration_ms(
     enum crazypod_scene_motion_kind kind);
 void crazypod_scene_motion_layout(

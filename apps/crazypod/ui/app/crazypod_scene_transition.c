@@ -136,7 +136,8 @@ bool crazypod_scene_transition_begin(
     const fb_data *framebuffer =
         crazypod_platform_display_framebuffer();
 
-    if(kind == CRAZYPOD_SCENE_MOTION_NONE || framebuffer == NULL)
+    if(kind == CRAZYPOD_SCENE_MOTION_NONE || framebuffer == NULL ||
+       crazypod_state_reduce_motion())
         return false;
     if(transition.active || transition.prepared)
         crazypod_scene_transition_finish();
@@ -212,10 +213,7 @@ bool crazypod_scene_transition_commit(lv_obj_t *parent)
     lv_anim_set_values(
         &animation, 0, CRAZYPOD_SCENE_MOTION_PROGRESS_MAX);
     lv_anim_set_duration(
-        &animation,
-        crazypod_state_reduce_motion()
-            ? crazypod_scene_motion_reduced_duration_ms(transition.kind)
-            : crazypod_scene_motion_duration_ms(transition.kind));
+        &animation, crazypod_scene_motion_duration_ms(transition.kind));
     lv_anim_set_path_cb(&animation, lv_anim_path_linear);
     lv_anim_set_completed_cb(&animation, transition_completed);
     lv_anim_set_early_apply(&animation, true);

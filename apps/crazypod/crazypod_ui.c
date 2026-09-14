@@ -53,6 +53,7 @@
 #include "crazypod_miniapp_font.h"
 #include "crazypod_notes.h"
 #include "crazypod_organizer.h"
+#include "crazypod_perf_log.h"
 #include "crazypod_playlist.h"
 #include "crazypod_photos.h"
 #include "crazypod_presets.h"
@@ -1017,7 +1018,9 @@ void crazypod_ui_run(void)
             crazypod_playback_tick_wave(current_tick);
         }
         if(crazypod_frameclock_due(&lvgl_clock, current_tick)) {
+            crazypod_perf_log_lv_begin();
             lv_timer_handler();
+            crazypod_perf_log_lv_end();
             crazypod_frameclock_schedule_next(&lvgl_clock, current_tick);
         }
         if(!locked) {
@@ -1041,6 +1044,7 @@ void crazypod_ui_run(void)
             crazypod_playback_sync_album_flow();
         }
         crazypod_present_tick();
+        crazypod_perf_log_tick(current_tick);
         crazypod_scene_transition_service();
         {
             enum crazypod_screen_recording_event recording_event =

@@ -251,12 +251,6 @@ static void test_scene_motion(void)
     assert(end.to_y == 0);
     assert(crazypod_scene_motion_duration_ms(
                CRAZYPOD_SCENE_MOTION_PUSH) == 340);
-    assert(crazypod_scene_motion_reduced_duration_ms(
-               CRAZYPOD_SCENE_MOTION_PUSH) == 80);
-    assert(crazypod_scene_motion_reduced_duration_ms(
-               CRAZYPOD_SCENE_MOTION_POP) == 80);
-    assert(crazypod_scene_motion_reduced_duration_ms(
-               CRAZYPOD_SCENE_MOTION_NONE) == 0);
 }
 
 static bool test_music_input_handler(
