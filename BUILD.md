@@ -97,6 +97,12 @@ Set `CRAZYPOD_SIM_LANGUAGE` to `en`, `zh-Hans`, `zh-Hant`, `ja`, `ko`, `de`,
 ./build-hw.sh --incremental
 ```
 
+`--firmware-only` builds `rockbox.ipod` alone, skipping the codecs, Mini App
+payloads, AOT fonts and the packaged zip. On a device that already has a full
+install only `rockbox.ipod` needs replacing, so this is the loop to use while
+iterating on firmware: it produces about 2 MB rather than several hundred. The
+"CrazyPod firmware only" workflow runs it and uploads just that file.
+
 `--target` selects the model; it defaults to `ipod6g`. The build directory,
 the packaged zip and the Mini App CPK payloads all follow the target:
 

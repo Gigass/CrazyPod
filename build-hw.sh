@@ -17,8 +17,13 @@ detect_jobs() {
 
 require_tools() {
     missing=0
-    for tool in make perl python3 zip node npm gcc "${CROSS_COMPILE}gcc" \
-        "${CROSS_COMPILE}objcopy" "${CROSS_COMPILE}nm"; do
+    tools="make perl python3 gcc ${CROSS_COMPILE}gcc ${CROSS_COMPILE}objcopy ${CROSS_COMPILE}nm"
+    if [ "$FIRMWARE_ONLY" -eq 0 ]; then
+        # Packaging needs the Mini App generator and the zip; the firmware
+        # itself needs neither.
+        tools="$tools zip node npm"
+    fi
+    for tool in $tools; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             echo "Error: missing required tool '$tool' on PATH." >&2
             missing=1
@@ -78,12 +83,16 @@ verify_stack_alignment() {
 
 verify_removed_runtime_absent() {
     forbidden='quickjs|mquickjs|crazypod_js|crazypod_script|solid_renderer|ui_command_batch'
-    for binary in rockbox.elf \
-        miniapps/apps/native-reference/app.arm \
-        miniapps/apps/capability-lab/app.arm \
-        miniapps/apps/game2048/app.arm \
-        miniapps/themes/atelier-hifi/app.arm \
-        miniapps/themes/signal-one/app.arm; do
+    binaries='rockbox.elf'
+    if [ "$FIRMWARE_ONLY" -eq 0 ]; then
+        binaries="$binaries
+miniapps/apps/native-reference/app.arm
+miniapps/apps/capability-lab/app.arm
+miniapps/apps/game2048/app.arm
+miniapps/themes/atelier-hifi/app.arm
+miniapps/themes/signal-one/app.arm"
+    fi
+    for binary in $binaries; do
         matches=$("${CROSS_COMPILE}nm" -a "$binary" 2>/dev/null |
             awk '{ print $3 }' |
             grep -E -i "$forbidden" || true)
@@ -108,14 +117,21 @@ while [ $# -gt 0 ]; do
         -h|--help)
             cat <<'EOF'
 Usage: build-hw.sh [-i|--incremental] [--target ipod6g|ipodvideo]
+                   [--firmware-only]
 
 Builds CrazyPod for a Rockbox target that ships the product UI.
 Defaults to ipod6g. ipodvideo (iPod Classic 5G/5.5G "Video") is an
 unvalidated bring-up target: it compiles and packages, but has not been
 certified on hardware.
 
+--firmware-only builds rockbox.ipod alone, skipping the codecs, Mini App
+payloads, AOT fonts and the packaged zip. Use it to iterate on firmware when
+the device already has a full install: only rockbox.ipod needs replacing, and
+it drops the output from hundreds of megabytes to about two.
+
 Environment:
   CRAZYPOD_TARGET=name    same as --target
+  CRAZYPOD_FIRMWARE_ONLY=1  same as --firmware-only
   CRAZYPOD_INCREMENTAL=1  reuse the selected variant build directory
   CRAZYPOD_SKIP_DEP=1     skip make dep when make.dep exists
   CRAZYPOD_REPRO_DIAGNOSTICS=1
@@ -139,6 +155,9 @@ EOF
             ;;
         --target=*)
             CRAZYPOD_TARGET="${1#--target=}"
+            ;;
+        --firmware-only)
+            FIRMWARE_ONLY=1
             ;;
         *)
             echo "Error: unsupported argument '$1'." >&2
@@ -167,6 +186,10 @@ case "$CRAZYPOD_TARGET" in
 esac
 CRAZYPOD_BUILD_DEFINES=""
 CRAZYPOD_BUILD_VARIANT="production"
+case "${CRAZYPOD_FIRMWARE_ONLY:-}" in
+    1|yes|true|YES|TRUE) FIRMWARE_ONLY=1 ;;
+esac
+FIRMWARE_ONLY="${FIRMWARE_ONLY:-0}"
 repro_diagnostics="${CRAZYPOD_REPRO_DIAGNOSTICS:-}"
 iap_diagnostics="${CRAZYPOD_IAP_DIAGNOSTICS:-}"
 repro_enabled=0
@@ -197,6 +220,7 @@ if [ "$repro_enabled" -eq 1 ]; then
 fi
 require_tools
 python3 tests/test-crazypod-lvgl-layer-budget.py
+if [ "$FIRMWARE_ONLY" -eq 0 ]; then
 npm ci --ignore-scripts --no-audit --no-fund \
     --prefix tools/miniapp-builder
 node tools/miniapp-builder/src/cli.mjs generate \
@@ -212,6 +236,7 @@ node tools/miniapp-builder/src/cli.mjs generate \
 # generated artifact in sync with the TSX source.
 test -f miniapps/themes/atelier-hifi/generated/app.c
 test -f miniapps/themes/signal-one/generated/app.c
+fi
 
 if [ "$CRAZYPOD_BUILD_VARIANT" = "repro" ]; then
     BUILDDIR="build-hw-$CRAZYPOD_TARGET-repro"
@@ -253,8 +278,13 @@ else
 fi
 
 prepare_generated_headers
-make EXTRA_DEFINES="$CRAZYPOD_BUILD_DEFINES" \
-    -j"$(detect_jobs)"
+if [ "$FIRMWARE_ONLY" -eq 1 ]; then
+    make EXTRA_DEFINES="$CRAZYPOD_BUILD_DEFINES" \
+        -j"$(detect_jobs)" "$(pwd)/rockbox.ipod"
+else
+    make EXTRA_DEFINES="$CRAZYPOD_BUILD_DEFINES" \
+        -j"$(detect_jobs)"
+fi
 
 if [ ! -f rockbox.ipod ]; then
     echo "Error: hardware build did not produce rockbox.ipod." >&2
@@ -262,6 +292,12 @@ if [ ! -f rockbox.ipod ]; then
 fi
 verify_stack_alignment
 verify_removed_runtime_absent
+if [ "$FIRMWARE_ONLY" -eq 1 ]; then
+    echo "CrazyPod: built $(pwd)/rockbox.ipod (firmware only)"
+    echo "CrazyPod: copy it over .rockbox/rockbox.ipod on a device that" \
+        "already has a full install."
+    exit 0
+fi
 mkdir -p ../dist/miniapps
 find ../dist/miniapps -type f -name 'game2048-*.cpk' -delete
 find ../dist/miniapps -type f -name 'capability-lab-*.cpk' -delete
