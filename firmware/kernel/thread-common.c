@@ -45,8 +45,16 @@ struct core_entry __cores[NUM_CORES] IBSS_ATTR;
 /* CrazyPod needs enough scheduler slots for its permanent workers and the
  * three-thread MPEG engine. Keeping every full thread_entry in IRAM makes
  * that configuration impossible to link on the targets this product runs
- * on. The slot pointer table stays in IRAM; the entries live in DRAM. */
+ * on, so the slot pointer table stays in IRAM and the entries move out. */
+#if NUM_CORES > 1
+/* Both cores run the scheduler, and the dual-core PortalPlayer parts have no
+ * cache coherency between them - which is why the stock placement is IRAM.
+ * Ordinary DRAM would let each core cache its own stale copy of a thread's
+ * saved context, so use the uncached alias instead. */
+static struct thread_entry __thread_entries[MAXTHREADS] NOCACHEBSS_ATTR;
+#else
 static struct thread_entry __thread_entries[MAXTHREADS];
+#endif
 #else
 static struct thread_entry __thread_entries[MAXTHREADS] IBSS_ATTR;
 #endif

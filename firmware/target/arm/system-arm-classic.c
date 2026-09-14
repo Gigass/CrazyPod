@@ -100,8 +100,10 @@ void NORETURN_ATTR UIE(unsigned int pc, unsigned int num)
 #if defined(HAVE_CRAZYPOD_UI) && !defined(BOOTLOADER)
     char report[96];
 
-    snprintf(report, sizeof(report), "%s\nPC %08x",
-             uiename[num], pc);
+    /* On dual-core targets say which core faulted: a fault on the COP
+     * points at shared kernel state rather than at the UI thread. */
+    snprintf(report, sizeof(report), "%s\nPC %08x" IF_COP("\nCORE %d"),
+             uiename[num], pc IF_COP(, CURRENT_CORE));
     crazypod_lcd_show_panic(report);
 #else
     /* safe guard variable - we call backtrace() only on first
