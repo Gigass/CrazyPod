@@ -1119,6 +1119,9 @@ static void audio_reset_buffer(void)
             break;
         runtime_handle_reserve[runtime_handle_count++] = handle;
     }
+    /* Fix the floor to what this arena can actually give before reserving
+     * against it, so the reservation cannot leave less than the floor. */
+    crazypod_audio_buffer_set_arena(core_allocatable());
     runtime_headroom =
         crazypod_audio_runtime_headroom(core_allocatable());
     if (runtime_headroom > 0)
@@ -1136,7 +1139,7 @@ static void audio_reset_buffer(void)
             core_free(runtime_reserve_handle);
             runtime_reserve_handle = -1;
         }
-        filebuflen = CRAZYPOD_AUDIO_BUFFER_FLOOR;
+        filebuflen = crazypod_audio_buffer_floor();
         audiobuf_handle = core_alloc_ex(filebuflen, &ops);
     }
     if (runtime_reserve_handle > 0)
