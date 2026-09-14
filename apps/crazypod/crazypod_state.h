@@ -14,6 +14,8 @@ void crazypod_state_load(void);
 void crazypod_state_mark_dirty(void);
 bool crazypod_state_reduce_motion(void);
 void crazypod_state_set_reduce_motion(bool enabled);
+bool crazypod_state_reduce_effects(void);
+void crazypod_state_set_reduce_effects(bool enabled);
 bool crazypod_state_lyrics_mode(void);
 void crazypod_state_set_lyrics_mode(bool enabled);
 bool crazypod_state_read_ipod_music(void);

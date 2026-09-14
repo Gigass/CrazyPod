@@ -3292,6 +3292,11 @@
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:121"
       ]
     },
+    "Reduce Effects": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c:98"
+      ]
+    },
     "Reduce Motion": {
       "locations": [
         "apps/crazypod/ui/features/settings/crazypod_settings_model.c:50"

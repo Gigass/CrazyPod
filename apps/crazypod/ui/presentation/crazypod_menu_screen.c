@@ -13,6 +13,7 @@
 #include "crazypod_menu_list.h"
 #include "../navigation/crazypod_route_query.h"
 #include "crazypod_marquee.h"
+#include "../../crazypod_state.h"
 #include "crazypod_menu_screen.h"
 
 #define COLOR_WHITE 0xFFFFFF
@@ -166,7 +167,8 @@ void crazypod_menu_screen_render(
                            selected ? context->primary_color : context->panel_color,
                            selected ? 220 : LV_OPA_TRANSP);
         if(selected) {
-            if(context->gradient_highlight) {
+            if(context->gradient_highlight &&
+               !crazypod_state_reduce_effects()) {
                 lv_obj_set_style_bg_grad_color(
                     row_box, lv_color_hex(context->secondary_color), 0);
                 lv_obj_set_style_bg_grad_dir(row_box, LV_GRAD_DIR_HOR, 0);

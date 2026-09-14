@@ -39,6 +39,7 @@ static const int display_items[] = {
 #endif
     SETTINGS_ITEM_LCD_SLEEP,
     SETTINGS_ITEM_REDUCE_MOTION,
+    SETTINGS_ITEM_REDUCE_EFFECTS,
 };
 
 static const int playback_items[] = {

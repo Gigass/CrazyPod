@@ -21,5 +21,6 @@ lv_display_t *crazypod_platform_display_init(
     uint32_t (*tick_ms)(void),
     const struct crazypod_platform_display_host *host);
 void *crazypod_platform_display_framebuffer(void);
+void crazypod_platform_display_set_antialiasing(bool enabled);
 
 #endif

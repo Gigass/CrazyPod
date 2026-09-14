@@ -819,6 +819,8 @@ void crazypod_ui_run(void)
         display = crazypod_platform_display_init(
             rockbox_tick_ms, &display_host);
         crazypod_perf_log_attach_display(display);
+        crazypod_platform_display_set_antialiasing(
+            !crazypod_state_reduce_effects());
     }
     font_unload_all();
     (void)crazypod_runtime_font_init();

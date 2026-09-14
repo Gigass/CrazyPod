@@ -8,6 +8,7 @@
 
 #include "crazypod_marquee.h"
 #include "crazypod_menu_icon_assets.h"
+#include "../../crazypod_state.h"
 #include "crazypod_menu_list.h"
 
 #define CRAZYPOD_MENU_LIST_ROWS 6
@@ -100,11 +101,13 @@ void crazypod_menu_list_refresh_row(
     lv_obj_set_style_bg_opa(
         box, selected ? 220 : LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(box, selected ? 1 : 0, 0);
-    if(selected && gradient) {
+    if(selected && gradient && !crazypod_state_reduce_effects()) {
         lv_obj_set_style_bg_grad_color(
             box, lv_color_hex(secondary_color), 0);
         lv_obj_set_style_bg_grad_dir(box, LV_GRAD_DIR_HOR, 0);
     }
+    else
+        lv_obj_set_style_bg_grad_dir(box, LV_GRAD_DIR_NONE, 0);
 
     if(view.circles[row] != NULL) {
         lv_obj_set_style_bg_opa(

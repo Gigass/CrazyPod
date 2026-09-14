@@ -10,6 +10,7 @@
 #include "../../crazypod_wallpaper.h"
 #include "../../platform/crazypod_platform_display.h"
 #include "crazypod_glass_panel.h"
+#include "../../crazypod_state.h"
 #include "crazypod_glass_slots.h"
 
 #define MENU_TOPBAR_PIXELS (LCD_WIDTH * 32)
@@ -77,6 +78,10 @@ static bool render_slot(
     int source_stride, int x, int y, int width, int height,
     enum crazypod_glass_material material)
 {
+    /* The blurred backdrop is the costliest part of a glass panel to
+     * prepare, and the panel does not show it under Reduce Effects. */
+    if(crazypod_state_reduce_effects())
+        return false;
     return crazypod_glass_render_descriptor(
         source, source_width, source_height, source_stride,
         x, y, width, height, material,

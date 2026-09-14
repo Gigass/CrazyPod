@@ -9,6 +9,7 @@
 #include "../../../crazypod_organizer.h"
 #include "../../presentation/crazypod_ui_text.h"
 #include "../../presentation/crazypod_ui_widgets.h"
+#include "../../../crazypod_state.h"
 #include "crazypod_contacts_screen.h"
 
 #define CRAZYPOD_CONTACT_FONT (&lv_font_source_han_sans_sc_14_cjk)
@@ -44,10 +45,12 @@ void crazypod_contacts_screen_render(lv_obj_t *content, int contact_index)
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_border_color(card, lv_color_hex(CRAZYPOD_CONTACT_WHITE), 0);
     lv_obj_set_style_border_opa(card, 42, 0);
-    lv_obj_set_style_shadow_width(card, 18, 0);
-    lv_obj_set_style_shadow_offset_y(card, 10, 0);
-    lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_shadow_opa(card, 95, 0);
+    if(!crazypod_state_reduce_effects()) {
+        lv_obj_set_style_shadow_width(card, 18, 0);
+        lv_obj_set_style_shadow_offset_y(card, 10, 0);
+        lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_shadow_opa(card, 95, 0);
+    }
 
     avatar = crazypod_ui_widget_box(card, 63, 14, 54, 54,
                       LV_RADIUS_CIRCLE, 0x59B89E, LV_OPA_COVER);

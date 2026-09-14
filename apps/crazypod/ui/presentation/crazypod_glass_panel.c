@@ -4,6 +4,7 @@
 
 #include "lvgl.h"
 
+#include "../../crazypod_state.h"
 #include "crazypod_ui_widgets.h"
 #include "crazypod_glass_panel.h"
 
@@ -22,8 +23,19 @@ lv_obj_t *crazypod_glass_panel_create(
     lv_obj_t *border;
     lv_opa_t shadow_opa =
         crazypod_glass_material_shadow_opa(material);
+    bool reduced = crazypod_state_reduce_effects();
 
-    lv_obj_set_style_clip_corner(panel, true, 0);
+    /*
+     * Under Reduce Effects a panel is a flat rounded box: no shadow ring to
+     * blend, no sampled backdrop image, and no corner clip, which would
+     * otherwise route every child through a masked layer.
+     */
+    if(reduced) {
+        shadow_opa = 0;
+        descriptor = NULL;
+    }
+    else
+        lv_obj_set_style_clip_corner(panel, true, 0);
     if(shadow_opa > 0) {
         lv_obj_set_style_shadow_width(panel, 12, 0);
         lv_obj_set_style_shadow_offset_y(panel, 6, 0);

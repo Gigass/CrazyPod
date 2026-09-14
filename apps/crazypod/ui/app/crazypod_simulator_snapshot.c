@@ -1205,6 +1205,10 @@ bool crazypod_simulator_snapshot_prepare(
     }
     else if(strcmp(screen, "settings-reduce-motion") == 0) {
         host->open_root_route(SETTINGS_ROUTE_DISPLAY);
+        select_bounded(host, item_count() - 2);
+    }
+    else if(strcmp(screen, "settings-reduce-effects") == 0) {
+        host->open_root_route(SETTINGS_ROUTE_DISPLAY);
         select_bounded(host, item_count() - 1);
     }
     else if(strcmp(screen, "notes") == 0)

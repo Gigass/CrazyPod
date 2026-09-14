@@ -159,6 +159,8 @@ static enum crazypod_menu_icon settings_item_icon(int item)
         return CRAZYPOD_MENU_ICON_DISPLAY_SLEEP;
     case SETTINGS_ITEM_REDUCE_MOTION:
         return CRAZYPOD_MENU_ICON_MOTION_OFF;
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
+        return CRAZYPOD_MENU_ICON_GLOW;
     case SETTINGS_ITEM_DATE_YEAR:
     case SETTINGS_ITEM_DATE_MONTH:
     case SETTINGS_ITEM_DATE_DAY:

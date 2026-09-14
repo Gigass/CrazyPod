@@ -635,6 +635,7 @@ static const struct crazypod_l10n_entry crazypod_l10n_entries[] = {
     { "Rebuilding current page", { "正在重新构建当前页面", "正在重新构建目前頁面", "現在のページを再構築中", "현재 페이지 다시 구성 중", "Aktuelle Seite wird neu aufgebaut", "Reconstruction de la page actuelle", "Reconstruyendo página actual", "Reconstruindo página atual" } },
     { "Recently deleted", { "最近删除", "最近刪除", "最近削除した項目", "최근 삭제됨", "Kürzlich gelöscht", "Supprimé récemment", "Eliminado recientemente", "Apagados recentemente" } },
     { "Recents", { "最近阅读", "最近阅讀", "最近", "최근 항목", "Zuletzt", "Récents", "Recientes", "Recentes" } },
+    { "Reduce Effects", { "减少视觉效果", "減少視覺效果", "視覚効果を減らす", "효과 줄이기", "Effekte reduzieren", "Réduire les effets", "Reducir efectos", "Reduzir Efeitos" } },
     { "Reduce Motion", { "减弱动态效果", "減弱動态效果", "視差効果を減らす", "동작 줄이기", "Bewegung reduzieren", "Réduire les animations", "Reducir movimiento", "Reduzir Movimento" } },
     { "Reflowing Text", { "正在重排文本", "正在重排文本", "テキストを再配置中", "텍스트 재배치 중", "Text wird neu umbrochen", "Remise en page du texte", "Redistribuyendo texto", "Reformatando texto" } },
     { "Release MENU to Cancel", { "松开菜单键到取消", "松開選單鍵到取消", "MENUを離すとキャンセル", "MENU를 놓으면 취소", "MENU zum Abbrechen loslassen", "Relâchez MENU pour annuler", "Suelta MENU para cancelar", "Solte MENU para cancelar" } },

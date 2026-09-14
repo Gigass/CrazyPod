@@ -27,6 +27,14 @@ void *crazypod_platform_display_framebuffer(void)
     return lcd_framebuffer_default.data;
 }
 
+void crazypod_platform_display_set_antialiasing(bool enabled)
+{
+    lv_display_t *display = lv_display_get_default();
+
+    if(display != NULL)
+        lv_display_set_antialiasing(display, enabled);
+}
+
 static void display_flush(
     lv_display_t *display, const lv_area_t *area, uint8_t *pixels)
 {

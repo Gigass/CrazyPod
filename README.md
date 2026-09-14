@@ -124,7 +124,7 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
   Restart confirmation surface without entering Rockbox's committed shutdown
   path first.
 - **Settings:** sound, EQ Studio, display and backlight, Reduce Motion,
-  playback, idle power-off, sleep timer, USB charging, click feedback,
+  Reduce Effects, playback, idle power-off, sleep timer, USB charging, click feedback,
   language, and main-menu order.
 
 Lock turns off the backlight, suspends product background media work, and stops
@@ -182,8 +182,13 @@ or follow the [Chinese Mini App tutorial](miniapps/TUTORIAL.zh-CN.md).
   and photo thumbnails are optional inner skins: cached media appears with a
   short fade after the physical entrance, without a spinner or replaying the
   scene. The All Music wall limits media reads to its first row.
-- Settings → Display → Reduce Motion replaces transforms and stagger with a
-  short crossfade. The preference is stored in CrazyPod's versioned state.
+- Settings → Display → Reduce Motion cuts between scenes and preview panes
+  instead of animating them, freezes the Now Playing wave and stops long
+  titles scrolling. The preference is stored in CrazyPod's versioned state.
+- Settings → Display → Reduce Effects draws flat panels: no shadows, no
+  highlight gradients, no sampled glass backdrops and no anti-aliasing. It
+  exists for the slower iPod Video, where a full-screen render otherwise
+  takes a good fraction of a second.
 
 ## Build and run
 

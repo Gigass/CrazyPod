@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "../../crazypod_music.h"
+#include "../../crazypod_state.h"
 #include "crazypod_artwork_widget.h"
 #include "crazypod_ui_widgets.h"
 
@@ -47,10 +48,15 @@ lv_obj_t *crazypod_artwork_widget_create(
         card, lv_color_hex(artwork_color(
             track != NULL ? track->artist : "", 1)), 0);
     lv_obj_set_style_bg_grad_dir(card, LV_GRAD_DIR_VER, 0);
-    lv_obj_set_style_shadow_width(card, display_size > 80 ? 12 : 5, 0);
-    lv_obj_set_style_shadow_offset_y(card, display_size > 80 ? 6 : 2, 0);
-    lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_shadow_opa(card, display_size > 80 ? 100 : 55, 0);
+    if(!crazypod_state_reduce_effects()) {
+        lv_obj_set_style_shadow_width(
+            card, display_size > 80 ? 12 : 5, 0);
+        lv_obj_set_style_shadow_offset_y(
+            card, display_size > 80 ? 6 : 2, 0);
+        lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_shadow_opa(
+            card, display_size > 80 ? 100 : 55, 0);
+    }
     lv_obj_set_style_clip_corner(card, true, 0);
 
     if(descriptor != NULL) {

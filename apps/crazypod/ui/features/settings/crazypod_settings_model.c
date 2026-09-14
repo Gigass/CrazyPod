@@ -19,6 +19,7 @@
 #include "../../../crazypod_music.h"
 #include "../../../crazypod_playlist.h"
 #include "../../../crazypod_state.h"
+#include "../../../platform/crazypod_platform_display.h"
 #include "crazypod_settings_model.h"
 
 static const int setting_timeout_values[] = {
@@ -94,6 +95,7 @@ const char *crazypod_ui_settings_item_title(int item)
     case SETTINGS_ITEM_BACKLIGHT_TIMEOUT_PLUGGED: return CP_TR("Charging Light");
     case SETTINGS_ITEM_LCD_SLEEP: return CP_TR("LCD Sleep");
     case SETTINGS_ITEM_REDUCE_MOTION: return CP_TR("Reduce Motion");
+    case SETTINGS_ITEM_REDUCE_EFFECTS: return CP_TR("Reduce Effects");
     case SETTINGS_ITEM_DATE_YEAR: return CP_TR("Year");
     case SETTINGS_ITEM_DATE_MONTH: return CP_TR("Month");
     case SETTINGS_ITEM_DATE_DAY: return CP_TR("Day");
@@ -141,6 +143,8 @@ const char *crazypod_ui_settings_item_symbol(int item)
         return LV_SYMBOL_EYE_OPEN;
     case SETTINGS_ITEM_REDUCE_MOTION:
         return LV_SYMBOL_EYE_CLOSE;
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
+        return LV_SYMBOL_IMAGE;
     case SETTINGS_ITEM_DATE_YEAR:
     case SETTINGS_ITEM_DATE_MONTH:
     case SETTINGS_ITEM_DATE_DAY:
@@ -308,6 +312,8 @@ static int settings_item_current_value(int item)
         return global_settings.lcd_sleep_after_backlight_off;
     case SETTINGS_ITEM_REDUCE_MOTION:
         return crazypod_state_reduce_motion() ? 1 : 0;
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
+        return crazypod_state_reduce_effects() ? 1 : 0;
     case SETTINGS_ITEM_DATE_YEAR:
     case SETTINGS_ITEM_DATE_MONTH:
     case SETTINGS_ITEM_DATE_DAY:
@@ -372,6 +378,7 @@ int crazypod_ui_settings_choice_count(int item)
         return CRAZYPOD_LANGUAGE_COUNT;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
@@ -456,6 +463,7 @@ static int settings_choice_value(int item, int index)
             ? index : CRAZYPOD_LANGUAGE_COUNT - 1;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
@@ -554,6 +562,7 @@ int crazypod_ui_settings_choice_index(int item)
         return current;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
@@ -709,6 +718,7 @@ const char *crazypod_ui_settings_choice_title(int item, int index)
             (enum crazypod_language)value);
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
@@ -865,6 +875,10 @@ bool crazypod_ui_settings_apply_choice(int item, int index)
         break;
     case SETTINGS_ITEM_REDUCE_MOTION:
         crazypod_state_set_reduce_motion(value != 0);
+        break;
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
+        crazypod_state_set_reduce_effects(value != 0);
+        crazypod_platform_display_set_antialiasing(value == 0);
         break;
     case SETTINGS_ITEM_SHUFFLE:
         crazypod_queue_set_shuffle(value != 0);
