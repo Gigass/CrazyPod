@@ -36,6 +36,8 @@ jobs:
             gcc-arm-none-eabi \
             libfreetype6-dev \
             libnewlib-arm-none-eabi \
+            binutils-mingw-w64-i686 \
+            gcc-mingw-w64-i686 \
             make \
             perl \
             pkg-config \
@@ -80,6 +82,16 @@ jobs:
           ../tools/configure --target=ipodvideo --type=b
           make -j"$(nproc)"
 
+      # Installing on the iPod Video needs ipodpatcher, and most owners of one
+      # are on Windows without a build environment. Cross-build the Windows
+      # binary so the artifact carries everything the install needs.
+      - name: Build ipodpatcher for Windows
+        if: matrix.target == 'ipodvideo'
+        shell: bash
+        run: |
+          make -C utils/ipodpatcher \
+            CROSS=i686-w64-mingw32- WINDRES=windres ipodpatcher.exe
+
       - name: Upload hardware build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -97,6 +109,7 @@ jobs:
             build-hw-${{ matrix.target }}/rockbox.ipod
             build-hw-${{ matrix.target }}/${{ matrix.package }}
             build-bootloader-ipodvideo/bootloader-ipodvideo.ipod
+            utils/ipodpatcher/ipodpatcher.exe
             dist/miniapps/*.cpk
 
   simulator:

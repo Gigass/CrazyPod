@@ -145,10 +145,64 @@ Build the 5G bootloader with stock Rockbox tooling; `build-bootloader.sh`
 covers the 6G NOR path only and does not apply here:
 
 ```sh
-mkdir build-bl-ipodvideo && cd build-bl-ipodvideo
+mkdir build-bootloader-ipodvideo && cd build-bootloader-ipodvideo
 ../tools/configure --target=ipodvideo --type=b
 make
 ```
+
+### Memory budget on 32 MiB units
+
+30 GB 5G/5.5G models carry 32 MiB; 60 and 80 GB models carry 64 MiB.
+`crt0-pp.S` probes which, and `core_allocator_init()` in `firmware/core_alloc.c`
+lowers `audiobufend` by 32 MiB when it finds the smaller one. The shared
+buflib arena that results holds both the audio buffer and every CrazyPod
+runtime allocation:
+
+| Build | Static | Shared arena |
+| --- | --- | --- |
+| iPod 6G | 19.6 MiB | ~40 MiB |
+| iPod Video, 64 MiB | 18.5 MiB | ~41.5 MiB |
+| iPod Video, 32 MiB | 18.5 MiB | ~9.5 MiB |
+
+The address math leaves no slack on a 32 MiB unit: the codec (1 MiB) and
+plugin (3 MiB) buffers alias into 28-32 MiB and land exactly on the top of
+RAM, so `PLUGIN_BUFFER_SIZE` cannot grow past 3 MiB without overflowing.
+Against a 4 MiB audio floor, a 32 MiB unit has roughly 5.5 MiB of working
+room where the 6G has about 36 MiB. This is unmeasured on hardware and is
+the most likely thing to fail there.
+
+### Installing on Windows
+
+The 5G writes its bootloader into the firmware partition with `ipodpatcher`,
+not through the 6G's DFU/`mks5lboot` path. CI builds `ipodpatcher.exe` and
+attaches it to the `crazypod-ipodvideo-firmware` artifact; to cross-build it
+locally:
+
+```sh
+make -C utils/ipodpatcher \
+  CROSS=i686-w64-mingw32- WINDRES=windres ipodpatcher.exe
+```
+
+The executable carries a `requireAdministrator` manifest, so it raises a UAC
+prompt rather than needing an elevated shell. On Windows the device argument
+is the `PhysicalDrive` **number** alone, not a path (`main.c` expands it):
+
+```bat
+ipodpatcher.exe --scan
+ipodpatcher.exe 2 -r ipod-firmware-backup.bin
+ipodpatcher.exe 2 -a bootloader-ipodvideo.ipod
+```
+
+Take the backup before writing anything; `-w ipod-firmware-backup.bin`
+restores it and `-d` removes the bootloader. Then extract `CrazyPod-5G.zip`
+to the root of the iPod's data volume, which produces `\.rockbox\`
+including `\.rockbox\rockbox.ipod`, the path `BOOTDIR`/`BOOTFILE` in
+`ipodvideo.h` point the bootloader at. Eject, then reset with MENU+SELECT.
+
+Recovery, should it not boot: hold MENU+SELECT for about six seconds to
+reset; to reach disk mode, reset and immediately hold SELECT+PLAY. Disk mode
+works with broken firmware installed, which is what makes the bootloader
+reversible.
 
 Not yet done: no hardware validation of any kind, no frame-time measurement
 on the slower CPU, no 32 MiB memory-budget check, and no accessory or

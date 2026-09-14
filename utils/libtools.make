@@ -168,7 +168,10 @@ $(TARGET_DIR)lib$(OUTPUT).a: $(LIBOBJS) $(addprefix $(OBJDIR),$(EXTRALIBOBJS))
 
 clean:
 	$(call rm, $(OBJS) $(OUTPUT) $(TARGET_DIR)lib$(OUTPUT)*.a $(OUTPUT).dmg)
-	$(call rm, $(OUTPUT)-* i386 ppc $(OBJDIR))
+	# $(OUTPUT)-i386/-ppc are the OS X universal build halves. Do not glob
+	# $(OUTPUT)-* here: it also matches sources such as
+	# ipodpatcher/ipodpatcher-aupd.c and deletes them.
+	$(call rm, $(OUTPUT)-i386 $(OUTPUT)-ppc i386 ppc $(OBJDIR))
 
 # extra tools
 BIN2C = $(TOP)/tools/bin2c
