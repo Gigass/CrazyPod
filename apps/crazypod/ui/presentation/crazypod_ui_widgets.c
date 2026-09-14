@@ -1,5 +1,7 @@
 #include "crazypod_ui_widgets.h"
 
+#include <string.h>
+
 #include "../../crazypod_l10n.h"
 #include "../../crazypod_runtime_font.h"
 
@@ -110,7 +112,11 @@ void crazypod_ui_widget_set_label_text(lv_obj_t *label, const char *text)
     const lv_font_t *font = lv_obj_get_style_text_font(
         label, LV_PART_MAIN);
 
-    lv_label_set_text(label, resolved);
+    /* lv_label_set_text() invalidates even when the text is unchanged, and
+     * status and playback timers re-set the same text several times a
+     * second. */
+    if(strcmp(lv_label_get_text(label), resolved) != 0)
+        lv_label_set_text(label, resolved);
     font = crazypod_ui_widget_resolve_font(text, font);
     lv_obj_set_style_text_font(label, font, 0);
 }

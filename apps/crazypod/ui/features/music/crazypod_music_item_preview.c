@@ -13,6 +13,7 @@
 #include "../../../crazypod_playlist.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "../../presentation/crazypod_preview_primitives.h"
+#include "../../../crazypod_state.h"
 #include "crazypod_music_item_preview.h"
 
 #define COLOR_CYAN 0x55D6E7
@@ -123,11 +124,13 @@ static void create_artwork(
         lv_color_hex(artwork_color(
             track != NULL ? track->artist : "", 1)), 0);
     lv_obj_set_style_bg_grad_dir(card, LV_GRAD_DIR_VER, 0);
-    lv_obj_set_style_shadow_width(card, 5, 0);
-    lv_obj_set_style_shadow_offset_y(card, 2, 0);
-    lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_shadow_opa(card, 55, 0);
-    lv_obj_set_style_clip_corner(card, true, 0);
+    if(!crazypod_state_reduce_effects()) {
+        lv_obj_set_style_shadow_width(card, 5, 0);
+        lv_obj_set_style_shadow_offset_y(card, 2, 0);
+        lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
+        lv_obj_set_style_shadow_opa(card, 55, 0);
+        lv_obj_set_style_clip_corner(card, true, 0);
+    }
     if(descriptor != NULL) {
         lv_obj_t *image = lv_image_create(card);
 

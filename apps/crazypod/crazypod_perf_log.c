@@ -36,6 +36,15 @@ struct draw_stats {
 struct invalidation {
     lv_area_t area;
     unsigned count;
+    const void *class;
+    const void *caller;
+};
+
+struct layer_use {
+    lv_area_t area;
+    unsigned count;
+    const void *class;
+    int type;
 };
 
 static const char *const draw_type_names[DRAW_TYPE_COUNT] = {
@@ -64,6 +73,8 @@ static struct {
     struct draw_stats draw[DRAW_TYPE_COUNT];
     unsigned invalidations;
     struct invalidation invalidation[INVALIDATION_SLOTS];
+    unsigned layers;
+    struct layer_use layer[INVALIDATION_SLOTS];
     unsigned samples;
     unsigned lowdata_samples;
     size_t pcm_free_min;
@@ -81,38 +92,90 @@ static struct {
     .useful_min = (size_t)-1,
 };
 
-static void note_invalidation(const lv_area_t *area)
+static const char *class_name(const void *class)
+{
+    if(class == &lv_obj_class)
+        return "obj";
+    if(class == &lv_label_class)
+        return "lab";
+    if(class == &lv_image_class)
+        return "img";
+    return NULL;
+}
+
+static bool same_area(const lv_area_t *a, const lv_area_t *b)
+{
+    return a->x1 == b->x1 && a->y1 == b->y1 &&
+        a->x2 == b->x2 && a->y2 == b->y2;
+}
+
+/* Keep the four most frequent shapes; a new one replaces the rarest only
+ * after that one has been seen just once. */
+static int claim_slot(unsigned *counts, size_t stride, void *slots,
+                      const lv_area_t *area)
 {
     int index;
     int free_slot = -1;
     int least = 0;
 
-    perf.invalidations++;
     for(index = 0; index < INVALIDATION_SLOTS; ++index) {
-        struct invalidation *slot = &perf.invalidation[index];
+        unsigned *count = (unsigned *)((char *)counts + index * stride);
+        const lv_area_t *slot_area =
+            (const lv_area_t *)((char *)slots + index * stride);
 
-        if(slot->count == 0) {
+        if(*count == 0) {
             if(free_slot < 0)
                 free_slot = index;
             continue;
         }
-        if(slot->area.x1 == area->x1 && slot->area.y1 == area->y1 &&
-           slot->area.x2 == area->x2 && slot->area.y2 == area->y2) {
-            slot->count++;
-            return;
+        if(same_area(slot_area, area)) {
+            (*count)++;
+            return -1;
         }
-        if(slot->count < perf.invalidation[least].count)
+        if(*count < *(unsigned *)((char *)counts + least * stride))
             least = index;
     }
-    /* Keep the four most frequent shapes; a new one replaces the rarest
-     * only after that one has been seen just once. */
     if(free_slot < 0) {
-        if(perf.invalidation[least].count > 1)
-            return;
+        if(*(unsigned *)((char *)counts + least * stride) > 1)
+            return -1;
         free_slot = least;
     }
-    perf.invalidation[free_slot].area = *area;
-    perf.invalidation[free_slot].count = 1;
+    return free_slot;
+}
+
+void crazypod_perf_log_invalidate(
+    const void *obj, const void *area, const void *caller)
+{
+    int slot;
+
+    perf.invalidations++;
+    slot = claim_slot(&perf.invalidation[0].count,
+                      sizeof(perf.invalidation[0]),
+                      &perf.invalidation[0].area, area);
+    if(slot < 0)
+        return;
+    perf.invalidation[slot].area = *(const lv_area_t *)area;
+    perf.invalidation[slot].count = 1;
+    perf.invalidation[slot].class = lv_obj_get_class(obj);
+    perf.invalidation[slot].caller = caller;
+}
+
+void crazypod_perf_log_layer(const void *obj, int type)
+{
+    const lv_obj_t *object = obj;
+    lv_area_t coords;
+    int slot;
+
+    perf.layers++;
+    lv_obj_get_coords(object, &coords);
+    slot = claim_slot(&perf.layer[0].count, sizeof(perf.layer[0]),
+                      &perf.layer[0].area, &coords);
+    if(slot < 0)
+        return;
+    perf.layer[slot].area = coords;
+    perf.layer[slot].count = 1;
+    perf.layer[slot].class = lv_obj_get_class(object);
+    perf.layer[slot].type = type;
 }
 
 static void display_event(lv_event_t *event)
@@ -130,9 +193,6 @@ static void display_event(lv_event_t *event)
             perf.render_max_us = elapsed;
         break;
     }
-    case LV_EVENT_INVALIDATE_AREA:
-        note_invalidation(lv_event_get_param(event));
-        break;
     default:
         break;
     }
@@ -144,8 +204,6 @@ void crazypod_perf_log_attach_display(void *display)
         display, display_event, LV_EVENT_RENDER_START, NULL);
     lv_display_add_event_cb(
         display, display_event, LV_EVENT_RENDER_READY, NULL);
-    lv_display_add_event_cb(
-        display, display_event, LV_EVENT_INVALIDATE_AREA, NULL);
 }
 
 void crazypod_perf_log_flush(unsigned pixels)
@@ -203,6 +261,8 @@ static void reset_window(void)
     memset(perf.draw, 0, sizeof(perf.draw));
     perf.invalidations = 0;
     memset(perf.invalidation, 0, sizeof(perf.invalidation));
+    perf.layers = 0;
+    memset(perf.layer, 0, sizeof(perf.layer));
     perf.samples = 0;
     perf.lowdata_samples = 0;
     perf.pcm_free_min = (size_t)-1;
@@ -261,9 +321,22 @@ static void append_draw_stats(void)
     }
 }
 
+static void append_class(const void *class)
+{
+    const char *name = class_name(class);
+    char text[16];
+
+    if(name != NULL) {
+        append(name);
+        return;
+    }
+    snprintf(text, sizeof(text), "%lx", (unsigned long)(uintptr_t)class);
+    append(text);
+}
+
 static void append_invalidations(void)
 {
-    char text[40];
+    char text[48];
     int index;
 
     snprintf(text, sizeof(text), " inv=%u", perf.invalidations);
@@ -273,10 +346,37 @@ static void append_invalidations(void)
 
         if(slot->count == 0)
             continue;
-        snprintf(text, sizeof(text), ",%d.%d-%d.%d:%u",
+        snprintf(text, sizeof(text), ",%d.%d-%d.%d:%u@",
                  (int)slot->area.x1, (int)slot->area.y1,
                  (int)slot->area.x2, (int)slot->area.y2,
                  slot->count);
+        append(text);
+        append_class(slot->class);
+        snprintf(text, sizeof(text), "/%lx",
+                 (unsigned long)(uintptr_t)slot->caller);
+        append(text);
+    }
+}
+
+static void append_layers(void)
+{
+    char text[48];
+    int index;
+
+    snprintf(text, sizeof(text), " lay=%u", perf.layers);
+    append(text);
+    for(index = 0; index < INVALIDATION_SLOTS; ++index) {
+        const struct layer_use *slot = &perf.layer[index];
+
+        if(slot->count == 0)
+            continue;
+        snprintf(text, sizeof(text), ",%d.%d-%d.%d:%u@",
+                 (int)slot->area.x1, (int)slot->area.y1,
+                 (int)slot->area.x2, (int)slot->area.y2,
+                 slot->count);
+        append(text);
+        append_class(slot->class);
+        snprintf(text, sizeof(text), "/t%d", slot->type);
         append(text);
     }
 }
@@ -296,7 +396,9 @@ static void format_line(long now)
                "fl=flushes/pixels pres=presents/full/misses/timeouts "
                "pmax=max_present_us home=renders/timeouts "
                "wr=prev_write_us dt=type:count/ms,... "
-               "inv=count,x1.y1-x2.y2:count,...\n");
+               "inv=count,x1.y1-x2.y2:count@class/caller,... "
+               "lay=count,x1.y1-x2.y2:count@class/type "
+               "(t1 simple, t2 transform, t3 clip_corner)\n");
         perf.header_written = true;
     }
     crazypod_present_get_diagnostics(&present);
@@ -336,6 +438,7 @@ static void format_line(long now)
     append(text);
     append_draw_stats();
     append_invalidations();
+    append_layers();
     append("\n");
 }
 

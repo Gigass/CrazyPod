@@ -359,6 +359,22 @@ void lv_obj_set_local_style_prop(lv_obj_t * obj, lv_style_prop_t prop, lv_style_
     trans_delete(obj, lv_obj_style_get_selector_part(selector), prop, NULL);
 
     lv_style_t * style = get_local_style(obj, selector);
+
+    /* CrazyPod: setting a local property to the value it already holds is a
+     * no-op for the screen, but upstream still refreshes the style, which
+     * invalidates the object and dirties its parent's layout. Periodic
+     * refresh code re-applies unchanged properties every tick, and on slow
+     * targets those redundant redraws are most of the idle render load. A
+     * transition on the property was already stopped above, as before. */
+    {
+        lv_style_value_t current;
+        if(lv_style_get_prop(style, prop, &current) == LV_STYLE_RES_FOUND &&
+           lv_memcmp(&current, &value, sizeof(value)) == 0) {
+            LV_PROFILER_STYLE_END;
+            return;
+        }
+    }
+
     if(selector == LV_PART_MAIN && lv_style_prop_has_flag(prop, LV_STYLE_PROP_FLAG_TRANSFORM)) {
         lv_obj_invalidate(obj);
     }

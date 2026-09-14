@@ -1081,6 +1081,16 @@ static lv_obj_tree_walk_res_t blur_walk_cb(lv_obj_t * obj, void * user_data)
 
 }
 
+#if defined(IPOD_VIDEO) && !defined(SIMULATOR)
+/* CrazyPod bring-up: attribute invalidations to objects and callers. */
+void crazypod_perf_log_invalidate(
+    const void *obj, const void *area, const void *caller);
+#define CRAZYPOD_INVALIDATE_HOOK(obj, area) \
+    crazypod_perf_log_invalidate((obj), (area), __builtin_return_address(0))
+#else
+#define CRAZYPOD_INVALIDATE_HOOK(obj, area) do {} while(0)
+#endif
+
 lv_result_t lv_obj_invalidate_area(const lv_obj_t * obj, const lv_area_t * area)
 {
     LV_ASSERT_OBJ(obj, MY_CLASS);
@@ -1088,6 +1098,7 @@ lv_result_t lv_obj_invalidate_area(const lv_obj_t * obj, const lv_area_t * area)
     lv_display_t * disp   = lv_obj_get_display(obj);
     if(!lv_display_is_invalidation_enabled(disp)) return LV_RESULT_INVALID;
 
+    CRAZYPOD_INVALIDATE_HOOK(obj, area);
     return obj_invalidate_area_internal(disp, obj, area);
 }
 
@@ -1108,6 +1119,7 @@ lv_result_t lv_obj_invalidate(const lv_obj_t * obj)
     obj_coords.x2 += ext_size;
     obj_coords.y2 += ext_size;
 
+    CRAZYPOD_INVALIDATE_HOOK(obj, &obj_coords);
     lv_result_t res = obj_invalidate_area_internal(disp, obj, &obj_coords);
 
     return res;

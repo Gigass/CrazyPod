@@ -56,8 +56,8 @@ lv_obj_t *crazypod_artwork_widget_create(
         lv_obj_set_style_shadow_color(card, lv_color_hex(0x000000), 0);
         lv_obj_set_style_shadow_opa(
             card, display_size > 80 ? 100 : 55, 0);
+        lv_obj_set_style_clip_corner(card, true, 0);
     }
-    lv_obj_set_style_clip_corner(card, true, 0);
 
     if(descriptor != NULL) {
         lv_obj_t *image = lv_image_create(card);

@@ -50,6 +50,15 @@ static void call_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t *
 static void wait_for_flushing(lv_display_t * disp);
 static lv_result_t layer_get_area(lv_layer_t * layer, lv_obj_t * obj, lv_layer_type_t layer_type,
                                   lv_area_t * layer_area_out, lv_area_t * obj_draw_size_out);
+
+#if defined(IPOD_VIDEO) && !defined(SIMULATOR)
+/* CrazyPod bring-up: attribute layer renders to objects. type 3 marks the
+ * two strips a clip_corner object renders its children through. */
+void crazypod_perf_log_layer(const void * obj, int type);
+#define CRAZYPOD_LAYER_HOOK(obj, type) crazypod_perf_log_layer((obj), (type))
+#else
+#define CRAZYPOD_LAYER_HOOK(obj, type) do {} while(0)
+#endif
 static bool alpha_test_area_on_obj(lv_obj_t * obj, const lv_area_t * area);
 #if LV_DRAW_TRANSFORM_USE_MATRIX
     static bool refr_check_obj_clip_overflow(lv_layer_t * layer, lv_obj_t * obj);
@@ -190,6 +199,7 @@ void lv_obj_redraw(lv_layer_t * layer, lv_obj_t * obj)
                 lv_draw_mask_rect_dsc_init(&mask_draw_dsc);
                 mask_draw_dsc.radius = radius;
                 mask_draw_dsc.area = obj->coords;
+                CRAZYPOD_LAYER_HOOK(obj, 3);
 
                 lv_draw_image_dsc_t img_draw_dsc;
                 lv_draw_image_dsc_init(&img_draw_dsc);
@@ -531,6 +541,7 @@ void lv_obj_refr(lv_layer_t * layer, lv_obj_t * obj)
             layer->recolor = layer_recolor;
             return;
         }
+        CRAZYPOD_LAYER_HOOK(obj, (int)layer_type);
 
         /*Simple layers can be subdivided into smaller layers*/
         uint32_t max_rgb_row_height = lv_area_get_height(&layer_area_full);
