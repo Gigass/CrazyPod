@@ -5,6 +5,13 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      firmware_only:
+        description: >-
+          Build only rockbox.ipod (about 2 MB, roughly a minute). Use when the
+          device already has a full install and only the firmware is changing.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -59,7 +66,11 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          if ! ./build-hw.sh --target "${{ matrix.target }}" 2>&1 \
+          flags=""
+          if [ "${{ inputs.firmware_only }}" = "true" ]; then
+            flags="--firmware-only"
+          fi
+          if ! ./build-hw.sh --target "${{ matrix.target }}" $flags 2>&1 \
               | tee build-hw.log; then
             {
               echo '## Hardware build log (tail)'
@@ -74,7 +85,7 @@ jobs:
       # the 6G's DFU/NOR path, so ship the bootloader image alongside the
       # firmware. build-bootloader.sh covers the 6G NOR path only.
       - name: Build iPod Video bootloader
-        if: matrix.target == 'ipodvideo'
+        if: matrix.target == 'ipodvideo' && !inputs.firmware_only
         shell: bash
         run: |
           mkdir -p build-bootloader-ipodvideo
@@ -86,7 +97,7 @@ jobs:
       # are on Windows without a build environment. Cross-build the Windows
       # binary so the artifact carries everything the install needs.
       - name: Build ipodpatcher for Windows
-        if: matrix.target == 'ipodvideo'
+        if: matrix.target == 'ipodvideo' && !inputs.firmware_only
         shell: bash
         run: |
           make -C utils/ipodpatcher \
@@ -100,7 +111,18 @@ jobs:
           if-no-files-found: warn
           path: build-hw.log
 
+      # Keep the firmware-only artifact to the single file that needs copying,
+      # which is the point of the mode: about 2 MB rather than hundreds.
+      - name: Upload firmware
+        if: inputs.firmware_only
+        uses: actions/upload-artifact@v4
+        with:
+          name: crazypod-${{ matrix.target }}-rockbox-ipod
+          if-no-files-found: error
+          path: build-hw-${{ matrix.target }}/rockbox.ipod
+
       - name: Upload firmware artifacts
+        if: ${{ !inputs.firmware_only }}
         uses: actions/upload-artifact@v4
         with:
           name: crazypod-${{ matrix.target }}-firmware
