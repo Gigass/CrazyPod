@@ -858,6 +858,7 @@ void crazypod_playback_refresh_lock_screen(void)
 
 void crazypod_playback_update_timer(lv_timer_t *timer)
 {
+    static unsigned transient_seen;
     struct crazypod_track track;
     bool have_track;
     struct mp3entry *id3;
@@ -887,12 +888,16 @@ void crazypod_playback_update_timer(lv_timer_t *timer)
     if(crazypod_now_playing_theme_open())
         return;
     if(have_track &&
-       strcmp(
-           crazypod_now_playing_feature_rendered_track_path(),
-           track.path) != 0) {
+       (strcmp(
+            crazypod_now_playing_feature_rendered_track_path(),
+            track.path) != 0 ||
+        transient_seen != crazypod_music_transient_generation())) {
         enum crazypod_now_playing_overlay overlay =
             crazypod_now_playing_overlay_kind();
 
+        /* A transient track's text changes without its path changing,
+         * as an audiobook moves to the next chapter. */
+        transient_seen = crazypod_music_transient_generation();
         playback.host.render(false);
         crazypod_now_playing_overlay_restore(overlay);
         return;

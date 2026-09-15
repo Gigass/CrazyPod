@@ -5,6 +5,7 @@
 #include "../../../crazypod_audiobooks.h"
 #include "../../../crazypod_books.h"
 #include "crazypod_books_actions.h"
+#include "crazypod_books_feature.h"
 
 static struct crazypod_books_action action(
     enum crazypod_books_action_kind kind)
@@ -40,10 +41,18 @@ static struct crazypod_books_action begin_reader(
 
 static bool has_continue(void)
 {
-    int index = crazypod_books_recent_index();
-    const struct crazypod_book *book = crazypod_book_get(index);
+    struct crazypod_books_recent_entry entry;
 
-    return book != NULL && book->progress > 0;
+    return crazypod_books_feature_continue_entry(&entry);
+}
+
+static struct crazypod_books_action play_audiobook(int index)
+{
+    struct crazypod_books_action result =
+        action(CRAZYPOD_BOOKS_ACTION_PLAY_AUDIOBOOK);
+
+    result.book_index = index;
+    return result;
 }
 
 static int route_book_index(
@@ -51,8 +60,12 @@ static int route_book_index(
 {
     if(state->route == BOOKS_ROUTE_LIBRARY)
         return position;
-    if(state->route == BOOKS_ROUTE_RECENTS)
-        return crazypod_books_recent_at(position);
+    if(state->route == BOOKS_ROUTE_RECENTS) {
+        struct crazypod_books_recent_entry entry;
+
+        return crazypod_books_feature_recent_at(position, &entry) &&
+               !entry.audiobook ? entry.index : -1;
+    }
     if(state->route == BOOKS_ROUTE_FAVORITES)
         return crazypod_books_favorite_at(position);
     return state->group;
@@ -66,12 +79,16 @@ struct crazypod_books_action crazypod_books_actions_activate(
         int logical = state->selected;
 
         if(has_continue() && state->selected == 0) {
-            int index = crazypod_books_recent_index();
-            const struct crazypod_book *book =
-                crazypod_book_get(index);
+            struct crazypod_books_recent_entry entry;
+            const struct crazypod_book *book;
 
+            if(!crazypod_books_feature_continue_entry(&entry))
+                return action(CRAZYPOD_BOOKS_ACTION_NONE);
+            if(entry.audiobook)
+                return play_audiobook(entry.index);
+            book = crazypod_book_get(entry.index);
             return book != NULL
-                ? begin_reader(index, book->progress)
+                ? begin_reader(entry.index, book->progress)
                 : action(CRAZYPOD_BOOKS_ACTION_NONE);
         }
         logical -= has_continue() ? 1 : 0;
@@ -89,16 +106,18 @@ struct crazypod_books_action crazypod_books_actions_activate(
             return push(BOOKS_ROUTE_AUDIOBOOKS, -1);
         return action(CRAZYPOD_BOOKS_ACTION_NONE);
     }
-    case BOOKS_ROUTE_AUDIOBOOKS: {
-        struct crazypod_books_action result =
-            action(CRAZYPOD_BOOKS_ACTION_PLAY_AUDIOBOOK);
+    case BOOKS_ROUTE_AUDIOBOOKS:
+        return crazypod_audiobook_get(state->selected) != NULL
+            ? play_audiobook(state->selected)
+            : action(CRAZYPOD_BOOKS_ACTION_NONE);
+    case BOOKS_ROUTE_RECENTS: {
+        struct crazypod_books_recent_entry entry;
 
-        if(crazypod_audiobook_get(state->selected) == NULL)
-            return action(CRAZYPOD_BOOKS_ACTION_NONE);
-        result.book_index = state->selected;
-        return result;
+        if(crazypod_books_feature_recent_at(state->selected, &entry) &&
+           entry.audiobook)
+            return play_audiobook(entry.index);
     }
-    case BOOKS_ROUTE_RECENTS:
+    /* Fall through: a text book in Recents. */
     case BOOKS_ROUTE_LIBRARY:
     case BOOKS_ROUTE_FAVORITES: {
         int index = route_book_index(state, state->selected);

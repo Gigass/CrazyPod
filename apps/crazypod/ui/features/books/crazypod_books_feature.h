@@ -7,6 +7,20 @@
 #include "../../navigation/crazypod_ui_routes.h"
 #include "../crazypod_feature.h"
 
+/* One entry of the merged Recents list: a text book or an audiobook. */
+struct crazypod_books_recent_entry {
+    bool audiobook;
+    int index;
+    uint32_t sequence;
+};
+
+int crazypod_books_feature_recent_count(void);
+bool crazypod_books_feature_recent_at(
+    int position, struct crazypod_books_recent_entry *entry);
+/* The newest entry, when it has a position to resume from. */
+bool crazypod_books_feature_continue_entry(
+    struct crazypod_books_recent_entry *entry);
+
 struct crazypod_books_activation_host {
     void (*render)(bool transition);
     void (*operation_failed)(void);

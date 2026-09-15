@@ -44,6 +44,8 @@ const struct crazypod_audiobook *crazypod_audiobook_get(int index);
 /* Loads title, author and length from the file's tags; cheap once done. */
 bool crazypod_audiobook_probe(int index);
 int crazypod_audiobooks_recent_index(void);
+/* Recency sequence shared with text books (0 = never listened). */
+uint32_t crazypod_audiobook_recent_sequence(int index);
 
 int crazypod_audiobook_chapter_count(int index);
 const struct crazypod_audiobook_chapter *crazypod_audiobook_chapter_get(

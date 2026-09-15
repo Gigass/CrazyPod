@@ -137,6 +137,8 @@ void crazypod_music_set_transient_track(
     const char *path, const char *title, const char *artist,
     const char *album);
 void crazypod_music_clear_transient_track(void);
+/* Bumps whenever the transient track is set or cleared. */
+unsigned crazypod_music_transient_generation(void);
 int crazypod_music_artist_count(void);
 bool crazypod_music_copy_artist(int index, char *artist, size_t size);
 int crazypod_music_artist_track_count(int artist_index);

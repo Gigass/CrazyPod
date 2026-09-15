@@ -489,7 +489,9 @@ void crazypod_now_screen_render(
     view->wave_surface = lv_obj_create(context->parent);
     crazypod_ui_widget_make_plain(view->wave_surface);
     lv_obj_set_pos(view->wave_surface, 16, 181);
-    lv_obj_set_size(view->wave_surface, 288, 34);
+    /* 32 rows: the clock labels below start at row 214, and sharing a
+     * row would redraw the whole wave on every clock tick. */
+    lv_obj_set_size(view->wave_surface, 288, 32);
     lv_obj_set_style_bg_opa(view->wave_surface, LV_OPA_TRANSP, 0);
     lv_obj_remove_flag(view->wave_surface, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(view->wave_surface, context->draw_wave,

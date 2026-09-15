@@ -45,10 +45,27 @@ static void make_pixel_heart(
 
 static bool books_has_continue(void)
 {
-    int index = crazypod_books_recent_index();
-    const struct crazypod_book *book = crazypod_book_get(index);
+    struct crazypod_books_recent_entry entry;
 
-    return book != NULL && book->progress > 0;
+    return crazypod_books_feature_continue_entry(&entry);
+}
+
+/* The audiobook shown for a position of a route, or -1 when the
+ * position holds a text book. */
+static int route_audiobook_index(const struct route_state *state)
+{
+    struct crazypod_books_recent_entry entry;
+
+    if(state->route == BOOKS_ROUTE_AUDIOBOOKS)
+        return state->selected;
+    if(state->route == BOOKS_ROUTE_RECENTS)
+        return crazypod_books_feature_recent_at(
+                   state->selected, &entry) && entry.audiobook
+            ? entry.index : -1;
+    if(state->route == BOOKS_ROUTE_MENU && state->selected == 0 &&
+       crazypod_books_feature_continue_entry(&entry) && entry.audiobook)
+        return entry.index;
+    return -1;
 }
 
 static int books_route_book_index(
@@ -56,8 +73,12 @@ static int books_route_book_index(
 {
     if(state->route == BOOKS_ROUTE_LIBRARY)
         return position;
-    if(state->route == BOOKS_ROUTE_RECENTS)
-        return crazypod_books_recent_at(position);
+    if(state->route == BOOKS_ROUTE_RECENTS) {
+        struct crazypod_books_recent_entry entry;
+
+        return crazypod_books_feature_recent_at(position, &entry) &&
+               !entry.audiobook ? entry.index : -1;
+    }
     if(state->route == BOOKS_ROUTE_FAVORITES)
         return crazypod_books_favorite_at(position);
     return state->group;
@@ -439,10 +460,8 @@ static void render_books_settings_stage(
 }
 
 static void render_audiobook_preview(
-    lv_obj_t *parent, const struct route_state *state,
-    const lv_font_t *metadata_font)
+    lv_obj_t *parent, int index, const lv_font_t *metadata_font)
 {
-    int index = state->selected;
     const struct crazypod_audiobook *book;
     const char *detail = "";
     char detail_text[64];
@@ -519,8 +538,9 @@ void crazypod_books_preview_render(
     lv_obj_t *text_panel;
     char detail_text[64];
 
-    if(state->route == BOOKS_ROUTE_AUDIOBOOKS) {
-        render_audiobook_preview(parent, state, metadata_font);
+    if(route_audiobook_index(state) >= 0) {
+        render_audiobook_preview(
+            parent, route_audiobook_index(state), metadata_font);
         return;
     }
     if(index >= 0 && state->route != BOOKS_ROUTE_MENU)

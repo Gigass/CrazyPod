@@ -8,10 +8,12 @@
 #include "dir.h"
 #include "kernel.h"
 #include "metadata.h"
+#include "pcmbuf.h"
 #include "storage.h"
 
 #include "crazypod_audiobook_chapters.h"
 #include "crazypod_audiobooks.h"
+#include "crazypod_books.h"
 #include "crazypod_checksum.h"
 #include "crazypod_music.h"
 #include "crazypod_playlist.h"
@@ -327,7 +329,7 @@ static bool remember_position(int index, uint32_t position_ms, bool touch)
     entry->position_ms = position_ms;
     entry->length_ms = book->length_ms;
     if(touch)
-        entry->sequence = persisted.next_sequence++;
+        entry->sequence = crazypod_books_take_recent_sequence();
     return state_save();
 }
 
@@ -412,6 +414,16 @@ bool crazypod_audiobook_probe(int index)
     if(probe_entry.length > 0)
         book->length_ms = (uint32_t)probe_entry.length;
     return true;
+}
+
+uint32_t crazypod_audiobook_recent_sequence(int index)
+{
+    const struct progress_disk *entry;
+
+    if(index < 0 || index >= book_count)
+        return 0;
+    entry = saved_progress(path_hash(books[index].path));
+    return entry != NULL ? entry->sequence : 0;
 }
 
 int crazypod_audiobooks_recent_index(void)
@@ -554,10 +566,25 @@ static void publish_transient(int index, uint32_t position_ms)
         book->path, book->title, book->author, album);
 }
 
+/*
+ * After a seek the PCM buffer normally refills to its two-second
+ * watermark before sound resumes; the low-latency mode Rockbox uses for
+ * scrubbing resumes at a quarter second. Hold it until the seek lands.
+ */
 static void begin_seek_measure(uint32_t target_ms)
 {
     live.seek_started = current_tick != 0 ? current_tick : 1;
     live.seek_target_ms = target_ms;
+    pcmbuf_set_low_latency(true);
+}
+
+static void end_seek_measure(long now, bool landed)
+{
+    if(landed)
+        live.last_seek_ms = (uint32_t)
+            ((now - live.seek_started) * 1000 / HZ);
+    live.seek_started = 0;
+    pcmbuf_set_low_latency(false);
 }
 
 uint32_t crazypod_audiobooks_last_seek_ms(void)
@@ -744,13 +771,10 @@ void crazypod_audiobooks_tick(long now)
             ? position - live.seek_target_ms
             : live.seek_target_ms - position;
 
-        if(distance < 3000u) {
-            live.last_seek_ms = (uint32_t)
-                ((now - live.seek_started) * 1000 / HZ);
-            live.seek_started = 0;
-        }
+        if(distance < 3000u)
+            end_seek_measure(now, true);
         else if(now - live.seek_started > 30 * HZ)
-            live.seek_started = 0;
+            end_seek_measure(now, false);
     }
     if(live.was_playing && !playing) {
         /* Paused by the user: this is the moment they expect saved. */

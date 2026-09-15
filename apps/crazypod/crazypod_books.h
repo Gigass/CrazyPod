@@ -43,6 +43,11 @@ int crazypod_book_index(const struct crazypod_book *book);
 int crazypod_books_recent_index(void);
 int crazypod_books_recent_count(void);
 int crazypod_books_recent_at(int position);
+/* Recency counter shared with audiobooks so one Recents list can order
+ * both: the sequence a book was last touched with (0 = never), and a
+ * fresh sequence for another module's touch. */
+uint32_t crazypod_books_recent_sequence(int index);
+uint32_t crazypod_books_take_recent_sequence(void);
 int crazypod_books_favorite_count(void);
 int crazypod_books_favorite_at(int position);
 bool crazypod_book_read_page(int index, uint32_t offset,

@@ -1650,6 +1650,7 @@ static struct {
     char artist[72];
     char album[72];
     bool valid;
+    unsigned generation;
 } transient;
 static struct mutex transient_mutex;
 static bool transient_mutex_ready;
@@ -1677,12 +1678,20 @@ void crazypod_music_set_transient_track(
     copy_text(transient.artist, sizeof(transient.artist), artist, "");
     copy_text(transient.album, sizeof(transient.album), album, "");
     transient.valid = true;
+    ++transient.generation;
     mutex_unlock(&transient_mutex);
+}
+
+unsigned crazypod_music_transient_generation(void)
+{
+    return transient.generation;
 }
 
 void crazypod_music_clear_transient_track(void)
 {
     transient_lock();
+    if(transient.valid)
+        ++transient.generation;
     transient.valid = false;
     transient.path[0] = '\0';
     mutex_unlock(&transient_mutex);

@@ -10,6 +10,9 @@
 #include "../../crazypod_artwork.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_playlist.h"
+#include "../../crazypod_state.h"
+#include "../navigation/crazypod_route_query.h"
+#include "../presentation/crazypod_menu_icon_assets.h"
 #include "../features/books/crazypod_books_feature.h"
 #include "../features/customize/crazypod_customize_feature.h"
 #include "../features/miniapps/crazypod_miniapps_feature.h"
@@ -159,6 +162,35 @@ void crazypod_menu_preview_reset(void)
     preview.defer_media = false;
 }
 
+static void render_simple(const struct route_state *state)
+{
+    const char *title = preview.host.item_title(state, state->selected);
+    const lv_image_dsc_t *asset = crazypod_menu_icon_asset(
+        crazypod_route_query_item_icon(state, state->selected));
+    lv_obj_t *parent = preview_parent();
+    lv_obj_t *badge = crazypod_ui_widget_box(
+        parent, 212, 74, 56, 56, LV_RADIUS_CIRCLE,
+        primary_color(), 200);
+
+    lv_obj_set_style_border_width(badge, 1, 0);
+    lv_obj_set_style_border_color(badge, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_opa(badge, 90, 0);
+    if(asset != NULL) {
+        lv_obj_t *icon = lv_image_create(badge);
+
+        lv_image_set_src(icon, asset);
+        lv_image_set_scale(icon, 512);
+        lv_obj_set_style_image_recolor(
+            icon, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_image_recolor_opa(icon, LV_OPA_COVER, 0);
+        lv_obj_center(icon);
+        lv_obj_remove_flag(icon, LV_OBJ_FLAG_CLICKABLE);
+    }
+    crazypod_preview_make_caption(
+        parent, title != NULL ? title : "",
+        preview.host.metadata_font, "", &lv_font_montserrat_8);
+}
+
 void crazypod_menu_preview_render(
     const struct route_state *state, bool animated)
 {
@@ -189,6 +221,20 @@ void crazypod_menu_preview_render(
     preview.defer_media = animate;
     *crazypod_preview_motion_media_deferred_flag() = false;
     crazypod_preview_motion_reset_root(preview.host.parent);
+    if(crazypod_state_reduce_effects() &&
+       state->route != MUSIC_ROUTE_SEARCH &&
+       state->route != CALENDAR_ROUTE_TITLE_EDITOR) {
+        /*
+         * A skeuomorphic preview is twenty to forty objects with bevels,
+         * fasteners and motion parts, rebuilt on every wheel step; on the
+         * PP5022 that rebuild is most of the frame. Reduce Effects trades
+         * it for the item's icon and a caption.
+         */
+        render_simple(state);
+        preview.defer_media = false;
+        preview.motion_ready = true;
+        return;
+    }
     if(state->route == MUSIC_ROUTE_SEARCH) {
         render_editor(
             crazypod_music_search_query(), CP_TR("Any track"),

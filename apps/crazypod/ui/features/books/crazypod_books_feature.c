@@ -17,18 +17,111 @@
 #include "crazypod_books_workflow.h"
 #include "crazypod_books_feature.h"
 
-static bool has_continue(void)
-{
-    int index = crazypod_books_recent_index();
-    const struct crazypod_book *book = crazypod_book_get(index);
-
-    return book != NULL && book->progress > 0;
-}
-
 static void ensure_audiobooks(void)
 {
     if(crazypod_audiobooks_scan_needed())
         crazypod_audiobooks_scan();
+}
+
+#define RECENT_ENTRIES_MAX 16
+
+static struct crazypod_books_recent_entry recent_entries[
+    RECENT_ENTRIES_MAX];
+static int recent_entry_count;
+
+static void offer_recent(bool audiobook, int index, uint32_t sequence)
+{
+    int slot;
+
+    if(sequence == 0)
+        return;
+    for(slot = recent_entry_count; slot > 0; --slot) {
+        if(recent_entries[slot - 1].sequence >= sequence)
+            break;
+        if(slot < RECENT_ENTRIES_MAX)
+            recent_entries[slot] = recent_entries[slot - 1];
+    }
+    if(slot >= RECENT_ENTRIES_MAX)
+        return;
+    recent_entries[slot].audiobook = audiobook;
+    recent_entries[slot].index = index;
+    recent_entries[slot].sequence = sequence;
+    if(recent_entry_count < RECENT_ENTRIES_MAX)
+        ++recent_entry_count;
+}
+
+/* Text books and audiobooks share one recency counter, so the merged
+ * list is just both catalogs sorted by it. Small enough to rebuild on
+ * every query. */
+static void collect_recents(void)
+{
+    int i;
+
+    ensure_audiobooks();
+    recent_entry_count = 0;
+    for(i = 0; i < crazypod_books_count(); ++i)
+        offer_recent(false, i, crazypod_books_recent_sequence(i));
+    for(i = 0; i < crazypod_audiobooks_count(); ++i)
+        offer_recent(true, i, crazypod_audiobook_recent_sequence(i));
+}
+
+int crazypod_books_feature_recent_count(void)
+{
+    collect_recents();
+    return recent_entry_count;
+}
+
+bool crazypod_books_feature_recent_at(
+    int position, struct crazypod_books_recent_entry *entry)
+{
+    collect_recents();
+    if(position < 0 || position >= recent_entry_count)
+        return false;
+    *entry = recent_entries[position];
+    return true;
+}
+
+bool crazypod_books_feature_continue_entry(
+    struct crazypod_books_recent_entry *entry)
+{
+    struct crazypod_books_recent_entry newest;
+
+    if(!crazypod_books_feature_recent_at(0, &newest))
+        return false;
+    if(newest.audiobook) {
+        const struct crazypod_audiobook *book =
+            crazypod_audiobook_get(newest.index);
+
+        if(book == NULL || book->position_ms == 0)
+            return false;
+    }
+    else {
+        const struct crazypod_book *book =
+            crazypod_book_get(newest.index);
+
+        if(book == NULL || book->progress == 0)
+            return false;
+    }
+    *entry = newest;
+    return true;
+}
+
+static bool has_continue(void)
+{
+    struct crazypod_books_recent_entry entry;
+
+    return crazypod_books_feature_continue_entry(&entry);
+}
+
+static bool recent_audiobook_at(int position, int *index)
+{
+    struct crazypod_books_recent_entry entry;
+
+    if(!crazypod_books_feature_recent_at(position, &entry) ||
+       !entry.audiobook)
+        return false;
+    *index = entry.index;
+    return true;
 }
 
 
@@ -57,7 +150,7 @@ int crazypod_books_feature_item_count(
         ensure_audiobooks();
         return crazypod_audiobooks_count();
     case BOOKS_ROUTE_RECENTS:
-        return crazypod_books_recent_count();
+        return crazypod_books_feature_recent_count();
     case BOOKS_ROUTE_LIBRARY:
         return crazypod_books_count();
     case BOOKS_ROUTE_FAVORITES:
@@ -129,8 +222,12 @@ static int book_index(
 {
     if(state->route == BOOKS_ROUTE_LIBRARY)
         return position;
-    if(state->route == BOOKS_ROUTE_RECENTS)
-        return crazypod_books_recent_at(position);
+    if(state->route == BOOKS_ROUTE_RECENTS) {
+        struct crazypod_books_recent_entry entry;
+
+        return crazypod_books_feature_recent_at(position, &entry) &&
+               !entry.audiobook ? entry.index : -1;
+    }
     if(state->route == BOOKS_ROUTE_FAVORITES)
         return crazypod_books_favorite_at(position);
     return state->group;
@@ -168,7 +265,20 @@ bool crazypod_books_feature_item_title(
         *title = book != NULL ? book->title : "";
         return true;
     }
-    case BOOKS_ROUTE_RECENTS:
+    case BOOKS_ROUTE_RECENTS: {
+        int audiobook;
+
+        if(recent_audiobook_at(index, &audiobook)) {
+            const struct crazypod_audiobook *book;
+
+            if(index == state->selected)
+                crazypod_audiobook_probe(audiobook);
+            book = crazypod_audiobook_get(audiobook);
+            *title = book != NULL ? book->title : "";
+            return true;
+        }
+    }
+    /* Fall through: a text book in Recents. */
     case BOOKS_ROUTE_LIBRARY:
     case BOOKS_ROUTE_FAVORITES: {
         int resolved_index = book_index(state, index);
@@ -270,7 +380,12 @@ enum crazypod_menu_icon crazypod_books_feature_item_icon(
         return logical >= 0 &&
             logical < (int)(sizeof(root_icons) / sizeof(root_icons[0]))
                 ? root_icons[logical] : CRAZYPOD_MENU_ICON_NONE;
-    case BOOKS_ROUTE_RECENTS:
+    case BOOKS_ROUTE_RECENTS: {
+        int audiobook;
+
+        return recent_audiobook_at(index, &audiobook)
+            ? CRAZYPOD_MENU_ICON_PODCAST : CRAZYPOD_MENU_ICON_BOOK;
+    }
     case BOOKS_ROUTE_LIBRARY:
         return CRAZYPOD_MENU_ICON_BOOK;
     case BOOKS_ROUTE_FAVORITES:

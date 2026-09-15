@@ -838,6 +838,19 @@ int crazypod_books_recent_index(void)
     return result;
 }
 
+uint32_t crazypod_books_recent_sequence(int index)
+{
+    return index >= 0 && index < book_count ? recent_sequences[index] : 0;
+}
+
+uint32_t crazypod_books_take_recent_sequence(void)
+{
+    uint32_t sequence = persisted.next_sequence++;
+
+    (void)state_save();
+    return sequence;
+}
+
 int crazypod_books_recent_count(void)
 {
     int count = 0;
