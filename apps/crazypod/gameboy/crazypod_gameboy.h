@@ -24,4 +24,15 @@ void crazypod_gameboy_close(void);
  * the menu can say so instead of a save silently doing nothing. */
 bool crazypod_gameboy_saves_progress(void);
 
+/* What happened to this game's save file when it was opened. Reported in
+ * the game menu: a save that is silently not written and silently not
+ * read looks exactly like one that is, so say which it was. */
+enum crazypod_gameboy_save_state {
+    CRAZYPOD_GAMEBOY_SAVE_UNSUPPORTED = 0,
+    CRAZYPOD_GAMEBOY_SAVE_ABSENT,
+    CRAZYPOD_GAMEBOY_SAVE_LOADED,
+    CRAZYPOD_GAMEBOY_SAVE_WRITTEN,
+};
+enum crazypod_gameboy_save_state crazypod_gameboy_save_state(void);
+
 #endif

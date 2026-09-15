@@ -20,6 +20,7 @@ static uint8_t *save_ram;
 static struct crazypod_gameboy_cartridge cartridge;
 static char save_path[MAX_PATH];
 static bool opened;
+static enum crazypod_gameboy_save_state save_state;
 
 static uint32_t read_u32(const uint8_t *p)
 {
@@ -118,8 +119,10 @@ static enum crazypod_gameboy_result load_save(void)
     bool valid;
     int fd, i;
 
+    save_state = CRAZYPOD_GAMEBOY_SAVE_UNSUPPORTED;
     if(!cartridge_saves())
         return CRAZYPOD_GAMEBOY_OK;
+    save_state = CRAZYPOD_GAMEBOY_SAVE_ABSENT;
     /*
      * Having no save yet is the normal first run, not a failure -- but do
      * not ask errno which it was. Rockbox's open() speculatively allocates
@@ -150,6 +153,7 @@ static enum crazypod_gameboy_result load_save(void)
         clock[i] = read_u32(header + 16 + i * 4);
     if(!crazypod_gameboy_core_clock_import(clock))
         return CRAZYPOD_GAMEBOY_BAD_SAVE;
+    save_state = CRAZYPOD_GAMEBOY_SAVE_LOADED;
     saved_at = read_u32(header + 12);
     now = (uint32_t)mktime(get_time());
     if(cartridge.clock && saved_at > 0 && now > saved_at)
@@ -255,10 +259,17 @@ bool crazypod_gameboy_save(void)
         success = false;
     if(close(fd) < 0)
         success = false;
-    if(success && rename(temporary, save_path) == 0)
+    if(success && rename(temporary, save_path) == 0) {
+        save_state = CRAZYPOD_GAMEBOY_SAVE_WRITTEN;
         return true;
+    }
     remove(temporary);
     return false;
+}
+
+enum crazypod_gameboy_save_state crazypod_gameboy_save_state(void)
+{
+    return save_state;
 }
 
 bool crazypod_gameboy_saves_progress(void)

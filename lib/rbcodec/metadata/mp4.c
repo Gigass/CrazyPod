@@ -63,6 +63,7 @@
 #define MP4_meta FOURCC('m', 'e', 't', 'a')
 #define MP4_minf FOURCC('m', 'i', 'n', 'f')
 #define MP4_moov FOURCC('m', 'o', 'o', 'v')
+#define MP4_mvhd FOURCC('m', 'v', 'h', 'd')
 #define MP4_mp4a FOURCC('m', 'p', '4', 'a')
 #define MP4_soun FOURCC('s', 'o', 'u', 'n')
 #define MP4_vide FOURCC('v', 'i', 'd', 'e')
@@ -77,6 +78,9 @@
 /* Read the tag data from an MP4 file, storing up to buffer_size bytes in
  * buffer.
  */
+/* Duration from moov/mvhd, 0 when absent; see the MP4_mvhd case. */
+static unsigned long container_length;
+
 static unsigned long read_mp4_tag(int fd, unsigned int size_left, char* buffer,
                                   unsigned int buffer_left)
 {
@@ -641,6 +645,56 @@ static bool read_mp4_container(int fd, struct mp3entry* id3,
             size -= 4;
             /* Fall through */
 
+        case MP4_mvhd:
+        {
+            /*
+             * The movie header's own clock, kept as a cross-check on the
+             * duration computed from the sample count below.
+             *
+             * Those two disagree for HE-AAC on a target built without
+             * CODEC_AAC_SBR_DEC (PortalPlayer): implicit SBR signalling is
+             * suppressed there, so id3->frequency stays at the core rate
+             * while the sample count is already at the SBR output rate,
+             * and the track reports twice its real length. Audiobooks are
+             * usually encoded that way, so a listener near the end of one
+             * saw it as half finished.
+             */
+            uint32_t version = 0;
+            uint32_t timescale = 0;
+            uint64_t duration = 0;
+
+            read_uint32be(fd, &version);
+            version >>= 24;
+            if (version == 0 && size >= 20)
+            {
+                uint32_t value;
+
+                lseek(fd, 8, SEEK_CUR);
+                read_uint32be(fd, &timescale);
+                read_uint32be(fd, &value);
+                duration = value;
+                size -= 20;
+            }
+            else if (version == 1 && size >= 32)
+            {
+                uint32_t high;
+                uint32_t low;
+
+                lseek(fd, 16, SEEK_CUR);
+                read_uint32be(fd, &timescale);
+                read_uint32be(fd, &high);
+                read_uint32be(fd, &low);
+                duration = ((uint64_t) high << 32) | low;
+                size -= 32;
+            }
+            else
+                size -= 4;
+
+            if (timescale > 0 && duration > 0)
+                container_length = (duration * 1000) / timescale;
+            break;
+        }
+
         case MP4_moov:
         case MP4_udta:
         case MP4_mdia:
@@ -825,6 +879,7 @@ bool get_mp4_metadata(int fd, struct mp3entry* id3)
 {
     id3->codectype = AFMT_UNKNOWN;
     id3->filesize = 0;
+    container_length = 0;
     errno = 0;
 
     if (read_mp4_container(fd, id3, filesize(fd)) && (errno == 0)
@@ -838,6 +893,22 @@ bool get_mp4_metadata(int fd, struct mp3entry* id3)
         }
 
         id3->length = ((int64_t) id3->samples * 1000) / id3->frequency;
+
+        /* Prefer the container clock when the two disagree by more than
+         * rounding: it is not affected by the SBR rate question above. */
+        if (container_length > 0)
+        {
+            int64_t diff = (int64_t) id3->length - (int64_t) container_length;
+
+            if (diff < 0)
+                diff = -diff;
+            if (diff > (int64_t) container_length / 20)
+            {
+                logf("mp4 length %ld ms from samples, %ld ms from mvhd",
+                     (long) id3->length, (long) container_length);
+                id3->length = container_length;
+            }
+        }
 
         id3->vbr = true; /* ALAC is native VBR, AAC very unlikely is CBR. */
 

@@ -10,13 +10,19 @@
 #include <stdio.h>
 #include <string.h>
 
+/*
+ * The emulator's own IRAM markings do not all fit here: it is linked into
+ * the firmware alongside everything else, and taking its ICODE as well
+ * overflows the 48K region by 28K. Its hot DATA is small and is what the
+ * scanline renderers touch per pixel -- the scan buffers, the palette,
+ * the sprite priority map, the CPU register file -- so keep that in IRAM
+ * and leave the code in DRAM.
+ */
+#include "system.h"
+
 #undef ICODE_ATTR
-#undef IBSS_ATTR
-#undef IDATA_ATTR
 #undef ICONST_ATTR
 #define ICODE_ATTR
-#define IBSS_ATTR
-#define IDATA_ATTR
 #define ICONST_ATTR
 #ifndef BIT_N
 #define BIT_N(n) (1u << (n))

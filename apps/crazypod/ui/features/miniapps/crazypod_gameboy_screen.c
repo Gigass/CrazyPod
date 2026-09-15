@@ -145,6 +145,23 @@ static void draw_frame(void)
     lcd_update_rect(0, 12, LCD_WIDTH, 216);
 }
 
+/* Says what actually happened to this game's save, so a save that is
+ * silently skipped cannot be mistaken for one that worked. */
+static const char *save_state_text(void)
+{
+    switch(crazypod_gameboy_save_state()) {
+    case CRAZYPOD_GAMEBOY_SAVE_UNSUPPORTED:
+        return CP_TR("This cartridge cannot save");
+    case CRAZYPOD_GAMEBOY_SAVE_ABSENT:
+        return CP_TR("No save file yet");
+    case CRAZYPOD_GAMEBOY_SAVE_LOADED:
+        return CP_TR("Save loaded");
+    case CRAZYPOD_GAMEBOY_SAVE_WRITTEN:
+        return CP_TR("Save written");
+    }
+    return CP_TR("Hold Center for game menu");
+}
+
 static void draw_menu(int selected, bool save_failed)
 {
     static const char *const items[] = {
@@ -164,9 +181,7 @@ static void draw_menu(int selected, bool save_failed)
     }
     crazypod_lcd_draw_text(
         save_failed ? CP_TR("Game save failed") :
-        !crazypod_gameboy_saves_progress()
-            ? CP_TR("This cartridge cannot save") :
-        CP_TR("Hold Center for game menu"), 18, 190, 306, 0xffd477);
+        save_state_text(), 18, 190, 306, 0xffd477);
     crazypod_lcd_draw_text(
         CP_TR("Controls: /MiniApps/Games/README.txt"),
         18, 212, 306, 0xaaaaaa);

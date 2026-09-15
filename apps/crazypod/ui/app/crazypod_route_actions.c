@@ -840,7 +840,11 @@ void crazypod_route_actions_move(int direction, long now)
     if(crazypod_menu_preview_is_skeuomorphic_route(
            state->route))
         crazypod_preview_motion_set_direction(direction);
-    if(state->route == MUSIC_ROUTE_SEARCH) {
+    /* A search editor draws its own right-hand pane -- the query, the
+     * match count and the first hits -- so it must not also get a menu
+     * preview on top of it. */
+    if(state->route == MUSIC_ROUTE_SEARCH ||
+       state->route == NOTES_ROUTE_SEARCH) {
         host.refresh_menu_rows(state);
         return;
     }

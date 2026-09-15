@@ -313,6 +313,7 @@ void crazypod_menu_preview_render(
     crazypod_preview_motion_reset_root(preview.host.parent);
     if(crazypod_state_reduce_effects() &&
        state->route != MUSIC_ROUTE_SEARCH &&
+       state->route != NOTES_ROUTE_SEARCH &&
        state->route != CALENDAR_ROUTE_TITLE_EDITOR) {
         /*
          * A skeuomorphic preview is twenty to forty objects with bevels,
@@ -330,6 +331,8 @@ void crazypod_menu_preview_render(
         return;
     }
     hide_simple();
+    if(state->route == NOTES_ROUTE_SEARCH)
+        return;
     if(state->route == MUSIC_ROUTE_SEARCH) {
         render_editor(
             crazypod_music_search_query(), CP_TR("Any track"),

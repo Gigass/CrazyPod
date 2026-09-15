@@ -2690,6 +2690,11 @@
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:543"
       ]
     },
+    "No save file yet": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c:156"
+      ]
+    },
     "No Recent Books": {
       "locations": [
         "apps/crazypod/ui/presentation/crazypod_menu_screen.c:155"
@@ -3610,6 +3615,16 @@
     "Saved to Favorites": {
       "locations": [
         "apps/crazypod/ui/features/photos/crazypod_photo_screen.c:83"
+      ]
+    },
+    "Save loaded": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c:158"
+      ]
+    },
+    "Save written": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c:160"
       ]
     },
     "Saved to Photos": {
