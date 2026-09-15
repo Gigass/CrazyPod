@@ -29,6 +29,14 @@ void crazypod_perf_log_lv_end(void);
  */
 void crazypod_perf_log_step_begin(void);
 void crazypod_perf_log_present_done(void);
+/* Where the time before LVGL runs goes. */
+enum {
+    CRAZYPOD_PERF_PHASE_SERVICES = 0,
+    CRAZYPOD_PERF_PHASE_SCHEDULER,
+    CRAZYPOD_PERF_PHASE_COUNT,
+};
+void crazypod_perf_log_phase_begin(void);
+void crazypod_perf_log_phase_end(int phase);
 void crazypod_perf_log_flush(unsigned pixels);
 /* Called by the LVGL software renderer around each draw task. */
 void crazypod_perf_log_draw_begin(void);
@@ -48,6 +56,10 @@ static inline void crazypod_perf_log_lv_begin(void) {}
 static inline void crazypod_perf_log_lv_end(void) {}
 static inline void crazypod_perf_log_step_begin(void) {}
 static inline void crazypod_perf_log_present_done(void) {}
+#define CRAZYPOD_PERF_PHASE_SERVICES 0
+#define CRAZYPOD_PERF_PHASE_SCHEDULER 1
+static inline void crazypod_perf_log_phase_begin(void) {}
+static inline void crazypod_perf_log_phase_end(int phase) { (void)phase; }
 static inline void crazypod_perf_log_flush(unsigned pixels)
 {
     (void)pixels;

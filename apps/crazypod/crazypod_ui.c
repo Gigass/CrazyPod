@@ -1008,12 +1008,16 @@ void crazypod_ui_run(void)
         crazypod_system_prompts_tick();
         crazypod_alpha_jump_hud_tick(current_tick,
             !locked && crazypod_shell_product_active());
+        crazypod_perf_log_phase_begin();
         crazypod_runtime_services_tick(
             current_tick,
             crazypod_frameclock_due(&lvgl_clock, current_tick),
             locked);
+        crazypod_perf_log_phase_end(CRAZYPOD_PERF_PHASE_SERVICES);
         if(!locked) {
+            crazypod_perf_log_phase_begin();
             process_deferred_route_render();
+            crazypod_perf_log_phase_end(CRAZYPOD_PERF_PHASE_SCHEDULER);
             crazypod_playback_warm_album_flow(
                 current_tick, false);
             crazypod_playback_process_artwork();
@@ -1034,7 +1038,14 @@ void crazypod_ui_run(void)
         if(!locked) {
             crazypod_playback_tick_wave(current_tick);
         }
-        if(crazypod_frameclock_due(&lvgl_clock, current_tick)) {
+        /*
+         * A step that arrives just after a frame tick would otherwise wait
+         * out the rest of the period before LVGL looks at it. Input is
+         * rare compared to the frame rate and the wheel driver already
+         * folds steps together, so handling one is reason enough to draw.
+         */
+        if(drained > 0 ||
+           crazypod_frameclock_due(&lvgl_clock, current_tick)) {
             crazypod_perf_log_lv_begin();
             lv_timer_handler();
             crazypod_perf_log_lv_end();

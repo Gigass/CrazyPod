@@ -74,6 +74,8 @@ static struct {
     unsigned step_present_total;
     unsigned step_max_us;
     unsigned step_total_us;
+    unsigned phase_mark_us;
+    unsigned phase_total_us[CRAZYPOD_PERF_PHASE_COUNT];
     unsigned draw_start_us;
     unsigned draw_depth;
     /* Window accumulators, reset after every line. */
@@ -248,6 +250,17 @@ void crazypod_perf_log_draw_end(int type)
     }
 }
 
+void crazypod_perf_log_phase_begin(void)
+{
+    perf.phase_mark_us = USEC_TIMER;
+}
+
+void crazypod_perf_log_phase_end(int phase)
+{
+    if(phase >= 0 && phase < CRAZYPOD_PERF_PHASE_COUNT)
+        perf.phase_total_us[phase] += USEC_TIMER - perf.phase_mark_us;
+}
+
 void crazypod_perf_log_step_begin(void)
 {
     /* A step that never reached the panel would otherwise block every
@@ -331,6 +344,7 @@ static void reset_window(void)
     perf.step_present_total = 0;
     perf.step_max_us = 0;
     perf.step_total_us = 0;
+    memset(perf.phase_total_us, 0, sizeof(perf.phase_total_us));
     perf.samples = 0;
     perf.lowdata_samples = 0;
     perf.pcm_free_min = (size_t)-1;
@@ -477,6 +491,7 @@ static void format_line(long now)
                "wr=prev_write_us seek=last_chapter_seek_ms objs=screen_objects "
                "step=count/avg_ms/gate_ms/render_ms/present_ms/worst_ms+dropped "
                "art=external/embedded/none/decoded/failed/unsupported "
+               "pre=services_ms/scheduler_ms "
                "dt=type:count/ms,... "
                "inv=count,x1.y1-x2.y2:count@class/caller,... "
                "lay=count,x1.y1-x2.y2:count@class/type "
@@ -534,6 +549,10 @@ static void format_line(long now)
                  perf.step_dropped);
     else
         snprintf(text, sizeof(text), " step=0+%u", perf.step_dropped);
+    append(text);
+    snprintf(text, sizeof(text), " pre=%u/%u",
+             perf.phase_total_us[CRAZYPOD_PERF_PHASE_SERVICES] / 1000,
+             perf.phase_total_us[CRAZYPOD_PERF_PHASE_SCHEDULER] / 1000);
     append(text);
     {
         struct crazypod_artwork_diagnostics art;
