@@ -13,6 +13,7 @@
 #include "crazypod_audiobook_chapters.h"
 #include "crazypod_audiobooks.h"
 #include "crazypod_checksum.h"
+#include "crazypod_music.h"
 #include "crazypod_playlist.h"
 
 #define AUDIOBOOKS_DIRECTORY "/Audiobooks"
@@ -61,7 +62,11 @@ static struct {
     long last_tick;
     long last_save;
     uint32_t last_saved_ms;
-} live = { .index = -1 };
+    int published_chapter;  /* chapter shown as the album line */
+    long seek_started;      /* tick of the pending chapter seek, or 0 */
+    uint32_t seek_target_ms;
+    uint32_t last_seek_ms;
+} live = { .index = -1, .published_chapter = -2 };
 
 static struct mp3entry probe_entry;
 
@@ -517,6 +522,49 @@ static int index_of_path(const char *path)
     return -1;
 }
 
+int crazypod_audiobooks_current_index(void)
+{
+    const struct mp3entry *entry = current_entry();
+
+    return entry != NULL ? index_of_path(entry->path) : -1;
+}
+
+/* Registers the book with the music layer so every player surface shows
+ * its title and author, with the current chapter on the album line. */
+static void publish_transient(int index, uint32_t position_ms)
+{
+    const struct crazypod_audiobook *book = &books[index];
+    const struct crazypod_audiobook_chapter *chapter = NULL;
+    int chapter_index = -1;
+    char album[80];
+
+    if(crazypod_audiobook_chapter_count(index) > 0) {
+        chapter_index = crazypod_audiobook_chapter_at(index, position_ms);
+        chapter = crazypod_audiobook_chapter_get(index, chapter_index);
+    }
+    if(live.published_chapter == chapter_index && live.index == index)
+        return;
+    live.published_chapter = chapter_index;
+    if(chapter != NULL)
+        snprintf(album, sizeof(album), "%d/%d  %s",
+                 chapter_index + 1, chapter_count, chapter->title);
+    else
+        album[0] = '\0';
+    crazypod_music_set_transient_track(
+        book->path, book->title, book->author, album);
+}
+
+static void begin_seek_measure(uint32_t target_ms)
+{
+    live.seek_started = current_tick != 0 ? current_tick : 1;
+    live.seek_target_ms = target_ms;
+}
+
+uint32_t crazypod_audiobooks_last_seek_ms(void)
+{
+    return live.last_seek_ms;
+}
+
 bool crazypod_audiobook_is_current(int index)
 {
     const struct mp3entry *entry = current_entry();
@@ -569,6 +617,9 @@ bool crazypod_audiobook_play(int index)
     live.was_playing = true;
     live.last_saved_ms = start_ms;
     live.last_save = current_tick;
+    live.published_chapter = -2;
+    publish_transient(index, start_ms);
+    begin_seek_measure(start_ms);
     remember_position(index, start_ms, true);
     return true;
 }
@@ -597,6 +648,8 @@ bool crazypod_audiobook_seek_chapter(int index, int chapter)
         return false;
     audio_ff_rewind((long)target->start_ms);
     books[index].position_ms = target->start_ms;
+    publish_transient(index, target->start_ms);
+    begin_seek_measure(target->start_ms);
     return true;
 }
 
@@ -638,6 +691,7 @@ bool crazypod_audiobook_skip_chapter(int index, int direction)
     }
     audio_ff_rewind((long)position);
     books[index].position_ms = position;
+    begin_seek_measure(position);
     return true;
 }
 
@@ -668,6 +722,8 @@ void crazypod_audiobooks_tick(long now)
             /* Stopped: the last saved position stands. */
             live.index = -1;
             live.was_playing = false;
+            live.published_chapter = -2;
+            crazypod_music_clear_transient_track();
         }
         return;
     }
@@ -675,12 +731,27 @@ void crazypod_audiobooks_tick(long now)
         live.index = index;
         live.was_playing = false;
         live.last_save = now;
+        live.published_chapter = -2;
     }
     playing = (status & AUDIO_STATUS_PAUSE) == 0;
     position = (uint32_t)entry->elapsed;
     if(entry->length > 0)
         books[index].length_ms = (uint32_t)entry->length;
     books[index].position_ms = position;
+    publish_transient(index, position);
+    if(live.seek_started != 0) {
+        uint32_t distance = position > live.seek_target_ms
+            ? position - live.seek_target_ms
+            : live.seek_target_ms - position;
+
+        if(distance < 3000u) {
+            live.last_seek_ms = (uint32_t)
+                ((now - live.seek_started) * 1000 / HZ);
+            live.seek_started = 0;
+        }
+        else if(now - live.seek_started > 30 * HZ)
+            live.seek_started = 0;
+    }
     if(live.was_playing && !playing) {
         /* Paused by the user: this is the moment they expect saved. */
         remember_position(index, position, true);

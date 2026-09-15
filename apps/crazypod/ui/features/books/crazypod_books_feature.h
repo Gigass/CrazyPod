@@ -14,6 +14,7 @@ struct crazypod_books_activation_host {
     void (*pop)(void);
     void (*show_font_size)(int selected);
     void (*show_theme)(int selected);
+    void (*open_now_playing)(void);
 };
 
 struct crazypod_books_runtime_host {

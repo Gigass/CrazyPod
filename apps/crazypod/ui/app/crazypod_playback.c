@@ -15,6 +15,7 @@
 #include "settings.h"
 
 #include "../../crazypod_artwork.h"
+#include "../../crazypod_audiobooks.h"
 #include "../../crazypod_coverflow.h"
 #include "../../crazypod_music.h"
 #include "../../crazypod_playlist.h"
@@ -511,6 +512,12 @@ static bool start_adjacent_from_restored_queue(int direction)
 
 void crazypod_playback_next(void)
 {
+    int audiobook = crazypod_audiobooks_current_index();
+
+    if(audiobook >= 0) {
+        (void)crazypod_audiobook_skip_chapter(audiobook, 1);
+        return;
+    }
     if(crazypod_queue_count() <= 0 ||
        start_adjacent_from_restored_queue(1))
         return;
@@ -523,7 +530,15 @@ static void note_lock_seek(uint32_t elapsed_ms);
 void crazypod_playback_previous_or_restart(void)
 {
     const struct mp3entry *id3;
+    int audiobook = crazypod_audiobooks_current_index();
 
+    if(audiobook >= 0) {
+        /* Skipping within the book: back to the chapter start, or the
+         * previous chapter when already near the start. */
+        (void)crazypod_audiobook_skip_chapter(audiobook, -1);
+        note_lock_seek(crazypod_audiobook_position_ms(audiobook));
+        return;
+    }
     if(crazypod_queue_count() <= 0 ||
        start_adjacent_from_restored_queue(-1))
         return;
@@ -706,6 +721,11 @@ void crazypod_playback_next_async(void)
     char path[MAX_PATH];
     int index;
 
+    if(crazypod_audiobooks_current_index() >= 0) {
+        queue_post(&playback_command_queue,
+                   CRAZYPOD_PLAYBACK_COMMAND_NEXT, 0);
+        return;
+    }
     mutex_lock(&lock_playback_mutex);
     index = lock_playback.requested_queue_index >= 0
         ? lock_playback.requested_queue_index
@@ -730,6 +750,11 @@ void crazypod_playback_previous_or_restart_async(void)
     int current_index;
     int requested_index;
 
+    if(crazypod_audiobooks_current_index() >= 0) {
+        queue_post(&playback_command_queue,
+                   CRAZYPOD_PLAYBACK_COMMAND_PREVIOUS, 0);
+        return;
+    }
     mutex_lock(&lock_playback_mutex);
     current_index = lock_playback.requested_queue_index >= 0
         ? lock_playback.requested_queue_index

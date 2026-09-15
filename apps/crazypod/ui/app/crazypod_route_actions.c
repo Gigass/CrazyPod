@@ -536,6 +536,7 @@ static bool activate_domain(
             .pop = action_pop,
             .show_font_size = show_book_font_size,
             .show_theme = show_book_theme,
+            .open_now_playing = crazypod_now_playing_request_open,
         };
 
         return crazypod_books_feature_activate(

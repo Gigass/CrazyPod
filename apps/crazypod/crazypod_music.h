@@ -124,6 +124,19 @@ void crazypod_music_set_scan_suspended(bool suspended);
 int crazypod_music_track_count(void);
 bool crazypod_music_copy_track(int index, struct crazypod_track *track);
 int crazypod_music_find_track(const char *path);
+
+/*
+ * A file the queue plays that is not in the library (an audiobook, a file
+ * played from elsewhere). crazypod_music_find_track() returns this index
+ * for its path and crazypod_music_copy_track() fills a track for it from
+ * the registered text and the codec's own tags, so Now Playing, the lock
+ * screen, the home capsule and artwork all treat it like any other track.
+ */
+#define CRAZYPOD_MUSIC_TRANSIENT_INDEX 0x7ffffff0
+void crazypod_music_set_transient_track(
+    const char *path, const char *title, const char *artist,
+    const char *album);
+void crazypod_music_clear_transient_track(void);
 int crazypod_music_artist_count(void);
 bool crazypod_music_copy_artist(int index, char *artist, size_t size);
 int crazypod_music_artist_track_count(int artist_index);

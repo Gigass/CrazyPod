@@ -16,6 +16,7 @@
 
 #include "lvgl.h"
 
+#include "crazypod_audiobooks.h"
 #include "crazypod_frameclock.h"
 #include "crazypod_music.h"
 
@@ -395,7 +396,7 @@ static void format_line(long now)
                "lv=calls/max_us/total_us rend=renders/max_us/total_us "
                "fl=flushes/pixels pres=presents/full/misses/timeouts "
                "pmax=max_present_us home=renders/timeouts "
-               "wr=prev_write_us dt=type:count/ms,... "
+               "wr=prev_write_us seek=last_chapter_seek_ms dt=type:count/ms,... "
                "inv=count,x1.y1-x2.y2:count@class/caller,... "
                "lay=count,x1.y1-x2.y2:count@class/type "
                "(t1 simple, t2 transform, t3 clip_corner)\n");
@@ -435,6 +436,9 @@ static void format_line(long now)
         (unsigned long)(present.home_render_timeouts -
             perf.present_base.home_render_timeouts),
         perf.write_us);
+    append(text);
+    snprintf(text, sizeof(text), " seek=%lu",
+             (unsigned long)crazypod_audiobooks_last_seek_ms());
     append(text);
     append_draw_stats();
     append_invalidations();

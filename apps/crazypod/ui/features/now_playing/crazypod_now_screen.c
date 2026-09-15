@@ -574,7 +574,11 @@ static void format_time_ms(
 {
     unsigned seconds = milliseconds / 1000;
 
-    snprintf(buffer, capacity, "%u:%02u", seconds / 60, seconds % 60);
+    if(seconds >= 3600)
+        snprintf(buffer, capacity, "%u:%02u:%02u",
+                 seconds / 3600, seconds / 60 % 60, seconds % 60);
+    else
+        snprintf(buffer, capacity, "%u:%02u", seconds / 60, seconds % 60);
 }
 
 void crazypod_now_screen_update_playback(

@@ -68,8 +68,7 @@ static int active_route_wait_ticks(long now)
         return CRAZYPOD_STATIC_WAIT_TICKS;
     state = crazypod_ui_routes_current();
     route = state->route;
-    if((route == BOOKS_ROUTE_READER ||
-        route == BOOKS_ROUTE_AUDIOBOOK_PLAYER) &&
+    if(route == BOOKS_ROUTE_READER &&
        !crazypod_choice_coordinator_visible())
         return crazypod_books_feature_reader_wait_ticks(
             state, now, CRAZYPOD_STATIC_WAIT_TICKS);

@@ -457,11 +457,6 @@
         "apps/crazypod/ui/features/music/crazypod_music_feature.c:132"
       ]
     },
-    "AUDIOBOOK": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_feature.c:137"
-      ]
-    },
     "AUDIOBOOKS": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:132"
@@ -1966,36 +1961,6 @@
     "Hold Center to Erase": {
       "locations": [
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:205"
-      ]
-    },
-    "Left and Right skip 30 seconds": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_screen.c:272"
-      ]
-    },
-    "Left and Right skip chapters": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_screen.c:271"
-      ]
-    },
-    "No chapters": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_feature.c:197"
-      ]
-    },
-    "Paused": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_screen.c:264"
-      ]
-    },
-    "Player": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_feature.c:191"
-      ]
-    },
-    "Playing": {
-      "locations": [
-        "apps/crazypod/ui/features/books/crazypod_books_screen.c:264"
       ]
     },
     "Remove Bookmark": {

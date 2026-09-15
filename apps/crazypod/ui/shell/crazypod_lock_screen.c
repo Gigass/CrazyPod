@@ -310,9 +310,15 @@ static void format_media_time(
 {
     uint32_t seconds = milliseconds / 1000;
 
-    snprintf(buffer, size, "%lu:%02lu",
-             (unsigned long)(seconds / 60),
-             (unsigned long)(seconds % 60));
+    if(seconds >= 3600)
+        snprintf(buffer, size, "%lu:%02lu:%02lu",
+                 (unsigned long)(seconds / 3600),
+                 (unsigned long)(seconds / 60 % 60),
+                 (unsigned long)(seconds % 60));
+    else
+        snprintf(buffer, size, "%lu:%02lu",
+                 (unsigned long)(seconds / 60),
+                 (unsigned long)(seconds % 60));
 }
 
 static void layout_lock_row(void)

@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include "audio.h"
+
 #include "crazypod_l10n.h"
 
 #ifdef HAVE_CRAZYPOD_UI
@@ -1642,12 +1644,100 @@ int crazypod_music_track_count(void)
     return count;
 }
 
+static struct {
+    char path[MAX_PATH];
+    char title[96];
+    char artist[72];
+    char album[72];
+    bool valid;
+} transient;
+static struct mutex transient_mutex;
+static bool transient_mutex_ready;
+
+static void transient_lock(void)
+{
+    if(!transient_mutex_ready) {
+        mutex_init(&transient_mutex);
+        transient_mutex_ready = true;
+    }
+    mutex_lock(&transient_mutex);
+}
+
+void crazypod_music_set_transient_track(
+    const char *path, const char *title, const char *artist,
+    const char *album)
+{
+    if(path == NULL || path[0] == '\0') {
+        crazypod_music_clear_transient_track();
+        return;
+    }
+    transient_lock();
+    copy_text(transient.path, sizeof(transient.path), path, "");
+    copy_text(transient.title, sizeof(transient.title), title, "");
+    copy_text(transient.artist, sizeof(transient.artist), artist, "");
+    copy_text(transient.album, sizeof(transient.album), album, "");
+    transient.valid = true;
+    mutex_unlock(&transient_mutex);
+}
+
+void crazypod_music_clear_transient_track(void)
+{
+    transient_lock();
+    transient.valid = false;
+    transient.path[0] = '\0';
+    mutex_unlock(&transient_mutex);
+}
+
+static bool copy_transient_track(struct crazypod_track *track)
+{
+    const struct mp3entry *id3;
+    bool copied = false;
+
+    transient_lock();
+    if(transient.valid) {
+        memset(track, 0, sizeof(*track));
+        copy_text(track->path, sizeof(track->path), transient.path, "");
+        if(transient.title[0] != '\0')
+            copy_text(track->title, sizeof(track->title),
+                      transient.title, "");
+        else
+            title_from_path(track->title, sizeof(track->title),
+                            transient.path);
+        copy_text(track->artist, sizeof(track->artist),
+                  transient.artist, CP_TR("Unknown Artist"));
+        copy_text(track->album, sizeof(track->album),
+                  transient.album, "");
+        copy_text(track->album_artist, sizeof(track->album_artist),
+                  track->artist, "");
+        /* Length and embedded artwork come from the codec's tags; they
+         * are only known while this file is the one playing. */
+        id3 = (audio_status() & AUDIO_STATUS_PLAY) != 0
+            ? audio_current_track() : NULL;
+        if(id3 != NULL && strcmp(id3->path, transient.path) == 0) {
+            track->duration_ms = id3->length > 0
+                ? (uint32_t)id3->length : 0;
+            track->format = id3->codectype < 256 ? id3->codectype : 0;
+            if(id3->has_embedded_albumart) {
+                track->artwork_embedded = true;
+                track->artwork_offset = id3->albumart.pos;
+                track->artwork_size = id3->albumart.size;
+                track->artwork_type = id3->albumart.type;
+            }
+        }
+        copied = true;
+    }
+    mutex_unlock(&transient_mutex);
+    return copied;
+}
+
 bool crazypod_music_copy_track(int index, struct crazypod_track *track)
 {
     bool copied = false;
 
     if(track == NULL)
         return false;
+    if(index == CRAZYPOD_MUSIC_TRANSIENT_INDEX)
+        return copy_transient_track(track);
     mutex_lock(&catalog_mutex);
     if(catalog_ready && index >= 0 && index < track_count) {
         *track = tracks[index];
@@ -1665,6 +1755,12 @@ int crazypod_music_find_track(const char *path)
     index = catalog_ready && path != NULL
         ? find_track_by_path(path) : -1;
     mutex_unlock(&catalog_mutex);
+    if(index < 0 && path != NULL) {
+        transient_lock();
+        if(transient.valid && strcmp(transient.path, path) == 0)
+            index = CRAZYPOD_MUSIC_TRANSIENT_INDEX;
+        mutex_unlock(&transient_mutex);
+    }
     return index;
 }
 

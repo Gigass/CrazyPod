@@ -93,12 +93,13 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
   favorites, chapters, font sizes, and paper themes. TXT and Markdown content
   automatically distinguishes strict UTF-8 from GBK/GB2312 (CP936).
 - **Audiobooks:** Books → Audiobooks lists M4B, M4A and MP3 files from
-  `/Audiobooks` (and M4B files under `/Books`), plays them through the normal
-  audio engine, reads Nero `chpl` chapter tables, skips chapters with Left and
-  Right (30 seconds when a file has no chapters), and remembers the listening
-  position per book: it is saved when you pause, when you switch books,
-  periodically while the disk is awake, and restored the next time the book
-  is opened.
+  `/Audiobooks` (and M4B files under `/Books`). Selecting one plays it in the
+  ordinary Now Playing screen, with the current chapter on the album line;
+  while an audiobook plays, Left and Right on Now Playing and on the lock
+  screen skip chapters (30 seconds when a file has no chapters). Chapters come
+  from Nero `chpl` tables. The listening position is remembered per book:
+  saved when you pause, when you switch books, periodically while the disk is
+  awake, and restored the next time the book is opened.
 - **Organizer:** local calendar events, read-only ICS import, and VCF contacts.
 - **Mini Apps:** React-style TypeScript/TSX is AOT-compiled to C and then to
   native `app.arm`; Native ABI 1 drives host-owned LVGL. The device runs no

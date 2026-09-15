@@ -52,6 +52,8 @@ int crazypod_audiobook_chapter_at(int index, uint32_t position_ms);
 
 /* Starts the book at its saved position, replacing the music queue. */
 bool crazypod_audiobook_play(int index);
+/* Index of the book the queue is playing, or -1. */
+int crazypod_audiobooks_current_index(void);
 bool crazypod_audiobook_is_current(int index);
 bool crazypod_audiobook_is_playing(int index);
 uint32_t crazypod_audiobook_position_ms(int index);
@@ -62,5 +64,7 @@ bool crazypod_audiobook_skip_chapter(int index, int direction);
 /* Call regularly from the UI loop; saves the position when playback pauses,
  * stops or moves to another file, and periodically while the disk is awake. */
 void crazypod_audiobooks_tick(long now);
+/* Wall time the last chapter seek took to land, for the perf log. */
+uint32_t crazypod_audiobooks_last_seek_ms(void);
 
 #endif

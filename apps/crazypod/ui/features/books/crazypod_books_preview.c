@@ -442,8 +442,7 @@ static void render_audiobook_preview(
     lv_obj_t *parent, const struct route_state *state,
     const lv_font_t *metadata_font)
 {
-    int index = state->route == BOOKS_ROUTE_AUDIOBOOKS
-        ? state->selected : state->group;
+    int index = state->selected;
     const struct crazypod_audiobook *book;
     const char *detail = "";
     char detail_text[64];
@@ -487,13 +486,7 @@ static void render_audiobook_preview(
 
     chapter_count = book != NULL
         ? crazypod_audiobook_chapter_count(index) : 0;
-    if(state->route == BOOKS_ROUTE_AUDIOBOOK_CHAPTERS) {
-        snprintf(detail_text, sizeof(detail_text),
-                 CP_FMT("Chapter %d of %d"),
-                 state->selected + 1, chapter_count);
-        detail = chapter_count > 0 ? detail_text : CP_TR("No chapters");
-    }
-    else if(book == NULL)
+    if(book == NULL)
         detail = CP_TR("Add M4B or MP3 files to /Audiobooks.");
     else if(book->length_ms > 0) {
         snprintf(detail_text, sizeof(detail_text),
@@ -526,9 +519,7 @@ void crazypod_books_preview_render(
     lv_obj_t *text_panel;
     char detail_text[64];
 
-    if(state->route == BOOKS_ROUTE_AUDIOBOOKS ||
-       state->route == BOOKS_ROUTE_AUDIOBOOK_PLAYER ||
-       state->route == BOOKS_ROUTE_AUDIOBOOK_CHAPTERS) {
+    if(state->route == BOOKS_ROUTE_AUDIOBOOKS) {
         render_audiobook_preview(parent, state, metadata_font);
         return;
     }

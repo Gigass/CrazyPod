@@ -98,21 +98,6 @@ struct crazypod_books_action crazypod_books_actions_activate(
         result.book_index = state->selected;
         return result;
     }
-    case BOOKS_ROUTE_AUDIOBOOK_PLAYER:
-        return crazypod_audiobook_chapter_count(state->group) > 0
-            ? push(BOOKS_ROUTE_AUDIOBOOK_CHAPTERS, state->group)
-            : action(CRAZYPOD_BOOKS_ACTION_NONE);
-    case BOOKS_ROUTE_AUDIOBOOK_CHAPTERS: {
-        struct crazypod_books_action result =
-            action(CRAZYPOD_BOOKS_ACTION_AUDIOBOOK_CHAPTER);
-
-        if(crazypod_audiobook_chapter_get(
-               state->group, state->selected) == NULL)
-            return action(CRAZYPOD_BOOKS_ACTION_NONE);
-        result.book_index = state->group;
-        result.offset = (uint32_t)state->selected;
-        return result;
-    }
     case BOOKS_ROUTE_RECENTS:
     case BOOKS_ROUTE_LIBRARY:
     case BOOKS_ROUTE_FAVORITES: {
