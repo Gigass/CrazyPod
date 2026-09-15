@@ -27,6 +27,10 @@ struct crazypod_stopwatch_screen_model {
 
 /* Drops the cached dial before the pane is cleaned. */
 void crazypod_clock_screen_forget(void);
+/* Whether the clock face is built and can be ticked in place, so the
+ * caller can wake often for a hand sweep without that meaning a rebuild
+ * of the whole dial at the same rate. */
+bool crazypod_clock_screen_dial_ready(void);
 /* Rotate the hands and retitle the numbers on the dial already up.
  * False when there is none, or when something that is not the time has
  * changed, and the caller must render in full. */

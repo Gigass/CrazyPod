@@ -31,6 +31,16 @@ static struct {
     lv_obj_t *digital;
     lv_obj_t *date;
     lv_obj_t *running;
+    /* What each of those is currently showing. A rotation or a label set
+     * invalidates whether or not the value moved, and at ten ticks a
+     * second most of them have not: the hour hand moves twice a minute
+     * and the date once a day. */
+    int hour_angle;
+    int minute_angle;
+    int second_angle;
+    int shown_time;
+    int shown_date;
+    bool shown_running;
     int lap_count;
     bool stopwatch;
     int style;
@@ -49,14 +59,21 @@ static bool face_usable(bool stopwatch, int style)
            face.second_hand != NULL && face.digital != NULL;
 }
 
-static void set_hand(lv_obj_t *hand, int angle_tenths)
+bool crazypod_clock_screen_dial_ready(void)
 {
-    if(hand != NULL)
-        lv_obj_set_style_transform_rotation(hand, angle_tenths, 0);
+    return face_usable(false, 0);
+}
+
+static void set_hand(lv_obj_t *hand, int *shown, int angle_tenths)
+{
+    if(hand == NULL || *shown == angle_tenths)
+        return;
+    *shown = angle_tenths;
+    lv_obj_set_style_transform_rotation(hand, angle_tenths, 0);
 }
 
 static lv_obj_t *make_clock_hand(
-    lv_obj_t *dial, int center, int length, int width,
+    lv_obj_t *dial, int *shown, int center, int length, int width,
     int angle_tenths, uint32_t color)
 {
     lv_obj_t *hand = crazypod_ui_widget_box(
@@ -66,6 +83,7 @@ static lv_obj_t *make_clock_hand(
     lv_obj_set_style_transform_pivot_x(hand, width / 2, 0);
     lv_obj_set_style_transform_pivot_y(hand, length, 0);
     lv_obj_set_style_transform_rotation(hand, angle_tenths, 0);
+    *shown = angle_tenths;
     return hand;
 }
 
@@ -96,13 +114,13 @@ static lv_obj_t *make_analog_clock(
         lv_obj_set_style_transform_rotation(mark, tick * 300, 0);
     }
     face.hour_hand = make_clock_hand(
-        dial, center, size * 25 / 100, 4,
+        dial, &face.hour_angle, center, size * 25 / 100, 4,
         ((hour % 12) * 30 + minute / 2) * 10, ink_color);
     face.minute_hand = make_clock_hand(
-        dial, center, size * 36 / 100, 3,
+        dial, &face.minute_angle, center, size * 36 / 100, 3,
         minute * 60 + second_tenths / 10, ink_color);
     face.second_hand = make_clock_hand(
-        dial, center, size * 42 / 100, 1,
+        dial, &face.second_angle, center, size * 42 / 100, 1,
         second_tenths * 6, ink_color);
     crazypod_ui_widget_box(
         dial, center - 4, center - 4, 8, 8,
@@ -172,6 +190,8 @@ void crazypod_clock_screen_render(
     face.panel = panel;
     face.stopwatch = false;
     face.style = 0;
+    face.shown_time = (time->hour * 60 + time->minute) * 60 + time->second;
+    face.shown_date = time->month_day;
     lv_obj_null_on_delete(&face.panel);
     lv_obj_null_on_delete(&face.hour_hand);
     lv_obj_null_on_delete(&face.minute_hand);
@@ -192,21 +212,30 @@ bool crazypod_clock_screen_refresh(
         CP_TR("July"), CP_TR("August"), CP_TR("September"), CP_TR("October"), CP_TR("November"), CP_TR("December")
     };
     char text[64];
+    int clock_time;
 
     if(!face_usable(false, 0))
         return false;
-    set_hand(face.hour_hand,
+    set_hand(face.hour_hand, &face.hour_angle,
              ((time->hour % 12) * 30 + time->minute / 2) * 10);
-    set_hand(face.minute_hand,
+    set_hand(face.minute_hand, &face.minute_angle,
              time->minute * 60 + time->second_tenths / 10);
-    set_hand(face.second_hand, time->second_tenths * 6);
-    snprintf(text, sizeof(text), CP_FMT("%02d:%02d:%02d"),
-             time->hour, time->minute, time->second);
-    CP_LV_LABEL_SET_TEXT(face.digital, text);
-    snprintf(text, sizeof(text), "%s\n%s %d",
-             weekdays[time->weekday], months[time->month],
-             time->month_day);
-    CP_LV_LABEL_SET_TEXT(face.date, text);
+    set_hand(face.second_hand, &face.second_angle,
+             time->second_tenths * 6);
+    clock_time = (time->hour * 60 + time->minute) * 60 + time->second;
+    if(clock_time != face.shown_time) {
+        face.shown_time = clock_time;
+        snprintf(text, sizeof(text), CP_FMT("%02d:%02d:%02d"),
+                 time->hour, time->minute, time->second);
+        CP_LV_LABEL_SET_TEXT(face.digital, text);
+    }
+    if(time->month_day != face.shown_date) {
+        face.shown_date = time->month_day;
+        snprintf(text, sizeof(text), "%s\n%s %d",
+                 weekdays[time->weekday], months[time->month],
+                 time->month_day);
+        CP_LV_LABEL_SET_TEXT(face.date, text);
+    }
     return true;
 }
 
@@ -330,6 +359,8 @@ void crazypod_stopwatch_screen_render(
     face.stopwatch = true;
     face.style = style;
     face.lap_count = model->lap_count;
+    face.shown_time = (int)total_hundredths;
+    face.shown_running = model->running;
     lv_obj_null_on_delete(&face.panel);
     lv_obj_null_on_delete(&face.hour_hand);
     lv_obj_null_on_delete(&face.minute_hand);
@@ -360,19 +391,25 @@ bool crazypod_stopwatch_screen_refresh(
     seconds = total_hundredths / 100 % 60;
     hundredths = total_hundredths % 100;
 
-    set_hand(face.hour_hand,
+    set_hand(face.hour_hand, &face.hour_angle,
              (((int)(minutes / 60) % 12) * 30 +
               ((int)minutes % 60) / 2) * 10);
-    set_hand(face.minute_hand,
+    set_hand(face.minute_hand, &face.minute_angle,
              ((int)minutes % 60) * 60 + (int)seconds / 6);
-    set_hand(face.second_hand,
+    set_hand(face.second_hand, &face.second_angle,
              ((int)seconds * 10 + (int)hundredths / 10) * 6);
-    snprintf(text, sizeof(text), "%02u:%02u.%02u",
-             minutes, seconds, hundredths);
-    CP_LV_LABEL_SET_TEXT(face.digital, text);
-    CP_LV_LABEL_SET_TEXT(
-        face.running,
-        model->running ? CP_TR("RUNNING") : CP_TR("PAUSED"));
+    if((int)total_hundredths != face.shown_time) {
+        face.shown_time = (int)total_hundredths;
+        snprintf(text, sizeof(text), "%02u:%02u.%02u",
+                 minutes, seconds, hundredths);
+        CP_LV_LABEL_SET_TEXT(face.digital, text);
+    }
+    if(model->running != face.shown_running) {
+        face.shown_running = model->running;
+        CP_LV_LABEL_SET_TEXT(
+            face.running,
+            model->running ? CP_TR("RUNNING") : CP_TR("PAUSED"));
+    }
     return true;
 }
 

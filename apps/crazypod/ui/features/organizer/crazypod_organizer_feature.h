@@ -65,6 +65,11 @@ bool crazypod_organizer_feature_handle_input(
     const struct crazypod_feature_input_context *context);
 /* Drops any cached screen state before the pane is cleaned. */
 void crazypod_organizer_feature_reset_view(void);
+/* Ticks between clock-face updates for this route, or 0 when the route
+ * is not one of the dials. Ten a second once the face is built and only
+ * the hands move; a quarter of that while a rebuild is still needed. */
+int crazypod_organizer_feature_dial_wait_ticks(
+    enum crazypod_route route, long ticks_per_second);
 bool crazypod_organizer_feature_stopwatch_running(void);
 bool crazypod_organizer_feature_workout_running(void);
 const char *crazypod_organizer_feature_editor_title(

@@ -466,8 +466,8 @@ bool crazypod_organizer_feature_service(
         return false;
     else {
         interval = route == CLOCK_ROUTE_VIEW
-            ? (ticks_per_second / 4 > 0
-                ? ticks_per_second / 4 : 1)
+            ? crazypod_organizer_feature_dial_wait_ticks(
+                  route, ticks_per_second)
             : ticks_per_second;
         if(TIME_BEFORE(now, clock_last_render_tick + interval))
             return false;
@@ -708,6 +708,26 @@ bool crazypod_organizer_feature_handle_input(
         return true;
     return crazypod_calendar_input_handle(
         state, event, context->today_date, &calendar);
+}
+
+/*
+ * The second hand used to step four times a second because that was also
+ * how often the whole dial was rebuilt. Now that a tick only rotates
+ * three hands, it can sweep at the resolution the model carries -- tenths
+ * of a second -- for a fraction of the old cost. Until the face exists
+ * there is nothing to rotate and a tick still means a rebuild, so stay at
+ * the old rate for that case.
+ */
+int crazypod_organizer_feature_dial_wait_ticks(
+    enum crazypod_route route, long ticks_per_second)
+{
+    long divisor;
+
+    if(route != CLOCK_ROUTE_VIEW)
+        return 0;
+    divisor = crazypod_clock_screen_dial_ready() ? 10 : 4;
+    return ticks_per_second / divisor > 0
+        ? (int)(ticks_per_second / divisor) : 1;
 }
 
 void crazypod_organizer_feature_reset_view(void)

@@ -72,8 +72,12 @@ static int active_route_wait_ticks(long now)
        !crazypod_choice_coordinator_visible())
         return crazypod_books_feature_reader_wait_ticks(
             state, now, CRAZYPOD_STATIC_WAIT_TICKS);
-    if(route == CLOCK_ROUTE_VIEW)
-        return CRAZYPOD_CLOCK_WAIT_TICKS;
+    if(route == CLOCK_ROUTE_VIEW) {
+        int ticks = crazypod_organizer_feature_dial_wait_ticks(
+            route, HZ);
+
+        return ticks > 0 ? ticks : CRAZYPOD_CLOCK_WAIT_TICKS;
+    }
     if(route == STOPWATCH_ROUTE_VIEW ||
        route == WORKOUT_ROUTE_ACTIVE)
         return CRAZYPOD_PLAYBACK_WAIT_TICKS;
