@@ -61,6 +61,58 @@ static int find_atom(
     return 0;
 }
 
+static uint64_t be64(const uint8_t *bytes)
+{
+    return ((uint64_t)be32(bytes) << 32) | be32(bytes + 4);
+}
+
+uint32_t crazypod_audiobook_parse_duration_ms(
+    crazypod_audiobook_read_fn read, void *context, uint32_t file_size)
+{
+    uint32_t moov_start;
+    uint32_t moov_end;
+    uint32_t mvhd_start;
+    uint32_t mvhd_end;
+    uint8_t header[32];
+    uint32_t timescale;
+    uint64_t duration;
+
+    if(find_atom(read, context, 0, file_size,
+                 FOURCC('m', 'o', 'o', 'v'),
+                 &moov_start, &moov_end) <= 0 ||
+       find_atom(read, context, moov_start, moov_end,
+                 FOURCC('m', 'v', 'h', 'd'),
+                 &mvhd_start, &mvhd_end) <= 0)
+        return 0;
+
+    /* version(1) flags(3), then created/modified/timescale/duration --
+     * 32-bit fields in version 0, 64-bit in version 1. */
+    if(mvhd_end - mvhd_start < 20 ||
+       !read(context, mvhd_start, header, 4))
+        return 0;
+    if(header[0] == 0) {
+        if(mvhd_end - mvhd_start < 20 ||
+           !read(context, mvhd_start + 12, header, 8))
+            return 0;
+        timescale = be32(header);
+        duration = be32(header + 4);
+    }
+    else if(header[0] == 1) {
+        if(mvhd_end - mvhd_start < 32 ||
+           !read(context, mvhd_start + 20, header, 12))
+            return 0;
+        timescale = be32(header);
+        duration = be64(header + 4);
+    }
+    else
+        return 0;
+
+    if(timescale == 0 || duration == 0)
+        return 0;
+    duration = duration * 1000u / timescale;
+    return duration > 0xffffffffu ? 0xffffffffu : (uint32_t)duration;
+}
+
 int crazypod_audiobook_parse_chapters(
     crazypod_audiobook_read_fn read, void *context, uint32_t file_size,
     struct crazypod_audiobook_chapter *out, int max_chapters)

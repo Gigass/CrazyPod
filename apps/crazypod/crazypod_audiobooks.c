@@ -437,6 +437,8 @@ const struct crazypod_audiobook *crazypod_audiobook_get(int index)
     return index >= 0 && index < book_count ? &books[index] : NULL;
 }
 
+static uint32_t container_duration_ms(const char *path);
+
 bool crazypod_audiobook_probe(int index)
 {
     struct crazypod_audiobook *book =
@@ -469,6 +471,12 @@ bool crazypod_audiobook_probe(int index)
                  probe_entry.albumartist);
     if(probe_entry.length > 0)
         book->length_ms = (uint32_t)probe_entry.length;
+    {
+        uint32_t duration = container_duration_ms(book->path);
+
+        if(duration > 0)
+            book->length_ms = duration;
+    }
     return true;
 }
 
@@ -514,6 +522,36 @@ static bool read_file_at(
     if(lseek(reader->fd, (off_t)offset, SEEK_SET) != (off_t)offset)
         return false;
     return read(reader->fd, buffer, size) == (ssize_t)size;
+}
+
+/*
+ * Duration straight from the MP4 container clock.
+ *
+ * The AAC metadata layer reports twice the real length for the HE-AAC
+ * that audiobooks are usually encoded in, but only on this CPU: SBR
+ * decoding is compiled out for PP5022, so mp4.c suppresses implicit SBR
+ * signalling and never doubles id3->frequency, while the sample count is
+ * already at the SBR output rate. A book near its end then reads as half
+ * listened. mvhd is unaffected, and agrees with the elapsed time the
+ * codec reports.
+ */
+static uint32_t container_duration_ms(const char *path)
+{
+    struct file_reader reader;
+    const char *dot = strrchr(path, '.');
+    uint32_t duration;
+
+    if(dot == NULL ||
+       (!text_equal_ignore_case(dot, ".m4b") &&
+        !text_equal_ignore_case(dot, ".m4a")))
+        return 0;
+    reader.fd = open(path, O_RDONLY);
+    if(reader.fd < 0)
+        return 0;
+    duration = crazypod_audiobook_parse_duration_ms(
+        read_file_at, &reader, (uint32_t)filesize(reader.fd));
+    close(reader.fd);
+    return duration;
 }
 
 static bool load_chapters(int index)

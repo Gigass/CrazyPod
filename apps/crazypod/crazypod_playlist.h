@@ -21,6 +21,9 @@ bool crazypod_queue_copy_path(int index, char *buffer, size_t buffer_size);
 void crazypod_queue_set_shuffle(bool enabled);
 bool crazypod_queue_shuffle(void);
 void crazypod_queue_set_repeat(int repeat_mode);
+/* Tell the queue the next skip is the listener's, not a track ending --
+ * repeat one steps for one and holds for the other. */
+void crazypod_queue_note_manual_skip(void);
 int crazypod_queue_repeat(void);
 unsigned crazypod_queue_generation(void);
 

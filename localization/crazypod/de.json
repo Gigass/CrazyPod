@@ -859,5 +859,7 @@
   "Game save is damaged; original preserved": "Spielstand beschädigt; Original bleibt erhalten",
   "Game emulation stopped": "Emulation angehalten",
   "Game file or save could not be written/read": "Spiel oder Spielstand nicht lesbar/schreibbar",
-  "No Chapters": "Keine Kapitel"
+  "No Chapters": "Keine Kapitel",
+  "No note title or body matched.": "Kein Notiztitel oder -text passte.",
+  "This cartridge cannot save": "Dieses Modul kann nicht speichern"
 }

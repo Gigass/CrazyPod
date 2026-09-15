@@ -23,6 +23,19 @@ struct crazypod_audiobook_chapter {
 typedef bool (*crazypod_audiobook_read_fn)(
     void *context, uint32_t offset, void *buffer, uint32_t size);
 
+/*
+ * Duration in milliseconds from moov/mvhd, or 0 when it cannot be read.
+ *
+ * The container's own clock is the only trustworthy one here. On PP5022
+ * the AAC metadata layer reports twice the real length for the HE-AAC
+ * that audiobooks are usually encoded in: SBR decoding is compiled out
+ * for this CPU, so mp4.c suppresses implicit SBR signalling and never
+ * doubles id3->frequency, while the sample count is already at the SBR
+ * output rate. mvhd is unaffected by any of that.
+ */
+uint32_t crazypod_audiobook_parse_duration_ms(
+    crazypod_audiobook_read_fn read, void *context, uint32_t file_size);
+
 /* Returns the chapter count, 0 when the file carries no chpl atom, or -1
  * when the atom structure cannot be read. */
 int crazypod_audiobook_parse_chapters(

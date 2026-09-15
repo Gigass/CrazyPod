@@ -859,5 +859,7 @@
   "Game save is damaged; original preserved": "游戏存档损坏，已保留原文件",
   "Game emulation stopped": "游戏运行已停止",
   "Game file or save could not be written/read": "游戏或存档文件读写失败",
-  "No Chapters": "没有章节"
+  "No Chapters": "没有章节",
+  "No note title or body matched.": "没有匹配的备忘录标题或正文。",
+  "This cartridge cannot save": "此卡带无法存档"
 }

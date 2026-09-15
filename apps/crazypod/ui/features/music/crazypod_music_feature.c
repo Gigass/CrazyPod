@@ -15,7 +15,7 @@
 #include "crazypod_music_item_preview.h"
 #include "crazypod_music_root_preview.h"
 #include "crazypod_album_flow_screen.h"
-#include "crazypod_search_screen.h"
+#include "../../presentation/crazypod_search_screen.h"
 #include "crazypod_music_feature.h"
 
 #define EDITOR_ACTION_COUNT 3
@@ -441,6 +441,26 @@ int crazypod_music_feature_sync_album_flow(void)
     return crazypod_album_flow_screen_sync();
 }
 
+static bool copy_search_result(
+    const char *query, int index, struct crazypod_track *track)
+{
+    return crazypod_music_copy_search_track(query, index, track);
+}
+
+static const char *search_result_title(const char *query, int index)
+{
+    static struct crazypod_track track;
+
+    return copy_search_result(query, index, &track) ? track.title : NULL;
+}
+
+static const char *search_result_artist(const char *query, int index)
+{
+    static struct crazypod_track track;
+
+    return copy_search_result(query, index, &track) ? track.artist : NULL;
+}
+
 bool crazypod_music_feature_render_special(
     lv_obj_t *parent, const struct route_state *state,
     const lv_font_t *metadata_font, int item_count,
@@ -461,6 +481,10 @@ bool crazypod_music_feature_render_special(
         const struct crazypod_search_screen_context context = {
             .parent = parent,
             .query = crazypod_music_search_query(),
+            .result_count = crazypod_music_search_count,
+            .result_title = search_result_title,
+            .result_subtitle = search_result_artist,
+            .empty_hint = CP_TR("No title, artist or album matched."),
             .item_count = item_count,
             .primary_color = primary_color,
             .secondary_color = secondary_color,

@@ -20,5 +20,8 @@ enum crazypod_gameboy_result crazypod_gameboy_open(
     int index, void (*audio)(const int16_t *, size_t));
 bool crazypod_gameboy_save(void);
 void crazypod_gameboy_close(void);
+/* False when the loaded cartridge has no RAM or battery to persist, so
+ * the menu can say so instead of a save silently doing nothing. */
+bool crazypod_gameboy_saves_progress(void);
 
 #endif

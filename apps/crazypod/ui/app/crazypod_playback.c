@@ -501,6 +501,7 @@ static bool start_adjacent_from_restored_queue(int direction)
 
     if((audio_status() & AUDIO_STATUS_PLAY) != 0)
         return false;
+    crazypod_queue_note_manual_skip();
     index = playlist_next(direction);
     if(index >= 0) {
         playlist_start(index, 0, 0);
@@ -521,6 +522,7 @@ void crazypod_playback_next(void)
     if(crazypod_queue_count() <= 0 ||
        start_adjacent_from_restored_queue(1))
         return;
+    crazypod_queue_note_manual_skip();
     audio_next();
 }
 
@@ -557,8 +559,10 @@ void crazypod_playback_previous_or_restart(void)
         audio_ff_rewind(0);
         note_lock_seek(0);
     }
-    else
+    else {
+        crazypod_queue_note_manual_skip();
         audio_prev();
+    }
 }
 
 bool crazypod_playback_seek_begin(int direction)

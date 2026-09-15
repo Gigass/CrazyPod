@@ -10,6 +10,9 @@ struct crazypod_calendar_input_actions {
     void (*move_selection)(int direction);
     void (*activate)(void);
     void (*render)(void);
+    /* Restyles the month grid in place; false when the pane has to be
+     * rebuilt after all (the focus crossed into another month). */
+    bool (*refocus)(void);
     void (*leave)(void);
 };
 

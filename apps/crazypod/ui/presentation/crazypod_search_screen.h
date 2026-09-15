@@ -6,8 +6,8 @@
 
 #include "lvgl.h"
 
-#include "../../navigation/crazypod_ui_routes.h"
-#include "../../presentation/crazypod_glass_slots.h"
+#include "../navigation/crazypod_ui_routes.h"
+#include "crazypod_glass_slots.h"
 
 typedef lv_obj_t *(*crazypod_search_panel_factory)(
     lv_obj_t *parent, enum crazypod_glass_slot slot,
@@ -25,6 +25,14 @@ struct crazypod_search_screen_context {
     const char *(*item_title)(
         const struct route_state *state, int index);
     crazypod_search_panel_factory make_panel;
+    /* What the query matches, and how to name one match. Supplied by the
+     * app so the same editor serves music and notes. */
+    int (*result_count)(const char *query);
+    const char *(*result_title)(const char *query, int index);
+    /* Second line under a match, or NULL when the app has none. */
+    const char *(*result_subtitle)(const char *query, int index);
+    /* Shown when the query matches nothing; names what was searched. */
+    const char *empty_hint;
 };
 
 void crazypod_search_screen_render(

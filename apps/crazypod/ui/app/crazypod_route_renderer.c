@@ -53,6 +53,7 @@ static void reset_feature_surfaces(void)
     crazypod_now_playing_overlay_reset();
     crazypod_choice_coordinator_reset();
     crazypod_menu_list_clear();
+    crazypod_organizer_feature_reset_view();
     crazypod_preview_motion_forget();
     crazypod_menu_preview_reset();
     crazypod_now_playing_feature_reset_screen();
@@ -239,6 +240,17 @@ static void render_feature(
             return;
         break;
     case CRAZYPOD_FEATURE_NOTES:
+        if(state->route == NOTES_ROUTE_SEARCH) {
+            create_panel_backgrounds();
+            if(crazypod_notes_feature_render_search(
+                   crazypod_shell_product_content(), state,
+                   host.metadata_font, host.item_count(state),
+                   host.item_title, primary_color(),
+                   secondary_color(), COLOR_PANEL,
+                   crazypod_appearance_get()->highlight_style != 0,
+                   make_search_panel))
+                return;
+        }
         if(crazypod_notes_feature_render(
                state, crazypod_shell_product_content()))
             return;

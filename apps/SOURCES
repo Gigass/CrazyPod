@@ -207,7 +207,7 @@ crazypod/ui/features/organizer/crazypod_clock_screen.c
 crazypod/ui/features/organizer/crazypod_contacts_screen.c
 crazypod/ui/presentation/crazypod_menu_screen.c
 crazypod/ui/features/notes/crazypod_notes_screen.c
-crazypod/ui/features/music/crazypod_search_screen.c
+crazypod/ui/presentation/crazypod_search_screen.c
 crazypod/ui/features/organizer/crazypod_workout_screen.c
 crazypod/ui/shell/crazypod_status_bar.c
 crazypod/ui/shell/crazypod_shell.c

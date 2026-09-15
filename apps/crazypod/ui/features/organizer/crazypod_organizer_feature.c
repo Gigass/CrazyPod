@@ -654,6 +654,13 @@ uint32_t crazypod_organizer_feature_background(
 
 static struct crazypod_feature_input_context organizer_input_context;
 
+static bool calendar_refocus(void)
+{
+    const struct crazypod_calendar_screen_date date = screen_date();
+
+    return crazypod_calendar_screen_refocus(&date);
+}
+
 static void organizer_input_render(void)
 {
     organizer_input_context.render(false);
@@ -681,6 +688,7 @@ bool crazypod_organizer_feature_handle_input(
         .move_selection = context->move,
         .activate = context->activate,
         .render = organizer_input_render,
+        .refocus = calendar_refocus,
         .leave = context->pop,
     };
 
@@ -691,6 +699,11 @@ bool crazypod_organizer_feature_handle_input(
         return true;
     return crazypod_calendar_input_handle(
         state, event, context->today_date, &calendar);
+}
+
+void crazypod_organizer_feature_reset_view(void)
+{
+    crazypod_calendar_screen_forget();
 }
 
 bool crazypod_organizer_feature_stopwatch_running(void)

@@ -9,6 +9,7 @@
 #include "crazypod_notes_actions.h"
 #include "crazypod_notes_controller.h"
 #include "crazypod_notes_confirmation.h"
+#include "../../presentation/crazypod_search_screen.h"
 #include "crazypod_notes_feature.h"
 #include "crazypod_notes_input.h"
 #include "crazypod_notes_preview.h"
@@ -324,6 +325,50 @@ bool crazypod_notes_feature_activate(
     default:
         break;
     }
+    return true;
+}
+
+static const char *notes_search_title(const char *query, int index)
+{
+    const struct crazypod_note *note =
+        crazypod_notes_search_get(query, index);
+
+    return note != NULL ? note->title : NULL;
+}
+
+bool crazypod_notes_feature_render_search(
+    lv_obj_t *parent, const struct route_state *state,
+    const lv_font_t *metadata_font, int item_count,
+    const char *(*item_title)(
+        const struct route_state *state, int index),
+    uint32_t primary_color, uint32_t secondary_color,
+    uint32_t panel_color, bool gradient_highlight,
+    crazypod_search_panel_factory make_panel)
+{
+    /* The search editor is the same instrument as the music one: a row of
+     * letters is useless without the query it is building and a live
+     * count of what it matches. Without this the route fell through to a
+     * plain menu -- no query box, and Menu backspacing one character at a
+     * time instead of leaving. */
+    const struct crazypod_search_screen_context context = {
+        .parent = parent,
+        .query = crazypod_notes_controller_query(),
+        .item_count = item_count,
+        .primary_color = primary_color,
+        .secondary_color = secondary_color,
+        .panel_color = panel_color,
+        .gradient_highlight = gradient_highlight,
+        .metadata_font = metadata_font,
+        .item_title = item_title,
+        .make_panel = make_panel,
+        .result_count = crazypod_notes_search_count,
+        .result_title = notes_search_title,
+        .empty_hint = CP_TR("No note title or body matched."),
+    };
+
+    if(state->route != NOTES_ROUTE_SEARCH)
+        return false;
+    crazypod_search_screen_render(state, &context);
     return true;
 }
 

@@ -859,5 +859,7 @@
   "Game save is damaged; original preserved": "Sauvegarde endommagée ; original conservé",
   "Game emulation stopped": "Émulation du jeu arrêtée",
   "Game file or save could not be written/read": "Lecture/écriture du jeu ou de la sauvegarde impossible",
-  "No Chapters": "Aucun chapitre"
+  "No Chapters": "Aucun chapitre",
+  "No note title or body matched.": "Aucun titre ou texte de note ne correspond.",
+  "This cartridge cannot save": "Cette cartouche ne peut pas sauvegarder"
 }

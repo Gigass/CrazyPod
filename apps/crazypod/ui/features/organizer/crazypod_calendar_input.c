@@ -7,6 +7,15 @@
 #include "crazypod_calendar_controller.h"
 #include "crazypod_calendar_input.h"
 
+/* Moving the focus is by far the most common thing that happens on this
+ * screen, and a full render tears down and rebuilds the whole month. */
+static void focus_moved(
+    const struct crazypod_calendar_input_actions *actions)
+{
+    if(actions->refocus == NULL || !actions->refocus())
+        actions->render();
+}
+
 static void handle_month(
     const struct crazypod_input_event *event, int today,
     const struct crazypod_calendar_input_actions *actions)
@@ -19,21 +28,21 @@ static void handle_month(
 
         while(count-- > 0)
             crazypod_calendar_controller_move_focus(direction);
-        actions->render();
+        focus_moved(actions);
     }
     else if(event->base == BUTTON_RIGHT && !event->repeated) {
         crazypod_calendar_controller_move_focus(1);
-        actions->render();
+        focus_moved(actions);
     }
     else if(event->base == BUTTON_LEFT && !event->repeated) {
         crazypod_calendar_controller_move_focus(-1);
-        actions->render();
+        focus_moved(actions);
     }
     else if(event->base == BUTTON_SELECT && !event->repeated)
         actions->activate();
     else if(event->base == BUTTON_PLAY && !event->repeated) {
         crazypod_calendar_controller_set_focus_date(today);
-        actions->render();
+        focus_moved(actions);
     }
     else if(event->base == BUTTON_MENU && !event->repeated)
         actions->leave();

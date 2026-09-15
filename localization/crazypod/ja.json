@@ -859,5 +859,7 @@
   "Game save is damaged; original preserved": "セーブデータが破損しています。元のファイルは保持されます",
   "Game emulation stopped": "ゲームの実行が停止しました",
   "Game file or save could not be written/read": "ゲームまたはセーブの読み書きに失敗",
-  "No Chapters": "チャプターなし"
+  "No Chapters": "チャプターなし",
+  "No note title or body matched.": "一致するメモがありません。",
+  "This cartridge cannot save": "このカートリッジは保存できません"
 }

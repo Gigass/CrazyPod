@@ -63,6 +63,8 @@ bool crazypod_organizer_feature_handle_input(
     const struct route_state *state,
     const struct crazypod_input_event *event,
     const struct crazypod_feature_input_context *context);
+/* Drops any cached screen state before the pane is cleaned. */
+void crazypod_organizer_feature_reset_view(void);
 bool crazypod_organizer_feature_stopwatch_running(void);
 bool crazypod_organizer_feature_workout_running(void);
 const char *crazypod_organizer_feature_editor_title(

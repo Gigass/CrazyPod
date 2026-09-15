@@ -96,6 +96,21 @@ static void save_digest(const uint8_t header[SAVE_HEADER_SIZE],
     crazypod_sha256_final(&hash, digest);
 }
 
+/*
+ * Whether this cartridge has anything to persist.
+ *
+ * The header's battery byte is the intent, but plenty of dumps carry a
+ * mapper and RAM with a type byte this table does not list, and then both
+ * the save and the load silently did nothing: the game ran, "Save and
+ * exit" reported success, and the next launch started over with no error
+ * anywhere. Save whenever there is cartridge RAM to save.
+ */
+static bool cartridge_saves(void)
+{
+    return cartridge.battery || cartridge.clock ||
+           cartridge.ram_size > 0;
+}
+
 static enum crazypod_gameboy_result load_save(void)
 {
     uint8_t header[SAVE_HEADER_SIZE], digest[32];
@@ -103,7 +118,7 @@ static enum crazypod_gameboy_result load_save(void)
     bool valid;
     int fd, i;
 
-    if(!cartridge.battery && !cartridge.clock)
+    if(!cartridge_saves())
         return CRAZYPOD_GAMEBOY_OK;
     /*
      * Having no save yet is the normal first run, not a failure -- but do
@@ -216,7 +231,7 @@ bool crazypod_gameboy_save(void)
 
     if(!opened)
         return false;
-    if(!cartridge.battery && !cartridge.clock)
+    if(!cartridge_saves())
         return true;
     if((!dir_exists("/.crazypod") && mkdir("/.crazypod") < 0) ||
        (!dir_exists(SAVE_DIRECTORY) && mkdir(SAVE_DIRECTORY) < 0))
@@ -244,6 +259,11 @@ bool crazypod_gameboy_save(void)
         return true;
     remove(temporary);
     return false;
+}
+
+bool crazypod_gameboy_saves_progress(void)
+{
+    return opened && cartridge_saves();
 }
 
 void crazypod_gameboy_close(void)

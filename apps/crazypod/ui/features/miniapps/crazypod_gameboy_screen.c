@@ -83,19 +83,66 @@ static void game_audio_stop(void)
     pcm_play_unlock();
 }
 
+/* Set when something other than the game has drawn over the framebuffer. */
+static bool frame_border_dirty = true;
+
+/*
+ * 1.5x nearest-neighbour, preserving the 10:9 game aspect ratio.
+ *
+ * The scale is exactly 3:2, so the mapping repeats every three output
+ * pixels and needs no arithmetic at all: three columns come from two
+ * source columns (a a b), three rows from two source rows (r0 r0 r1).
+ * Written as a division per axis per pixel it was 103,680 calls to the
+ * software divide routine per frame -- ARM7TDMI has no divide
+ * instruction -- which on its own cost more than emulating the frame.
+ * The duplicated row is copied rather than scaled a second time.
+ */
 static void draw_frame(void)
 {
     const uint16_t *pixels = crazypod_gameboy_core_pixels();
     fb_data *target = crazypod_platform_display_framebuffer();
-    int x, y;
+    int group;
 
-    /* 1.5x nearest-neighbour, preserving the 10:9 game aspect ratio. */
-    memset(target, 0, LCD_WIDTH * LCD_HEIGHT * sizeof(*target));
-    for(y = 0; y < 216; ++y)
-        for(x = 0; x < 240; ++x)
-            target[(y + 12) * LCD_WIDTH + x + 40] =
-                pixels[(y * 2 / 3) * 160 + x * 2 / 3];
-    lcd_update();
+    if(frame_border_dirty) {
+        /* The game area is overwritten in full every frame; only the
+         * surround needs clearing, and only after something else drew. */
+        memset(target, 0, LCD_WIDTH * LCD_HEIGHT * sizeof(*target));
+        frame_border_dirty = false;
+    }
+
+    for(group = 0; group < 72; ++group) {
+        const uint16_t *src = pixels + group * 2 * 160;
+        fb_data *row0 = target + (group * 3 + 12) * LCD_WIDTH + 40;
+        fb_data *row1 = row0 + LCD_WIDTH;
+        fb_data *row2 = row1 + LCD_WIDTH;
+        const uint16_t *src1 = src + 160;
+        int column;
+
+        for(column = 0; column < 80; ++column) {
+            fb_data a = src[0];
+            fb_data b = src[1];
+
+            row0[0] = a;
+            row0[1] = a;
+            row0[2] = b;
+
+            a = src1[0];
+            b = src1[1];
+            row2[0] = a;
+            row2[1] = a;
+            row2[2] = b;
+
+            row0 += 3;
+            row2 += 3;
+            src += 2;
+            src1 += 2;
+        }
+        memcpy(row1, row0 - 240, 240 * sizeof(fb_data));
+    }
+    /* Full-width rect: on PortalPlayer a narrower one repeats the BCM
+     * address setup for every scanline, so trimming columns costs more
+     * than the pixels save. Trimming rows is free. */
+    lcd_update_rect(0, 12, LCD_WIDTH, 216);
 }
 
 static void draw_menu(int selected, bool save_failed)
@@ -107,6 +154,7 @@ static void draw_menu(int selected, bool save_failed)
     int i;
 
     memset(target, 0, LCD_WIDTH * LCD_HEIGHT * sizeof(*target));
+    frame_border_dirty = true;
     crazypod_lcd_draw_text(CP_TR("GB / GBC"), 18, 16, 304, 0xffffff);
     for(i = 0; i < 4; ++i) {
         if(i == selected)
@@ -114,7 +162,10 @@ static void draw_menu(int selected, bool save_failed)
         crazypod_lcd_draw_text(items[i], 40, 54 + 28 * i, 306,
                                 i == selected ? 0x69bfff : 0xffffff);
     }
-    crazypod_lcd_draw_text(save_failed ? CP_TR("Game save failed") :
+    crazypod_lcd_draw_text(
+        save_failed ? CP_TR("Game save failed") :
+        !crazypod_gameboy_saves_progress()
+            ? CP_TR("This cartridge cannot save") :
         CP_TR("Hold Center for game menu"), 18, 190, 306, 0xffd477);
     crazypod_lcd_draw_text(
         CP_TR("Controls: /MiniApps/Games/README.txt"),
@@ -201,6 +252,7 @@ enum crazypod_gameboy_result crazypod_gameboy_screen_run(int index)
     mixer_set_frequency(44100);
     mixer_channel_set_amplitude(PCM_MIXER_CHAN_PLAYBACK, MIX_AMP_UNITY);
     deadline = pause_tick = current_tick;
+    frame_border_dirty = true;
     draw_menu(selected, false);
 
     for(;;) {

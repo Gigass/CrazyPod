@@ -19,6 +19,8 @@ static bool read_ipod_music;
 static char large_paths[LARGE_QUEUE_LENGTH][32];
 static const char *large_path_pointers[LARGE_QUEUE_LENGTH];
 
+long current_tick;
+
 void audio_stop(void)
 {
 }
@@ -32,14 +34,6 @@ void audio_play(unsigned long elapsed, unsigned long offset)
 
 void audio_resume(void)
 {
-}
-
-/* Repeat one holds across an automatic skip and steps on a manual one;
- * the tests here exercise the automatic case. */
-bool audio_pending_track_skip_is_manual(void);
-bool audio_pending_track_skip_is_manual(void)
-{
-    return false;
 }
 
 bool crazypod_state_read_ipod_music(void)

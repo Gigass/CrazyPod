@@ -89,16 +89,53 @@ static bool queue_storage_reserve(int required)
     return true;
 }
 
-/* REPEAT_ONE support function from playback.c, as upstream playlist.c
- * uses it: repeat one holds the track across an automatic skip but steps
- * normally when the listener presses next or previous. */
-extern bool audio_pending_track_skip_is_manual(void);
+/*
+ * Repeat one holds the track when one ends by itself and steps normally
+ * when the listener presses next or previous, so both peek and next need
+ * to know which kind of skip is in flight.
+ *
+ * playback.c's own audio_pending_track_skip_is_manual() cannot answer
+ * that here: audio_on_skip() clears the flag before the skip reaches
+ * this queue and only sets it again in audio_begin_track_change(), well
+ * after. Reading it mid-skip returns the PREVIOUS skip's kind -- which
+ * made the first press of next do nothing and a track ending after a
+ * manual skip advance instead of repeating.
+ *
+ * So the UI tells us directly. The flag is set where the button is
+ * handled and cleared when playlist_next() commits the move; the tick
+ * deadline is a backstop for a press that never reaches a commit (the
+ * end of a playlist, a failed load).
+ */
+#define MANUAL_SKIP_GRACE (3 * HZ)
+
+static bool manual_skip_pending;
+static long manual_skip_until;
+
+void crazypod_queue_note_manual_skip(void)
+{
+    queue_lock();
+    manual_skip_pending = true;
+    manual_skip_until = current_tick + MANUAL_SKIP_GRACE;
+    queue_unlock();
+}
+
+/* Call with the queue lock held. */
+static bool manual_skip_in_flight(void)
+{
+    if(!manual_skip_pending)
+        return false;
+    if(TIME_AFTER(current_tick, manual_skip_until)) {
+        manual_skip_pending = false;
+        return false;
+    }
+    return true;
+}
 
 static bool hold_for_repeat_one(int steps)
 {
     return steps != 0 &&
         global_settings.repeat_mode == REPEAT_ONE &&
-        !audio_pending_track_skip_is_manual();
+        !manual_skip_in_flight();
 }
 
 static int normalize_index(int index, bool allow_repeat)
@@ -291,6 +328,10 @@ int playlist_next(int steps)
         return -1;
     }
 
+    /* The move is committed: a later track ending is an automatic skip
+     * again, whatever this one was. */
+    if(steps != 0)
+        manual_skip_pending = false;
     /* Playback commits an automatic track change through here. Every
      * other writer of queue_index bumps the generation; without it the
      * Now Playing screen and the home capsule never learn the track

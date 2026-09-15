@@ -7,6 +7,7 @@
 
 #include "../../crazypod_menu_icon.h"
 #include "../../navigation/crazypod_ui_routes.h"
+#include "../../presentation/crazypod_search_screen.h"
 #include "../crazypod_feature.h"
 
 struct crazypod_notes_activation_host {
@@ -47,6 +48,15 @@ enum crazypod_menu_icon crazypod_notes_feature_item_icon(
 bool crazypod_notes_feature_activate(
     const struct route_state *state,
     const struct crazypod_notes_activation_host *host);
+/* The search editor, drawn with the same screen the Music app uses. */
+bool crazypod_notes_feature_render_search(
+    lv_obj_t *parent, const struct route_state *state,
+    const lv_font_t *metadata_font, int item_count,
+    const char *(*item_title)(
+        const struct route_state *state, int index),
+    uint32_t primary_color, uint32_t secondary_color,
+    uint32_t panel_color, bool gradient_highlight,
+    crazypod_search_panel_factory make_panel);
 bool crazypod_notes_feature_render(
     const struct route_state *state, lv_obj_t *parent);
 bool crazypod_notes_feature_handle_input(

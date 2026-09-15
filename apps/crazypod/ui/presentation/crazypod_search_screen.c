@@ -1,6 +1,6 @@
 #include "config.h"
 
-#include "../../../crazypod_l10n.h"
+#include "../../crazypod_l10n.h"
 
 #ifdef HAVE_CRAZYPOD_UI
 
@@ -8,10 +8,9 @@
 
 #include "lvgl.h"
 
-#include "../../../crazypod_music.h"
-#include "../../presentation/crazypod_ui_menu_layout.h"
-#include "../../presentation/crazypod_ui_widgets.h"
-#include "../../presentation/crazypod_menu_list.h"
+#include "crazypod_ui_menu_layout.h"
+#include "crazypod_ui_widgets.h"
+#include "crazypod_menu_list.h"
 #include "crazypod_search_screen.h"
 
 #define COLOR_WHITE 0xFFFFFF
@@ -51,7 +50,7 @@ void crazypod_search_screen_render(
     int start;
     int row;
     int result_count = context->query[0] != '\0'
-        ? crazypod_music_search_count(context->query) : 0;
+        ? context->result_count(context->query) : 0;
     lv_obj_t *label;
     lv_obj_t *query_box;
     char text[96];
@@ -174,7 +173,7 @@ void crazypod_search_screen_render(
     }
     else if(result_count <= 0) {
         label = make_label(context->parent,
-                           CP_TR("No title, artist or album matched."),
+                           context->empty_hint,
                            &lv_font_montserrat_8,
                            COLOR_WHITE, 105);
         lv_obj_set_pos(label, 182, 125);
@@ -185,21 +184,27 @@ void crazypod_search_screen_render(
     else {
         int shown = result_count < CRAZYPOD_SEARCH_PREVIEW_ROWS
             ? result_count : CRAZYPOD_SEARCH_PREVIEW_ROWS;
+        const char *subtitle;
         int i;
         for(i = 0; i < shown; ++i) {
-            struct crazypod_track track;
             int y = 124 + i * 30;
-            if(!crazypod_music_copy_search_track(
-                   context->query, i, &track))
+            const char *title =
+                context->result_title(context->query, i);
+
+            if(title == NULL)
                 continue;
-            label = make_label(context->parent, track.title,
+            label = make_label(context->parent, title,
                                &lv_font_montserrat_8,
                                COLOR_WHITE, i == 0 ? 210 : 145);
             lv_obj_set_pos(label, 182, y);
             lv_obj_set_width(label, 112);
             lv_obj_set_height(label, 15);
             lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-            label = make_label(context->parent, track.artist,
+            subtitle = context->result_subtitle != NULL
+                ? context->result_subtitle(context->query, i) : NULL;
+            if(subtitle == NULL)
+                continue;
+            label = make_label(context->parent, subtitle,
                                &lv_font_montserrat_8,
                                COLOR_WHITE, 75);
             lv_obj_set_pos(label, 182, y + 15);

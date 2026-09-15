@@ -4619,6 +4619,16 @@
       "locations": [
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:1139"
       ]
+    },
+    "No note title or body matched.": {
+      "locations": [
+        "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:366"
+      ]
+    },
+    "This cartridge cannot save": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c:168"
+      ]
     }
   }
 }
