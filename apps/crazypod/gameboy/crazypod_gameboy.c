@@ -1,5 +1,4 @@
 #include "config.h"
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -106,10 +105,19 @@ static enum crazypod_gameboy_result load_save(void)
 
     if(!cartridge.battery && !cartridge.clock)
         return CRAZYPOD_GAMEBOY_OK;
+    /*
+     * Having no save yet is the normal first run, not a failure -- but do
+     * not ask errno which it was. Rockbox's open() speculatively allocates
+     * a descriptor before resolving the path and calls close() on it when
+     * resolution fails; close() finds a stream it never opened and sets
+     * errno to EBADF, burying the ENOENT underneath. Every battery-backed
+     * cartridge therefore reported an I/O error on its first launch.
+     */
+    if(!file_exists(save_path))
+        return CRAZYPOD_GAMEBOY_OK;
     fd = open(save_path, O_RDONLY);
     if(fd < 0)
-        return errno == ENOENT ? CRAZYPOD_GAMEBOY_OK :
-            CRAZYPOD_GAMEBOY_IO_ERROR;
+        return CRAZYPOD_GAMEBOY_IO_ERROR;
     valid = filesize(fd) ==
         (off_t)(sizeof(header) + cartridge.ram_size) &&
         read(fd, header, sizeof(header)) == (ssize_t)sizeof(header) &&

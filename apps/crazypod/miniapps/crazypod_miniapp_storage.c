@@ -77,7 +77,9 @@ static bool ensure_directory(const char *path)
 {
     if(mkdir(path) == 0)
         return true;
-    return errno == EEXIST && dir_exists(path);
+    /* Ask the filesystem rather than errno: a failed call inside Rockbox
+     * can leave errno describing its own cleanup rather than the fault. */
+    return dir_exists(path);
 }
 
 static bool data_path(
