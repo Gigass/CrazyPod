@@ -369,6 +369,27 @@ void lv_refr_set_disp_refreshing(lv_display_t * disp)
     disp_refr = disp;
 }
 
+#if defined(IPOD_VIDEO) && !defined(SIMULATOR)
+/*
+ * CrazyPod bring-up: lv_timer_handler costs far more than the rendering
+ * inside it, and the refresh timer does two things before a pixel is
+ * drawn -- relayout every screen whose tree changed, and join the
+ * invalidated areas. Time them separately so the gap has a name.
+ */
+#include "system.h"
+void crazypod_perf_log_refr_phase(int phase, unsigned elapsed_us);
+#define CRAZYPOD_REFR_MARK unsigned cp_refr_mark = USEC_TIMER
+#define CRAZYPOD_REFR_PHASE(phase) \
+    do { \
+        unsigned cp_refr_now = USEC_TIMER; \
+        crazypod_perf_log_refr_phase((phase), cp_refr_now - cp_refr_mark); \
+        cp_refr_mark = cp_refr_now; \
+    } while(0)
+#else
+#define CRAZYPOD_REFR_MARK do {} while(0)
+#define CRAZYPOD_REFR_PHASE(phase) do {} while(0)
+#endif
+
 void lv_display_refr_timer(lv_timer_t * tmr)
 {
     LV_PROFILER_REFR_BEGIN;
@@ -408,6 +429,7 @@ void lv_display_refr_timer(lv_timer_t * tmr)
     }
 
     /*Refresh the screen's layout if required*/
+    CRAZYPOD_REFR_MARK;
     LV_PROFILER_LAYOUT_BEGIN_TAG("layout");
     lv_obj_update_layout(disp_refr->act_scr);
     if(disp_refr->prev_scr) lv_obj_update_layout(disp_refr->prev_scr);
@@ -416,6 +438,7 @@ void lv_display_refr_timer(lv_timer_t * tmr)
     lv_obj_update_layout(disp_refr->top_layer);
     lv_obj_update_layout(disp_refr->sys_layer);
     LV_PROFILER_LAYOUT_END_TAG("layout");
+    CRAZYPOD_REFR_PHASE(0);
 
     /*Do nothing if there is no active screen*/
     if(disp_refr->act_scr == NULL) {
@@ -426,7 +449,9 @@ void lv_display_refr_timer(lv_timer_t * tmr)
 
     lv_refr_join_area();
     refr_sync_areas();
+    CRAZYPOD_REFR_PHASE(1);
     refr_invalid_areas();
+    CRAZYPOD_REFR_PHASE(2);
 
     if(disp_refr->inv_p == 0) goto refr_finish;
     /*In double buffered direct mode save the updated areas.
@@ -1454,6 +1479,7 @@ static void call_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t *
 
 static void wait_for_flushing(lv_display_t * disp)
 {
+    CRAZYPOD_REFR_MARK;
     LV_PROFILER_REFR_BEGIN;
     LV_LOG_TRACE("begin");
 
@@ -1469,6 +1495,7 @@ static void wait_for_flushing(lv_display_t * disp)
         while(disp->flushing);
     }
     disp->flushing_last = 0;
+    CRAZYPOD_REFR_PHASE(3);
 
     lv_display_send_event(disp, LV_EVENT_FLUSH_WAIT_FINISH, NULL);
 

@@ -76,6 +76,17 @@ static struct {
     unsigned step_total_us;
     unsigned phase_mark_us;
     unsigned phase_total_us[CRAZYPOD_PERF_PHASE_COUNT];
+    /* Inside the LVGL refresh timer: relayout, area joining, drawing. */
+    unsigned refr_total_us[4];
+    unsigned refr_layout_max_us;
+    /* A whole-route render, split at the point the old pane is gone. */
+    unsigned route_mark_us;
+    unsigned route_start_us;
+    unsigned route_clean_us;
+    unsigned route_build_us;
+    unsigned route_count;
+    unsigned route_max_us;
+    int route_worst;
     unsigned draw_start_us;
     unsigned draw_depth;
     /* Window accumulators, reset after every line. */
@@ -256,6 +267,41 @@ void crazypod_perf_log_draw_end(int type)
     }
 }
 
+void crazypod_perf_log_refr_phase(int phase, unsigned elapsed_us)
+{
+    if(phase < 0 || phase >= 4)
+        return;
+    perf.refr_total_us[phase] += elapsed_us;
+    if(phase == 0 && elapsed_us > perf.refr_layout_max_us)
+        perf.refr_layout_max_us = elapsed_us;
+}
+
+void crazypod_perf_log_route_begin(void)
+{
+    perf.route_start_us = perf.route_mark_us = USEC_TIMER;
+}
+
+void crazypod_perf_log_route_cleaned(void)
+{
+    unsigned now = USEC_TIMER;
+
+    perf.route_clean_us += now - perf.route_mark_us;
+    perf.route_mark_us = now;
+}
+
+void crazypod_perf_log_route_end(int route)
+{
+    unsigned now = USEC_TIMER;
+    unsigned total = now - perf.route_start_us;
+
+    perf.route_build_us += now - perf.route_mark_us;
+    ++perf.route_count;
+    if(total > perf.route_max_us) {
+        perf.route_max_us = total;
+        perf.route_worst = route;
+    }
+}
+
 void crazypod_perf_log_phase_begin(void)
 {
     perf.phase_mark_us = USEC_TIMER;
@@ -352,6 +398,13 @@ static void reset_window(void)
     perf.step_max_us = 0;
     perf.step_total_us = 0;
     memset(perf.phase_total_us, 0, sizeof(perf.phase_total_us));
+    memset(perf.refr_total_us, 0, sizeof(perf.refr_total_us));
+    perf.refr_layout_max_us = 0;
+    perf.route_clean_us = 0;
+    perf.route_build_us = 0;
+    perf.route_count = 0;
+    perf.route_max_us = 0;
+    perf.route_worst = -1;
     perf.samples = 0;
     perf.lowdata_samples = 0;
     perf.pcm_free_min = (size_t)-1;
@@ -500,6 +553,8 @@ static void format_line(long now)
                "step=count/avg_ms/gate_ms/render_ms/present_ms/worst_ms+dropped "
                "art=external/embedded/none/decoded/failed/unsupported "
                "pre=services_ms/scheduler_ms "
+               "refr=layout_ms/join_ms/draw_ms/flushwait_ms/layout_max_ms "
+               "route=renders/clean_ms/build_ms/max_ms@worst_route "
                "dt=type:count/ms,... "
                "inv=count/total_ms,x1.y1-x2.y2:count@class/caller,... "
                "lay=count,x1.y1-x2.y2:count@class/type "
@@ -561,6 +616,16 @@ static void format_line(long now)
     snprintf(text, sizeof(text), " pre=%u/%u",
              perf.phase_total_us[CRAZYPOD_PERF_PHASE_SERVICES] / 1000,
              perf.phase_total_us[CRAZYPOD_PERF_PHASE_SCHEDULER] / 1000);
+    append(text);
+    snprintf(text, sizeof(text), " refr=%u/%u/%u/%u/%u",
+             perf.refr_total_us[0] / 1000, perf.refr_total_us[1] / 1000,
+             perf.refr_total_us[2] / 1000, perf.refr_total_us[3] / 1000,
+             perf.refr_layout_max_us / 1000);
+    append(text);
+    snprintf(text, sizeof(text), " route=%u/%u/%u/%u@%d",
+             perf.route_count, perf.route_clean_us / 1000,
+             perf.route_build_us / 1000, perf.route_max_us / 1000,
+             perf.route_worst);
     append(text);
     {
         struct crazypod_artwork_diagnostics art;

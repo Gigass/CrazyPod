@@ -31,6 +31,7 @@
 #include "../shell/crazypod_status_bar.h"
 #include "crazypod_choice_coordinator.h"
 #include "crazypod_menu_preview.h"
+#include "../../crazypod_perf_log.h"
 #include "crazypod_route_renderer.h"
 
 #define STATUS_BAR_HEIGHT 32
@@ -364,8 +365,10 @@ void crazypod_route_renderer_render(
         return;
     }
 
+    crazypod_perf_log_route_begin();
     reset_feature_surfaces();
     lv_obj_clean(content);
+    crazypod_perf_log_route_cleaned();
     if(state->route == MUSIC_ROUTE_NOW_PLAYING &&
        crazypod_now_playing_theme_enabled() &&
        !crazypod_now_playing_theme_open() &&
@@ -392,6 +395,7 @@ void crazypod_route_renderer_render(
         lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
     }
     render_feature(state, now);
+    crazypod_perf_log_route_end((int)state->route);
     lv_obj_invalidate(content);
     if(transition) {
         lv_obj_set_x(content, 0);

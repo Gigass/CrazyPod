@@ -37,6 +37,19 @@ enum {
 };
 void crazypod_perf_log_phase_begin(void);
 void crazypod_perf_log_phase_end(int phase);
+/* Inside LVGL's refresh timer: 0 relayout, 1 area joining, 2 drawing,
+ * 3 blocked waiting for the panel to take the last flush. */
+void crazypod_perf_log_refr_phase(int phase, unsigned elapsed_us);
+/*
+ * A whole-route render: begin before the old pane is torn down, cleaned
+ * once it is gone, end once the new one is built. lv_timer_handler costs
+ * several times what the drawing inside it does, and a route render is
+ * the other half of the story -- which of the two owns the pause on
+ * opening a menu was a guess until both were on the same line.
+ */
+void crazypod_perf_log_route_begin(void);
+void crazypod_perf_log_route_cleaned(void);
+void crazypod_perf_log_route_end(int route);
 void crazypod_perf_log_flush(unsigned pixels);
 /* Called by the LVGL software renderer around each draw task. */
 void crazypod_perf_log_draw_begin(void);
@@ -61,6 +74,15 @@ static inline void crazypod_perf_log_present_done(void) {}
 #define CRAZYPOD_PERF_PHASE_SCHEDULER 1
 static inline void crazypod_perf_log_phase_begin(void) {}
 static inline void crazypod_perf_log_phase_end(int phase) { (void)phase; }
+static inline void crazypod_perf_log_refr_phase(
+    int phase, unsigned elapsed_us)
+{
+    (void)phase;
+    (void)elapsed_us;
+}
+static inline void crazypod_perf_log_route_begin(void) {}
+static inline void crazypod_perf_log_route_cleaned(void) {}
+static inline void crazypod_perf_log_route_end(int route) { (void)route; }
 static inline void crazypod_perf_log_flush(unsigned pixels)
 {
     (void)pixels;
