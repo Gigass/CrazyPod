@@ -10,12 +10,15 @@
 #define CRAZYPOD_MAX_PLAYLISTS 64
 #define CRAZYPOD_MAX_PLAYLIST_TRACKS 8192
 
+#define CRAZYPOD_MUSIC_TITLE_SIZE 96
+#define CRAZYPOD_MUSIC_NAME_SIZE 72
+
 struct crazypod_track {
     char path[MAX_PATH];
-    char title[96];
-    char artist[72];
-    char album[72];
-    char album_artist[72];
+    char title[CRAZYPOD_MUSIC_TITLE_SIZE];
+    char artist[CRAZYPOD_MUSIC_NAME_SIZE];
+    char album[CRAZYPOD_MUSIC_NAME_SIZE];
+    char album_artist[CRAZYPOD_MUSIC_NAME_SIZE];
     uint32_t duration_ms;
     uint32_t artwork_offset;
     uint32_t artwork_size;
@@ -30,14 +33,14 @@ struct crazypod_track {
 };
 
 struct crazypod_playlist {
-    char name[72];
+    char name[CRAZYPOD_MUSIC_NAME_SIZE];
     uint32_t first_track;
     uint32_t track_count;
 };
 
 struct crazypod_album {
-    char title[72];
-    char artist[72];
+    char title[CRAZYPOD_MUSIC_NAME_SIZE];
+    char artist[CRAZYPOD_MUSIC_NAME_SIZE];
     uint32_t first_track;
     uint32_t track_count;
 };

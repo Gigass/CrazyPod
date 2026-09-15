@@ -43,7 +43,7 @@
     CRAZYPOD_STATE_DIRECTORY "/favorites.tmp"
 #define CRAZYPOD_FAVORITES_NAME CP_TR("My Favorites")
 #define CRAZYPOD_MUSIC_CACHE_MAGIC 0x43504d4cu
-#define CRAZYPOD_MUSIC_CACHE_VERSION 7u
+#define CRAZYPOD_MUSIC_CACHE_VERSION 8u
 
 struct music_source_fingerprint {
     uint32_t file_count;
@@ -60,6 +60,7 @@ struct music_cache_header {
     uint32_t track_count;
     uint32_t playlist_count;
     uint32_t playlist_track_count;
+    uint32_t text_bytes;
     struct music_source_fingerprint source_fingerprint;
     uint32_t checksum;
 };
@@ -67,7 +68,7 @@ struct music_cache_header {
 static struct crazypod_music_storage catalog_storage;
 #define tracks catalog_storage.tracks
 #define albums catalog_storage.albums
-#define artists catalog_storage.artists
+#define artist_names catalog_storage.artist_names
 #define artist_first_tracks catalog_storage.artist_first_tracks
 #define artist_track_counts catalog_storage.artist_track_counts
 #define artist_track_indices catalog_storage.artist_track_indices
@@ -75,6 +76,95 @@ static struct crazypod_music_storage catalog_storage;
 #define path_track_indices catalog_storage.path_track_indices
 #define favorite_track_indices catalog_storage.favorite_track_indices
 #define search_track_indices catalog_storage.search_track_indices
+
+/* Records carry offsets into the shared text pool; these read them back. */
+static const char *pool_text(uint32_t offset)
+{
+    return crazypod_music_storage_text(&catalog_storage, offset);
+}
+
+static const char *record_path(const struct crazypod_track_record *record)
+{
+    return pool_text(record->path_offset);
+}
+
+static const char *record_title(const struct crazypod_track_record *record)
+{
+    return pool_text(record->title_offset);
+}
+
+static const char *record_artist(const struct crazypod_track_record *record)
+{
+    return pool_text(record->artist_offset);
+}
+
+static const char *record_album(const struct crazypod_track_record *record)
+{
+    return pool_text(record->album_offset);
+}
+
+static const char *record_album_artist(
+    const struct crazypod_track_record *record)
+{
+    return pool_text(record->album_artist_offset);
+}
+
+/*
+ * The pool is sized before the scan starts: paths are measured exactly
+ * during the counting pass, and the four tag strings get a per-track
+ * budget. The budget is comfortably above what real tags need; a track
+ * that still overruns it loses the tail of a display string rather than
+ * failing the whole library. Paths are never shortened -- a truncated
+ * path is a file that cannot be opened.
+ */
+#define CRAZYPOD_MUSIC_TEXT_BUDGET 160
+
+static size_t text_pool_bytes(uint32_t count, uint32_t path_bytes)
+{
+    uint64_t total = (uint64_t)path_bytes +
+        (uint64_t)count * CRAZYPOD_MUSIC_TEXT_BUDGET;
+
+    return total > SIZE_MAX ? SIZE_MAX : (size_t)total;
+}
+
+static size_t add_pool_text(const char *text, size_t max_length)
+{
+    return crazypod_music_storage_add_text(
+        &catalog_storage, text, max_length);
+}
+
+static size_t add_pool_display_text(const char *text, size_t max_length)
+{
+    return crazypod_music_storage_add_text_truncating(
+        &catalog_storage, text, max_length);
+}
+
+static void expand_track(const struct crazypod_track_record *record,
+                         struct crazypod_track *track)
+{
+    memset(track, 0, sizeof(*track));
+    snprintf(track->path, sizeof(track->path), "%s",
+             record_path(record));
+    snprintf(track->title, sizeof(track->title), "%s",
+             record_title(record));
+    snprintf(track->artist, sizeof(track->artist), "%s",
+             record_artist(record));
+    snprintf(track->album, sizeof(track->album), "%s",
+             record_album(record));
+    snprintf(track->album_artist, sizeof(track->album_artist), "%s",
+             record_album_artist(record));
+    track->duration_ms = record->duration_ms;
+    track->artwork_offset = record->artwork_offset;
+    track->artwork_size = record->artwork_size;
+    track->source_size = record->source_size;
+    track->source_mtime = record->source_mtime;
+    track->year = record->year;
+    track->track_number = record->track_number;
+    track->disc_number = record->disc_number;
+    track->format = record->format;
+    track->artwork_type = record->artwork_type;
+    track->artwork_embedded = record->artwork_embedded != 0;
+}
 static struct crazypod_playlist playlists[CRAZYPOD_MAX_PLAYLISTS];
 static uint32_t playlist_track_indices[CRAZYPOD_MAX_PLAYLIST_TRACKS];
 static struct crazypod_playlist favorites_playlist;
@@ -106,8 +196,9 @@ static long scan_stack[(DEFAULT_STACK_SIZE + 0x3000) / sizeof(long)];
 static struct mutex catalog_mutex;
 
 static void wait_for_scan_resume(void);
-static int compare_track_order(const struct crazypod_track *left,
-                               const struct crazypod_track *right);
+static int compare_track_order(
+    const struct crazypod_track_record *left,
+    const struct crazypod_track_record *right);
 static void load_favorites(void);
 
 static uint32_t checksum_update(uint32_t hash, const void *data, size_t size)
@@ -171,6 +262,8 @@ static uint32_t music_cache_checksum(
     hash = checksum_update(
         hash, tracks,
         (size_t)header.track_count * sizeof(tracks[0]));
+    hash = checksum_update(
+        hash, catalog_storage.text, (size_t)header.text_bytes);
     hash = checksum_update(
         hash, playlists,
         (size_t)header.playlist_count * sizeof(playlists[0]));
@@ -236,16 +329,27 @@ static bool music_cache_contents_valid(
 {
     uint32_t i;
 
+    /* A record is only as trustworthy as its offsets: every one has to
+     * point at a NUL-terminated string inside the pool that was read. */
+    if(header->text_bytes == 0 ||
+       header->text_bytes > catalog_storage.text_capacity ||
+       catalog_storage.text == NULL ||
+       catalog_storage.text[header->text_bytes - 1] != '\0')
+        return false;
     for(i = 0; i < header->track_count; ++i) {
-        const struct crazypod_track *track = &tracks[i];
+        const struct crazypod_track_record *record = &tracks[i];
+        const uint32_t offsets[] = {
+            record->path_offset, record->title_offset,
+            record->artist_offset, record->album_offset,
+            record->album_artist_offset
+        };
+        unsigned j;
 
-        if(memchr(track->path, '\0', sizeof(track->path)) == NULL ||
-           memchr(track->title, '\0', sizeof(track->title)) == NULL ||
-           memchr(track->artist, '\0', sizeof(track->artist)) == NULL ||
-           memchr(track->album, '\0', sizeof(track->album)) == NULL ||
-           memchr(track->album_artist, '\0',
-                  sizeof(track->album_artist)) == NULL ||
-           track->path[0] != '/')
+        for(j = 0; j < sizeof(offsets) / sizeof(offsets[0]); ++j) {
+            if(offsets[j] >= header->text_bytes)
+                return false;
+        }
+        if(record_path(record)[0] != '/')
             return false;
     }
     for(i = 0; i < header->playlist_count; ++i) {
@@ -312,11 +416,14 @@ static bool music_cache_load(void)
             sizeof(playlist_track_indices[0]) &&
         header.track_count <= INT_MAX &&
         header.playlist_count <= CRAZYPOD_MAX_PLAYLISTS &&
-        header.playlist_track_count <= CRAZYPOD_MAX_PLAYLIST_TRACKS;
+        header.playlist_track_count <= CRAZYPOD_MAX_PLAYLIST_TRACKS &&
+        header.text_bytes > 0;
     if(valid) {
         valid = crazypod_music_storage_allocate_tracks(
                     &catalog_storage, header.track_count) &&
-                crazypod_music_storage_allocate_groups(
+                crazypod_music_storage_allocate_text(
+                    &catalog_storage, header.text_bytes) &&
+                crazypod_music_storage_allocate_indices(
                     &catalog_storage, header.track_count);
         if(!valid)
             scan_failure = CRAZYPOD_MUSIC_SCAN_NO_MEMORY;
@@ -327,6 +434,8 @@ static bool music_cache_load(void)
                 fd, tracks,
                 (size_t)header.track_count * sizeof(tracks[0])) &&
             read_exact(
+                fd, catalog_storage.text, header.text_bytes) &&
+            read_exact(
                 fd, playlists,
                 (size_t)header.playlist_count *
                 sizeof(playlists[0])) &&
@@ -334,6 +443,8 @@ static bool music_cache_load(void)
                 fd, playlist_track_indices,
                 (size_t)header.playlist_track_count *
                 sizeof(playlist_track_indices[0]));
+        if(valid)
+            catalog_storage.text_used = header.text_bytes;
     }
     close(fd);
     if(!valid ||
@@ -369,6 +480,7 @@ static bool music_cache_save(unsigned expected_epoch)
     header.track_count = (uint32_t)track_count;
     header.playlist_count = (uint32_t)playlist_count;
     header.playlist_track_count = (uint32_t)playlist_track_count;
+    header.text_bytes = (uint32_t)catalog_storage.text_used;
     header.source_fingerprint = scan_fingerprint;
     header.checksum = music_cache_checksum(&header);
 
@@ -384,6 +496,8 @@ static bool music_cache_save(unsigned expected_epoch)
         write_exact_while_scanning(fd, &header, sizeof(header)) &&
         write_exact_while_scanning(
             fd, tracks, (size_t)track_count * sizeof(tracks[0])) &&
+        write_exact_while_scanning(
+            fd, catalog_storage.text, catalog_storage.text_used) &&
         write_exact_while_scanning(
             fd, playlists,
             (size_t)playlist_count * sizeof(playlists[0])) &&
@@ -459,13 +573,13 @@ static bool text_contains(const char *text, const char *query)
     return false;
 }
 
-static bool track_matches(const struct crazypod_track *track,
+static bool track_matches(const struct crazypod_track_record *track,
                           const char *query)
 {
     return track != NULL &&
-           (text_contains(track->title, query) ||
-            text_contains(track->artist, query) ||
-            text_contains(track->album, query));
+           (text_contains(record_title(track), query) ||
+            text_contains(record_artist(track), query) ||
+            text_contains(record_album(track), query));
 }
 
 static void refresh_search_cache(const char *query)
@@ -556,31 +670,32 @@ static bool append_path(char *output, size_t size, const char *directory,
 
 static int compare_tracks(const void *left_ptr, const void *right_ptr)
 {
-    const struct crazypod_track *left = left_ptr;
-    const struct crazypod_track *right = right_ptr;
+    const struct crazypod_track_record *left = left_ptr;
+    const struct crazypod_track_record *right = right_ptr;
     int result = crazypod_collation_compare(
-        left->title, right->title);
+        record_title(left), record_title(right));
 
     if(result == 0)
         result = crazypod_collation_compare(
-            left->artist, right->artist);
+            record_artist(left), record_artist(right));
     if(result == 0)
         result = crazypod_collation_compare(
-            left->album, right->album);
+            record_album(left), record_album(right));
     if(result == 0)
-        result = compare_text(left->path, right->path);
+        result = compare_text(
+            record_path(left), record_path(right));
     return result;
 }
 
 static int compare_artist_track_indices(const void *left_ptr,
                                         const void *right_ptr)
 {
-    const struct crazypod_track *left =
+    const struct crazypod_track_record *left =
         &tracks[*(const uint32_t *)left_ptr];
-    const struct crazypod_track *right =
+    const struct crazypod_track_record *right =
         &tracks[*(const uint32_t *)right_ptr];
     int result = crazypod_collation_compare(
-        left->artist, right->artist);
+        record_artist(left), record_artist(right));
 
     return result != 0 ? result : compare_tracks(left, right);
 }
@@ -588,32 +703,33 @@ static int compare_artist_track_indices(const void *left_ptr,
 static int compare_album_track_indices(const void *left_ptr,
                                        const void *right_ptr)
 {
-    const struct crazypod_track *left =
+    const struct crazypod_track_record *left =
         &tracks[*(const uint32_t *)left_ptr];
-    const struct crazypod_track *right =
+    const struct crazypod_track_record *right =
         &tracks[*(const uint32_t *)right_ptr];
     int result = crazypod_collation_compare(
-        left->album, right->album);
+        record_album(left), record_album(right));
 
     if(result == 0)
         result = crazypod_collation_compare(
-            left->album_artist, right->album_artist);
+            record_album_artist(left), record_album_artist(right));
     return result != 0 ? result : compare_track_order(left, right);
 }
 
 static int compare_path_track_indices(const void *left_ptr,
                                       const void *right_ptr)
 {
-    const struct crazypod_track *left =
+    const struct crazypod_track_record *left =
         &tracks[*(const uint32_t *)left_ptr];
-    const struct crazypod_track *right =
+    const struct crazypod_track_record *right =
         &tracks[*(const uint32_t *)right_ptr];
 
-    return compare_text(left->path, right->path);
+    return compare_text(record_path(left), record_path(right));
 }
 
 static bool count_directory_tracks(
-    const char *path, int depth, uint32_t *count)
+    const char *path, int depth, uint32_t *count,
+    uint32_t *path_bytes)
 {
     DIR *directory;
     struct DIRENT *entry;
@@ -646,7 +762,8 @@ static bool count_directory_tracks(
         info = dir_get_info(directory, entry);
         if(info.attribute & ATTR_DIRECTORY) {
             if(!should_skip_directory(entry->d_name) &&
-               !count_directory_tracks(child, depth + 1, count)) {
+               !count_directory_tracks(
+                   child, depth + 1, count, path_bytes)) {
                 closedir(directory);
                 return false;
             }
@@ -654,12 +771,16 @@ static bool count_directory_tracks(
         else if(!is_playlist_file(child) &&
                 !is_artwork_file(child) &&
                 probe_file_format(child) != AFMT_UNKNOWN) {
-            if(*count >= INT_MAX) {
+            size_t length = strlen(child) + 1;
+
+            if(*count >= INT_MAX ||
+               *path_bytes > UINT32_MAX - length) {
                 scan_failure = CRAZYPOD_MUSIC_SCAN_NO_MEMORY;
                 closedir(directory);
                 return false;
             }
             ++*count;
+            *path_bytes += (uint32_t)length;
         }
 
         if((++visited & 15) == 0)
@@ -676,7 +797,7 @@ static void NO_INLINE add_track(const char *path, off_t source_size,
                                 time_t source_mtime, int format)
 {
     struct mp3entry metadata;
-    struct crazypod_track *track;
+    struct crazypod_track_record *track;
     int fd;
 
     wait_for_scan_resume();
@@ -704,20 +825,48 @@ static void NO_INLINE add_track(const char *path, off_t source_size,
         close(fd);
         return;
     }
-    track = &tracks[track_count++];
-    memset(track, 0, sizeof(*track));
-    copy_text(track->path, sizeof(track->path), path, "");
-    if(metadata.title != NULL && metadata.title[0] != '\0')
-        copy_text(track->title, sizeof(track->title), metadata.title, "");
-    else
-        title_from_path(track->title, sizeof(track->title), path);
-    copy_text(track->artist, sizeof(track->artist), metadata.artist,
-              CP_TR("Unknown Artist"));
-    copy_text(track->album, sizeof(track->album), metadata.album,
-              CP_TR("Unknown Album"));
-    copy_text(track->album_artist, sizeof(track->album_artist),
-              metadata.albumartist,
-              track->artist[0] != '\0' ? track->artist : CP_TR("Unknown Artist"));
+    {
+        char title[CRAZYPOD_MUSIC_TITLE_SIZE];
+        char artist[CRAZYPOD_MUSIC_NAME_SIZE];
+        char album[CRAZYPOD_MUSIC_NAME_SIZE];
+        char album_artist[CRAZYPOD_MUSIC_NAME_SIZE];
+        size_t offsets[5];
+        unsigned i;
+
+        if(metadata.title != NULL && metadata.title[0] != '\0')
+            copy_text(title, sizeof(title), metadata.title, "");
+        else
+            title_from_path(title, sizeof(title), path);
+        copy_text(artist, sizeof(artist), metadata.artist,
+                  CP_TR("Unknown Artist"));
+        copy_text(album, sizeof(album), metadata.album,
+                  CP_TR("Unknown Album"));
+        copy_text(album_artist, sizeof(album_artist),
+                  metadata.albumartist,
+                  artist[0] != '\0' ? artist : CP_TR("Unknown Artist"));
+        offsets[0] = add_pool_text(path, MAX_PATH - 1);
+        offsets[1] = add_pool_display_text(title, sizeof(title) - 1);
+        offsets[2] = add_pool_display_text(artist, sizeof(artist) - 1);
+        offsets[3] = add_pool_display_text(album, sizeof(album) - 1);
+        offsets[4] = add_pool_display_text(album_artist,
+                                           sizeof(album_artist) - 1);
+        for(i = 0; i < 5; ++i) {
+            if(offsets[i] == SIZE_MAX) {
+                /* Publishing a library with missing names would be worse
+                 * than asking for a rescan with more room. */
+                scan_failure = CRAZYPOD_MUSIC_SCAN_NO_MEMORY;
+                close(fd);
+                return;
+            }
+        }
+        track = &tracks[track_count++];
+        memset(track, 0, sizeof(*track));
+        track->path_offset = (uint32_t)offsets[0];
+        track->title_offset = (uint32_t)offsets[1];
+        track->artist_offset = (uint32_t)offsets[2];
+        track->album_offset = (uint32_t)offsets[3];
+        track->album_artist_offset = (uint32_t)offsets[4];
+    }
     track->duration_ms = metadata.length;
     track->source_size = source_size > 0
         ? (uint32_t)source_size : 0;
@@ -728,7 +877,7 @@ static void NO_INLINE add_track(const char *path, off_t source_size,
     track->disc_number = metadata.discnum > 0 ? metadata.discnum : 0;
     track->format = metadata.codectype < 256 ? metadata.codectype : 0;
     if(metadata.has_embedded_albumart) {
-        track->artwork_embedded = true;
+        track->artwork_embedded = 1;
         track->artwork_offset = metadata.albumart.pos;
         track->artwork_size = metadata.albumart.size;
         track->artwork_type = metadata.albumart.type;
@@ -898,17 +1047,54 @@ static void build_groups(void)
               compare_path_track_indices);
     }
 
+    /* Count the distinct runs before allocating: a library has far fewer
+     * albums and artists than tracks, and sizing these tables by the track
+     * count was most of the catalog's memory. */
     artist_count = 0;
     for(i = 0; i < track_count; ++i) {
-        const struct crazypod_track *track =
+        const struct crazypod_track_record *track =
+            &tracks[artist_track_indices[i]];
+
+        if(i == 0 ||
+           compare_text(
+               record_artist(&tracks[artist_track_indices[i - 1]]),
+               record_artist(track)) != 0)
+            ++artist_count;
+    }
+
+    album_count = 0;
+    for(i = 0; i < track_count; ++i) {
+        const struct crazypod_track_record *track =
+            &tracks[album_track_indices[i]];
+        const struct crazypod_track_record *previous =
+            i > 0 ? &tracks[album_track_indices[i - 1]] : NULL;
+
+        if(previous == NULL ||
+           compare_text(record_album(previous),
+                        record_album(track)) != 0 ||
+           compare_text(record_album_artist(previous),
+                        record_album_artist(track)) != 0)
+            ++album_count;
+    }
+
+    if(!crazypod_music_storage_allocate_groups(
+           &catalog_storage, (size_t)album_count,
+           (size_t)artist_count)) {
+        artist_count = 0;
+        album_count = 0;
+        scan_failure = CRAZYPOD_MUSIC_SCAN_NO_MEMORY;
+        return;
+    }
+
+    artist_count = 0;
+    for(i = 0; i < track_count; ++i) {
+        const struct crazypod_track_record *track =
             &tracks[artist_track_indices[i]];
 
         if(artist_count == 0 ||
-           compare_text(artists[artist_count - 1],
-                        track->artist) != 0) {
-            copy_text(artists[artist_count],
-                      sizeof(artists[artist_count]),
-                      track->artist, CP_TR("Unknown Artist"));
+           compare_text(pool_text(artist_names[artist_count - 1]),
+                        record_artist(track)) != 0) {
+            artist_names[artist_count] = track->artist_offset;
             artist_first_tracks[artist_count] = (uint32_t)i;
             artist_track_counts[artist_count] = 0;
             ++artist_count;
@@ -918,20 +1104,19 @@ static void build_groups(void)
 
     album_count = 0;
     for(i = 0; i < track_count; ++i) {
-        const struct crazypod_track *track =
+        const struct crazypod_track_record *track =
             &tracks[album_track_indices[i]];
-        struct crazypod_album *album =
+        struct crazypod_album_record *album =
             album_count > 0 ? &albums[album_count - 1] : NULL;
 
         if(album == NULL ||
-           compare_text(album->title, track->album) != 0 ||
-           compare_text(album->artist,
-                        track->album_artist) != 0) {
+           compare_text(pool_text(album->title_offset),
+                        record_album(track)) != 0 ||
+           compare_text(pool_text(album->artist_offset),
+                        record_album_artist(track)) != 0) {
             album = &albums[album_count++];
-            copy_text(album->title, sizeof(album->title),
-                      track->album, CP_TR("Unknown Album"));
-            copy_text(album->artist, sizeof(album->artist),
-                      track->album_artist, CP_TR("Unknown Artist"));
+            album->title_offset = track->album_offset;
+            album->artist_offset = track->album_artist_offset;
             album->first_track = (uint32_t)i;
             album->track_count = 0;
         }
@@ -947,7 +1132,8 @@ static int find_track_by_path(const char *path)
     while(low <= high) {
         int middle = low + (high - low) / 2;
         int track_index = path_track_indices[middle];
-        int result = compare_text(tracks[track_index].path, path);
+        int result = compare_text(
+            record_path(&tracks[track_index]), path);
 
         if(result == 0)
             return track_index;
@@ -1117,12 +1303,12 @@ static bool save_favorites(void)
     for(position = 0;
         complete && position < favorite_track_count;
         ++position) {
-        const struct crazypod_track *track =
-            &tracks[favorite_track_indices[position]];
-        size_t length = strlen(track->path);
+        const char *track_path =
+            record_path(&tracks[favorite_track_indices[position]]);
+        size_t length = strlen(track_path);
 
         complete =
-            write_exact(fd, track->path, length) &&
+            write_exact(fd, track_path, length) &&
             write_exact(fd, "\n", 1);
     }
     if(complete)
@@ -1243,16 +1429,19 @@ static void parse_playlists(void)
     }
 }
 
-static int compare_track_order(const struct crazypod_track *left,
-                               const struct crazypod_track *right)
+static int compare_track_order(
+    const struct crazypod_track_record *left,
+    const struct crazypod_track_record *right)
 {
     if(left->disc_number != right->disc_number)
         return left->disc_number < right->disc_number ? -1 : 1;
     if(left->track_number != right->track_number)
         return left->track_number < right->track_number ? -1 : 1;
     {
-        int result = compare_text(left->title, right->title);
-        return result != 0 ? result : compare_text(left->path, right->path);
+        int result = compare_text(
+            record_title(left), record_title(right));
+        return result != 0 ? result
+            : compare_text(record_path(left), record_path(right));
     }
 }
 
@@ -1289,7 +1478,20 @@ void crazypod_music_init(void)
         crazypod_music_catalog_validation_after_boot(catalog_ready);
     if(catalog_ready) {
         build_groups();
-        load_favorites();
+        /* build_groups() sizes the album and artist tables from what it
+         * counted; if that allocation fails the catalog is incomplete, so
+         * drop it rather than publishing a library with no albums. */
+        if(scan_failure != CRAZYPOD_MUSIC_SCAN_OK) {
+            crazypod_music_storage_release(&catalog_storage);
+            track_count = 0;
+            artist_count = 0;
+            album_count = 0;
+            playlist_count = 0;
+            playlist_track_count = 0;
+            catalog_ready = false;
+        }
+        else
+            load_favorites();
     }
     search_cache_generation = (unsigned)-1;
     search_cache_query[0] = '\0';
@@ -1299,6 +1501,7 @@ void crazypod_music_init(void)
 void crazypod_music_scan(void)
 {
     uint32_t candidate_count = 0;
+    uint32_t candidate_path_bytes = 0;
     unsigned build_epoch;
     bool include_ipod_music =
         crazypod_state_read_ipod_music();
@@ -1323,20 +1526,27 @@ void crazypod_music_scan(void)
            sizeof(scan_fingerprint));
     mutex_unlock(&catalog_mutex);
 
-    if(!count_directory_tracks("/Music", 0, &candidate_count) ||
+    if(!count_directory_tracks(
+           "/Music", 0, &candidate_count, &candidate_path_bytes) ||
        (!scan_abort_requested && include_ipod_music &&
         !count_directory_tracks(
-            "/iPod_Control/Music", 0, &candidate_count)) ||
+            "/iPod_Control/Music", 0, &candidate_count,
+            &candidate_path_bytes)) ||
        (!scan_abort_requested &&
-        !count_directory_tracks("/Podcasts", 0, &candidate_count))) {
+        !count_directory_tracks(
+            "/Podcasts", 0, &candidate_count,
+            &candidate_path_bytes))) {
         if(!scan_abort_requested &&
            scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
             scan_failure = CRAZYPOD_MUSIC_SCAN_LIBRARY_CHANGED;
     }
     if(!scan_abort_requested &&
        scan_failure == CRAZYPOD_MUSIC_SCAN_OK &&
-       !crazypod_music_storage_allocate_tracks(
-           &catalog_storage, candidate_count))
+       (!crazypod_music_storage_allocate_tracks(
+            &catalog_storage, candidate_count) ||
+        !crazypod_music_storage_allocate_text(
+            &catalog_storage,
+            text_pool_bytes(candidate_count, candidate_path_bytes))))
         scan_failure = CRAZYPOD_MUSIC_SCAN_NO_MEMORY;
 
     if(!scan_abort_requested &&
@@ -1355,7 +1565,8 @@ void crazypod_music_scan(void)
        scan_failure == CRAZYPOD_MUSIC_SCAN_OK) {
         crazypod_music_storage_shrink_tracks(
             &catalog_storage, (size_t)track_count);
-        if(!crazypod_music_storage_allocate_groups(
+        crazypod_music_storage_shrink_text(&catalog_storage);
+        if(!crazypod_music_storage_allocate_indices(
                &catalog_storage, (size_t)track_count))
             scan_failure = CRAZYPOD_MUSIC_SCAN_NO_MEMORY;
     }
@@ -1749,7 +1960,7 @@ bool crazypod_music_copy_track(int index, struct crazypod_track *track)
         return copy_transient_track(track);
     mutex_lock(&catalog_mutex);
     if(catalog_ready && index >= 0 && index < track_count) {
-        *track = tracks[index];
+        expand_track(&tracks[index], track);
         copied = true;
     }
     mutex_unlock(&catalog_mutex);
@@ -1792,7 +2003,8 @@ bool crazypod_music_copy_artist(int index, char *artist, size_t size)
     artist[0] = '\0';
     mutex_lock(&catalog_mutex);
     if(catalog_ready && index >= 0 && index < artist_count) {
-        snprintf(artist, size, "%s", artists[index]);
+        snprintf(artist, size, "%s",
+                 pool_text(artist_names[index]));
         copied = true;
     }
     mutex_unlock(&catalog_mutex);
@@ -1824,7 +2036,7 @@ bool crazypod_music_copy_artist_track(int artist_index, int track_index,
        artist_index < artist_count && track_index >= 0 &&
        (uint32_t)track_index < artist_track_counts[artist_index]) {
         pool_index = artist_first_tracks[artist_index] + track_index;
-        *track = tracks[artist_track_indices[pool_index]];
+        expand_track(&tracks[artist_track_indices[pool_index]], track);
         copied = true;
     }
     mutex_unlock(&catalog_mutex);
@@ -1849,7 +2061,13 @@ bool crazypod_music_copy_album(int index, struct crazypod_album *album)
         return false;
     mutex_lock(&catalog_mutex);
     if(catalog_ready && index >= 0 && index < album_count) {
-        *album = albums[index];
+        memset(album, 0, sizeof(*album));
+        snprintf(album->title, sizeof(album->title), "%s",
+                 pool_text(albums[index].title_offset));
+        snprintf(album->artist, sizeof(album->artist), "%s",
+                 pool_text(albums[index].artist_offset));
+        album->first_track = albums[index].first_track;
+        album->track_count = albums[index].track_count;
         copied = true;
     }
     mutex_unlock(&catalog_mutex);
@@ -1871,7 +2089,7 @@ int crazypod_music_album_track_count(int album_index)
 bool crazypod_music_copy_album_track(int album_index, int track_index,
                                      struct crazypod_track *track)
 {
-    const struct crazypod_album *album;
+    const struct crazypod_album_record *album;
     int pool_index;
     bool copied = false;
 
@@ -1883,7 +2101,8 @@ bool crazypod_music_copy_album_track(int album_index, int track_index,
         if(track_index >= 0 &&
            (uint32_t)track_index < album->track_count) {
             pool_index = album->first_track + track_index;
-            *track = tracks[album_track_indices[pool_index]];
+            expand_track(
+                &tracks[album_track_indices[pool_index]], track);
             copied = true;
         }
     }
@@ -1951,7 +2170,7 @@ bool crazypod_music_copy_playlist_track(int playlist_index, int track_index,
                 library_index = playlist_track_indices[pool_index];
             }
             if(library_index >= 0 && library_index < track_count) {
-                *track = tracks[library_index];
+                expand_track(&tracks[library_index], track);
                 copied = true;
             }
         }
@@ -2056,7 +2275,8 @@ bool crazypod_music_copy_search_track(const char *query, int result_index,
     if(catalog_ready) {
         refresh_search_cache(query);
         if(result_index >= 0 && result_index < search_result_count) {
-            *track = tracks[search_track_indices[result_index]];
+            expand_track(
+                &tracks[search_track_indices[result_index]], track);
             copied = true;
         }
     }
@@ -2142,7 +2362,7 @@ bool crazypod_music_play_search(const char *query, int selected_index)
         if(i == selected_index)
             start = count;
         snprintf(path_storage + (size_t)count * MAX_PATH, MAX_PATH,
-                 "%s", tracks[track_index].path);
+                 "%s", record_path(&tracks[track_index]));
         ++count;
     }
     mutex_unlock(&catalog_mutex);
@@ -2160,7 +2380,7 @@ bool crazypod_music_play(enum crazypod_music_scope scope, int group_index,
     char *path_storage;
     char selected_path[MAX_PATH];
     const struct crazypod_playlist *playlist = NULL;
-    const struct crazypod_album *album = NULL;
+    const struct crazypod_album_record *album = NULL;
     int queue_handle;
     int requested_count;
     int count = 0;
@@ -2221,7 +2441,7 @@ bool crazypod_music_play(enum crazypod_music_scope scope, int group_index,
             if(i == selected_index)
                 start = count;
             snprintf(path_storage + (size_t)count * MAX_PATH, MAX_PATH,
-                     "%s", tracks[library_index].path);
+                     "%s", record_path(&tracks[library_index]));
             ++count;
         }
     }
@@ -2232,10 +2452,10 @@ bool crazypod_music_play(enum crazypod_music_scope scope, int group_index,
             if(library_index < 0 || library_index >= track_count)
                 continue;
             snprintf(path_storage + (size_t)count * MAX_PATH, MAX_PATH,
-                     "%s", tracks[library_index].path);
+                     "%s", record_path(&tracks[library_index]));
             if(i == selected_index)
                 snprintf(selected_path, sizeof(selected_path), "%s",
-                         tracks[library_index].path);
+                         record_path(&tracks[library_index]));
             ++count;
         }
         if(selected_path[0] != '\0') {
@@ -2250,19 +2470,20 @@ bool crazypod_music_play(enum crazypod_music_scope scope, int group_index,
     else {
         const char *artist = scope == CRAZYPOD_SCOPE_ARTIST &&
             group_index >= 0 && group_index < artist_count
-                ? artists[group_index] : NULL;
+                ? pool_text(artist_names[group_index]) : NULL;
         int visible_index = 0;
 
         for(i = 0; i < track_count; ++i) {
             bool include = scope == CRAZYPOD_SCOPE_ALL;
             if(scope == CRAZYPOD_SCOPE_ARTIST && artist != NULL)
-                include = compare_text(tracks[i].artist, artist) == 0;
+                include = compare_text(
+                    record_artist(&tracks[i]), artist) == 0;
 
             if(include) {
                 if(visible_index == selected_index)
                     start = count;
                 snprintf(path_storage + (size_t)count * MAX_PATH,
-                         MAX_PATH, "%s", tracks[i].path);
+                         MAX_PATH, "%s", record_path(&tracks[i]));
                 ++count;
                 ++visible_index;
             }
@@ -2303,7 +2524,7 @@ bool crazypod_music_shuffle_all(unsigned int seed)
     }
     for(i = 0; i < count; ++i)
         snprintf(path_storage + (size_t)i * MAX_PATH, MAX_PATH,
-                 "%s", tracks[i].path);
+                 "%s", record_path(&tracks[i]));
     mutex_unlock(&catalog_mutex);
     queued = crazypod_queue_replace_shuffled(
         queue_paths, count, seed);
