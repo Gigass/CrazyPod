@@ -210,6 +210,14 @@ static fb_data canonical_scratch[
     CRAZYPOD_ARTWORK_CACHE_SIZE * CRAZYPOD_ARTWORK_CACHE_SIZE]
     CACHEALIGN_AT_LEAST_ATTR(16);
 static struct mutex artwork_mutex;
+static struct crazypod_artwork_diagnostics artwork_diagnostics;
+
+void crazypod_artwork_get_diagnostics(
+    struct crazypod_artwork_diagnostics *diagnostics)
+{
+    if(diagnostics != NULL)
+        *diagnostics = artwork_diagnostics;
+}
 static struct event_queue artwork_queue;
 static long artwork_stack[(DEFAULT_STACK_SIZE + 0x5000) / sizeof(long)];
 static volatile unsigned artwork_publish_generation;
@@ -778,6 +786,7 @@ static void resolve_artwork_source(
            request, discovered_path, &source->file_size,
            &source->file_mtime)) {
         source->kind = CRAZYPOD_ARTWORK_SOURCE_EXTERNAL;
+        ++artwork_diagnostics.sources_external;
         source->type = is_jpeg(discovered_path)
             ? AA_TYPE_JPG : AA_TYPE_BMP;
         snprintf(source->path, sizeof(source->path), "%s",
@@ -786,6 +795,10 @@ static void resolve_artwork_source(
     }
     if(request->embedded) {
         source->kind = CRAZYPOD_ARTWORK_SOURCE_EMBEDDED;
+        ++artwork_diagnostics.sources_embedded;
+        if((request->type & AA_CLEAR_FLAGS_MASK) != AA_TYPE_JPG &&
+           (request->type & AA_CLEAR_FLAGS_MASK) != AA_TYPE_BMP)
+            ++artwork_diagnostics.unsupported_type;
         source->type = request->type;
         source->file_size = request->source_size;
         source->file_mtime = request->source_mtime;
@@ -794,6 +807,8 @@ static void resolve_artwork_source(
         snprintf(source->path, sizeof(source->path), "%s",
                  request->track_path);
     }
+    else
+        ++artwork_diagnostics.sources_none;
 }
 
 static enum artwork_cache_result artwork_cache_load(
@@ -980,8 +995,11 @@ static bool decode_artwork(const struct artwork_source *source,
     }
 
     if(result < 0 || bitmap.width <= 0 || bitmap.height <= 0 ||
-       bitmap.data == NULL)
+       bitmap.data == NULL) {
+        ++artwork_diagnostics.decode_failed;
         return false;
+    }
+    ++artwork_diagnostics.decoded;
     return crazypod_image_configure_rgb565(
         descriptor, (fb_data *)bitmap.data, bitmap.width, bitmap.height);
 }

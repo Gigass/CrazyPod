@@ -32,6 +32,21 @@ enum crazypod_artwork_state {
     CRAZYPOD_ARTWORK_ERROR,
 };
 
+/*
+ * Why a track shows no cover. Counted for every decode the artwork thread
+ * attempts, so a device that shows no art can say which step failed.
+ */
+struct crazypod_artwork_diagnostics {
+    uint32_t sources_external;  /* folder.jpg or .rockbox/albumart */
+    uint32_t sources_embedded;  /* a picture frame inside the file */
+    uint32_t sources_none;      /* the track has neither */
+    uint32_t decoded;
+    uint32_t decode_failed;
+    uint32_t unsupported_type;  /* PNG: no decoder is built in */
+};
+
+void crazypod_artwork_get_diagnostics(
+    struct crazypod_artwork_diagnostics *diagnostics);
 void crazypod_artwork_init(void);
 void crazypod_artwork_prime_library(void);
 void crazypod_artwork_cancel_library_prime(void);

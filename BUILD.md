@@ -238,7 +238,10 @@ input-to-pixels latency of a wheel step split into the three phases it
 can wait in: the frame-clock gate, the LVGL render, and the panel write
 (`count/average/gate/render/present/worst+dropped`, milliseconds; a
 dropped step is one that never reached the panel before the next
-input arrived). Lines are held in RAM
+input arrived), and `art=`, why tracks do or do not show a cover
+(`external/embedded/none/decoded/failed/unsupported`; unsupported
+counts embedded pictures in a format no decoder is built for, which
+means PNG — only JPEG and BMP are decodable). Lines are held in RAM
 and written only when the disk is already awake or the buffer fills, since
 waking a sleeping drive from the UI thread costs most of a second. The log
 stops itself at 512 KiB; delete the file to start over. Play music for a

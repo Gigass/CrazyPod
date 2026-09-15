@@ -16,6 +16,7 @@
 
 #include "lvgl.h"
 
+#include "crazypod_artwork.h"
 #include "crazypod_audiobooks.h"
 #include "crazypod_frameclock.h"
 #include "crazypod_music.h"
@@ -475,6 +476,7 @@ static void format_line(long now)
                "pmax=max_present_us home=renders/timeouts "
                "wr=prev_write_us seek=last_chapter_seek_ms objs=screen_objects "
                "step=count/avg_ms/gate_ms/render_ms/present_ms/worst_ms+dropped "
+               "art=external/embedded/none/decoded/failed/unsupported "
                "dt=type:count/ms,... "
                "inv=count,x1.y1-x2.y2:count@class/caller,... "
                "lay=count,x1.y1-x2.y2:count@class/type "
@@ -533,6 +535,20 @@ static void format_line(long now)
     else
         snprintf(text, sizeof(text), " step=0+%u", perf.step_dropped);
     append(text);
+    {
+        struct crazypod_artwork_diagnostics art;
+
+        crazypod_artwork_get_diagnostics(&art);
+        snprintf(text, sizeof(text),
+                 " art=%lu/%lu/%lu/%lu/%lu/%lu",
+                 (unsigned long)art.sources_external,
+                 (unsigned long)art.sources_embedded,
+                 (unsigned long)art.sources_none,
+                 (unsigned long)art.decoded,
+                 (unsigned long)art.decode_failed,
+                 (unsigned long)art.unsupported_type);
+        append(text);
+    }
     append_draw_stats();
     append_invalidations();
     append_layers();
