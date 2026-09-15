@@ -197,6 +197,7 @@
   "Changes More Features": "更改“更多功能”",
   "Changes launcher position": "更改启动器位置",
   "Chapter": "章节",
+  "Chapter %d": "第 %d 章",
   "Chapter %d of %d": "第 %d 章，共 %d 章",
   "Chapters": "章节",
   "Charcoal": "深炭灰",
@@ -857,5 +858,6 @@
   "Not enough memory for this game": "内存不足，无法运行游戏",
   "Game save is damaged; original preserved": "游戏存档损坏，已保留原文件",
   "Game emulation stopped": "游戏运行已停止",
-  "Game file or save could not be written/read": "游戏或存档文件读写失败"
+  "Game file or save could not be written/read": "游戏或存档文件读写失败",
+  "No Chapters": "没有章节"
 }

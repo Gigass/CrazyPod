@@ -988,6 +988,65 @@ static void show_now_playback_popup(void)
     animate_now_popup(now_overlay_panel, geometry.y);
 }
 
+/* The queue popup doubles as the audiobook chapter list: same three-row
+ * panel, different source. Only these four helpers differ. */
+static bool now_list_is_chapters(void)
+{
+    return now_overlay == CRAZYPOD_NOW_OVERLAY_CHAPTERS;
+}
+
+static int now_list_count(void)
+{
+    int audiobook;
+
+    if(!now_list_is_chapters())
+        return crazypod_queue_count();
+    audiobook = current_audiobook();
+    return audiobook >= 0
+        ? crazypod_audiobook_chapter_count(audiobook) : 0;
+}
+
+static int now_list_current(void)
+{
+    int audiobook;
+
+    if(!now_list_is_chapters())
+        return crazypod_queue_index();
+    audiobook = current_audiobook();
+    return audiobook >= 0
+        ? crazypod_audiobook_chapter_at(
+              audiobook, crazypod_audiobook_position_ms(audiobook))
+        : -1;
+}
+
+static const char *now_list_title(int index, char *buffer, size_t size)
+{
+    static struct crazypod_track track;
+    char path[MAX_PATH];
+    int audiobook;
+
+    if(now_list_is_chapters()) {
+        const struct crazypod_audiobook_chapter *chapter;
+
+        audiobook = current_audiobook();
+        chapter = audiobook >= 0
+            ? crazypod_audiobook_chapter_get(audiobook, index) : NULL;
+        if(chapter == NULL)
+            return CP_TR("Unavailable");
+        if(chapter->title[0] != '\0') {
+            snprintf(buffer, size, "%s", chapter->title);
+            return buffer;
+        }
+        snprintf(buffer, size, CP_FMT("Chapter %d"), index + 1);
+        return buffer;
+    }
+    if(crazypod_queue_copy_path(index, path, sizeof(path)) &&
+       crazypod_music_copy_track(
+           crazypod_music_find_track(path), &track))
+        return track.title;
+    return CP_TR("Unavailable");
+}
+
 static int now_queue_start(int count)
 {
     int start;
@@ -1004,8 +1063,9 @@ static int now_queue_start(int count)
 
 static void refresh_now_queue_popup(void)
 {
-    int count = crazypod_queue_count();
-    int current = crazypod_queue_index();
+    int count = now_list_count();
+    int current = now_list_current();
+    bool chapters = now_list_is_chapters();
     int start;
     char text[32];
     int row;
@@ -1022,9 +1082,11 @@ static void refresh_now_queue_popup(void)
     }
 
     crazypod_ui_widget_icon_set(
-        now_queue_view.mode_icon, now_playback_mode_icon());
+        now_queue_view.mode_icon,
+        chapters ? CRAZYPOD_UI_ICON_BARS : now_playback_mode_icon());
     CP_LV_LABEL_SET_TEXT(
-        now_queue_view.mode, now_playback_mode_label());
+        now_queue_view.mode,
+        chapters ? CP_TR("Chapters") : now_playback_mode_label());
     snprintf(text, sizeof(text), count > 0 ? CP_FMT("%d/%d") : "0/0",
              count > 0 ? now_queue_selected + 1 : 0, count);
     CP_LV_LABEL_SET_TEXT(now_queue_view.count, text);
@@ -1038,9 +1100,7 @@ static void refresh_now_queue_popup(void)
         int index = start + row;
         bool selected = index == now_queue_selected;
         bool current_row = index == current;
-        char path[MAX_PATH];
-        struct crazypod_track track;
-        bool have_track;
+        char title[96];
 
         if(index < 0 || index >= count) {
             crazypod_marquee_configure(
@@ -1051,13 +1111,9 @@ static void refresh_now_queue_popup(void)
         }
         lv_obj_remove_flag(now_queue_view.rows[row],
                            LV_OBJ_FLAG_HIDDEN);
-        have_track = crazypod_queue_copy_path(
-                index, path, sizeof(path)) &&
-            crazypod_music_copy_track(
-                crazypod_music_find_track(path), &track);
         crazypod_marquee_set_text(
             now_queue_view.titles[row],
-            have_track ? track.title : CP_TR("Unavailable"),
+            now_list_title(index, title, sizeof(title)),
             selected);
         CP_LV_LABEL_SET_TEXT(
             now_queue_view.icons[row],
@@ -1077,6 +1133,10 @@ static void refresh_now_queue_popup(void)
         lv_obj_set_style_text_opa(
             now_queue_view.titles[row], selected ? 255 : 220, 0);
     }
+    if(now_queue_view.empty != NULL)
+        CP_LV_LABEL_SET_TEXT(
+            now_queue_view.empty,
+            chapters ? CP_TR("No Chapters") : CP_TR("No Queue"));
     now_queue_generation_seen = crazypod_queue_generation();
 }
 
@@ -1087,7 +1147,7 @@ static int now_queue_visible_rows(int count)
     return count < 3 ? count : 3;
 }
 
-static void show_now_queue_popup(void)
+static void show_now_list_popup(enum crazypod_now_playing_overlay kind)
 {
     struct crazypod_popup_geometry geometry;
     int count;
@@ -1098,12 +1158,12 @@ static void show_now_queue_popup(void)
 
     if(now_overlay == CRAZYPOD_NOW_OVERLAY_NONE)
         prepare_now_overlay_glass(false);
-    begin_now_overlay(CRAZYPOD_NOW_OVERLAY_QUEUE);
-    count = crazypod_queue_count();
+    begin_now_overlay(kind);
+    count = now_list_count();
     if(count > 0 &&
        (now_queue_selected < 0 ||
         now_queue_selected >= count))
-        now_queue_selected = crazypod_queue_index();
+        now_queue_selected = now_list_current();
     if(now_queue_selected < 0)
         now_queue_selected = 0;
     if(count > 0 && now_queue_selected >= count)
@@ -1375,8 +1435,9 @@ static void restore_now_overlay(enum crazypod_now_playing_overlay overlay)
         show_now_actions_popup();
     else if(overlay == CRAZYPOD_NOW_OVERLAY_PLAYBACK)
         show_now_playback_popup();
-    else if(overlay == CRAZYPOD_NOW_OVERLAY_QUEUE)
-        show_now_queue_popup();
+    else if(overlay == CRAZYPOD_NOW_OVERLAY_QUEUE ||
+            overlay == CRAZYPOD_NOW_OVERLAY_CHAPTERS)
+        show_now_list_popup(overlay);
     else if(overlay == CRAZYPOD_NOW_OVERLAY_PROGRESS)
         show_now_progress_popup(false);
 }
@@ -1497,11 +1558,26 @@ void crazypod_now_playing_overlay_show_actions(void)
 
 void crazypod_now_playing_overlay_show_queue(void)
 {
-    show_now_queue_popup();
+    show_now_list_popup(CRAZYPOD_NOW_OVERLAY_QUEUE);
 }
 
 void crazypod_now_playing_overlay_show_progress(void)
 {
+    int audiobook = current_audiobook();
+
+    /* An audiobook's progress is measured in chapters, so Progress opens
+     * its chapter table rather than a scrub bar. */
+    if(audiobook >= 0 &&
+       crazypod_audiobook_chapter_count(audiobook) > 0) {
+        now_queue_selected = now_list_count() > 0
+            ? crazypod_audiobook_chapter_at(
+                  audiobook, crazypod_audiobook_position_ms(audiobook))
+            : 0;
+        if(now_queue_selected < 0)
+            now_queue_selected = 0;
+        show_now_list_popup(CRAZYPOD_NOW_OVERLAY_CHAPTERS);
+        return;
+    }
     if(!now_progress_available()) {
         dismiss_now_overlay_with_notice(
             CP_TR("No track available"), false, true);
@@ -1547,7 +1623,7 @@ void crazypod_now_playing_overlay_activate(void)
         if(now_action_selected == NOW_ACTION_QUEUE) {
             now_queue_selected = crazypod_queue_count() > 0
                 ? crazypod_queue_index() : 0;
-            show_now_queue_popup();
+            show_now_list_popup(CRAZYPOD_NOW_OVERLAY_QUEUE);
         }
         else if(now_action_selected == NOW_ACTION_FAVORITE) {
             struct crazypod_track track;
@@ -1600,6 +1676,16 @@ void crazypod_now_playing_overlay_activate(void)
         (void)apply_now_playback_mode(selected);
         dismiss_now_overlay_with_notice(
             now_playback_mode_label_for(selected), true, true);
+        return;
+    }
+    if(now_overlay == CRAZYPOD_NOW_OVERLAY_CHAPTERS) {
+        int audiobook = current_audiobook();
+
+        if(audiobook >= 0 && now_queue_selected >= 0 &&
+           now_queue_selected < now_list_count() &&
+           crazypod_audiobook_seek_chapter(
+               audiobook, now_queue_selected))
+            dismiss_now_overlay(true);
         return;
     }
     if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE) {
@@ -1700,9 +1786,10 @@ void crazypod_now_playing_overlay_move(int direction)
             refresh_now_actions_popup();
         }
     }
-    else if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE) {
+    else if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE ||
+            now_overlay == CRAZYPOD_NOW_OVERLAY_CHAPTERS) {
         int next = now_queue_selected + direction;
-        int count = crazypod_queue_count();
+        int count = now_list_count();
 
         if(count <= 0)
             return;
@@ -1733,7 +1820,8 @@ void crazypod_now_playing_overlay_move(int direction)
 
 void crazypod_now_playing_overlay_refresh_queue(void)
 {
-    if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE)
+    if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE ||
+       now_overlay == CRAZYPOD_NOW_OVERLAY_CHAPTERS)
         refresh_now_queue_popup();
 }
 
@@ -1762,7 +1850,9 @@ void crazypod_now_playing_overlay_refresh_tick(void)
 {
     if(now_overlay == CRAZYPOD_NOW_OVERLAY_QUEUE &&
        now_queue_generation_seen != crazypod_queue_generation())
-        show_now_queue_popup();
+        show_now_list_popup(CRAZYPOD_NOW_OVERLAY_QUEUE);
+    else if(now_overlay == CRAZYPOD_NOW_OVERLAY_CHAPTERS)
+        refresh_now_queue_popup();
     else
         refresh_now_progress_after_playback();
 }

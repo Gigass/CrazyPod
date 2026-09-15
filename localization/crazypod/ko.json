@@ -197,6 +197,7 @@
   "Changes More Features": "기타 기능 변경",
   "Changes launcher position": "런처 위치 변경",
   "Chapter": "장",
+  "Chapter %d": "%d장",
   "Chapter %d of %d": "%d장 / %d장",
   "Chapters": "장",
   "Charcoal": "차콜",
@@ -857,5 +858,6 @@
   "Not enough memory for this game": "게임 실행 메모리 부족",
   "Game save is damaged; original preserved": "게임 저장 손상, 원본 파일 유지",
   "Game emulation stopped": "게임 실행 중지됨",
-  "Game file or save could not be written/read": "게임 또는 저장 파일 읽기/쓰기 실패"
+  "Game file or save could not be written/read": "게임 또는 저장 파일 읽기/쓰기 실패",
+  "No Chapters": "챕터 없음"
 }

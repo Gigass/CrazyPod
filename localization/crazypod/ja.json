@@ -197,6 +197,7 @@
   "Changes More Features": "「その他」の機能を変更",
   "Changes launcher position": "ランチャーの位置を変更",
   "Chapter": "章",
+  "Chapter %d": "第%d章",
   "Chapter %d of %d": "第%d章 / %d章",
   "Chapters": "章",
   "Charcoal": "チャコール",
@@ -857,5 +858,6 @@
   "Not enough memory for this game": "ゲームを実行するメモリが不足",
   "Game save is damaged; original preserved": "セーブデータが破損しています。元のファイルは保持されます",
   "Game emulation stopped": "ゲームの実行が停止しました",
-  "Game file or save could not be written/read": "ゲームまたはセーブの読み書きに失敗"
+  "Game file or save could not be written/read": "ゲームまたはセーブの読み書きに失敗",
+  "No Chapters": "チャプターなし"
 }

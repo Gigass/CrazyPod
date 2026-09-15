@@ -1058,6 +1058,11 @@
         "apps/crazypod/crazypod_epub.c:185"
       ]
     },
+    "Chapter %d": {
+      "locations": [
+        "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:1040"
+      ]
+    },
     "Chapter %d of %d": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_preview.c:485"
@@ -4608,6 +4613,11 @@
       "keepEnglish": true,
       "locations": [
         "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c"
+      ]
+    },
+    "No Chapters": {
+      "locations": [
+        "apps/crazypod/ui/features/now_playing/crazypod_now_playing_overlay.c:1139"
       ]
     }
   }

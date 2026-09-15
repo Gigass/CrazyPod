@@ -197,6 +197,7 @@
   "Changes More Features": "Modifie les fonctions supplémentaires",
   "Changes launcher position": "Modifie la position du lanceur",
   "Chapter": "Chapitre",
+  "Chapter %d": "Chapitre %d",
   "Chapter %d of %d": "Chapitre %d sur %d",
   "Chapters": "Chapitres",
   "Charcoal": "Charbon",
@@ -857,5 +858,6 @@
   "Not enough memory for this game": "Mémoire insuffisante pour ce jeu",
   "Game save is damaged; original preserved": "Sauvegarde endommagée ; original conservé",
   "Game emulation stopped": "Émulation du jeu arrêtée",
-  "Game file or save could not be written/read": "Lecture/écriture du jeu ou de la sauvegarde impossible"
+  "Game file or save could not be written/read": "Lecture/écriture du jeu ou de la sauvegarde impossible",
+  "No Chapters": "Aucun chapitre"
 }

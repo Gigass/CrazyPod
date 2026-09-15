@@ -14,6 +14,8 @@ enum crazypod_now_playing_overlay {
     CRAZYPOD_NOW_OVERLAY_PLAYBACK,
     CRAZYPOD_NOW_OVERLAY_QUEUE,
     CRAZYPOD_NOW_OVERLAY_PROGRESS,
+    /* Progress for an audiobook: its chapter table, not a scrub bar. */
+    CRAZYPOD_NOW_OVERLAY_CHAPTERS,
 };
 
 struct crazypod_now_playing_overlay_host {

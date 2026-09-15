@@ -197,6 +197,7 @@
   "Changes More Features": "Ändert weitere Funktionen",
   "Changes launcher position": "Ändert die Startposition",
   "Chapter": "Kapitel",
+  "Chapter %d": "Kapitel %d",
   "Chapter %d of %d": "Kapitel %d von %d",
   "Chapters": "Kapitel",
   "Charcoal": "Anthrazit",
@@ -857,5 +858,6 @@
   "Not enough memory for this game": "Nicht genug Speicher für dieses Spiel",
   "Game save is damaged; original preserved": "Spielstand beschädigt; Original bleibt erhalten",
   "Game emulation stopped": "Emulation angehalten",
-  "Game file or save could not be written/read": "Spiel oder Spielstand nicht lesbar/schreibbar"
+  "Game file or save could not be written/read": "Spiel oder Spielstand nicht lesbar/schreibbar",
+  "No Chapters": "Keine Kapitel"
 }
