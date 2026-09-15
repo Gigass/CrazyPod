@@ -25,6 +25,15 @@ struct crazypod_stopwatch_screen_model {
     bool reset_armed;
 };
 
+/* Drops the cached dial before the pane is cleaned. */
+void crazypod_clock_screen_forget(void);
+/* Rotate the hands and retitle the numbers on the dial already up.
+ * False when there is none, or when something that is not the time has
+ * changed, and the caller must render in full. */
+bool crazypod_clock_screen_refresh(
+    const struct crazypod_clock_screen_time *time);
+bool crazypod_stopwatch_screen_refresh(
+    const struct crazypod_stopwatch_screen_model *model);
 void crazypod_clock_screen_render(
     lv_obj_t *content,
     const struct crazypod_clock_screen_time *time);

@@ -445,29 +445,38 @@ enum crazypod_menu_icon crazypod_organizer_feature_item_icon(
     }
 }
 
+static bool tick_in_place(enum crazypod_route route, long now,
+                          long ticks_per_second);
+
 bool crazypod_organizer_feature_service(
     enum crazypod_route route, long now,
     long ticks_per_second)
 {
     long interval;
+    bool due;
 
     if(route == STOPWATCH_ROUTE_VIEW)
-        return crazypod_activity_service_stopwatch(
+        due = crazypod_activity_service_stopwatch(
             now, ticks_per_second);
-    if(route == WORKOUT_ROUTE_ACTIVE)
+    else if(route == WORKOUT_ROUTE_ACTIVE)
         return crazypod_activity_service_workout(
             now, ticks_per_second);
-    if(route != CLOCK_ROUTE_VIEW &&
-       route != CLOCK_ROUTE_SLEEP_TIMER)
+    else if(route != CLOCK_ROUTE_VIEW &&
+            route != CLOCK_ROUTE_SLEEP_TIMER)
         return false;
-    interval = route == CLOCK_ROUTE_VIEW
-        ? (ticks_per_second / 4 > 0
-            ? ticks_per_second / 4 : 1)
-        : ticks_per_second;
-    if(TIME_BEFORE(now, clock_last_render_tick + interval))
+    else {
+        interval = route == CLOCK_ROUTE_VIEW
+            ? (ticks_per_second / 4 > 0
+                ? ticks_per_second / 4 : 1)
+            : ticks_per_second;
+        if(TIME_BEFORE(now, clock_last_render_tick + interval))
+            return false;
+        clock_last_render_tick = now;
+        due = true;
+    }
+    if(!due)
         return false;
-    clock_last_render_tick = now;
-    return true;
+    return !tick_in_place(route, now, ticks_per_second);
 }
 
 bool crazypod_organizer_feature_activate(
@@ -704,6 +713,38 @@ bool crazypod_organizer_feature_handle_input(
 void crazypod_organizer_feature_reset_view(void)
 {
     crazypod_calendar_screen_forget();
+    crazypod_clock_screen_forget();
+}
+
+/* A clock tick only moves the hands and the numbers, so try that before
+ * asking for a route render, which would tear the whole dial down and
+ * build it again four or ten times a second. */
+static bool tick_in_place(enum crazypod_route route, long now,
+                          long ticks_per_second)
+{
+    if(route == CLOCK_ROUTE_VIEW) {
+        struct tm *stamp = get_time();
+        const struct crazypod_clock_screen_time time = {
+            .hour = stamp->tm_hour,
+            .minute = stamp->tm_min,
+            .second = stamp->tm_sec,
+            .second_tenths = stamp->tm_sec * 10 +
+                (now % ticks_per_second) * 10 / ticks_per_second,
+            .weekday = stamp->tm_wday,
+            .month = stamp->tm_mon,
+            .month_day = stamp->tm_mday,
+        };
+
+        return crazypod_clock_screen_refresh(&time);
+    }
+    if(route == STOPWATCH_ROUTE_VIEW) {
+        struct crazypod_stopwatch_screen_model model;
+
+        crazypod_activity_stopwatch_model(
+            now, ticks_per_second, &model);
+        return crazypod_stopwatch_screen_refresh(&model);
+    }
+    return false;
 }
 
 bool crazypod_organizer_feature_stopwatch_running(void)

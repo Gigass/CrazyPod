@@ -6,11 +6,54 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_clock_screen.h"
 
 #define COLOR_WHITE 0xFFFFFF
+
+/*
+ * The dial is rebuilt on a timer -- four times a second for the clock,
+ * ten for the stopwatch -- and it is twenty-five objects of which sixteen
+ * carry a transform, so every one of them renders through its own layer.
+ * Only the three hands and a couple of numbers actually change, so build
+ * the face once and rotate the hands in place: the twelve tick marks then
+ * never redraw at all, because nothing invalidates them.
+ *
+ * Cleared by crazypod_clock_screen_forget() before the pane is cleaned.
+ */
+static struct {
+    lv_obj_t *panel;
+    lv_obj_t *hour_hand;
+    lv_obj_t *minute_hand;
+    lv_obj_t *second_hand;
+    lv_obj_t *digital;
+    lv_obj_t *date;
+    lv_obj_t *running;
+    int lap_count;
+    bool stopwatch;
+    int style;
+} face;
+
+void crazypod_clock_screen_forget(void)
+{
+    memset(&face, 0, sizeof(face));
+}
+
+static bool face_usable(bool stopwatch, int style)
+{
+    return face.panel != NULL && lv_obj_is_valid(face.panel) &&
+           face.stopwatch == stopwatch && face.style == style &&
+           face.hour_hand != NULL && face.minute_hand != NULL &&
+           face.second_hand != NULL && face.digital != NULL;
+}
+
+static void set_hand(lv_obj_t *hand, int angle_tenths)
+{
+    if(hand != NULL)
+        lv_obj_set_style_transform_rotation(hand, angle_tenths, 0);
+}
 
 static lv_obj_t *make_clock_hand(
     lv_obj_t *dial, int center, int length, int width,
@@ -52,13 +95,13 @@ static lv_obj_t *make_analog_clock(
         lv_obj_set_style_transform_pivot_y(mark, center - 7, 0);
         lv_obj_set_style_transform_rotation(mark, tick * 300, 0);
     }
-    make_clock_hand(
+    face.hour_hand = make_clock_hand(
         dial, center, size * 25 / 100, 4,
         ((hour % 12) * 30 + minute / 2) * 10, ink_color);
-    make_clock_hand(
+    face.minute_hand = make_clock_hand(
         dial, center, size * 36 / 100, 3,
         minute * 60 + second_tenths / 10, ink_color);
-    make_clock_hand(
+    face.second_hand = make_clock_hand(
         dial, center, size * 42 / 100, 1,
         second_tenths * 6, ink_color);
     crazypod_ui_widget_box(
@@ -83,6 +126,10 @@ void crazypod_clock_screen_render(
     lv_obj_t *label;
     char text[64];
 
+    if(crazypod_clock_screen_refresh(time))
+        return;
+    memset(&face, 0, sizeof(face));
+
     crazypod_ui_widget_box(
         content, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32, 0,
         0xF9F9F7, LV_OPA_COVER);
@@ -106,6 +153,7 @@ void crazypod_clock_screen_render(
         panel, text, &lv_font_montserrat_24,
         0x0E0E0E, LV_OPA_COVER);
     lv_obj_set_pos(label, 170, 53);
+    face.digital = label;
     crazypod_ui_widget_box(
         panel, 170, 86, 112, 1, 0, 0x0E0E0E, 210);
     snprintf(text, sizeof(text), "%s\n%s %d",
@@ -115,10 +163,51 @@ void crazypod_clock_screen_render(
         panel, text, &lv_font_montserrat_10,
         0x5C5C5C, LV_OPA_COVER);
     lv_obj_set_pos(label, 170, 97);
+    face.date = label;
     label = crazypod_ui_widget_label(
         panel, CP_TR("DEVICE TIME"), &lv_font_montserrat_8, 0x949494, 230);
     lv_obj_set_style_text_letter_space(label, 1, 0);
     lv_obj_set_pos(label, 170, 132);
+
+    face.panel = panel;
+    face.stopwatch = false;
+    face.style = 0;
+    lv_obj_null_on_delete(&face.panel);
+    lv_obj_null_on_delete(&face.hour_hand);
+    lv_obj_null_on_delete(&face.minute_hand);
+    lv_obj_null_on_delete(&face.second_hand);
+    lv_obj_null_on_delete(&face.digital);
+    lv_obj_null_on_delete(&face.date);
+}
+
+bool crazypod_clock_screen_refresh(
+    const struct crazypod_clock_screen_time *time)
+{
+    static const char *const weekdays[] = {
+        CP_TR("Sunday"), CP_TR("Monday"), CP_TR("Tuesday"), CP_TR("Wednesday"),
+        CP_TR("Thursday"), CP_TR("Friday"), CP_TR("Saturday")
+    };
+    static const char *const months[] = {
+        CP_TR("January"), CP_TR("February"), CP_TR("March"), CP_TR("April"), CP_TR("May"), CP_TR("June"),
+        CP_TR("July"), CP_TR("August"), CP_TR("September"), CP_TR("October"), CP_TR("November"), CP_TR("December")
+    };
+    char text[64];
+
+    if(!face_usable(false, 0))
+        return false;
+    set_hand(face.hour_hand,
+             ((time->hour % 12) * 30 + time->minute / 2) * 10);
+    set_hand(face.minute_hand,
+             time->minute * 60 + time->second_tenths / 10);
+    set_hand(face.second_hand, time->second_tenths * 6);
+    snprintf(text, sizeof(text), CP_FMT("%02d:%02d:%02d"),
+             time->hour, time->minute, time->second);
+    CP_LV_LABEL_SET_TEXT(face.digital, text);
+    snprintf(text, sizeof(text), "%s\n%s %d",
+             weekdays[time->weekday], months[time->month],
+             time->month_day);
+    CP_LV_LABEL_SET_TEXT(face.date, text);
+    return true;
 }
 
 void crazypod_stopwatch_screen_render(
@@ -149,6 +238,10 @@ void crazypod_stopwatch_screen_render(
     int first_lap;
     int lap;
     int style = model->style % 3;
+
+    if(crazypod_stopwatch_screen_refresh(model))
+        return;
+    memset(&face, 0, sizeof(face));
 
     crazypod_ui_widget_box(
         content, 0, 32, LCD_WIDTH, LCD_HEIGHT - 32, 0,
@@ -181,10 +274,12 @@ void crazypod_stopwatch_screen_render(
         panel, text, &lv_font_montserrat_24,
         ink_colors[style], LV_OPA_COVER);
     lv_obj_set_pos(label, 166, 39);
+    face.digital = label;
     label = crazypod_ui_widget_label(
         panel, model->running ? CP_TR("RUNNING") : CP_TR("PAUSED"),
         &lv_font_montserrat_8, ink_colors[style], 225);
     lv_obj_set_pos(label, 166, 69);
+    face.running = label;
     if(model->lap_count > 0) {
         snprintf(text, sizeof(text), CP_FMT("%d LAPS"), model->lap_count);
         label = crazypod_ui_widget_label(
@@ -230,6 +325,55 @@ void crazypod_stopwatch_screen_render(
     lv_obj_set_width(label, 136);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_pos(label, 166, 168);
+
+    face.panel = panel;
+    face.stopwatch = true;
+    face.style = style;
+    face.lap_count = model->lap_count;
+    lv_obj_null_on_delete(&face.panel);
+    lv_obj_null_on_delete(&face.hour_hand);
+    lv_obj_null_on_delete(&face.minute_hand);
+    lv_obj_null_on_delete(&face.second_hand);
+    lv_obj_null_on_delete(&face.digital);
+    lv_obj_null_on_delete(&face.running);
+}
+
+bool crazypod_stopwatch_screen_refresh(
+    const struct crazypod_stopwatch_screen_model *model)
+{
+    unsigned total_hundredths;
+    unsigned minutes;
+    unsigned seconds;
+    unsigned hundredths;
+    char text[32];
+
+    /* A lap arriving changes the list under the dial, and the style can
+     * only change before the first lap; both mean a rebuild. Ticking
+     * does not. */
+    if(!face_usable(true, model->style % 3) ||
+       face.lap_count != model->lap_count || face.running == NULL)
+        return false;
+
+    total_hundredths = (unsigned)(model->elapsed_ticks * 100 /
+                                  model->ticks_per_second);
+    minutes = total_hundredths / 6000;
+    seconds = total_hundredths / 100 % 60;
+    hundredths = total_hundredths % 100;
+
+    set_hand(face.hour_hand,
+             (((int)(minutes / 60) % 12) * 30 +
+              ((int)minutes % 60) / 2) * 10);
+    set_hand(face.minute_hand,
+             ((int)minutes % 60) * 60 + (int)seconds / 6);
+    set_hand(face.second_hand,
+             ((int)seconds * 10 + (int)hundredths / 10) * 6);
+    snprintf(text, sizeof(text), "%02u:%02u.%02u",
+             minutes, seconds, hundredths);
+    CP_LV_LABEL_SET_TEXT(face.digital, text);
+    CP_LV_LABEL_SET_TEXT(
+        face.running,
+        model->running ? CP_TR("RUNNING") : CP_TR("PAUSED"));
+    return true;
 }
 
 #endif
