@@ -63,3 +63,17 @@ LVGL_SRC := \
 
 SRC += $(LVGL_SRC)
 OTHER_SRC += $(LVGL_SRC)
+
+# Rockbox compiles with -Os. On the ARM7TDMI targets that costs the LVGL
+# renderer real time in its hot loops (blends, masks, glyph blits, style
+# lookups), so LVGL alone is built at -O2 there; the size increase lands in
+# SDRAM code space, which the PortalPlayer targets have to spare.
+ifneq (,$(findstring -DIPOD_VIDEO,$(TARGET)))
+LVGL_OPTFLAGS := -O2
+else
+LVGL_OPTFLAGS :=
+endif
+
+$(BUILDDIR)/lib/lvgl/%.o: $(ROOTDIR)/lib/lvgl/%.c $(CORE_COMPILE_GENERATED_HEADERS)
+	$(SILENT)mkdir -p $(dir $@)
+	$(call PRINTS,CC $(subst $(ROOTDIR)/,,$<))$(CC) $(CFLAGS) $(LVGL_OPTFLAGS) -c $< -o $@

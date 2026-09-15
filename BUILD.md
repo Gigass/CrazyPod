@@ -243,8 +243,9 @@ time goes.
 The first log from a 30 GB unit showed why playback stuttered: Rockbox
 threads are cooperative, and one LVGL refresh took 200-600 ms at the idle
 30 MHz clock, during which the codec thread could not run. PortalPlayer
-builds therefore yield between render strips and hold the 80 MHz clock
-while the backlight is on.
+builds therefore yield between render strips, hold the 80 MHz clock while
+the backlight is on, render in 120-row strips, and compile LVGL at `-O2`
+(about 80 KiB more code than the `-Os` the rest of the firmware uses).
 
 Not yet done: no 32 MiB memory-budget check under load and no accessory or
 inline-remote support. Boot, library scanning and playback have run on a
