@@ -376,13 +376,17 @@ static void apply_media_layout(bool media_active)
         lv_obj_set_pos(
             lock_state.time_label, 0, LOCK_MEDIA_TIME_Y);
         lv_obj_set_style_transform_scale(
-            lock_state.time_label, LOCK_MEDIA_TIME_SCALE, 0);
+            lock_state.time_label,
+            crazypod_state_reduce_effects()
+                ? 256 : LOCK_MEDIA_TIME_SCALE, 0);
         lv_obj_set_style_text_letter_space(
             lock_state.time_label, 0, 0);
         lv_obj_set_style_text_outline_stroke_width(
             lock_state.time_label, 1, 0);
         lv_obj_set_style_transform_scale(
-            lock_state.date_label, LOCK_MEDIA_DATE_SCALE, 0);
+            lock_state.date_label,
+            crazypod_state_reduce_effects()
+                ? 256 : LOCK_MEDIA_DATE_SCALE, 0);
         lv_obj_set_width(lock_state.date_label, LCD_WIDTH);
         lock_state.date_y = LOCK_MEDIA_DATE_Y;
         lv_obj_set_pos(lock_state.date_label, 0, lock_state.date_y);
@@ -397,8 +401,11 @@ static void apply_media_layout(bool media_active)
             lock_state.time_label, &lv_font_montserrat_48, 0);
         lv_obj_set_width(lock_state.time_label, LCD_WIDTH);
         lv_obj_set_pos(lock_state.time_label, 0, 62);
+        /* A scaled label renders through a transform layer on every
+         * refresh; Reduce Effects keeps the 48 px face unscaled. */
         lv_obj_set_style_transform_scale(
-            lock_state.time_label, 292, 0);
+            lock_state.time_label,
+            crazypod_state_reduce_effects() ? 256 : 292, 0);
         lv_obj_set_style_text_letter_space(
             lock_state.time_label, 2, 0);
         lv_obj_set_style_text_outline_stroke_width(

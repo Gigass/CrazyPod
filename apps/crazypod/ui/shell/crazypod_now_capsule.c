@@ -199,7 +199,8 @@ static void refresh_corners(void)
             capsule.material[index], CAPSULE_WIDTH, layer_height);
         lv_obj_set_style_radius(capsule.material[index], radius, 0);
         lv_obj_set_style_clip_corner(
-            capsule.material[index], radius > 0, 0);
+            capsule.material[index],
+            radius > 0 && !crazypod_state_reduce_effects(), 0);
 
         if(capsule.glass[index] != NULL)
             lv_obj_set_pos(
@@ -273,7 +274,8 @@ void crazypod_now_capsule_refresh_appearance(void)
         use_fallback_wave_palette();
     if(capsule.wave_ball != NULL) {
         lv_obj_set_style_shadow_width(
-            capsule.wave_ball, playing ? 10 : 4, 0);
+            capsule.wave_ball,
+            crazypod_state_reduce_effects() ? 0 : playing ? 10 : 4, 0);
         lv_obj_set_style_shadow_color(
             capsule.wave_ball,
             lv_color_hex(capsule.wave_palette.primary), 0);
@@ -344,7 +346,8 @@ void crazypod_now_capsule_create(
             CAPSULE_WIDTH, CAPSULE_HEIGHT, 0,
             COLOR_WHITE, CAPSULE_FALLBACK_OPA);
         lv_obj_set_style_clip_corner(
-            capsule.material[index], true, 0);
+            capsule.material[index],
+            !crazypod_state_reduce_effects(), 0);
         lv_obj_remove_flag(
             capsule.material[index], LV_OBJ_FLAG_CLICKABLE);
     }
@@ -357,7 +360,8 @@ void crazypod_now_capsule_create(
         capsule.artwork, lv_color_hex(0x2E5CFA), 0);
     lv_obj_set_style_bg_grad_dir(
         capsule.artwork, LV_GRAD_DIR_VER, 0);
-    lv_obj_set_style_clip_corner(capsule.artwork, true, 0);
+    lv_obj_set_style_clip_corner(
+        capsule.artwork, !crazypod_state_reduce_effects(), 0);
     capsule.artwork_image = lv_image_create(capsule.artwork);
     lv_obj_center(capsule.artwork_image);
     lv_obj_remove_flag(capsule.artwork_image, LV_OBJ_FLAG_CLICKABLE);
@@ -414,7 +418,8 @@ void crazypod_now_capsule_create(
         capsule.wave_ball, lv_color_hex(0x1A1F38), 0);
     lv_obj_set_style_bg_grad_dir(
         capsule.wave_ball, LV_GRAD_DIR_VER, 0);
-    lv_obj_set_style_clip_corner(capsule.wave_ball, true, 0);
+    lv_obj_set_style_clip_corner(
+        capsule.wave_ball, !crazypod_state_reduce_effects(), 0);
     lv_obj_set_style_border_width(capsule.wave_ball, 1, 0);
     lv_obj_set_style_border_color(
         capsule.wave_ball, lv_color_hex(COLOR_WHITE), 0);
@@ -635,8 +640,20 @@ void crazypod_now_capsule_reset_motion(long now)
 void crazypod_now_capsule_tick(
     long now, bool home_active, bool wheel_touch_active)
 {
+    static bool effects_reduced;
     bool playing;
 
+    if(capsule.root != NULL &&
+       effects_reduced != crazypod_state_reduce_effects()) {
+        effects_reduced = crazypod_state_reduce_effects();
+        if(capsule.artwork != NULL)
+            lv_obj_set_style_clip_corner(
+                capsule.artwork, !effects_reduced, 0);
+        if(capsule.wave_ball != NULL)
+            lv_obj_set_style_clip_corner(
+                capsule.wave_ball, !effects_reduced, 0);
+        crazypod_now_capsule_refresh_appearance();
+    }
     if(capsule.marquee_active != home_active) {
         capsule.marquee_active = home_active;
         crazypod_marquee_configure(
@@ -671,7 +688,17 @@ void crazypod_now_capsule_tick(
     if(!capsule.spectrum_playing) {
         capsule.spectrum_playing = true;
         crazypod_now_capsule_refresh_appearance();
+        lv_obj_invalidate(capsule.spectrum);
+        return;
     }
+    /*
+     * Each spectrum frame re-renders the capsule through its rounded clip
+     * layers, which on the iPod Video cost 55 ms ten times a second while
+     * music played on the home screen. Under Reduce Motion the spectrum
+     * holds its pose once it shows the playing state.
+     */
+    if(crazypod_state_reduce_motion())
+        return;
     capsule.spectrum_phase =
         (capsule.spectrum_phase + 1) & 0x7fff;
     lv_obj_invalidate(capsule.spectrum);
