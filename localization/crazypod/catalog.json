@@ -230,6 +230,11 @@
         "apps/crazypod/ui/features/settings/crazypod_eq_studio_controller.c:187"
       ]
     },
+    "%lu%% listened · %d chapters": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_preview.c:500"
+      ]
+    },
     "%lu%% read%s": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_preview.c:439"
@@ -452,6 +457,16 @@
         "apps/crazypod/ui/features/music/crazypod_music_feature.c:132"
       ]
     },
+    "AUDIOBOOK": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_feature.c:137"
+      ]
+    },
+    "AUDIOBOOKS": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_feature.c:132"
+      ]
+    },
     "AUG": {
       "locations": [
         "apps/crazypod/ui/shell/crazypod_lock_screen.c:87"
@@ -490,6 +505,11 @@
       "locations": [
         "apps/crazypod/ui/features/photos/crazypod_photo_screen.c:159",
         "apps/crazypod/ui/presentation/crazypod_menu_screen.c:121"
+      ]
+    },
+    "Add M4B or MP3 files to /Audiobooks.": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_preview.c:251"
       ]
     },
     "Add VCF files to /Contacts.": {
@@ -637,6 +657,11 @@
     "Artwork Cache Failed": {
       "locations": [
         "apps/crazypod/ui/features/music/crazypod_music_library.c:52"
+      ]
+    },
+    "Audiobooks": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_feature.c:166"
       ]
     },
     "August": {
@@ -1943,6 +1968,36 @@
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:205"
       ]
     },
+    "Left and Right skip 30 seconds": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_screen.c:272"
+      ]
+    },
+    "Left and Right skip chapters": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_screen.c:271"
+      ]
+    },
+    "No chapters": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_feature.c:197"
+      ]
+    },
+    "Paused": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_screen.c:264"
+      ]
+    },
+    "Player": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_feature.c:191"
+      ]
+    },
+    "Playing": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_screen.c:264"
+      ]
+    },
     "Remove Bookmark": {
       "locations": [
         "apps/crazypod/ui/app/crazypod_choice_coordinator.c:250"
@@ -2787,6 +2842,16 @@
         "apps/crazypod/ui/features/music/crazypod_music_feature.c:166",
         "apps/crazypod/ui/features/music/crazypod_music_root_preview.c:27",
         "apps/crazypod/ui/features/now_playing/crazypod_now_playing_feature.c:66"
+      ]
+    },
+    "Resume listening": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_preview.c:508"
+      ]
+    },
+    "Spoken books with chapters": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_preview.c:250"
       ]
     },
     "Themes": {

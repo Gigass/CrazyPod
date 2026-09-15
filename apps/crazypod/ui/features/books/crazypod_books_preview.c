@@ -8,6 +8,7 @@
 
 #include "lvgl.h"
 
+#include "../../../crazypod_audiobooks.h"
 #include "../../../crazypod_books.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "../../presentation/crazypod_preview_motion.h"
@@ -238,6 +239,51 @@ static void render_books_menu_stage(
         return;
     }
 
+    if(logical == 5) {
+        int audiobook_count;
+        lv_obj_t *disc;
+
+        if(crazypod_audiobooks_scan_needed())
+            crazypod_audiobooks_scan();
+        audiobook_count = crazypod_audiobooks_count();
+        *detail = audiobook_count > 0
+            ? CP_TR("Spoken books with chapters")
+            : CP_TR("Add M4B or MP3 files to /Audiobooks.");
+        crazypod_preview_make_plinth(
+            parent, 184, 155, 112, 0x8C6A3E, 0x2A1B12);
+        stage = make_box(parent, 185, 66, 110, 84, 9,
+                         0x2B2118, LV_OPA_COVER);
+        lv_obj_set_style_border_width(stage, 1, 0);
+        lv_obj_set_style_border_color(
+            stage, lv_color_hex(0xC9A467), 0);
+        lv_obj_set_style_border_opa(stage, 120, 0);
+        crazypod_preview_add_bevel(
+            stage, 110, 84, 0x6E5A3E, 0x110B06);
+        for(i = 0; i < 2; ++i) {
+            disc = make_box(stage, 14 + i * 50, 16, 32, 32,
+                            LV_RADIUS_CIRCLE, 0x1A1410, LV_OPA_COVER);
+            lv_obj_set_style_border_width(disc, 2, 0);
+            lv_obj_set_style_border_color(
+                disc, lv_color_hex(0xD4B46A), 0);
+            lv_obj_set_style_border_opa(disc, 200, 0);
+            make_box(disc, 11, 11, 10, 10, LV_RADIUS_CIRCLE,
+                     0xD4B46A, 230);
+            crazypod_preview_motion_register(
+                disc, 0, 0, 256, i == 0 ? -900 : 900, 0,
+                40 + i * 40, 320, 0, 0, 256, i == 0 ? -400 : 400);
+        }
+        make_box(stage, 30, 32, 50, 3, 1, 0xC9A467, 90);
+        make_box(stage, 12, 60, 86, 12, 3, 0x181210, 200);
+        make_box(stage, 16, 64, 78, 4, 2, 0xD4B46A, 90);
+        make_box(stage, 16, 64,
+                 audiobook_count > 0 ? 42 : 4, 4, 2,
+                 0xF6D58C, 230);
+        crazypod_preview_motion_register(
+            stage, 0, 14, 226, 0, 0, 0, 240,
+            0, 10, 226, 0);
+        return;
+    }
+
     if(logical == 3) {
         char value[16];
         *detail = CP_TR("Library and progress totals");
@@ -392,6 +438,82 @@ static void render_books_settings_stage(
         : CP_TR("Choose a page theme in a popup");
 }
 
+static void render_audiobook_preview(
+    lv_obj_t *parent, const struct route_state *state,
+    const lv_font_t *metadata_font)
+{
+    int index = state->route == BOOKS_ROUTE_AUDIOBOOKS
+        ? state->selected : state->group;
+    const struct crazypod_audiobook *book;
+    const char *detail = "";
+    char detail_text[64];
+    lv_obj_t *stage;
+    lv_obj_t *disc;
+    lv_obj_t *text_panel;
+    int chapter_count;
+
+    if(crazypod_audiobooks_scan_needed())
+        crazypod_audiobooks_scan();
+    crazypod_audiobook_probe(index);
+    book = crazypod_audiobook_get(index);
+
+    crazypod_preview_make_plinth(
+        parent, 184, 155, 112, 0x8C6A3E, 0x2A1B12);
+    stage = make_box(parent, 196, 60, 88, 88, 12,
+                     0x2B2118, LV_OPA_COVER);
+    lv_obj_set_style_border_width(stage, 1, 0);
+    lv_obj_set_style_border_color(
+        stage, lv_color_hex(0xC9A467), 0);
+    lv_obj_set_style_border_opa(stage, 120, 0);
+    crazypod_preview_add_bevel(stage, 88, 88, 0x6E5A3E, 0x110B06);
+    disc = make_box(stage, 22, 14, 44, 44, LV_RADIUS_CIRCLE,
+                    0x1A1410, LV_OPA_COVER);
+    lv_obj_set_style_border_width(disc, 2, 0);
+    lv_obj_set_style_border_color(disc, lv_color_hex(0xD4B46A), 0);
+    lv_obj_set_style_border_opa(disc, 200, 0);
+    make_box(disc, 16, 16, 12, 12, LV_RADIUS_CIRCLE, 0xD4B46A, 230);
+    make_box(stage, 12, 68, 64, 4, 2, 0xD4B46A, 80);
+    if(book != NULL && book->length_ms > 0) {
+        int fill = (int)((uint64_t)book->position_ms * 64u /
+                         book->length_ms);
+
+        make_box(stage, 12, 68, fill < 3 ? 3 : fill, 4, 2,
+                 0xF6D58C, 230);
+    }
+    crazypod_preview_motion_register(
+        disc, 0, 0, 256, -720, 0, 40, 320, 0, 0, 256, -360);
+    crazypod_preview_motion_register(
+        stage, 0, 14, 226, 0, 0, 0, 240, 0, 10, 226, 0);
+
+    chapter_count = book != NULL
+        ? crazypod_audiobook_chapter_count(index) : 0;
+    if(state->route == BOOKS_ROUTE_AUDIOBOOK_CHAPTERS) {
+        snprintf(detail_text, sizeof(detail_text),
+                 CP_FMT("Chapter %d of %d"),
+                 state->selected + 1, chapter_count);
+        detail = chapter_count > 0 ? detail_text : CP_TR("No chapters");
+    }
+    else if(book == NULL)
+        detail = CP_TR("Add M4B or MP3 files to /Audiobooks.");
+    else if(book->length_ms > 0) {
+        snprintf(detail_text, sizeof(detail_text),
+                 CP_FMT("%lu%% listened · %d chapters"),
+                 (unsigned long)(
+                     (uint64_t)book->position_ms * 100u /
+                     book->length_ms),
+                 chapter_count);
+        detail = detail_text;
+    }
+    else
+        detail = CP_TR("Resume listening");
+
+    text_panel = crazypod_preview_make_caption(
+        parent,
+        book != NULL ? book->title : CP_TR("Audiobooks"),
+        metadata_font, detail, &lv_font_montserrat_8);
+    (void)text_panel;
+}
+
 void crazypod_books_preview_render(
     lv_obj_t *parent, const struct route_state *state,
     const lv_font_t *metadata_font)
@@ -404,6 +526,12 @@ void crazypod_books_preview_render(
     lv_obj_t *text_panel;
     char detail_text[64];
 
+    if(state->route == BOOKS_ROUTE_AUDIOBOOKS ||
+       state->route == BOOKS_ROUTE_AUDIOBOOK_PLAYER ||
+       state->route == BOOKS_ROUTE_AUDIOBOOK_CHAPTERS) {
+        render_audiobook_preview(parent, state, metadata_font);
+        return;
+    }
     if(index >= 0 && state->route != BOOKS_ROUTE_MENU)
         crazypod_book_probe(index);
     book = crazypod_book_get(index);

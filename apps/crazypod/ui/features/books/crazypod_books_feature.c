@@ -4,9 +4,12 @@
 
 #ifdef HAVE_CRAZYPOD_UI
 
+#include "button.h"
 #include "kernel.h"
 
+#include "../../../crazypod_audiobooks.h"
 #include "../../../crazypod_books.h"
+#include "../now_playing/crazypod_now_playing_feature.h"
 #include "crazypod_book_session.h"
 #include "crazypod_book_reader_input.h"
 #include "crazypod_books_actions.h"
@@ -23,6 +26,15 @@ static bool has_continue(void)
 
     return book != NULL && book->progress > 0;
 }
+
+static void ensure_audiobooks(void)
+{
+    if(crazypod_audiobooks_scan_needed())
+        crazypod_audiobooks_scan();
+}
+
+#define PLAYER_REFRESH_TICKS (HZ > 0 ? HZ : 1)
+static long player_refresh_tick;
 
 static const uint32_t page_colors[] = {
     0xE8D5A4, 0xF8F8F4, 0xDDEFE3, 0x17181D
@@ -44,7 +56,17 @@ int crazypod_books_feature_item_count(
 {
     switch(state->route) {
     case BOOKS_ROUTE_MENU:
-        return has_continue() ? 6 : 5;
+        return has_continue() ? 7 : 6;
+    case BOOKS_ROUTE_AUDIOBOOKS:
+        ensure_audiobooks();
+        return crazypod_audiobooks_count();
+    case BOOKS_ROUTE_AUDIOBOOK_PLAYER:
+        return 1;
+    case BOOKS_ROUTE_AUDIOBOOK_CHAPTERS: {
+        int count = crazypod_audiobook_chapter_count(state->group);
+
+        return count > 0 ? count : 1;
+    }
     case BOOKS_ROUTE_RECENTS:
         return crazypod_books_recent_count();
     case BOOKS_ROUTE_LIBRARY:
@@ -106,6 +128,16 @@ const char *crazypod_books_feature_title(
         return CP_TR("READING");
     case BOOKS_ROUTE_INFO:
         return CP_TR("BOOK INFO");
+    case BOOKS_ROUTE_AUDIOBOOKS:
+        return CP_TR("AUDIOBOOKS");
+    case BOOKS_ROUTE_AUDIOBOOK_PLAYER: {
+        const struct crazypod_audiobook *book =
+            crazypod_audiobook_get(state->group);
+
+        return book != NULL ? book->title : CP_TR("AUDIOBOOK");
+    }
+    case BOOKS_ROUTE_AUDIOBOOK_CHAPTERS:
+        return CP_TR("CHAPTERS");
     default:
         return "";
     }
@@ -130,7 +162,8 @@ bool crazypod_books_feature_item_title(
     switch(state->route) {
     case BOOKS_ROUTE_MENU: {
         static const char *const titles[] = {
-            CP_TR("Recents"), CP_TR("Books"), CP_TR("Favorites"), CP_TR("Stats"), CP_TR("Reading")
+            CP_TR("Recents"), CP_TR("Books"), CP_TR("Favorites"), CP_TR("Stats"), CP_TR("Reading"),
+            CP_TR("Audiobooks")
         };
         bool can_continue = has_continue();
         int logical;
@@ -139,9 +172,29 @@ bool crazypod_books_feature_item_title(
             *title = CP_TR("Continue");
         else {
             logical = index - (can_continue ? 1 : 0);
-            *title = logical >= 0 && logical < 5
+            *title = logical >= 0 && logical < 6
                 ? titles[logical] : "";
         }
+        return true;
+    }
+    case BOOKS_ROUTE_AUDIOBOOKS: {
+        const struct crazypod_audiobook *book;
+
+        ensure_audiobooks();
+        if(index == state->selected)
+            crazypod_audiobook_probe(index);
+        book = crazypod_audiobook_get(index);
+        *title = book != NULL ? book->title : "";
+        return true;
+    }
+    case BOOKS_ROUTE_AUDIOBOOK_PLAYER:
+        *title = CP_TR("Player");
+        return true;
+    case BOOKS_ROUTE_AUDIOBOOK_CHAPTERS: {
+        const struct crazypod_audiobook_chapter *chapter =
+            crazypod_audiobook_chapter_get(state->group, index);
+
+        *title = chapter != NULL ? chapter->title : CP_TR("No chapters");
         return true;
     }
     case BOOKS_ROUTE_RECENTS:
@@ -232,6 +285,7 @@ enum crazypod_menu_icon crazypod_books_feature_item_icon(
         CRAZYPOD_MENU_ICON_FAVORITE,
         CRAZYPOD_MENU_ICON_STATS,
         CRAZYPOD_MENU_ICON_READING,
+        CRAZYPOD_MENU_ICON_PODCAST,
     };
     int logical;
 
@@ -274,6 +328,12 @@ enum crazypod_menu_icon crazypod_books_feature_item_icon(
         return CRAZYPOD_MENU_ICON_DETAILS;
     case BOOKS_ROUTE_READER:
         return CRAZYPOD_MENU_ICON_READING;
+    case BOOKS_ROUTE_AUDIOBOOKS:
+        return CRAZYPOD_MENU_ICON_PODCAST;
+    case BOOKS_ROUTE_AUDIOBOOK_PLAYER:
+        return CRAZYPOD_MENU_ICON_PLAYBACK;
+    case BOOKS_ROUTE_AUDIOBOOK_CHAPTERS:
+        return CRAZYPOD_MENU_ICON_CHAPTERS;
     default:
         return CRAZYPOD_MENU_ICON_NONE;
     }
@@ -311,6 +371,19 @@ bool crazypod_books_feature_activate(
     case CRAZYPOD_BOOKS_ACTION_SHOW_THEME:
         host->show_theme(crazypod_books_theme());
         break;
+    case CRAZYPOD_BOOKS_ACTION_PLAY_AUDIOBOOK:
+        if(crazypod_audiobook_play(action.book_index))
+            host->push(BOOKS_ROUTE_AUDIOBOOK_PLAYER, action.book_index);
+        else
+            host->operation_failed();
+        break;
+    case CRAZYPOD_BOOKS_ACTION_AUDIOBOOK_CHAPTER:
+        if(crazypod_audiobook_seek_chapter(
+               action.book_index, (int)action.offset))
+            host->pop();
+        else
+            host->operation_failed();
+        break;
     case CRAZYPOD_BOOKS_ACTION_NONE:
     case CRAZYPOD_BOOKS_ACTION_UNHANDLED:
     default:
@@ -337,6 +410,10 @@ bool crazypod_books_feature_render(
         crazypod_books_screen_render_stats(parent);
         return true;
     }
+    if(state->route == BOOKS_ROUTE_AUDIOBOOK_PLAYER) {
+        crazypod_books_screen_render_audiobook(parent, state->group);
+        return true;
+    }
     if(state->route != BOOKS_ROUTE_INFO)
         return false;
     crazypod_books_screen_render_info(parent, state->group);
@@ -355,6 +432,12 @@ int crazypod_books_feature_reader_wait_ticks(
 {
     long remaining;
 
+    if(state != NULL && state->route == BOOKS_ROUTE_AUDIOBOOK_PLAYER) {
+        remaining = player_refresh_tick + PLAYER_REFRESH_TICKS - now;
+        if(remaining <= 0)
+            return 1;
+        return remaining < maximum ? (int)remaining : maximum;
+    }
     if(state == NULL || state->route != BOOKS_ROUTE_READER ||
        !reader_view.toolbar_visible ||
        reader_view.toolbar_hide_tick == 0)
@@ -368,6 +451,13 @@ int crazypod_books_feature_reader_wait_ticks(
 bool crazypod_books_feature_service_reader(
     const struct route_state *state, long now)
 {
+    if(state != NULL && state->route == BOOKS_ROUTE_AUDIOBOOK_PLAYER) {
+        /* The player shows a running clock; redraw it once a second. */
+        if(TIME_BEFORE(now, player_refresh_tick + PLAYER_REFRESH_TICKS))
+            return false;
+        player_refresh_tick = now;
+        return true;
+    }
     if(state == NULL || state->route != BOOKS_ROUTE_READER ||
        !reader_view.toolbar_visible ||
        reader_view.toolbar_hide_tick == 0 ||
@@ -443,6 +533,39 @@ bool crazypod_books_feature_handle_input(
         .leave = context->pop,
     };
 
+    if(state->route == BOOKS_ROUTE_AUDIOBOOK_PLAYER) {
+        int index = state->group;
+
+        if(event->release)
+            return true;
+        if(event->base == BUTTON_SCROLL_FWD ||
+           event->base == BUTTON_SCROLL_BACK) {
+            crazypod_now_playing_adjust_volume(
+                event->base == BUTTON_SCROLL_FWD ? 1 : -1);
+            return true;
+        }
+        if(event->repeated)
+            return true;
+        if(event->base == BUTTON_RIGHT)
+            (void)crazypod_audiobook_skip_chapter(index, 1);
+        else if(event->base == BUTTON_LEFT)
+            (void)crazypod_audiobook_skip_chapter(index, -1);
+        else if(event->base == BUTTON_PLAY)
+            (void)crazypod_audiobook_toggle(index);
+        else if(event->base == BUTTON_SELECT) {
+            context->activate();
+            return true;
+        }
+        else if(event->base == BUTTON_MENU) {
+            context->pop();
+            return true;
+        }
+        else
+            return true;
+        player_refresh_tick = context->now;
+        context->render(false);
+        return true;
+    }
     if(state->route != BOOKS_ROUTE_READER)
         return false;
     book_input_context = *context;

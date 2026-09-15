@@ -7,6 +7,7 @@
 #include "kernel.h"
 #include "lvgl.h"
 #include "../../crazypod_artwork.h"
+#include "../../crazypod_audiobooks.h"
 #include "../../crazypod_coverflow.h"
 #include "../../crazypod_frameclock.h"
 #include "../../crazypod_music.h"
@@ -67,7 +68,8 @@ static int active_route_wait_ticks(long now)
         return CRAZYPOD_STATIC_WAIT_TICKS;
     state = crazypod_ui_routes_current();
     route = state->route;
-    if(route == BOOKS_ROUTE_READER &&
+    if((route == BOOKS_ROUTE_READER ||
+        route == BOOKS_ROUTE_AUDIOBOOK_PLAYER) &&
        !crazypod_choice_coordinator_visible())
         return crazypod_books_feature_reader_wait_ticks(
             state, now, CRAZYPOD_STATIC_WAIT_TICKS);
@@ -209,6 +211,7 @@ void crazypod_runtime_services_tick(
     crazypod_miniapp_alarm_tick(
         crazypod_miniapp_host_epoch_seconds());
     crazypod_miniapps_feature_service_rescan();
+    crazypod_audiobooks_tick(now);
 
     crazypod_music_set_scan_suspended(locked);
     crazypod_artwork_set_lock_suspended(

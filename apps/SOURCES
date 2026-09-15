@@ -101,6 +101,8 @@ crazypod/crazypod_miniapp_input.c
 crazypod/crazypod_miniapp_font.c
 crazypod/crazypod_notes.c
 crazypod/crazypod_books.c
+crazypod/crazypod_audiobook_chapters.c
+crazypod/crazypod_audiobooks.c
 crazypod/epub/crazypod_epub_html.c
 crazypod/epub/crazypod_epub_navigation.c
 crazypod/epub/crazypod_epub_parser.c

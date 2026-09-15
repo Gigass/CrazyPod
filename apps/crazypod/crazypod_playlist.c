@@ -417,7 +417,8 @@ void playlist_resume_track(int start_index, unsigned int crc,
 
 static bool queue_replace(const char *const *paths, int count,
                           int start_index, bool preserve_selected,
-                          bool force_shuffle, unsigned int seed)
+                          bool force_shuffle, unsigned int seed,
+                          unsigned long elapsed_ms)
 {
     char selected[MAX_PATH];
     bool previous_shuffle;
@@ -490,7 +491,7 @@ static bool queue_replace(const char *const *paths, int count,
     iap_on_tracks_count(count);
     iap_on_shuffle_state(crazypod_queue_shuffle());
     if(start_playback) {
-        audio_play(0, 0);
+        audio_play(elapsed_ms, 0);
         audio_resume();
     }
     return true;
@@ -499,13 +500,23 @@ static bool queue_replace(const char *const *paths, int count,
 bool crazypod_queue_replace(const char *const *paths, int count,
                             int start_index)
 {
-    return queue_replace(paths, count, start_index, true, false, 0);
+    return queue_replace(paths, count, start_index, true, false, 0, 0);
 }
 
 bool crazypod_queue_replace_shuffled(const char *const *paths, int count,
                                      unsigned int seed)
 {
-    return queue_replace(paths, count, 0, false, true, seed);
+    return queue_replace(paths, count, 0, false, true, seed, 0);
+}
+
+bool crazypod_queue_replace_resume(const char *path,
+                                   unsigned long elapsed_ms)
+{
+    const char *paths[1] = { path };
+
+    if(path == NULL)
+        return false;
+    return queue_replace(paths, 1, 0, true, false, 0, elapsed_ms);
 }
 
 void crazypod_queue_restore_begin(void)

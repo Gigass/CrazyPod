@@ -92,6 +92,13 @@ pipeline, USB Audio, HID, and iPod accessory protocol.
 - **Books:** EPUB, TXT, and Markdown reading with progress, bookmarks,
   favorites, chapters, font sizes, and paper themes. TXT and Markdown content
   automatically distinguishes strict UTF-8 from GBK/GB2312 (CP936).
+- **Audiobooks:** Books → Audiobooks lists M4B, M4A and MP3 files from
+  `/Audiobooks` (and M4B files under `/Books`), plays them through the normal
+  audio engine, reads Nero `chpl` chapter tables, skips chapters with Left and
+  Right (30 seconds when a file has no chapters), and remembers the listening
+  position per book: it is saved when you pause, when you switch books,
+  periodically while the disk is awake, and restored the next time the book
+  is opened.
 - **Organizer:** local calendar events, read-only ICS import, and VCF contacts.
 - **Mini Apps:** React-style TypeScript/TSX is AOT-compiled to C and then to
   native `app.arm`; Native ABI 1 drives host-owned LVGL. The device runs no
@@ -490,6 +497,7 @@ storage. Create them manually when installing without the archive:
 | iTunes-managed music | `/iPod_Control/Music` when enabled in Playback settings |
 | Podcasts | `/Podcasts` |
 | Books | `/Books` |
+| Audiobooks | `/Audiobooks` (M4B files under `/Books` are listed too) |
 | Photos and wallpapers | `/Pictures` |
 | Videos | `/Videos/*.mpg` or `/Videos/*.mpeg` |
 | Contacts | `/Contacts/*.vcf` |

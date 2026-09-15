@@ -48,6 +48,7 @@
 #include "crazypod_audio_shims.h"
 #include "crazypod_audio_reserve.h"
 #include "crazypod_appearance.h"
+#include "crazypod_audiobooks.h"
 #include "crazypod_books.h"
 #include "crazypod_lcd.h"
 #include "crazypod_music.h"
@@ -105,6 +106,7 @@ static void crazypod_platform_init(void)
     crazypod_presets_load();
     crazypod_notes_init();
     crazypod_books_init();
+    crazypod_audiobooks_init();
     crazypod_workouts_init();
     crazypod_music_init();
 
@@ -216,6 +218,7 @@ static void crazypod_platform_init(void)
     crazypod_presets_load();
     crazypod_notes_init();
     crazypod_books_init();
+    crazypod_audiobooks_init();
     crazypod_workouts_init();
     crazypod_music_init();
 

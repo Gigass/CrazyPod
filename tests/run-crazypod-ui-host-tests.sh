@@ -32,6 +32,14 @@ cc -std=c99 -Wall -Wextra -Werror \
 "$test_root/crazypod_books_catalog_host_test"
 
 cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/apps/crazypod/crazypod_audiobook_chapters.c" \
+    "$repo_root/tests/crazypod_audiobook_chapters_host_test.c" \
+    -o "$test_root/crazypod_audiobook_chapters_host_test"
+
+"$test_root/crazypod_audiobook_chapters_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-frameclock-stubs" \
     -I"$repo_root/apps/crazypod" \
     -I"$repo_root/apps/crazypod/ui" \

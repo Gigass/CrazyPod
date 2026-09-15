@@ -56,6 +56,9 @@ WPS、皮肤引擎、主题系统、插件界面、录音流程、USB Audio、HI
 
 - **备忘录：** 草稿、置顶、搜索、复制、废纸篓和恢复。
 - **图书：** EPUB、TXT 和 Markdown，支持进度、书签、收藏、章节、字号和纸张主题。
+- **有声书：** 图书 → 有声书列出 `/Audiobooks` 中的 M4B、M4A 和 MP3 文件（以及 `/Books` 下的
+  M4B），通过常规音频引擎播放，读取 Nero `chpl` 章节表，左右键切换章节（无章节时跳转 30 秒），
+  并按每本书记住收听位置：暂停、切换书籍时保存，磁盘唤醒时定期保存，下次打开时恢复。
 - **日程：** 本地日历事件、只读 ICS 导入和 VCF 联系人。
 - **Mini Apps：** React 风格 TypeScript/TSX 经 AOT 编译为 C，再编译为原生 `app.arm`；
   设备不运行 JavaScript 引擎。内置 2048 和 Capability Lab 示例。
@@ -130,6 +133,7 @@ cd build-sim
 - 图片：`/Pictures`
 - 视频：`/Videos`
 - 图书：`/Books`
+- 有声书：`/Audiobooks`（也会列出 `/Books` 下的 M4B）
 - Mini Apps：`/MiniApps`
 - GB / GBC 游戏：`/MiniApps/Games`、`/MiniApps/Games/GB`、`/MiniApps/Games/GBC`，
   入口为桌面上的“GB / GBC”图标，支持音频、滚轮操作、卡带存档和 RTC。

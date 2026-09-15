@@ -9,6 +9,9 @@ bool crazypod_queue_replace(const char *const *paths, int count,
                             int start_index);
 bool crazypod_queue_replace_shuffled(const char *const *paths, int count,
                                      unsigned int seed);
+/* Replaces the queue with one file and starts it at elapsed_ms. */
+bool crazypod_queue_replace_resume(const char *path,
+                                   unsigned long elapsed_ms);
 void crazypod_queue_restore_begin(void);
 bool crazypod_queue_restore_add(const char *path);
 void crazypod_queue_restore_finish(int selected_index, bool shuffled);

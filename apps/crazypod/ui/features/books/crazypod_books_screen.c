@@ -6,6 +6,7 @@
 
 #include "lvgl.h"
 
+#include "../../../crazypod_audiobooks.h"
 #include "../../../crazypod_books.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_books_screen.h"
@@ -150,4 +151,128 @@ void crazypod_books_screen_render_info(lv_obj_t *content,
     lv_obj_set_width(label, 268);
     lv_obj_set_height(label, 112);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
+}
+
+static void format_clock(char *text, size_t size, uint32_t ms)
+{
+    uint32_t seconds = ms / 1000u;
+
+    if(seconds >= 3600u)
+        snprintf(text, size, "%lu:%02lu:%02lu",
+                 (unsigned long)(seconds / 3600u),
+                 (unsigned long)(seconds / 60u % 60u),
+                 (unsigned long)(seconds % 60u));
+    else
+        snprintf(text, size, "%lu:%02lu",
+                 (unsigned long)(seconds / 60u),
+                 (unsigned long)(seconds % 60u));
+}
+
+void crazypod_books_screen_render_audiobook(
+    lv_obj_t *content, int audiobook_index)
+{
+    const struct crazypod_audiobook *book;
+    const struct crazypod_audiobook_chapter *chapter = NULL;
+    lv_obj_t *label;
+    lv_obj_t *panel;
+    char text[128];
+    char elapsed[16];
+    char remaining[16];
+    uint32_t position;
+    uint32_t length;
+    int chapter_count;
+    int chapter_index = -1;
+    int fill;
+    bool playing;
+
+    crazypod_audiobook_probe(audiobook_index);
+    book = crazypod_audiobook_get(audiobook_index);
+    position = crazypod_audiobook_position_ms(audiobook_index);
+    length = book != NULL ? book->length_ms : 0;
+    chapter_count = crazypod_audiobook_chapter_count(audiobook_index);
+    if(chapter_count > 0) {
+        chapter_index = crazypod_audiobook_chapter_at(
+            audiobook_index, position);
+        chapter = crazypod_audiobook_chapter_get(
+            audiobook_index, chapter_index);
+    }
+    playing = crazypod_audiobook_is_playing(audiobook_index);
+
+    label = crazypod_ui_widget_label(
+        content, book != NULL ? book->title : CP_TR("AUDIOBOOK"),
+        &lv_font_montserrat_16, CRAZYPOD_BOOKS_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(label, 14, 40);
+    lv_obj_set_width(label, 292);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    label = crazypod_ui_widget_label(
+        content,
+        book != NULL && book->author[0] != '\0'
+            ? book->author : CP_TR("Unknown author"),
+        CRAZYPOD_BOOKS_FONT, CRAZYPOD_BOOKS_WHITE, 170);
+    lv_obj_set_pos(label, 14, 64);
+    lv_obj_set_width(label, 292);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+
+    panel = crazypod_ui_widget_box(content, 14, 92, 292, 114, 10,
+                                   CRAZYPOD_BOOKS_PANEL, 220);
+    if(chapter != NULL) {
+        snprintf(text, sizeof(text), CP_FMT("Chapter %d of %d"),
+                 chapter_index + 1, chapter_count);
+        label = crazypod_ui_widget_label(
+            panel, text, CRAZYPOD_BOOKS_FONT, CRAZYPOD_BOOKS_WHITE, 170);
+        lv_obj_set_pos(label, 12, 8);
+        label = crazypod_ui_widget_label(
+            panel, chapter->title, CRAZYPOD_BOOKS_FONT,
+            CRAZYPOD_BOOKS_WHITE, LV_OPA_COVER);
+        lv_obj_set_pos(label, 12, 26);
+        lv_obj_set_width(label, 268);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+    }
+    else {
+        label = crazypod_ui_widget_label(
+            panel, CP_TR("No chapters"), CRAZYPOD_BOOKS_FONT,
+            CRAZYPOD_BOOKS_WHITE, 170);
+        lv_obj_set_pos(label, 12, 8);
+    }
+
+    crazypod_ui_widget_box(panel, 12, 54, 268, 6, LV_RADIUS_CIRCLE,
+                           CRAZYPOD_BOOKS_WHITE, 40);
+    fill = length > 0
+        ? (int)((uint64_t)position * 268u / length) : 0;
+    if(fill < 4)
+        fill = 4;
+    if(fill > 268)
+        fill = 268;
+    crazypod_ui_widget_box(panel, 12, 54, fill, 6,
+                           LV_RADIUS_CIRCLE, 0xD4B46A, 230);
+
+    format_clock(elapsed, sizeof(elapsed), position);
+    format_clock(remaining, sizeof(remaining),
+                 length > position ? length - position : 0);
+    label = crazypod_ui_widget_label(
+        panel, elapsed, CRAZYPOD_BOOKS_FONT, CRAZYPOD_BOOKS_WHITE, 200);
+    lv_obj_set_pos(label, 12, 66);
+    snprintf(text, sizeof(text), "-%s", remaining);
+    label = crazypod_ui_widget_label(
+        panel, text, CRAZYPOD_BOOKS_FONT, CRAZYPOD_BOOKS_WHITE, 200);
+    lv_obj_set_pos(label, 190, 66);
+    lv_obj_set_width(label, 90);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+
+    snprintf(text, sizeof(text), "%s  %s",
+             playing ? LV_SYMBOL_PLAY : LV_SYMBOL_PAUSE,
+             playing ? CP_FMT("Playing") : CP_FMT("Paused"));
+    label = crazypod_ui_widget_label(
+        panel, text, CRAZYPOD_BOOKS_FONT, CRAZYPOD_BOOKS_WHITE, 200);
+    lv_obj_set_pos(label, 12, 88);
+    label = crazypod_ui_widget_label(
+        panel,
+        chapter_count > 0
+            ? CP_TR("Left and Right skip chapters")
+            : CP_TR("Left and Right skip 30 seconds"),
+        CRAZYPOD_BOOKS_FONT, CRAZYPOD_BOOKS_WHITE, 120);
+    lv_obj_set_pos(label, 100, 88);
+    lv_obj_set_width(label, 180);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
 }
