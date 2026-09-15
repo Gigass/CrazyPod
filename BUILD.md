@@ -271,6 +271,7 @@ sh tests/check-crazypod-ui-architecture.sh
 sh tests/run-crazypod-ui-host-tests.sh
 sh tests/run-miniapp-host-tests.sh
 sh tests/run-gameboy-host-tests.sh
+sh tests/run-crazypod-metadata-host-tests.sh
 sh tests/run-epub-host-tests.sh
 sh tests/run-crazypod-font-tests.sh
 python3 tools/check-crazypod-l10n.py --strict-bare
@@ -280,7 +281,10 @@ git diff --check
 The UI host test covers collation, A-Z wheel-jump state, route dispatch,
 navigation commands, menu layout, book-reader input, and text helpers. The
 architecture gate requires `crazypod_ui.c` to remain between 400 and 1500
-lines and rejects feature-private includes outside their owner.
+lines and rejects feature-private includes outside their owner. The
+metadata host test builds the firmware's own MP4 parser against rbcodec's
+Unix platform shim and runs it over a synthetic file, so a change to the
+atom dispatch cannot silently lose the tag list or the duration.
 
 For a user-visible change, also run the simulator and exercise the affected
 route. For LCD, storage, USB, power, audio, or native Mini App changes, an ARM
