@@ -230,8 +230,10 @@ running, the fullest and emptiest PCM buffer level and the lowest
 file-buffer fill seen in the window, how many times the LVGL timer handler
 ran and its worst and total time, the same for LVGL renders, the number of
 flushed strips and pixels, and the presenter's frame counts and deadline
-misses, the render time split by LVGL draw task type, and the four most
-frequent invalidated screen areas with their counts. Lines are held in RAM
+misses, the render time split by LVGL draw task type, the four most
+frequent invalidated screen areas and layer renders with the object class
+and caller behind them, the live object count of the active screen, and
+the wall time of the last audiobook chapter seek. Lines are held in RAM
 and written only when the disk is already awake or the buffer fills, since
 waking a sleeping drive from the UI thread costs most of a second. The log
 stops itself at 512 KiB; delete the file to start over. Play music for a
