@@ -1,5 +1,6 @@
 #ifndef GAMEBOY_TEST_FILE_H
 #define GAMEBOY_TEST_FILE_H
+#include <stdbool.h>
 #include <stddef.h>
 #include <sys/types.h>
 #define O_RDONLY 0
@@ -15,6 +16,7 @@ int gb_test_close(int fd);
 int gb_test_fsync(int fd);
 int gb_test_rename(const char *from, const char *to);
 int gb_test_remove(const char *path);
+bool file_exists(const char *path);
 #define open gb_test_open
 #define read gb_test_read
 #define write gb_test_write

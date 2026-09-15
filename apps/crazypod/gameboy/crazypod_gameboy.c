@@ -21,6 +21,7 @@ static struct crazypod_gameboy_cartridge cartridge;
 static char save_path[MAX_PATH];
 static bool opened;
 static enum crazypod_gameboy_save_state save_state;
+static char save_detail[64];
 
 static uint32_t read_u32(const uint8_t *p)
 {
@@ -112,53 +113,92 @@ static bool cartridge_saves(void)
            cartridge.ram_size > 0;
 }
 
-static enum crazypod_gameboy_result load_save(void)
+/*
+ * Load this game's save, and say exactly what happened.
+ *
+ * A save that cannot be used never stops the game from running: the file
+ * is left on disk untouched, the cartridge RAM is returned to its blank
+ * state, and the menu reports which check gave up. Refusing to launch
+ * turned every unreadable save into "Game file or save could not be
+ * written/read", which says nothing about which of six steps failed.
+ */
+static void load_save(void)
 {
     uint8_t header[SAVE_HEADER_SIZE], digest[32];
     uint32_t clock[8], saved_at, now;
-    bool valid;
+    const char *step = NULL;
+    off_t size = 0;
     int fd, i;
 
     save_state = CRAZYPOD_GAMEBOY_SAVE_UNSUPPORTED;
+    snprintf(save_detail, sizeof(save_detail),
+             "type %02x ram %lu: cartridge cannot save",
+             cartridge.type, (unsigned long)cartridge.ram_size);
     if(!cartridge_saves())
-        return CRAZYPOD_GAMEBOY_OK;
+        return;
+
     save_state = CRAZYPOD_GAMEBOY_SAVE_ABSENT;
+    snprintf(save_detail, sizeof(save_detail),
+             "type %02x ram %lu: no file yet",
+             cartridge.type, (unsigned long)cartridge.ram_size);
     /*
      * Having no save yet is the normal first run, not a failure -- but do
      * not ask errno which it was. Rockbox's open() speculatively allocates
      * a descriptor before resolving the path and calls close() on it when
      * resolution fails; close() finds a stream it never opened and sets
-     * errno to EBADF, burying the ENOENT underneath. Every battery-backed
-     * cartridge therefore reported an I/O error on its first launch.
+     * errno to EBADF, burying the ENOENT underneath.
      */
     if(!file_exists(save_path))
-        return CRAZYPOD_GAMEBOY_OK;
+        return;
+
     fd = open(save_path, O_RDONLY);
     if(fd < 0)
-        return CRAZYPOD_GAMEBOY_IO_ERROR;
-    valid = filesize(fd) ==
-        (off_t)(sizeof(header) + cartridge.ram_size) &&
-        read(fd, header, sizeof(header)) == (ssize_t)sizeof(header) &&
-        memcmp(header, "CPGBSV01", 8) == 0 &&
-        read_u32(header + 8) == cartridge.ram_size &&
-        read(fd, save_ram, cartridge.ram_size) ==
-            (ssize_t)cartridge.ram_size;
-    close(fd);
-    if(!valid)
-        return CRAZYPOD_GAMEBOY_BAD_SAVE;
-    save_digest(header, digest);
-    if(memcmp(header + 48, digest, sizeof(digest)) != 0)
-        return CRAZYPOD_GAMEBOY_BAD_SAVE;
-    for(i = 0; i < 8; ++i)
-        clock[i] = read_u32(header + 16 + i * 4);
-    if(!crazypod_gameboy_core_clock_import(clock))
-        return CRAZYPOD_GAMEBOY_BAD_SAVE;
+        step = "open failed";
+    else {
+        size = filesize(fd);
+        if(size != (off_t)(sizeof(header) + cartridge.ram_size))
+            step = "wrong size";
+        else if(read(fd, header, sizeof(header)) !=
+                (ssize_t)sizeof(header))
+            step = "short header";
+        else if(memcmp(header, "CPGBSV01", 8) != 0)
+            step = "bad magic";
+        else if(read_u32(header + 8) != cartridge.ram_size)
+            step = "ram size moved";
+        else if(read(fd, save_ram, cartridge.ram_size) !=
+                (ssize_t)cartridge.ram_size)
+            step = "short ram";
+        close(fd);
+    }
+    if(step == NULL) {
+        save_digest(header, digest);
+        if(memcmp(header + 48, digest, sizeof(digest)) != 0)
+            step = "checksum";
+    }
+    if(step == NULL) {
+        for(i = 0; i < 8; ++i)
+            clock[i] = read_u32(header + 16 + i * 4);
+        if(!crazypod_gameboy_core_clock_import(clock))
+            step = "clock";
+    }
+    if(step != NULL) {
+        /* Never start from half a save read out of a broken file. */
+        memset(save_ram, 0xff, CRAZYPOD_GAMEBOY_RAM_MAX);
+        save_state = CRAZYPOD_GAMEBOY_SAVE_REJECTED;
+        snprintf(save_detail, sizeof(save_detail),
+                 "ram %lu file %ld: %s",
+                 (unsigned long)cartridge.ram_size, (long)size, step);
+        return;
+    }
+
     save_state = CRAZYPOD_GAMEBOY_SAVE_LOADED;
+    snprintf(save_detail, sizeof(save_detail),
+             "ram %lu file %ld: loaded",
+             (unsigned long)cartridge.ram_size, (long)size);
     saved_at = read_u32(header + 12);
     now = (uint32_t)mktime(get_time());
     if(cartridge.clock && saved_at > 0 && now > saved_at)
         crazypod_gameboy_core_clock_advance(now - saved_at);
-    return CRAZYPOD_GAMEBOY_OK;
 }
 
 enum crazypod_gameboy_result crazypod_gameboy_open(
@@ -169,7 +209,6 @@ enum crazypod_gameboy_result crazypod_gameboy_open(
     uint8_t *data;
     off_t size;
     int fd, i;
-    enum crazypod_gameboy_result result;
 
     if(opened || index < 0 || index >= game_count)
         return CRAZYPOD_GAMEBOY_BAD_ROM;
@@ -215,22 +254,27 @@ enum crazypod_gameboy_result crazypod_gameboy_open(
         crazypod_gameboy_close();
         return CRAZYPOD_GAMEBOY_BAD_ROM;
     }
-    result = load_save();
-    if(result != CRAZYPOD_GAMEBOY_OK) {
-        /* Never silently reset, or later overwrite, a damaged save. */
-        crazypod_gameboy_close();
-        return result;
-    }
+    load_save();
     opened = true;
     return CRAZYPOD_GAMEBOY_OK;
+}
+
+/* Report where a save gave up, and leave save_state saying it failed. */
+static bool save_gave_up(const char *step)
+{
+    save_state = CRAZYPOD_GAMEBOY_SAVE_FAILED;
+    snprintf(save_detail, sizeof(save_detail),
+             "ram %lu: write %s",
+             (unsigned long)cartridge.ram_size, step);
+    return false;
 }
 
 bool crazypod_gameboy_save(void)
 {
     uint8_t header[SAVE_HEADER_SIZE] = { 0 };
     uint32_t clock[8];
-    char temporary[MAX_PATH];
-    bool success;
+    char temporary[MAX_PATH + 8];
+    const char *step = NULL;
     int fd, i;
 
     if(!opened)
@@ -239,7 +283,7 @@ bool crazypod_gameboy_save(void)
         return true;
     if((!dir_exists("/.crazypod") && mkdir("/.crazypod") < 0) ||
        (!dir_exists(SAVE_DIRECTORY) && mkdir(SAVE_DIRECTORY) < 0))
-        return false;
+        return save_gave_up("mkdir failed");
     memcpy(header, "CPGBSV01", 8);
     write_u32(header + 8, cartridge.ram_size);
     write_u32(header + 12, (uint32_t)mktime(get_time()));
@@ -250,26 +294,53 @@ bool crazypod_gameboy_save(void)
     snprintf(temporary, sizeof(temporary), "%s.tmp", save_path);
     fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if(fd < 0)
-        return false;
-    success = write(fd, header, sizeof(header)) ==
-        (ssize_t)sizeof(header) &&
-        write(fd, save_ram, cartridge.ram_size) ==
-            (ssize_t)cartridge.ram_size;
-    if(fsync(fd) < 0)
-        success = false;
-    if(close(fd) < 0)
-        success = false;
-    if(success && rename(temporary, save_path) == 0) {
-        save_state = CRAZYPOD_GAMEBOY_SAVE_WRITTEN;
-        return true;
+        return save_gave_up("open failed");
+    if(write(fd, header, sizeof(header)) != (ssize_t)sizeof(header))
+        step = "short header";
+    else if(write(fd, save_ram, cartridge.ram_size) !=
+            (ssize_t)cartridge.ram_size)
+        step = "short ram";
+    if(fsync(fd) < 0 && step == NULL)
+        step = "fsync failed";
+    if(close(fd) < 0 && step == NULL)
+        step = "close failed";
+    if(step == NULL) {
+        /*
+         * A save we could not read is still the player's only copy of
+         * whatever is in it, so move it aside rather than let the rename
+         * drop it.
+         */
+        if(save_state == CRAZYPOD_GAMEBOY_SAVE_REJECTED) {
+            /* Room for the suffix: a truncated name here would be a
+             * prefix of the real one and the rename would eat it. */
+            char rescue[MAX_PATH + 8];
+
+            snprintf(rescue, sizeof(rescue), "%s.bad", save_path);
+            remove(rescue);
+            rename(save_path, rescue);
+        }
+        if(rename(temporary, save_path) != 0)
+            step = "rename failed";
     }
-    remove(temporary);
-    return false;
+    if(step != NULL) {
+        remove(temporary);
+        return save_gave_up(step);
+    }
+    save_state = CRAZYPOD_GAMEBOY_SAVE_WRITTEN;
+    snprintf(save_detail, sizeof(save_detail),
+             "ram %lu: written",
+             (unsigned long)cartridge.ram_size);
+    return true;
 }
 
 enum crazypod_gameboy_save_state crazypod_gameboy_save_state(void)
 {
     return save_state;
+}
+
+const char *crazypod_gameboy_save_detail(void)
+{
+    return save_detail;
 }
 
 bool crazypod_gameboy_saves_progress(void)

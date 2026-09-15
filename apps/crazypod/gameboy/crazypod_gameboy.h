@@ -32,7 +32,20 @@ enum crazypod_gameboy_save_state {
     CRAZYPOD_GAMEBOY_SAVE_ABSENT,
     CRAZYPOD_GAMEBOY_SAVE_LOADED,
     CRAZYPOD_GAMEBOY_SAVE_WRITTEN,
+    /* A save file is there but could not be used. The game still runs;
+     * the file is kept until a new save displaces it. */
+    CRAZYPOD_GAMEBOY_SAVE_REJECTED,
+    CRAZYPOD_GAMEBOY_SAVE_FAILED,
 };
 enum crazypod_gameboy_save_state crazypod_gameboy_save_state(void);
+
+/*
+ * One line of plain facts about this game's save, in English, for a bug
+ * report: cartridge type and RAM size, what was on disk, and which step
+ * gave up. Three rounds of guessing at why saves did not come back cost
+ * three test passes, because "it does not work" does not distinguish a
+ * cartridge we think cannot save from a file we refuse to read.
+ */
+const char *crazypod_gameboy_save_detail(void);
 
 #endif

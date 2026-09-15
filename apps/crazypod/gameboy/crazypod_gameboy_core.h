@@ -20,6 +20,9 @@ enum crazypod_gameboy_button {
 struct crazypod_gameboy_cartridge {
     size_t rom_size;
     size_t ram_size;
+    /* Raw cartridge type byte at 0x147, kept so a save diagnostic can
+     * name the cartridge rather than only the mapper we mapped it to. */
+    unsigned type;
     unsigned mapper;
     bool battery;
     bool clock;

@@ -80,6 +80,7 @@ off_t gb_test_lseek(int fd, off_t offset, int origin)
 }
 
 off_t filesize(int fd) { return files[fd].size; }
+bool file_exists(const char *path) { return find_file(path) >= 0; }
 int gb_test_close(int fd) { (void)fd; --handles; return 0; }
 int gb_test_fsync(int fd) { (void)fd; return fail_sync ? -1 : 0; }
 int gb_test_remove(const char *path)
@@ -88,6 +89,19 @@ int gb_test_remove(const char *path)
     if(i >= 0)
         files[i].path[0] = '\0';
     return i >= 0 ? 0 : -1;
+}
+
+static int find_file_index_with_suffix(const char *suffix)
+{
+    size_t length = strlen(suffix);
+    int i;
+    for(i = 0; i < file_count; ++i) {
+        size_t have = strlen(files[i].path);
+        if(have >= length &&
+           strcmp(files[i].path + have - length, suffix) == 0)
+            return i;
+    }
+    return -1;
 }
 
 int gb_test_rename(const char *from, const char *to)
@@ -161,7 +175,7 @@ int core_free(int handle)
 
 int main(void)
 {
-    int save_index, i;
+    int save_index, rescued, i;
     uint32_t clock[8] = { 4, 0, 0, 3, 0, 0, 0, 0 };
     uint8_t saved[80 + 8192];
 
@@ -205,13 +219,35 @@ int main(void)
     assert(clock[0] == 4 && clock[2] == 2 && clock[3] == 3);
     assert(crazypod_gameboy_save());
     crazypod_gameboy_close();
-    /* Corrupt or truncated saves are refused without overwriting them. */
+    /*
+     * A save that cannot be used never blocks the game: it launches with
+     * blank cartridge RAM and says so, and the file it could not read is
+     * moved aside rather than overwritten by the next save.
+     */
     files[save_index].data[80] ^= 1;
-    assert(crazypod_gameboy_open(0, NULL) == CRAZYPOD_GAMEBOY_BAD_SAVE);
-    assert(!crazypod_gameboy_save());
+    assert(crazypod_gameboy_open(0, NULL) == CRAZYPOD_GAMEBOY_OK);
+    assert(crazypod_gameboy_save_state() ==
+           CRAZYPOD_GAMEBOY_SAVE_REJECTED);
+    assert(allocation[32768] == 0xff);
+    memcpy(saved, files[save_index].data, sizeof(saved));
+    assert(crazypod_gameboy_save());
+    assert(crazypod_gameboy_save_state() ==
+           CRAZYPOD_GAMEBOY_SAVE_WRITTEN);
+    rescued = find_file_index_with_suffix(".bad");
+    assert(rescued >= 0);
+    assert(memcmp(saved, files[rescued].data, sizeof(saved)) == 0);
+    crazypod_gameboy_close();
     assert(handles == 0 && allocation == NULL);
+
+    /* A truncated save is the same story, told by a different step.
+     * The rescue moved the old file aside, so find the live one again. */
+    save_index = find_file_index_with_suffix(".sav");
+    assert(save_index >= 0);
     files[save_index].size = 12;
-    assert(crazypod_gameboy_open(0, NULL) == CRAZYPOD_GAMEBOY_BAD_SAVE);
+    assert(crazypod_gameboy_open(0, NULL) == CRAZYPOD_GAMEBOY_OK);
+    assert(crazypod_gameboy_save_state() ==
+           CRAZYPOD_GAMEBOY_SAVE_REJECTED);
+    crazypod_gameboy_close();
     assert(handles == 0 && allocation == NULL);
     puts("Game Boy storage: save/RTC reload, rename, failure preservation pass");
     return 0;

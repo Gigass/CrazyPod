@@ -33,6 +33,7 @@ bool crazypod_gameboy_cartridge_probe(
     cart->ram_size = ram_sizes[header[0x149]];
     cart->color = (header[0x143] & 0x80) != 0;
     type = header[0x147];
+    cart->type = type;
     switch(type) {
     case 0x00: case 0x08: case 0x09:
         cart->mapper = 0;

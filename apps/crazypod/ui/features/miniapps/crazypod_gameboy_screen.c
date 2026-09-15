@@ -158,6 +158,10 @@ static const char *save_state_text(void)
         return CP_TR("Save loaded");
     case CRAZYPOD_GAMEBOY_SAVE_WRITTEN:
         return CP_TR("Save written");
+    case CRAZYPOD_GAMEBOY_SAVE_REJECTED:
+        return CP_TR("Save file unreadable, starting fresh");
+    case CRAZYPOD_GAMEBOY_SAVE_FAILED:
+        return CP_TR("Game save failed");
     }
     return CP_TR("Hold Center for game menu");
 }
@@ -181,10 +185,14 @@ static void draw_menu(int selected, bool save_failed)
     }
     crazypod_lcd_draw_text(
         save_failed ? CP_TR("Game save failed") :
-        save_state_text(), 18, 190, 306, 0xffd477);
+        save_state_text(), 18, 178, 306, 0xffd477);
+    /* Deliberately untranslated: this line exists to be copied into a bug
+     * report, and it is facts rather than prose. */
+    crazypod_lcd_draw_text(
+        crazypod_gameboy_save_detail(), 18, 196, 306, 0xaaaaaa);
     crazypod_lcd_draw_text(
         CP_TR("Controls: /MiniApps/Games/README.txt"),
-        18, 212, 306, 0xaaaaaa);
+        18, 214, 306, 0xaaaaaa);
     lcd_update();
 }
 

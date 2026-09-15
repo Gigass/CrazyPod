@@ -94,6 +94,10 @@ void audio_pause(void) { ++restored; }
 void backlight_on(void) { }
 void reset_poweroff_timer(void) { }
 void lcd_update(void) { }
+void lcd_update_rect(int x, int y, int width, int height)
+{
+    (void)x; (void)y; (void)width; (void)height;
+}
 void *crazypod_platform_display_framebuffer(void) { return framebuffer; }
 void crazypod_lcd_draw_text(const char *text, int x, int y,
                             int maximum_x, uint32_t color)
@@ -141,6 +145,15 @@ bool crazypod_gameboy_save(void)
     return scenario != RETRY_SAVE || saves > 1;
 }
 void crazypod_gameboy_close(void) { opened = false; ++closed; }
+enum crazypod_gameboy_save_state crazypod_gameboy_save_state(void)
+{
+    return saves > 0 ? CRAZYPOD_GAMEBOY_SAVE_WRITTEN
+                     : CRAZYPOD_GAMEBOY_SAVE_ABSENT;
+}
+const char *crazypod_gameboy_save_detail(void)
+{
+    return "ram 8192: test";
+}
 
 int main(void)
 {

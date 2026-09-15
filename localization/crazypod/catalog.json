@@ -3617,6 +3617,11 @@
         "apps/crazypod/ui/features/photos/crazypod_photo_screen.c:83"
       ]
     },
+    "Save file unreadable, starting fresh": {
+      "locations": [
+        "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c:162"
+      ]
+    },
     "Save loaded": {
       "locations": [
         "apps/crazypod/ui/features/miniapps/crazypod_gameboy_screen.c:158"
