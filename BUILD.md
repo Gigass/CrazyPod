@@ -232,8 +232,11 @@ ran and its worst and total time, the same for LVGL renders, the number of
 flushed strips and pixels, and the presenter's frame counts and deadline
 misses, the render time split by LVGL draw task type, the four most
 frequent invalidated screen areas and layer renders with the object class
-and caller behind them, the live object count of the active screen, and
-the wall time of the last audiobook chapter seek. Lines are held in RAM
+and caller behind them, the live object count of the active screen,
+the wall time of the last audiobook chapter seek, and `step=`, the
+input-to-pixels latency of a wheel step split into the three phases it
+can wait in: the frame-clock gate, the LVGL render, and the panel write
+(`count/average/gate/render/worst`, milliseconds). Lines are held in RAM
 and written only when the disk is already awake or the buffer fills, since
 waking a sleeping drive from the UI thread costs most of a second. The log
 stops itself at 512 KiB; delete the file to start over. Play music for a

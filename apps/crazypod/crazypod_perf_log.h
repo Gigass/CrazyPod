@@ -21,6 +21,14 @@
 void crazypod_perf_log_attach_display(void *display);
 void crazypod_perf_log_lv_begin(void);
 void crazypod_perf_log_lv_end(void);
+/*
+ * One wheel step's journey to the screen, split into the three phases it
+ * can wait in: the frame clock gate, the LVGL render, and the panel write.
+ * step_begin() is called when the button is handled, present_done() when
+ * pixels have been pushed.
+ */
+void crazypod_perf_log_step_begin(void);
+void crazypod_perf_log_present_done(void);
 void crazypod_perf_log_flush(unsigned pixels);
 /* Called by the LVGL software renderer around each draw task. */
 void crazypod_perf_log_draw_begin(void);
@@ -38,6 +46,8 @@ static inline void crazypod_perf_log_attach_display(void *display)
 }
 static inline void crazypod_perf_log_lv_begin(void) {}
 static inline void crazypod_perf_log_lv_end(void) {}
+static inline void crazypod_perf_log_step_begin(void) {}
+static inline void crazypod_perf_log_present_done(void) {}
 static inline void crazypod_perf_log_flush(unsigned pixels)
 {
     (void)pixels;

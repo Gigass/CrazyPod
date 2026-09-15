@@ -60,6 +60,16 @@ static struct {
     bool header_written;
     unsigned lv_start_us;
     unsigned render_start_us;
+    /* Input-to-pixels, phase by phase. stage: 0 idle, 1 waiting for the
+     * frame clock, 2 rendering, 3 waiting for the present. */
+    unsigned step_stage;
+    unsigned step_mark_us;
+    unsigned steps;
+    unsigned step_gate_us;
+    unsigned step_render_us;
+    unsigned step_present_us;
+    unsigned step_max_us;
+    unsigned step_total_us;
     unsigned draw_start_us;
     unsigned draw_depth;
     /* Window accumulators, reset after every line. */
@@ -234,15 +244,59 @@ void crazypod_perf_log_draw_end(int type)
     }
 }
 
+void crazypod_perf_log_step_begin(void)
+{
+    /* A step still in flight keeps its original start: what matters is
+     * when the screen caught up with the user, not with the last event. */
+    if(perf.step_stage != 0)
+        return;
+    perf.step_stage = 1;
+    perf.step_mark_us = USEC_TIMER;
+    perf.step_gate_us = 0;
+    perf.step_render_us = 0;
+}
+
+void crazypod_perf_log_present_done(void)
+{
+    unsigned now;
+    unsigned total;
+
+    if(perf.step_stage != 3)
+        return;
+    now = USEC_TIMER;
+    total = perf.step_gate_us + perf.step_render_us +
+        (now - perf.step_mark_us);
+    perf.step_present_us += now - perf.step_mark_us;
+    perf.step_total_us += total;
+    if(total > perf.step_max_us)
+        perf.step_max_us = total;
+    ++perf.steps;
+    perf.step_stage = 0;
+}
+
 void crazypod_perf_log_lv_begin(void)
 {
     perf.lv_start_us = USEC_TIMER;
+    if(perf.step_stage == 1) {
+        unsigned now = USEC_TIMER;
+
+        perf.step_gate_us = now - perf.step_mark_us;
+        perf.step_mark_us = now;
+        perf.step_stage = 2;
+    }
 }
 
 void crazypod_perf_log_lv_end(void)
 {
     unsigned elapsed = USEC_TIMER - perf.lv_start_us;
 
+    if(perf.step_stage == 2) {
+        unsigned now = USEC_TIMER;
+
+        perf.step_render_us = now - perf.step_mark_us;
+        perf.step_mark_us = now;
+        perf.step_stage = 3;
+    }
     perf.lv_calls++;
     perf.lv_total_us += elapsed;
     if(elapsed > perf.lv_max_us)
@@ -264,6 +318,12 @@ static void reset_window(void)
     memset(perf.invalidation, 0, sizeof(perf.invalidation));
     perf.layers = 0;
     memset(perf.layer, 0, sizeof(perf.layer));
+    perf.steps = 0;
+    perf.step_gate_us = 0;
+    perf.step_render_us = 0;
+    perf.step_present_us = 0;
+    perf.step_max_us = 0;
+    perf.step_total_us = 0;
     perf.samples = 0;
     perf.lowdata_samples = 0;
     perf.pcm_free_min = (size_t)-1;
@@ -408,6 +468,7 @@ static void format_line(long now)
                "fl=flushes/pixels pres=presents/full/misses/timeouts "
                "pmax=max_present_us home=renders/timeouts "
                "wr=prev_write_us seek=last_chapter_seek_ms objs=screen_objects "
+               "step=count/avg_ms/gate_ms/render_ms/worst_ms "
                "dt=type:count/ms,... "
                "inv=count,x1.y1-x2.y2:count@class/caller,... "
                "lay=count,x1.y1-x2.y2:count@class/type "
@@ -453,6 +514,16 @@ static void format_line(long now)
              (unsigned long)crazypod_audiobooks_last_seek_ms(),
              lv_screen_active() != NULL
                  ? count_objects(lv_screen_active()) : 0u);
+    append(text);
+    if(perf.steps > 0)
+        snprintf(text, sizeof(text), " step=%u/%u/%u/%u/%u",
+                 perf.steps,
+                 perf.step_total_us / perf.steps / 1000,
+                 perf.step_gate_us / perf.steps / 1000,
+                 perf.step_render_us / perf.steps / 1000,
+                 perf.step_max_us / 1000);
+    else
+        snprintf(text, sizeof(text), " step=0");
     append(text);
     append_draw_stats();
     append_invalidations();

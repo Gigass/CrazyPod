@@ -9,6 +9,7 @@
 #include "system.h"
 
 #include "crazypod_frameclock.h"
+#include "crazypod_perf_log.h"
 
 /*
  * The 6G panel driver exposes tearing-avoidance variants of
@@ -347,6 +348,7 @@ void crazypod_present_now(void)
         present_diagnostics.max_present_us = duration_us;
     if(duration_us > CRAZYPOD_FRAME_BUDGET_US)
         ++present_diagnostics.present_timeouts;
+    crazypod_perf_log_present_done();
 #ifdef SIMULATOR
     simulator_present_crc = crc_32(
         lcd_framebuffer_default.data,

@@ -972,6 +972,11 @@ void crazypod_ui_run(void)
         process_lock_state();
         while(button != BUTTON_NONE && drained < 16) {
             intptr_t data = button_get_data();
+
+            /* Presses and wheel steps start the input-to-pixels clock;
+             * releases and system events do not move the screen. */
+            if((button & (SYS_EVENT | BUTTON_REL)) == 0)
+                crazypod_perf_log_step_begin();
             handle_button(button, data);
             ++drained;
             if(crazypod_system_prompts_storage_active())
