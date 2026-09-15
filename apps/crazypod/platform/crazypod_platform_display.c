@@ -13,7 +13,17 @@
 #include "../crazypod_perf_log.h"
 #include "crazypod_platform_display.h"
 
+/*
+ * LVGL renders each invalidated area in strips of this height and walks
+ * the whole object tree once per strip. Six strips per full screen was
+ * measured as most of the non-drawing time on the PP5022, so it gets two
+ * strips (a 75 KiB buffer); the 6G keeps the smaller buffer.
+ */
+#if defined(CPU_PP) && !defined(SIMULATOR)
+#define DRAW_ROWS 120
+#else
 #define DRAW_ROWS 40
+#endif
 #define DISPLAY_REFRESH_PERIOD_MS 20
 
 static struct crazypod_platform_display_host display_host;

@@ -16,7 +16,10 @@
 
 #define LV_DRAW_BUF_STRIDE_ALIGN 1
 #define LV_DRAW_BUF_ALIGN 4
-#define LV_DRAW_LAYER_SIMPLE_BUF_SIZE (8U * 1024U)
+/* A simple layer (transform, clip_corner strip) is rendered in chunks of
+ * this size, re-walking the object's subtree per chunk; 8 KiB was six
+ * full-width ARGB rows per chunk. */
+#define LV_DRAW_LAYER_SIMPLE_BUF_SIZE (32U * 1024U)
 /*
  * A transformed LVGL layer cannot be rendered in chunks.  The old 32 KiB
  * limit was smaller than a legal on-screen transformed object and made the
@@ -56,7 +59,11 @@
 
 #define LV_CACHE_DEF_SIZE 0
 #define LV_IMAGE_HEADER_CACHE_DEF_CNT 0
-#define LV_OBJ_STYLE_CACHE 0
+/* Per-object bitmap of which style properties are set, so a lookup for a
+ * property no style overrides returns without searching. Two words per
+ * object; a large saving on the ARM7 targets where property lookups were
+ * a visible share of every frame. */
+#define LV_OBJ_STYLE_CACHE 1
 #define LV_USE_OBJ_ID 0
 #define LV_USE_OBJ_NAME 0
 #define LV_USE_OBJ_PROPERTY 0

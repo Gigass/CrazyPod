@@ -189,7 +189,9 @@ void crazypod_menu_screen_render(
                 lv_obj_t *circle = make_box(
                     row_box, 0, 0, 21, 21,
                     LV_RADIUS_CIRCLE, COLOR_WHITE,
-                    selected ? 45 : 18);
+                    selected ? 45
+                        : crazypod_state_reduce_effects()
+                            ? LV_OPA_TRANSP : 18);
                 lv_obj_t *icon = lv_image_create(circle);
 
                 lv_obj_align(circle, LV_ALIGN_LEFT_MID, 6, 0);

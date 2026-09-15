@@ -382,6 +382,17 @@ static void append_layers(void)
     }
 }
 
+static unsigned count_objects(lv_obj_t *object)
+{
+    unsigned count = 1;
+    uint32_t i;
+    uint32_t children = lv_obj_get_child_count(object);
+
+    for(i = 0; i < children; ++i)
+        count += count_objects(lv_obj_get_child(object, (int32_t)i));
+    return count;
+}
+
 static void format_line(long now)
 {
     struct crazypod_present_diagnostics present;
@@ -396,7 +407,8 @@ static void format_line(long now)
                "lv=calls/max_us/total_us rend=renders/max_us/total_us "
                "fl=flushes/pixels pres=presents/full/misses/timeouts "
                "pmax=max_present_us home=renders/timeouts "
-               "wr=prev_write_us seek=last_chapter_seek_ms dt=type:count/ms,... "
+               "wr=prev_write_us seek=last_chapter_seek_ms objs=screen_objects "
+               "dt=type:count/ms,... "
                "inv=count,x1.y1-x2.y2:count@class/caller,... "
                "lay=count,x1.y1-x2.y2:count@class/type "
                "(t1 simple, t2 transform, t3 clip_corner)\n");
@@ -437,8 +449,10 @@ static void format_line(long now)
             perf.present_base.home_render_timeouts),
         perf.write_us);
     append(text);
-    snprintf(text, sizeof(text), " seek=%lu",
-             (unsigned long)crazypod_audiobooks_last_seek_ms());
+    snprintf(text, sizeof(text), " seek=%lu objs=%u",
+             (unsigned long)crazypod_audiobooks_last_seek_ms(),
+             lv_screen_active() != NULL
+                 ? count_objects(lv_screen_active()) : 0u);
     append(text);
     append_draw_stats();
     append_invalidations();

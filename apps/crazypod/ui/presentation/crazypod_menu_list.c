@@ -110,8 +110,13 @@ void crazypod_menu_list_refresh_row(
         lv_obj_set_style_bg_grad_dir(box, LV_GRAD_DIR_NONE, 0);
 
     if(view.circles[row] != NULL) {
+        /* Under Reduce Effects the faint unselected circle is dropped:
+         * it is one anti-aliased rounded fill per row for 7% opacity. */
         lv_obj_set_style_bg_opa(
-            view.circles[row], selected ? 45 : 18, 0);
+            view.circles[row],
+            selected ? 45
+                : crazypod_state_reduce_effects() ? LV_OPA_TRANSP : 18,
+            0);
         if(view.icons[row] != NULL) {
             lv_image_set_src(
                 view.icons[row], crazypod_menu_icon_asset(icon));
