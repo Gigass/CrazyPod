@@ -115,8 +115,9 @@ void crazypod_marquee_set_paused(lv_obj_t *label, bool paused)
         lv_anim_resume(animation);
 }
 
-void crazypod_marquee_set_text(
-    lv_obj_t *label, const char *text, bool active)
+static void set_text(
+    lv_obj_t *label, const char *text, bool active,
+    bool center_when_static)
 {
     bool changed;
 
@@ -127,9 +128,21 @@ void crazypod_marquee_set_text(
     changed = strcmp(lv_label_get_text(label), text) != 0;
     if(changed)
         CP_LV_LABEL_SET_TEXT(label, text);
-    crazypod_marquee_configure(label, active);
+    configure(label, active, center_when_static);
     if(changed)
         lv_label_set_long_mode(label, marquee_mode(label, active));
+}
+
+void crazypod_marquee_set_text(
+    lv_obj_t *label, const char *text, bool active)
+{
+    set_text(label, text, active, false);
+}
+
+void crazypod_marquee_set_text_centered(
+    lv_obj_t *label, const char *text, bool active)
+{
+    set_text(label, text, active, true);
 }
 
 #endif

@@ -29,8 +29,16 @@
 #define CRAZYPOD_ARTWORK_BANKS 2
 #define CRAZYPOD_ARTWORK_PIXELS \
     (CRAZYPOD_ARTWORK_MAX_SIZE * CRAZYPOD_ARTWORK_MAX_SIZE)
+/* The image loaders carve their own scratch out of whatever follows the
+ * output bitmap in this buffer: the JPEG decoder alone wants its state
+ * struct, a row of MCUs for the source image, and three spare lines for
+ * the rescaler. A 320px Now Playing cover leaves only 64K behind at the
+ * old size, which is about what a modest source JPEG needs -- so the
+ * large decodes failed while the 128px cache entries behind the capsule
+ * and the menus succeeded. Reserve the scratch explicitly instead. */
+#define CRAZYPOD_DECODE_SCRATCH_SIZE (192 * 1024)
 #define CRAZYPOD_DECODE_BUFFER_SIZE \
-    (CRAZYPOD_ARTWORK_PIXELS * sizeof(fb_data) + 64 * 1024)
+    (CRAZYPOD_ARTWORK_PIXELS * sizeof(fb_data) + CRAZYPOD_DECODE_SCRATCH_SIZE)
 #define CRAZYPOD_ARTWORK_WAKE 1
 #define CRAZYPOD_ARTWORK_DEFAULT_PRIORITY 100
 #define CRAZYPOD_CACHE_MAGIC 0x43504632u
@@ -949,9 +957,9 @@ static bool artwork_cache_store(
     return complete;
 }
 
-static bool decode_artwork(const struct artwork_source *source,
-                           int target_size,
-                           lv_image_dsc_t *descriptor)
+static bool decode_artwork_at(const struct artwork_source *source,
+                              int target_size,
+                              lv_image_dsc_t *descriptor)
 {
     struct bitmap bitmap;
     int fd;
@@ -995,13 +1003,31 @@ static bool decode_artwork(const struct artwork_source *source,
     }
 
     if(result < 0 || bitmap.width <= 0 || bitmap.height <= 0 ||
-       bitmap.data == NULL) {
-        ++artwork_diagnostics.decode_failed;
+       bitmap.data == NULL)
         return false;
-    }
-    ++artwork_diagnostics.decoded;
     return crazypod_image_configure_rgb565(
         descriptor, (fb_data *)bitmap.data, bitmap.width, bitmap.height);
+}
+
+static bool decode_artwork(const struct artwork_source *source,
+                           int target_size,
+                           lv_image_dsc_t *descriptor)
+{
+    if(decode_artwork_at(source, target_size, descriptor)) {
+        ++artwork_diagnostics.decoded;
+        return true;
+    }
+    /* A large target leaves the loader less scratch than a small one, so
+     * an unusually big source can fail at Now Playing size and still fit
+     * at cache size. Showing the smaller cover beats showing none. */
+    if(target_size > CRAZYPOD_ARTWORK_CACHE_SIZE &&
+       decode_artwork_at(source, CRAZYPOD_ARTWORK_CACHE_SIZE,
+                         descriptor)) {
+        ++artwork_diagnostics.decoded;
+        return true;
+    }
+    ++artwork_diagnostics.decode_failed;
+    return false;
 }
 
 static void copy_decoded_pixels(const lv_image_dsc_t *source,

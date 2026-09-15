@@ -128,14 +128,17 @@ static lv_obj_t *make_caption_label(
     return label;
 }
 
-lv_obj_t *crazypod_preview_make_caption(
+lv_obj_t *crazypod_preview_make_caption_labels(
     lv_obj_t *parent,
     const char *title, const lv_font_t *title_font,
-    const char *detail, const lv_font_t *detail_font)
+    const char *detail, const lv_font_t *detail_font,
+    lv_obj_t **title_label, lv_obj_t **detail_label)
 {
     lv_obj_t *panel = crazypod_preview_make_text_panel(
         parent, CRAZYPOD_PREVIEW_CAPTION_Y,
         CRAZYPOD_PREVIEW_CAPTION_HEIGHT);
+    lv_obj_t *title_obj;
+    lv_obj_t *detail_obj = NULL;
 
     if(detail == NULL || detail[0] == '\0') {
         int line_height = lv_font_get_line_height(title_font);
@@ -144,20 +147,34 @@ lv_obj_t *crazypod_preview_make_caption(
         if(line_height > CAPTION_TITLE_HEIGHT)
             line_height = CAPTION_TITLE_HEIGHT;
         y = (CRAZYPOD_PREVIEW_CAPTION_HEIGHT - line_height) / 2;
-        make_caption_label(
+        title_obj = make_caption_label(
             panel, title, title_font, y, line_height,
             LV_OPA_COVER);
-        return panel;
     }
-
-    make_caption_label(
-        panel, title, title_font,
-        CAPTION_TITLE_Y, CAPTION_TITLE_HEIGHT,
-        LV_OPA_COVER);
-    make_caption_label(
-        panel, detail, detail_font,
-        CAPTION_DETAIL_Y, CAPTION_DETAIL_HEIGHT, 135);
+    else {
+        title_obj = make_caption_label(
+            panel, title, title_font,
+            CAPTION_TITLE_Y, CAPTION_TITLE_HEIGHT,
+            LV_OPA_COVER);
+        detail_obj = make_caption_label(
+            panel, detail, detail_font,
+            CAPTION_DETAIL_Y, CAPTION_DETAIL_HEIGHT, 135);
+    }
+    if(title_label != NULL)
+        *title_label = title_obj;
+    if(detail_label != NULL)
+        *detail_label = detail_obj;
     return panel;
+}
+
+lv_obj_t *crazypod_preview_make_caption(
+    lv_obj_t *parent,
+    const char *title, const lv_font_t *title_font,
+    const char *detail, const lv_font_t *detail_font)
+{
+    return crazypod_preview_make_caption_labels(
+        parent, title, title_font, detail, detail_font,
+        NULL, NULL);
 }
 
 #endif

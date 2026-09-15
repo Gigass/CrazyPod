@@ -31,5 +31,12 @@ lv_obj_t *crazypod_preview_make_caption(
     lv_obj_t *parent,
     const char *title, const lv_font_t *title_font,
     const char *detail, const lv_font_t *detail_font);
+/* As above, but hands back the labels so a caller that keeps the caption
+ * alive across renders can retitle it instead of rebuilding it. */
+lv_obj_t *crazypod_preview_make_caption_labels(
+    lv_obj_t *parent,
+    const char *title, const lv_font_t *title_font,
+    const char *detail, const lv_font_t *detail_font,
+    lv_obj_t **title_label, lv_obj_t **detail_label);
 
 #endif

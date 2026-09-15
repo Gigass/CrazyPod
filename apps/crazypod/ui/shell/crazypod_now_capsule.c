@@ -26,6 +26,11 @@
 #define CAPSULE_TINT_COLOR 0x11131A
 #define CAPSULE_TINT_OPA 48
 #define CAPSULE_FALLBACK_OPA 34
+/* Reduce Effects High: a plain half-transparent slab instead of frosted
+ * wallpaper. The old fallback was a 13% white wash, which over a blurred
+ * backdrop looked near enough to the glass to be indistinguishable. */
+#define CAPSULE_FLAT_COLOR 0x0B0D12
+#define CAPSULE_FLAT_OPA 128
 #define CAPSULE_SIDE_MARGIN 0
 #define CAPSULE_BOTTOM_MARGIN 0
 #define CAPSULE_X CAPSULE_SIDE_MARGIN
@@ -256,15 +261,22 @@ void crazypod_now_capsule_refresh_material(void)
         refresh_corners();
     }
     else {
+        bool flat = crazypod_state_reduce_effects_level() >=
+            CRAZYPOD_REDUCE_EFFECTS_HIGH;
+
         for(index = 0; index < 2; ++index) {
             if(capsule.glass[index] != NULL)
                 lv_obj_add_flag(
                     capsule.glass[index], LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_style_bg_color(
-                capsule.material[index], lv_color_hex(COLOR_WHITE), 0);
+                capsule.material[index],
+                lv_color_hex(
+                    flat ? CAPSULE_FLAT_COLOR : COLOR_WHITE), 0);
             lv_obj_set_style_bg_opa(
-                capsule.material[index], CAPSULE_FALLBACK_OPA, 0);
+                capsule.material[index],
+                flat ? CAPSULE_FLAT_OPA : CAPSULE_FALLBACK_OPA, 0);
         }
+        refresh_corners();
     }
 }
 
@@ -645,18 +657,25 @@ void crazypod_now_capsule_reset_motion(long now)
 void crazypod_now_capsule_tick(
     long now, bool home_active, bool wheel_touch_active)
 {
-    static bool effects_reduced;
+    static int effects_level;
     bool playing;
 
+    /* Track the level, not just on/off: Low, Medium and High each change
+     * what the capsule draws, so a Medium to High switch has to reach the
+     * material as well. */
     if(capsule.root != NULL &&
-       effects_reduced != crazypod_state_reduce_effects()) {
-        effects_reduced = crazypod_state_reduce_effects();
+       effects_level != crazypod_state_reduce_effects_level()) {
+        bool reduced;
+
+        effects_level = crazypod_state_reduce_effects_level();
+        reduced = effects_level != CRAZYPOD_REDUCE_EFFECTS_OFF;
         if(capsule.artwork != NULL)
             lv_obj_set_style_clip_corner(
-                capsule.artwork, !effects_reduced, 0);
+                capsule.artwork, !reduced, 0);
         if(capsule.wave_ball != NULL)
             lv_obj_set_style_clip_corner(
-                capsule.wave_ball, !effects_reduced, 0);
+                capsule.wave_ball, !reduced, 0);
+        crazypod_now_capsule_refresh_material();
         crazypod_now_capsule_refresh_appearance();
     }
     if(capsule.marquee_active != home_active) {

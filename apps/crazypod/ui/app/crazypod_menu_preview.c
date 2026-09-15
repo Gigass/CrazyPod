@@ -45,6 +45,43 @@ static struct {
     bool defer_media;
 } preview;
 
+/*
+ * The Reduce Effects preview is rebuilt on every wheel step: a badge, its
+ * icon, and a caption panel that is itself a box, a bevel, two fasteners
+ * and a marquee label. That is a dozen objects created and destroyed per
+ * step, which on the PP5022 is worth more than the drawing it replaced.
+ * Keep them alive for as long as one route owns the pane and retitle them
+ * instead.
+ *
+ * Lifetime: the pane is cleaned wholesale on every route change, and
+ * crazypod_menu_preview_reset() runs just before that clean, so it drops
+ * these pointers itself. lv_obj_null_on_delete() is the backstop for any
+ * other path that deletes the tree from underneath us -- a stale object
+ * pointer here would be invalidated later through a freed parent chain.
+ */
+static struct {
+    lv_obj_t *root;
+    lv_obj_t *badge;
+    lv_obj_t *icon;
+    lv_obj_t *caption;
+    lv_obj_t *caption_label;
+    const lv_obj_t *parent;
+    const lv_image_dsc_t *asset;
+} simple;
+
+static void forget_simple(void)
+{
+    if(simple.root != NULL && lv_obj_is_valid(simple.root))
+        lv_obj_delete(simple.root);
+    memset(&simple, 0, sizeof(simple));
+}
+
+static void hide_simple(void)
+{
+    if(simple.root != NULL && lv_obj_is_valid(simple.root))
+        lv_obj_add_flag(simple.root, LV_OBJ_FLAG_HIDDEN);
+}
+
 static uint32_t primary_color(void)
 {
     return crazypod_appearance_color(
@@ -162,6 +199,47 @@ void crazypod_menu_preview_reset(void)
 {
     preview.motion_ready = false;
     preview.defer_media = false;
+    /* The caller cleans the pane immediately after this, taking the
+     * persistent preview with it. Drop the pointers before they dangle. */
+    memset(&simple, 0, sizeof(simple));
+}
+
+static void build_simple(lv_obj_t *parent)
+{
+    simple.root = lv_obj_create(parent);
+    crazypod_ui_widget_make_plain(simple.root);
+    lv_obj_set_pos(simple.root, 0, 0);
+    lv_obj_set_size(simple.root, LCD_WIDTH, LCD_HEIGHT);
+    lv_obj_set_style_bg_opa(simple.root, LV_OPA_TRANSP, 0);
+    lv_obj_remove_flag(simple.root, LV_OBJ_FLAG_CLICKABLE);
+
+    simple.badge = crazypod_ui_widget_box(
+        simple.root, 212, 74, 56, 56, LV_RADIUS_CIRCLE,
+        primary_color(), 200);
+    lv_obj_set_style_border_width(simple.badge, 1, 0);
+    lv_obj_set_style_border_color(
+        simple.badge, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_border_opa(simple.badge, 90, 0);
+
+    simple.icon = lv_image_create(simple.badge);
+    lv_image_set_scale(simple.icon, 512);
+    lv_obj_set_style_image_recolor(
+        simple.icon, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_image_recolor_opa(
+        simple.icon, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(simple.icon, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(simple.icon, LV_OBJ_FLAG_HIDDEN);
+
+    simple.caption = crazypod_preview_make_caption_labels(
+        simple.root, "", preview.host.metadata_font,
+        "", &lv_font_montserrat_8, &simple.caption_label, NULL);
+
+    simple.parent = parent;
+    lv_obj_null_on_delete(&simple.root);
+    lv_obj_null_on_delete(&simple.badge);
+    lv_obj_null_on_delete(&simple.icon);
+    lv_obj_null_on_delete(&simple.caption);
+    lv_obj_null_on_delete(&simple.caption_label);
 }
 
 static void render_simple(const struct route_state *state)
@@ -169,28 +247,38 @@ static void render_simple(const struct route_state *state)
     const char *title = preview.host.item_title(state, state->selected);
     const lv_image_dsc_t *asset = crazypod_menu_icon_asset(
         crazypod_route_query_item_icon(state, state->selected));
-    lv_obj_t *parent = preview_parent();
-    lv_obj_t *badge = crazypod_ui_widget_box(
-        parent, 212, 74, 56, 56, LV_RADIUS_CIRCLE,
-        primary_color(), 200);
+    lv_obj_t *parent = preview.host.parent;
 
-    lv_obj_set_style_border_width(badge, 1, 0);
-    lv_obj_set_style_border_color(badge, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_border_opa(badge, 90, 0);
-    if(asset != NULL) {
-        lv_obj_t *icon = lv_image_create(badge);
+    if(parent == NULL)
+        return;
+    /* The pane is rebuilt under a different parent, or something deleted
+     * the tree without going through reset(): start over rather than
+     * touch anything that may already be gone. */
+    if(simple.root != NULL &&
+       (simple.parent != parent || !lv_obj_is_valid(simple.root) ||
+        simple.badge == NULL || simple.icon == NULL ||
+        simple.caption_label == NULL))
+        forget_simple();
+    if(simple.root == NULL)
+        build_simple(parent);
+    if(simple.root == NULL)
+        return;
 
-        lv_image_set_src(icon, asset);
-        lv_image_set_scale(icon, 512);
-        lv_obj_set_style_image_recolor(
-            icon, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_set_style_image_recolor_opa(icon, LV_OPA_COVER, 0);
-        lv_obj_center(icon);
-        lv_obj_remove_flag(icon, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_color(
+        simple.badge, lv_color_hex(primary_color()), 0);
+    if(simple.asset != asset) {
+        simple.asset = asset;
+        if(asset != NULL) {
+            lv_image_set_src(simple.icon, asset);
+            lv_obj_center(simple.icon);
+            lv_obj_remove_flag(simple.icon, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+            lv_obj_add_flag(simple.icon, LV_OBJ_FLAG_HIDDEN);
     }
-    crazypod_preview_make_caption(
-        parent, title != NULL ? title : "",
-        preview.host.metadata_font, "", &lv_font_montserrat_8);
+    crazypod_marquee_set_text_centered(
+        simple.caption_label, title != NULL ? title : "", true);
+    lv_obj_remove_flag(simple.root, LV_OBJ_FLAG_HIDDEN);
 }
 
 void crazypod_menu_preview_render(
@@ -234,9 +322,14 @@ void crazypod_menu_preview_render(
          */
         render_simple(state);
         preview.defer_media = false;
-        preview.motion_ready = true;
+        /* The simple preview lives beside the motion content, not inside
+         * it, so there is nothing for an exit animation to carry off --
+         * and reporting motion_ready would make the scheduler wait out
+         * that animation before retitling. Take the direct path. */
+        preview.motion_ready = false;
         return;
     }
+    hide_simple();
     if(state->route == MUSIC_ROUTE_SEARCH) {
         render_editor(
             crazypod_music_search_query(), CP_TR("Any track"),

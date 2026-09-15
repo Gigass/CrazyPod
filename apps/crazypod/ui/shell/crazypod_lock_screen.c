@@ -44,6 +44,11 @@
     (LCD_HEIGHT - MEDIA_PANEL_HEIGHT - MEDIA_PANEL_BOTTOM_MARGIN)
 #define MEDIA_PANEL_TINT_COLOR 0x11131A
 #define MEDIA_PANEL_TINT_OPA 48
+/* Reduce Effects High: a plain half-transparent slab instead of frosted
+ * wallpaper. Without one the panel paints nothing at all and the widget
+ * dissolves into whatever the lock wallpaper happens to be. */
+#define MEDIA_PANEL_FLAT_COLOR 0x0B0D12
+#define MEDIA_PANEL_FLAT_OPA 128
 #define MEDIA_ARTWORK_SIZE 74
 #define MEDIA_ARTWORK_X 12
 #define MEDIA_ARTWORK_Y 10
@@ -90,6 +95,7 @@ struct lock_screen_state {
     lv_obj_t *media_material[2];
     lv_obj_t *media_glass[2];
     lv_obj_t *media_border[2];
+    int media_effects_level;
     lv_obj_t *media_artwork;
     lv_obj_t *media_artwork_image;
     lv_obj_t *media_artwork_symbol;
@@ -274,25 +280,40 @@ static void set_media_label_text(
 static void refresh_media_material(void)
 {
     const lv_image_dsc_t *glass = NULL;
-
+    bool flat = crazypod_state_reduce_effects_level() >=
+        CRAZYPOD_REDUCE_EFFECTS_HIGH;
     int index;
 
     if(lock_state.media_glass[0] == NULL ||
-       lock_state.media_glass[1] == NULL)
+       lock_state.media_glass[1] == NULL ||
+       lock_state.media_material[0] == NULL ||
+       lock_state.media_material[1] == NULL)
         return;
-    if(crazypod_wallpaper_prepare_frosted_lock_media(
+    /* Reduce Effects High: skip the backdrop entirely. Preparing it blurs
+     * a full-width strip of wallpaper, and drawing it puts a full-width
+     * image underneath every widget on the panel. */
+    if(!flat &&
+       crazypod_wallpaper_prepare_frosted_lock_media(
            MEDIA_PANEL_TINT_COLOR, MEDIA_PANEL_TINT_OPA))
         glass = crazypod_frosted_lock_media();
-    if(glass == NULL) {
-        set_hidden(lock_state.media_glass[0], true);
-        set_hidden(lock_state.media_glass[1], true);
-        return;
-    }
     for(index = 0; index < 2; ++index) {
-        lv_image_set_src(lock_state.media_glass[index], glass);
-        lv_obj_set_style_image_opa(
-            lock_state.media_glass[index], LV_OPA_COVER, 0);
-        set_hidden(lock_state.media_glass[index], false);
+        if(glass != NULL) {
+            lv_image_set_src(lock_state.media_glass[index], glass);
+            lv_obj_set_style_image_opa(
+                lock_state.media_glass[index], LV_OPA_COVER, 0);
+            lv_obj_set_style_bg_opa(
+                lock_state.media_material[index], LV_OPA_TRANSP, 0);
+            set_hidden(lock_state.media_glass[index], false);
+        }
+        else {
+            set_hidden(lock_state.media_glass[index], true);
+            lv_obj_set_style_bg_color(
+                lock_state.media_material[index],
+                lv_color_hex(MEDIA_PANEL_FLAT_COLOR), 0);
+            lv_obj_set_style_bg_opa(
+                lock_state.media_material[index],
+                MEDIA_PANEL_FLAT_OPA, 0);
+        }
     }
     refresh_media_corners();
 }
@@ -534,8 +555,15 @@ void crazypod_lock_screen_update_media(
         return;
     }
 
-    if(!lock_state.media_active)
+    /* Re-prepare when the level moved too: High drops the frosted
+     * backdrop for a flat slab, and nothing else would notice. */
+    if(!lock_state.media_active ||
+       lock_state.media_effects_level !=
+           crazypod_state_reduce_effects_level()) {
+        lock_state.media_effects_level =
+            crazypod_state_reduce_effects_level();
         refresh_media_material();
+    }
     lock_state.media_active = true;
     apply_media_layout(true);
     if(snapshot->metadata_ready) {
