@@ -645,6 +645,15 @@ static bool read_mp4_container(int fd, struct mp3entry* id3,
             size -= 4;
             /* Fall through */
 
+        case MP4_moov:
+        case MP4_udta:
+        case MP4_mdia:
+        case MP4_stbl:
+        case MP4_trak:
+            rc = read_mp4_container(fd, id3, size);
+            size = 0;
+            break;
+
         case MP4_mvhd:
         {
             /*
@@ -695,14 +704,6 @@ static bool read_mp4_container(int fd, struct mp3entry* id3,
             break;
         }
 
-        case MP4_moov:
-        case MP4_udta:
-        case MP4_mdia:
-        case MP4_stbl:
-        case MP4_trak:
-            rc = read_mp4_container(fd, id3, size);
-            size = 0;
-            break;
 
         case MP4_ilst:
             /* We need at least a size of 8 to read the next atom. */
