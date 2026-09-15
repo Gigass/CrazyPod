@@ -243,8 +243,15 @@ static void refresh_media_corners(void)
             MEDIA_PANEL_WIDTH, layer_height);
         lv_obj_set_style_radius(
             lock_state.media_material[index], radius, 0);
+        /* clip_corner routes the whole half-panel through a masked
+         * layer -- two 296x55 composites per draw of the widget. It only
+         * exists to keep the frosted backdrop inside the rounded corner,
+         * so once High has dropped that backdrop it buys nothing. */
         lv_obj_set_style_clip_corner(
-            lock_state.media_material[index], radius > 0, 0);
+            lock_state.media_material[index],
+            radius > 0 &&
+                crazypod_state_reduce_effects_level() <
+                    CRAZYPOD_REDUCE_EFFECTS_HIGH, 0);
         if(lock_state.media_glass[index] != NULL)
             lv_obj_set_pos(
                 lock_state.media_glass[index], 0,
@@ -315,6 +322,11 @@ static void refresh_media_material(void)
                 MEDIA_PANEL_FLAT_OPA, 0);
         }
     }
+    /* Same trade for the cover: its rounded clip is a third masked layer,
+     * 74x74, every time the widget draws. */
+    if(lock_state.media_artwork != NULL)
+        lv_obj_set_style_clip_corner(
+            lock_state.media_artwork, !flat, 0);
     refresh_media_corners();
 }
 

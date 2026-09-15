@@ -11,6 +11,7 @@
 #include "lv_obj_event_private.h"
 #include "lv_obj_draw_private.h"
 #include "lv_obj_style_private.h"
+#include "../misc/lv_style_private.h"
 #include "lv_obj_private.h"
 #include "../display/lv_display.h"
 #include "../display/lv_display_private.h"
@@ -1083,23 +1084,42 @@ static lv_obj_tree_walk_res_t blur_walk_cb(lv_obj_t * obj, void * user_data)
 
 #if defined(IPOD_VIDEO) && !defined(SIMULATOR)
 /* CrazyPod bring-up: attribute invalidations to objects and callers. */
+#include "system.h"
 void crazypod_perf_log_invalidate(
     const void *obj, const void *area, const void *caller);
+void crazypod_perf_log_invalidate_time(unsigned elapsed_us);
 #define CRAZYPOD_INVALIDATE_HOOK(obj, area) \
     crazypod_perf_log_invalidate((obj), (area), __builtin_return_address(0))
+#define CRAZYPOD_INVALIDATE_TIME_BEGIN unsigned cp_inv_start = USEC_TIMER
+#define CRAZYPOD_INVALIDATE_TIME_END \
+    crazypod_perf_log_invalidate_time(USEC_TIMER - cp_inv_start)
 #else
 #define CRAZYPOD_INVALIDATE_HOOK(obj, area) do {} while(0)
+#define CRAZYPOD_INVALIDATE_TIME_BEGIN do {} while(0)
+#define CRAZYPOD_INVALIDATE_TIME_END do {} while(0)
 #endif
 
 lv_result_t lv_obj_invalidate_area(const lv_obj_t * obj, const lv_area_t * area)
 {
     LV_ASSERT_OBJ(obj, MY_CLASS);
 
+    /*An empty area cannot dirty anything, and callers pass one often:
+     *lv_obj_get_scrollbar_area() returns two empty areas for a widget with
+     *no scrollbar, and both are invalidated on every SCROLLABLE flag
+     *change -- which is once per widget in a UI that opts out of
+     *scrolling. Bail before walking the parent chain to find that out.*/
+    if(area->x2 < area->x1 || area->y2 < area->y1) return LV_RESULT_INVALID;
+
     lv_display_t * disp   = lv_obj_get_display(obj);
     if(!lv_display_is_invalidation_enabled(disp)) return LV_RESULT_INVALID;
 
     CRAZYPOD_INVALIDATE_HOOK(obj, area);
-    return obj_invalidate_area_internal(disp, obj, area);
+    {
+        CRAZYPOD_INVALIDATE_TIME_BEGIN;
+        lv_result_t res = obj_invalidate_area_internal(disp, obj, area);
+        CRAZYPOD_INVALIDATE_TIME_END;
+        return res;
+    }
 }
 
 
@@ -1120,7 +1140,9 @@ lv_result_t lv_obj_invalidate(const lv_obj_t * obj)
     obj_coords.y2 += ext_size;
 
     CRAZYPOD_INVALIDATE_HOOK(obj, &obj_coords);
+    CRAZYPOD_INVALIDATE_TIME_BEGIN;
     lv_result_t res = obj_invalidate_area_internal(disp, obj, &obj_coords);
+    CRAZYPOD_INVALIDATE_TIME_END;
 
     return res;
 }
@@ -1340,15 +1362,20 @@ static lv_result_t obj_invalidate_area_internal(const lv_display_t * disp, const
     lv_result_t res = invalidate_area_core(obj, &area_tmp);
     if(res == LV_RESULT_INVALID) return res;
 
-    /*If this area is on a blurred widget, invalidate that widget too*/
-    blur_walk_data_t blur_walk_data;
-    blur_walk_data.requester_obj = obj;
-    blur_walk_data.inv_area = &area_tmp;
-    lv_obj_tree_walk(disp->act_scr, blur_walk_cb, &blur_walk_data);
-    if(disp->prev_scr) lv_obj_tree_walk(disp->prev_scr, blur_walk_cb, &blur_walk_data);
-    lv_obj_tree_walk(disp->sys_layer, blur_walk_cb, &blur_walk_data);
-    lv_obj_tree_walk(disp->top_layer, blur_walk_cb, &blur_walk_data);
-    lv_obj_tree_walk(disp->bottom_layer, blur_walk_cb, &blur_walk_data);
+    /*If this area is on a blurred widget, invalidate that widget too.
+     *These are five full tree walks per invalidation, each testing every
+     *widget's transform and style list, so skip them entirely while no
+     *style in the session has set a blur or drop shadow.*/
+    if(lv_style_blur_in_use) {
+        blur_walk_data_t blur_walk_data;
+        blur_walk_data.requester_obj = obj;
+        blur_walk_data.inv_area = &area_tmp;
+        lv_obj_tree_walk(disp->act_scr, blur_walk_cb, &blur_walk_data);
+        if(disp->prev_scr) lv_obj_tree_walk(disp->prev_scr, blur_walk_cb, &blur_walk_data);
+        lv_obj_tree_walk(disp->sys_layer, blur_walk_cb, &blur_walk_data);
+        lv_obj_tree_walk(disp->top_layer, blur_walk_cb, &blur_walk_data);
+        lv_obj_tree_walk(disp->bottom_layer, blur_walk_cb, &blur_walk_data);
+    }
 
     return res;
 }

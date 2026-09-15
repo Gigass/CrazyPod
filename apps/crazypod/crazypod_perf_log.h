@@ -43,6 +43,7 @@ void crazypod_perf_log_draw_begin(void);
 void crazypod_perf_log_draw_end(int type);
 /* Called by LVGL when an object invalidates an area, and when an object
  * renders through a layer (type 3 is a clip_corner strip). */
+void crazypod_perf_log_invalidate_time(unsigned elapsed_us);
 void crazypod_perf_log_invalidate(
     const void *obj, const void *area, const void *caller);
 void crazypod_perf_log_layer(const void *obj, int type);

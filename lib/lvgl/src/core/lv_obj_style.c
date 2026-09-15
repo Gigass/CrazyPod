@@ -9,6 +9,7 @@
 #include "lv_obj_private.h"
 #include "../misc/lv_anim_private.h"
 #include "lv_obj_style_private.h"
+#include "../misc/lv_style_private.h"
 #include "lv_obj_class_private.h"
 #include "../display/lv_display.h"
 #include "../display/lv_display_private.h"
@@ -115,6 +116,14 @@ void lv_obj_add_style(lv_obj_t * obj, const lv_style_t * style, lv_style_selecto
 
     if(style && part == LV_PART_MAIN && style_has_flag(style, LV_STYLE_PROP_FLAG_TRANSFORM)) {
         lv_obj_invalidate(obj);
+    }
+
+    /*A const style never passes through lv_style_set_prop, so catch its
+     *blur and drop-shadow properties as it is attached instead*/
+    if(style && !lv_style_blur_in_use) {
+        const uint32_t blur_groups = ((uint32_t)1 << lv_style_get_prop_group(LV_STYLE_BLUR_RADIUS)) |
+                                     ((uint32_t)1 << lv_style_get_prop_group(LV_STYLE_DROP_SHADOW_OPA));
+        if(style->has_group & blur_groups) lv_style_blur_in_use = true;
     }
 
     /*Try removing the style first to be sure it won't be added twice*/

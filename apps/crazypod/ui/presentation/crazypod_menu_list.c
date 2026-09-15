@@ -21,6 +21,7 @@ struct crazypod_menu_list_view {
     lv_obj_t *markers[CRAZYPOD_MENU_LIST_ROWS];
     lv_obj_t *circles[CRAZYPOD_MENU_LIST_ROWS];
     lv_obj_t *icons[CRAZYPOD_MENU_LIST_ROWS];
+    const void *icon_src[CRAZYPOD_MENU_LIST_ROWS];
     lv_obj_t *scroll_thumb;
 };
 
@@ -60,6 +61,7 @@ void crazypod_menu_list_bind_icon(int row, lv_obj_t *circle,
         return;
     view.circles[row] = circle;
     view.icons[row] = icon;
+    view.icon_src[row] = NULL;
 }
 
 void crazypod_menu_list_bind_scroll_thumb(lv_obj_t *thumb)
@@ -118,8 +120,15 @@ void crazypod_menu_list_refresh_row(
                 : crazypod_state_reduce_effects() ? LV_OPA_TRANSP : 18,
             0);
         if(view.icons[row] != NULL) {
-            lv_image_set_src(
-                view.icons[row], crazypod_menu_icon_asset(icon));
+            /* lv_image_set_src invalidates unconditionally, and these
+             * assets are static, so a row that keeps its icon across a
+             * wheel step should not pay for a redraw of it. */
+            const void *asset = crazypod_menu_icon_asset(icon);
+
+            if(view.icon_src[row] != asset) {
+                view.icon_src[row] = asset;
+                lv_image_set_src(view.icons[row], asset);
+            }
             lv_obj_set_style_opa(view.icons[row], icon_opa, 0);
         }
     }

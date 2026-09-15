@@ -342,6 +342,8 @@ bool lv_style_remove_prop(lv_style_t * style, lv_style_prop_t prop)
     return false;
 }
 
+bool lv_style_blur_in_use = false;
+
 void lv_style_set_prop(lv_style_t * style, lv_style_prop_t prop, lv_style_value_t value)
 {
     LV_ASSERT_STYLE(style);
@@ -352,6 +354,9 @@ void lv_style_set_prop(lv_style_t * style, lv_style_prop_t prop, lv_style_value_
     }
 
     LV_ASSERT(prop != LV_STYLE_PROP_INV);
+    /*Every local and shared style property lands here, so this is the one
+     *place that can tell whether the blur walk on invalidation is needed*/
+    if(prop == LV_STYLE_BLUR_RADIUS || prop == LV_STYLE_DROP_SHADOW_OPA) lv_style_blur_in_use = true;
     LV_PROFILER_STYLE_BEGIN;
     lv_style_prop_t * props;
     int32_t i;

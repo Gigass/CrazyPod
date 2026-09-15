@@ -89,6 +89,7 @@ static struct {
     unsigned flushed_pixels;
     struct draw_stats draw[DRAW_TYPE_COUNT];
     unsigned invalidations;
+    unsigned invalidate_us;
     struct invalidation invalidation[INVALIDATION_SLOTS];
     unsigned layers;
     struct layer_use layer[INVALIDATION_SLOTS];
@@ -158,6 +159,11 @@ static int claim_slot(unsigned *counts, size_t stride, void *slots,
         free_slot = least;
     }
     return free_slot;
+}
+
+void crazypod_perf_log_invalidate_time(unsigned elapsed_us)
+{
+    perf.invalidate_us += elapsed_us;
 }
 
 void crazypod_perf_log_invalidate(
@@ -334,6 +340,7 @@ static void reset_window(void)
     perf.flushed_pixels = 0;
     memset(perf.draw, 0, sizeof(perf.draw));
     perf.invalidations = 0;
+    perf.invalidate_us = 0;
     memset(perf.invalidation, 0, sizeof(perf.invalidation));
     perf.layers = 0;
     memset(perf.layer, 0, sizeof(perf.layer));
@@ -421,7 +428,8 @@ static void append_invalidations(void)
     char text[48];
     int index;
 
-    snprintf(text, sizeof(text), " inv=%u", perf.invalidations);
+    snprintf(text, sizeof(text), " inv=%u/%ums",
+             perf.invalidations, perf.invalidate_us / 1000);
     append(text);
     for(index = 0; index < INVALIDATION_SLOTS; ++index) {
         const struct invalidation *slot = &perf.invalidation[index];
@@ -493,7 +501,7 @@ static void format_line(long now)
                "art=external/embedded/none/decoded/failed/unsupported "
                "pre=services_ms/scheduler_ms "
                "dt=type:count/ms,... "
-               "inv=count,x1.y1-x2.y2:count@class/caller,... "
+               "inv=count/total_ms,x1.y1-x2.y2:count@class/caller,... "
                "lay=count,x1.y1-x2.y2:count@class/type "
                "(t1 simple, t2 transform, t3 clip_corner)\n");
         perf.header_written = true;
