@@ -14,8 +14,26 @@ void crazypod_state_load(void);
 void crazypod_state_mark_dirty(void);
 bool crazypod_state_reduce_motion(void);
 void crazypod_state_set_reduce_motion(bool enabled);
+/*
+ * Reduce Effects is graduated: each level keeps what the one below it
+ * removes and drops more. Off draws the full product; Low removes the
+ * per-frame ornament (shadows, gradients, corner clips, sampled glass
+ * backdrops, anti-aliasing, the skeuomorphic previews); Medium also drops
+ * the blurred artwork behind Now Playing; High also draws the lock screen
+ * and home capsule panels flat.
+ */
+enum crazypod_reduce_effects_level {
+    CRAZYPOD_REDUCE_EFFECTS_OFF = 0,
+    CRAZYPOD_REDUCE_EFFECTS_LOW,
+    CRAZYPOD_REDUCE_EFFECTS_MEDIUM,
+    CRAZYPOD_REDUCE_EFFECTS_HIGH,
+    CRAZYPOD_REDUCE_EFFECTS_LEVELS,
+};
+
+/* True at any level above Off: the per-frame ornament is dropped. */
 bool crazypod_state_reduce_effects(void);
-void crazypod_state_set_reduce_effects(bool enabled);
+int crazypod_state_reduce_effects_level(void);
+void crazypod_state_set_reduce_effects_level(int level);
 bool crazypod_state_lyrics_mode(void);
 void crazypod_state_set_lyrics_mode(bool enabled);
 bool crazypod_state_read_ipod_music(void);

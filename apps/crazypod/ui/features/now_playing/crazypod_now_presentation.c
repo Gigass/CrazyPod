@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../../../crazypod_state.h"
+
 #include "file.h"
 #include "kernel.h"
 #include "lcd.h"
@@ -97,6 +99,14 @@ static bool prepare_backdrop(const lv_image_dsc_t *artwork, int bank)
        artwork->header.cf != LV_COLOR_FORMAT_RGB565 ||
        artwork->header.w <= 0 || artwork->header.h <= 0)
         return false;
+    /* Reduce Effects Medium and above: the cover is still prepared, but
+     * the blur behind it is neither built nor drawn. */
+    if(crazypod_state_reduce_effects_level() >=
+       CRAZYPOD_REDUCE_EFFECTS_MEDIUM) {
+        memset(&backdrop_descriptors[bank], 0,
+               sizeof(backdrop_descriptors[bank]));
+        return true;
+    }
     source = (const fb_data *)artwork->data;
     source_stride = artwork->header.stride / sizeof(fb_data);
     crop_x = 0;

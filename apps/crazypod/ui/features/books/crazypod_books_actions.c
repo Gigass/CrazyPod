@@ -97,13 +97,13 @@ struct crazypod_books_action crazypod_books_actions_activate(
         if(logical == 1)
             return push(BOOKS_ROUTE_LIBRARY, -1);
         if(logical == 2)
-            return push(BOOKS_ROUTE_FAVORITES, -1);
-        if(logical == 3)
-            return push(BOOKS_ROUTE_STATS, -1);
-        if(logical == 4)
-            return push(BOOKS_ROUTE_READING_SETTINGS, -1);
-        if(logical == 5)
             return push(BOOKS_ROUTE_AUDIOBOOKS, -1);
+        if(logical == 3)
+            return push(BOOKS_ROUTE_FAVORITES, -1);
+        if(logical == 4)
+            return push(BOOKS_ROUTE_STATS, -1);
+        if(logical == 5)
+            return push(BOOKS_ROUTE_READING_SETTINGS, -1);
         return action(CRAZYPOD_BOOKS_ACTION_NONE);
     }
     case BOOKS_ROUTE_AUDIOBOOKS:

@@ -24,6 +24,8 @@ lv_obj_t *crazypod_glass_panel_create(
     lv_opa_t shadow_opa =
         crazypod_glass_material_shadow_opa(material);
     bool reduced = crazypod_state_reduce_effects();
+    bool flat = crazypod_state_reduce_effects_level() >=
+        CRAZYPOD_REDUCE_EFFECTS_HIGH;
 
     /*
      * Under Reduce Effects a panel is a flat rounded box: no shadow ring to
@@ -50,6 +52,10 @@ lv_obj_t *crazypod_glass_panel_create(
         lv_obj_set_pos(image, 0, 0);
         lv_obj_remove_flag(image, LV_OBJ_FLAG_CLICKABLE);
     }
+    /* Reduce Effects High: the panel is its own background and nothing
+     * more, saving two full-panel fills per draw. */
+    if(flat)
+        return panel;
     tint = crazypod_ui_widget_box(
         panel, 0, 0, width, height, radius,
         crazypod_glass_material_tint(material),

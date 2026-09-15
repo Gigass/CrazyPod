@@ -202,7 +202,7 @@ static void render_books_menu_stage(
         return;
     }
 
-    if(logical == 2) {
+    if(logical == 3) {
         int favorite_count = crazypod_books_favorite_count();
         *detail = favorite_count > 0
             ? CP_TR("Your favorite books") : CP_TR("No favorites yet");
@@ -260,7 +260,7 @@ static void render_books_menu_stage(
         return;
     }
 
-    if(logical == 5) {
+    if(logical == 2) {
         int audiobook_count;
         lv_obj_t *disc;
 
@@ -305,7 +305,7 @@ static void render_books_menu_stage(
         return;
     }
 
-    if(logical == 3) {
+    if(logical == 4) {
         char value[16];
         *detail = CP_TR("Library and progress totals");
         stage = make_box(parent, 184, 61, 112, 94, 10,

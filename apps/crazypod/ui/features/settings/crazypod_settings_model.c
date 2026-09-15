@@ -313,7 +313,7 @@ static int settings_item_current_value(int item)
     case SETTINGS_ITEM_REDUCE_MOTION:
         return crazypod_state_reduce_motion() ? 1 : 0;
     case SETTINGS_ITEM_REDUCE_EFFECTS:
-        return crazypod_state_reduce_effects() ? 1 : 0;
+        return crazypod_state_reduce_effects_level();
     case SETTINGS_ITEM_DATE_YEAR:
     case SETTINGS_ITEM_DATE_MONTH:
     case SETTINGS_ITEM_DATE_DAY:
@@ -376,9 +376,10 @@ int crazypod_ui_settings_choice_count(int item)
     switch(item) {
     case SETTINGS_ITEM_LANGUAGE:
         return CRAZYPOD_LANGUAGE_COUNT;
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
+        return CRAZYPOD_REDUCE_EFFECTS_LEVELS;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
-    case SETTINGS_ITEM_REDUCE_EFFECTS:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
@@ -461,9 +462,13 @@ static int settings_choice_value(int item, int index)
             return CRAZYPOD_LANGUAGE_ENGLISH;
         return index < CRAZYPOD_LANGUAGE_COUNT
             ? index : CRAZYPOD_LANGUAGE_COUNT - 1;
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
+        if(index < 0)
+            return CRAZYPOD_REDUCE_EFFECTS_OFF;
+        return index < CRAZYPOD_REDUCE_EFFECTS_LEVELS
+            ? index : CRAZYPOD_REDUCE_EFFECTS_LEVELS - 1;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
-    case SETTINGS_ITEM_REDUCE_EFFECTS:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
@@ -559,10 +564,10 @@ int crazypod_ui_settings_choice_index(int item)
 
     switch(item) {
     case SETTINGS_ITEM_LANGUAGE:
+    case SETTINGS_ITEM_REDUCE_EFFECTS:
         return current;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
-    case SETTINGS_ITEM_REDUCE_EFFECTS:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
@@ -716,9 +721,16 @@ const char *crazypod_ui_settings_choice_title(int item, int index)
     case SETTINGS_ITEM_LANGUAGE:
         return crazypod_language_native_name(
             (enum crazypod_language)value);
+    case SETTINGS_ITEM_REDUCE_EFFECTS: {
+        static const char *const levels[] = {
+            CP_TR("Off"), CP_TR("Low"), CP_TR("Medium"), CP_TR("High")
+        };
+
+        return value >= 0 && value < CRAZYPOD_REDUCE_EFFECTS_LEVELS
+            ? levels[value] : levels[0];
+    }
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
-    case SETTINGS_ITEM_REDUCE_EFFECTS:
     case SETTINGS_ITEM_SHUFFLE:
     case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
     case SETTINGS_ITEM_SLEEP_TIMER_STARTUP:
@@ -877,8 +889,9 @@ bool crazypod_ui_settings_apply_choice(int item, int index)
         crazypod_state_set_reduce_motion(value != 0);
         break;
     case SETTINGS_ITEM_REDUCE_EFFECTS:
-        crazypod_state_set_reduce_effects(value != 0);
-        crazypod_platform_display_set_antialiasing(value == 0);
+        crazypod_state_set_reduce_effects_level(value);
+        crazypod_platform_display_set_antialiasing(
+            value == CRAZYPOD_REDUCE_EFFECTS_OFF);
         break;
     case SETTINGS_ITEM_SHUFFLE:
         crazypod_queue_set_shuffle(value != 0);

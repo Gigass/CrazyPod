@@ -634,10 +634,9 @@ static bool lyrics_mode = true;
  */
 static bool read_ipod_music;
 /*
- * Off by default. Drops the shadows, gradients, glass backdrops and
- * anti-aliasing that the slower targets cannot afford per frame.
+ * Off by default. Graduated: see enum crazypod_reduce_effects_level.
  */
-static bool reduce_effects;
+static int reduce_effects;
 static enum crazypod_headphone_popup_style headphone_popup_style;
 
 static uint32_t hash_bytes(uint32_t hash, const void *data, size_t size)
@@ -1417,7 +1416,7 @@ void crazypod_state_load(void)
     state_save_failures = 0;
     state_dirty = false;
     reduce_motion = false;
-    reduce_effects = false;
+    reduce_effects = CRAZYPOD_REDUCE_EFFECTS_OFF;
     lyrics_mode = true;
     read_ipod_music = false;
     headphone_popup_style =
@@ -1434,7 +1433,10 @@ void crazypod_state_load(void)
     state_dirty = migrated;
 
     reduce_motion = state.reduce_motion != 0;
-    reduce_effects = state.reduce_effects != 0;
+    reduce_effects = state.reduce_effects;
+    if(reduce_effects < 0 ||
+       reduce_effects >= CRAZYPOD_REDUCE_EFFECTS_LEVELS)
+        reduce_effects = CRAZYPOD_REDUCE_EFFECTS_OFF;
     lyrics_mode = state.lyrics_mode != 0;
     read_ipod_music = state.read_ipod_music != 0;
     if(state.headphone_popup_style >= 0 &&
@@ -1510,14 +1512,21 @@ void crazypod_state_set_reduce_motion(bool enabled)
 
 bool crazypod_state_reduce_effects(void)
 {
+    return reduce_effects != CRAZYPOD_REDUCE_EFFECTS_OFF;
+}
+
+int crazypod_state_reduce_effects_level(void)
+{
     return reduce_effects;
 }
 
-void crazypod_state_set_reduce_effects(bool enabled)
+void crazypod_state_set_reduce_effects_level(int level)
 {
-    if(reduce_effects == enabled)
+    if(level < 0 || level >= CRAZYPOD_REDUCE_EFFECTS_LEVELS)
+        level = CRAZYPOD_REDUCE_EFFECTS_OFF;
+    if(reduce_effects == level)
         return;
-    reduce_effects = enabled;
+    reduce_effects = level;
     state_dirty = true;
 }
 
@@ -1705,7 +1714,7 @@ void crazypod_state_save(bool force)
     crazypod_apps_export(state.menu_order, sizeof(state.menu_order),
                          &state.menu_enabled_mask);
     state.reduce_motion = reduce_motion ? 1 : 0;
-    state.reduce_effects = reduce_effects ? 1 : 0;
+    state.reduce_effects = reduce_effects;
     state.storage_mode = global_settings.storage_mode;
     state.language = crazypod_language_current();
     state.poweroff = global_settings.poweroff;

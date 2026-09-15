@@ -229,7 +229,12 @@ void crazypod_now_capsule_refresh_material(void)
     if(capsule.root == NULL || capsule.material[0] == NULL ||
        capsule.material[1] == NULL)
         return;
-    if(crazypod_wallpaper_prepare_frosted_capsule(
+    /* Reduce Effects High: the capsule is a flat panel. Preparing the
+     * frosted wallpaper is a full-width blur, and drawing it is a
+     * full-width image behind everything else on the home screen. */
+    if(crazypod_state_reduce_effects_level() <
+           CRAZYPOD_REDUCE_EFFECTS_HIGH &&
+       crazypod_wallpaper_prepare_frosted_capsule(
            CAPSULE_TINT_COLOR, CAPSULE_TINT_OPA))
         glass = crazypod_frosted_wallpaper_capsule();
     if(glass != NULL) {

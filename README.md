@@ -193,10 +193,16 @@ or follow the [Chinese Mini App tutorial](miniapps/TUTORIAL.zh-CN.md).
 - Settings → Display → Reduce Motion cuts between scenes and preview panes
   instead of animating them, freezes the Now Playing wave and stops long
   titles scrolling. The preference is stored in CrazyPod's versioned state.
-- Settings → Display → Reduce Effects draws flat panels: no shadows, no
-  highlight gradients, no sampled glass backdrops and no anti-aliasing. It
-  exists for the slower iPod Video, where a full-screen render otherwise
-  takes a good fraction of a second.
+- Settings → Display → Reduce Effects trades ornament for frame time, in
+  three levels that each keep what the one below removes. It exists for the
+  slower iPod Video, where a full-screen render otherwise takes a good
+  fraction of a second.
+  - **Low** drops shadows, highlight gradients, rounded corner clips,
+    sampled glass backdrops and anti-aliasing, and replaces the
+    skeuomorphic menu previews with the item's icon and a caption.
+  - **Medium** also drops the blurred album artwork behind Now Playing.
+  - **High** also draws the lock screen and home capsule panels flat, with
+    no frosted wallpaper and no tint or border overlays.
 
 ## Build and run
 

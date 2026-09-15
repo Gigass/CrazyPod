@@ -240,8 +240,8 @@ bool crazypod_books_feature_item_title(
     switch(state->route) {
     case BOOKS_ROUTE_MENU: {
         static const char *const titles[] = {
-            CP_TR("Recents"), CP_TR("Books"), CP_TR("Favorites"), CP_TR("Stats"), CP_TR("Reading"),
-            CP_TR("Audiobooks")
+            CP_TR("Recents"), CP_TR("Books"), CP_TR("Audiobooks"),
+            CP_TR("Favorites"), CP_TR("Stats"), CP_TR("Reading")
         };
         bool can_continue = has_continue();
         int logical;
@@ -363,10 +363,10 @@ enum crazypod_menu_icon crazypod_books_feature_item_icon(
     static const enum crazypod_menu_icon root_icons[] = {
         CRAZYPOD_MENU_ICON_RECENTS,
         CRAZYPOD_MENU_ICON_BOOK,
+        CRAZYPOD_MENU_ICON_PODCAST,
         CRAZYPOD_MENU_ICON_FAVORITE,
         CRAZYPOD_MENU_ICON_STATS,
         CRAZYPOD_MENU_ICON_READING,
-        CRAZYPOD_MENU_ICON_PODCAST,
     };
     int logical;
 
