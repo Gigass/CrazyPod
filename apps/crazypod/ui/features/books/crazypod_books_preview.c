@@ -62,6 +62,10 @@ static int route_audiobook_index(const struct route_state *state)
         return crazypod_books_feature_recent_at(
                    state->selected, &entry) && entry.audiobook
             ? entry.index : -1;
+    if(state->route == BOOKS_ROUTE_FAVORITES)
+        return crazypod_books_feature_favorite_at(
+                   state->selected, &entry) && entry.audiobook
+            ? entry.index : -1;
     if(state->route == BOOKS_ROUTE_MENU && state->selected == 0 &&
        crazypod_books_feature_continue_entry(&entry) && entry.audiobook)
         return entry.index;
@@ -79,8 +83,12 @@ static int books_route_book_index(
         return crazypod_books_feature_recent_at(position, &entry) &&
                !entry.audiobook ? entry.index : -1;
     }
-    if(state->route == BOOKS_ROUTE_FAVORITES)
-        return crazypod_books_favorite_at(position);
+    if(state->route == BOOKS_ROUTE_FAVORITES) {
+        struct crazypod_books_recent_entry entry;
+
+        return crazypod_books_feature_favorite_at(position, &entry) &&
+               !entry.audiobook ? entry.index : -1;
+    }
     return state->group;
 }
 

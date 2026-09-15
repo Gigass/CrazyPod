@@ -34,6 +34,14 @@ void audio_resume(void)
 {
 }
 
+/* Repeat one holds across an automatic skip and steps on a manual one;
+ * the tests here exercise the automatic case. */
+bool audio_pending_track_skip_is_manual(void);
+bool audio_pending_track_skip_is_manual(void)
+{
+    return false;
+}
+
 bool crazypod_state_read_ipod_music(void)
 {
     return read_ipod_music;

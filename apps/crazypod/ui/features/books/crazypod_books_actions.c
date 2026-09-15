@@ -66,8 +66,12 @@ static int route_book_index(
         return crazypod_books_feature_recent_at(position, &entry) &&
                !entry.audiobook ? entry.index : -1;
     }
-    if(state->route == BOOKS_ROUTE_FAVORITES)
-        return crazypod_books_favorite_at(position);
+    if(state->route == BOOKS_ROUTE_FAVORITES) {
+        struct crazypod_books_recent_entry entry;
+
+        return crazypod_books_feature_favorite_at(position, &entry) &&
+               !entry.audiobook ? entry.index : -1;
+    }
     return state->group;
 }
 
@@ -110,16 +114,19 @@ struct crazypod_books_action crazypod_books_actions_activate(
         return crazypod_audiobook_get(state->selected) != NULL
             ? play_audiobook(state->selected)
             : action(CRAZYPOD_BOOKS_ACTION_NONE);
-    case BOOKS_ROUTE_RECENTS: {
+    case BOOKS_ROUTE_RECENTS:
+    case BOOKS_ROUTE_FAVORITES: {
         struct crazypod_books_recent_entry entry;
+        bool found = state->route == BOOKS_ROUTE_RECENTS
+            ? crazypod_books_feature_recent_at(state->selected, &entry)
+            : crazypod_books_feature_favorite_at(
+                  state->selected, &entry);
 
-        if(crazypod_books_feature_recent_at(state->selected, &entry) &&
-           entry.audiobook)
+        if(found && entry.audiobook)
             return play_audiobook(entry.index);
     }
-    /* Fall through: a text book in Recents. */
-    case BOOKS_ROUTE_LIBRARY:
-    case BOOKS_ROUTE_FAVORITES: {
+    /* Fall through: a text book in Recents or Favorites. */
+    case BOOKS_ROUTE_LIBRARY: {
         int index = route_book_index(state, state->selected);
 
         return index >= 0

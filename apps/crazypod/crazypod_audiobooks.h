@@ -31,6 +31,7 @@ struct crazypod_audiobook {
     uint32_t length_ms;
     uint32_t position_ms;
     bool details_loaded;
+    bool favorite;
 };
 
 #include "crazypod_audiobook_chapters.h"
@@ -66,6 +67,14 @@ bool crazypod_audiobook_skip_chapter(int index, int direction);
 /* Call regularly from the UI loop; saves the position when playback pauses,
  * stops or moves to another file, and periodically while the disk is awake. */
 void crazypod_audiobooks_tick(long now);
+/* Favorites, shared with the Books app's Favorites list. */
+bool crazypod_audiobook_is_favorite(int index);
+bool crazypod_audiobook_toggle_favorite(int index);
+int crazypod_audiobooks_favorite_count(void);
+int crazypod_audiobooks_favorite_at(int position);
+/* Index of the audiobook at this path, or -1. */
+int crazypod_audiobooks_find_path(const char *path);
+
 /* Wall time the last chapter seek took to land, for the perf log. */
 uint32_t crazypod_audiobooks_last_seek_ms(void);
 

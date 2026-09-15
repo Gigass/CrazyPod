@@ -81,6 +81,35 @@ bool crazypod_books_feature_recent_at(
     return true;
 }
 
+int crazypod_books_feature_favorite_count(void)
+{
+    ensure_audiobooks();
+    return crazypod_books_favorite_count() +
+        crazypod_audiobooks_favorite_count();
+}
+
+bool crazypod_books_feature_favorite_at(
+    int position, struct crazypod_books_recent_entry *entry)
+{
+    int text_count;
+
+    if(position < 0)
+        return false;
+    ensure_audiobooks();
+    text_count = crazypod_books_favorite_count();
+    entry->sequence = 0;
+    if(position < text_count) {
+        entry->audiobook = false;
+        entry->index = crazypod_books_favorite_at(position);
+    }
+    else {
+        entry->audiobook = true;
+        entry->index =
+            crazypod_audiobooks_favorite_at(position - text_count);
+    }
+    return entry->index >= 0;
+}
+
 bool crazypod_books_feature_continue_entry(
     struct crazypod_books_recent_entry *entry)
 {
@@ -154,7 +183,7 @@ int crazypod_books_feature_item_count(
     case BOOKS_ROUTE_LIBRARY:
         return crazypod_books_count();
     case BOOKS_ROUTE_FAVORITES:
-        return crazypod_books_favorite_count();
+        return crazypod_books_feature_favorite_count();
     case BOOKS_ROUTE_READER:
     case BOOKS_ROUTE_STATS:
     case BOOKS_ROUTE_INFO:
@@ -228,9 +257,24 @@ static int book_index(
         return crazypod_books_feature_recent_at(position, &entry) &&
                !entry.audiobook ? entry.index : -1;
     }
-    if(state->route == BOOKS_ROUTE_FAVORITES)
-        return crazypod_books_favorite_at(position);
+    if(state->route == BOOKS_ROUTE_FAVORITES) {
+        struct crazypod_books_recent_entry entry;
+
+        return crazypod_books_feature_favorite_at(position, &entry) &&
+               !entry.audiobook ? entry.index : -1;
+    }
     return state->group;
+}
+
+static bool favorite_audiobook_at(int position, int *index)
+{
+    struct crazypod_books_recent_entry entry;
+
+    if(!crazypod_books_feature_favorite_at(position, &entry) ||
+       !entry.audiobook)
+        return false;
+    *index = entry.index;
+    return true;
 }
 
 bool crazypod_books_feature_item_title(
@@ -265,10 +309,14 @@ bool crazypod_books_feature_item_title(
         *title = book != NULL ? book->title : "";
         return true;
     }
-    case BOOKS_ROUTE_RECENTS: {
+    case BOOKS_ROUTE_RECENTS:
+    case BOOKS_ROUTE_FAVORITES: {
         int audiobook;
+        bool is_audiobook = state->route == BOOKS_ROUTE_RECENTS
+            ? recent_audiobook_at(index, &audiobook)
+            : favorite_audiobook_at(index, &audiobook);
 
-        if(recent_audiobook_at(index, &audiobook)) {
+        if(is_audiobook) {
             const struct crazypod_audiobook *book;
 
             if(index == state->selected)
@@ -278,9 +326,8 @@ bool crazypod_books_feature_item_title(
             return true;
         }
     }
-    /* Fall through: a text book in Recents. */
-    case BOOKS_ROUTE_LIBRARY:
-    case BOOKS_ROUTE_FAVORITES: {
+    /* Fall through: a text book in Recents or Favorites. */
+    case BOOKS_ROUTE_LIBRARY: {
         int resolved_index = book_index(state, index);
         const struct crazypod_book *book =
             crazypod_book_get(resolved_index);
@@ -388,8 +435,12 @@ enum crazypod_menu_icon crazypod_books_feature_item_icon(
     }
     case BOOKS_ROUTE_LIBRARY:
         return CRAZYPOD_MENU_ICON_BOOK;
-    case BOOKS_ROUTE_FAVORITES:
-        return CRAZYPOD_MENU_ICON_FAVORITE;
+    case BOOKS_ROUTE_FAVORITES: {
+        int audiobook;
+
+        return favorite_audiobook_at(index, &audiobook)
+            ? CRAZYPOD_MENU_ICON_PODCAST : CRAZYPOD_MENU_ICON_FAVORITE;
+    }
     case BOOKS_ROUTE_ACTIONS:
         return index == 0 ? CRAZYPOD_MENU_ICON_READING :
             index == 1 ? CRAZYPOD_MENU_ICON_BOOKMARK :

@@ -104,10 +104,14 @@ static struct crazypod_music_activation_result activate_menu(
 static struct crazypod_music_activation_result activate_search(
     int selected)
 {
+    /* editor_characters[] are CP_TR() strings, so each carries the
+     * localisation marker byte in front of the letter. Displaying one
+     * strips it; typing one has to strip it too, or the query becomes
+     * "\x1fA\x1fB" and matches nothing. */
     if(selected < EDITOR_CHARACTER_COUNT)
         crazypod_ui_text_append(
             search_query, sizeof(search_query),
-            editor_characters[selected]);
+            crazypod_l10n_text(editor_characters[selected]));
     else if(selected == EDITOR_CHARACTER_COUNT)
         crazypod_ui_text_append(
             search_query, sizeof(search_query), " ");

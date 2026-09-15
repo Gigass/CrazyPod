@@ -24,7 +24,8 @@
 #define AUDIOBOOKS_STATE_PATH AUDIOBOOKS_STATE_DIRECTORY "/audiobooks.bin"
 #define AUDIOBOOKS_STATE_TEMP AUDIOBOOKS_STATE_DIRECTORY "/audiobooks.tmp"
 #define AUDIOBOOKS_MAGIC 0x4B424141u /* "AABK" */
-#define AUDIOBOOKS_VERSION 1u
+#define AUDIOBOOKS_VERSION 2u
+#define AUDIOBOOKS_VERSION_NO_FAVORITES 1u
 #define AUDIOBOOKS_SCAN_DEPTH 4
 #define TICK_INTERVAL (HZ / 2)
 #define PERIODIC_SAVE_INTERVAL (30 * HZ)
@@ -32,6 +33,16 @@
 #define FINISHED_MARGIN_MS 5000u
 
 struct progress_disk {
+    uint32_t path_hash;
+    uint32_t position_ms;
+    uint32_t length_ms;
+    uint32_t sequence;
+    uint32_t favorite;
+};
+
+/* Version 1 had no favorite flag. Kept so an existing file's listening
+ * positions migrate instead of being discarded. */
+struct progress_disk_v1 {
     uint32_t path_hash;
     uint32_t position_ms;
     uint32_t length_ms;
@@ -45,6 +56,16 @@ struct state_disk {
     uint32_t count;
     uint32_t next_sequence;
     struct progress_disk entries[CRAZYPOD_AUDIOBOOKS_MAX];
+    uint32_t checksum;
+};
+
+struct state_disk_v1 {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    uint32_t count;
+    uint32_t next_sequence;
+    struct progress_disk_v1 entries[CRAZYPOD_AUDIOBOOKS_MAX];
     uint32_t checksum;
 };
 
@@ -161,6 +182,7 @@ static void add_book(const char *path, const struct dirinfo *info)
     if(saved != NULL) {
         book->position_ms = saved->position_ms;
         book->length_ms = saved->length_ms;
+        book->favorite = saved->favorite != 0;
     }
     ++book_count;
 }
@@ -269,10 +291,36 @@ static bool state_save(void)
     return true;
 }
 
+static bool state_load_v1(int fd)
+{
+    static struct state_disk_v1 loaded;
+    uint32_t i;
+
+    if(lseek(fd, 0, SEEK_SET) != 0 ||
+       !read_exact(fd, &loaded, sizeof(loaded)) ||
+       loaded.size != sizeof(loaded) ||
+       loaded.count > CRAZYPOD_AUDIOBOOKS_MAX ||
+       loaded.checksum != crazypod_checksum_with_zeroed_u32(
+           &loaded, sizeof(loaded),
+           offsetof(struct state_disk_v1, checksum)))
+        return false;
+    persisted.count = loaded.count;
+    persisted.next_sequence = loaded.next_sequence;
+    for(i = 0; i < loaded.count; ++i) {
+        persisted.entries[i].path_hash = loaded.entries[i].path_hash;
+        persisted.entries[i].position_ms = loaded.entries[i].position_ms;
+        persisted.entries[i].length_ms = loaded.entries[i].length_ms;
+        persisted.entries[i].sequence = loaded.entries[i].sequence;
+        persisted.entries[i].favorite = 0;
+    }
+    return true;
+}
+
 static void state_load(void)
 {
     static struct state_disk loaded;
     int fd;
+    bool ready = false;
 
     memset(&persisted, 0, sizeof(persisted));
     persisted.next_sequence = 1;
@@ -286,8 +334,16 @@ static void state_load(void)
        loaded.count <= CRAZYPOD_AUDIOBOOKS_MAX &&
        loaded.checksum == state_checksum(&loaded)) {
         persisted = loaded;
-        if(persisted.next_sequence == 0)
-            persisted.next_sequence = 1;
+        ready = true;
+    }
+    else if(loaded.magic == AUDIOBOOKS_MAGIC &&
+            loaded.version == AUDIOBOOKS_VERSION_NO_FAVORITES)
+        ready = state_load_v1(fd);
+    if(ready && persisted.next_sequence == 0)
+        persisted.next_sequence = 1;
+    if(!ready) {
+        memset(&persisted, 0, sizeof(persisted));
+        persisted.next_sequence = 1;
     }
     close(fd);
 }
@@ -585,6 +641,63 @@ static void end_seek_measure(long now, bool landed)
             ((now - live.seek_started) * 1000 / HZ);
     live.seek_started = 0;
     pcmbuf_set_low_latency(false);
+}
+
+bool crazypod_audiobook_is_favorite(int index)
+{
+    return index >= 0 && index < book_count && books[index].favorite;
+}
+
+bool crazypod_audiobook_toggle_favorite(int index)
+{
+    struct progress_disk *entry;
+
+    if(index < 0 || index >= book_count)
+        return false;
+    entry = progress_slot(path_hash(books[index].path));
+    if(entry == NULL)
+        return false;
+    books[index].favorite = !books[index].favorite;
+    entry->favorite = books[index].favorite ? 1u : 0u;
+    /* progress_slot() may have claimed a fresh entry; keep the position
+     * it already had rather than leaving a favorite with no progress. */
+    entry->position_ms = books[index].position_ms;
+    entry->length_ms = books[index].length_ms;
+    return state_save();
+}
+
+int crazypod_audiobooks_favorite_count(void)
+{
+    int count = 0;
+    int i;
+
+    for(i = 0; i < book_count; ++i)
+        if(books[i].favorite)
+            ++count;
+    return count;
+}
+
+int crazypod_audiobooks_favorite_at(int position)
+{
+    int visible = 0;
+    int i;
+
+    for(i = 0; i < book_count; ++i)
+        if(books[i].favorite && visible++ == position)
+            return i;
+    return -1;
+}
+
+int crazypod_audiobooks_find_path(const char *path)
+{
+    int i;
+
+    if(path == NULL || path[0] == '\0')
+        return -1;
+    for(i = 0; i < book_count; ++i)
+        if(strcmp(books[i].path, path) == 0)
+            return i;
+    return -1;
 }
 
 uint32_t crazypod_audiobooks_last_seek_ms(void)

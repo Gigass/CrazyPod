@@ -15,6 +15,10 @@ struct crazypod_books_recent_entry {
 };
 
 int crazypod_books_feature_recent_count(void);
+/* Favorites lists text books first, then favorited audiobooks. */
+int crazypod_books_feature_favorite_count(void);
+bool crazypod_books_feature_favorite_at(
+    int position, struct crazypod_books_recent_entry *entry);
 bool crazypod_books_feature_recent_at(
     int position, struct crazypod_books_recent_entry *entry);
 /* The newest entry, when it has a position to resume from. */

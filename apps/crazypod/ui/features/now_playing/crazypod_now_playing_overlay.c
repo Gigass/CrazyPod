@@ -13,6 +13,7 @@
 #include "sound.h"
 
 #include "../../../crazypod_lyrics.h"
+#include "../../../crazypod_audiobooks.h"
 #include "../../../crazypod_music.h"
 #include "../../../crazypod_playlist.h"
 #include "../../../crazypod_runtime_font.h"
@@ -565,10 +566,20 @@ static int now_actions_detail_height(int width)
     return height;
 }
 
+/* An audiobook plays through the music queue but is not in the music
+ * catalog, so its favorite lives with the Books app instead. */
+static int current_audiobook(void)
+{
+    return crazypod_audiobooks_current_index();
+}
+
 static bool current_track_is_favorite(void)
 {
     struct crazypod_track track;
+    int audiobook = current_audiobook();
 
+    if(audiobook >= 0)
+        return crazypod_audiobook_is_favorite(audiobook);
     return copy_current_track(&track) &&
         crazypod_music_track_is_favorite(track.path);
 }
@@ -1540,15 +1551,20 @@ void crazypod_now_playing_overlay_activate(void)
         }
         else if(now_action_selected == NOW_ACTION_FAVORITE) {
             struct crazypod_track track;
-            bool favorite;
+            int audiobook = current_audiobook();
+            bool favorite = current_track_is_favorite();
+            bool saved;
 
-            if(!copy_current_track(&track)) {
+            if(audiobook >= 0)
+                saved = crazypod_audiobook_toggle_favorite(audiobook);
+            else if(copy_current_track(&track))
+                saved = crazypod_music_toggle_favorite(track.path);
+            else {
                 dismiss_now_overlay_with_notice(
                     CP_TR("No track available"), false, true);
                 return;
             }
-            favorite = current_track_is_favorite();
-            if(!crazypod_music_toggle_favorite(track.path)) {
+            if(!saved) {
                 dismiss_now_overlay_with_notice(
                     CP_TR("Favorite Save Failed"), false, true);
                 return;

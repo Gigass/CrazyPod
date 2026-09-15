@@ -89,9 +89,12 @@ struct crazypod_notes_action crazypod_notes_actions_activate(
         return result;
     }
     case NOTES_ROUTE_COMPOSER:
+        /* Strip the CP_TR() marker: without this every typed letter
+         * lands in the note body as "\x1f" plus the character. */
         if(state->selected < EDITOR_CHAR_COUNT)
             crazypod_notes_controller_insert(
-                editor_characters[state->selected]);
+                crazypod_l10n_text(
+                    editor_characters[state->selected]));
         else if(state->selected == EDITOR_CHAR_COUNT)
             crazypod_notes_controller_insert(" ");
         else if(state->selected == EDITOR_CHAR_COUNT + 1)
@@ -116,7 +119,8 @@ struct crazypod_notes_action crazypod_notes_actions_activate(
     case NOTES_ROUTE_SEARCH:
         if(state->selected < EDITOR_CHAR_COUNT)
             crazypod_notes_controller_append_query(
-                editor_characters[state->selected]);
+                crazypod_l10n_text(
+                    editor_characters[state->selected]));
         else if(state->selected == EDITOR_CHAR_COUNT)
             crazypod_notes_controller_append_query(" ");
         else if(state->selected == EDITOR_CHAR_COUNT + 1)

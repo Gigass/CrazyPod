@@ -89,6 +89,18 @@ static bool queue_storage_reserve(int required)
     return true;
 }
 
+/* REPEAT_ONE support function from playback.c, as upstream playlist.c
+ * uses it: repeat one holds the track across an automatic skip but steps
+ * normally when the listener presses next or previous. */
+extern bool audio_pending_track_skip_is_manual(void);
+
+static bool hold_for_repeat_one(int steps)
+{
+    return steps != 0 &&
+        global_settings.repeat_mode == REPEAT_ONE &&
+        !audio_pending_track_skip_is_manual();
+}
+
 static int normalize_index(int index, bool allow_repeat)
 {
     if(queue_length <= 0)
@@ -223,7 +235,15 @@ const char *playlist_peek(int steps, char *buffer, size_t buffer_size)
     const char *path;
 
     queue_lock();
-    index = normalize_index(queue_index + steps, true);
+    /* Playback buffers ahead through peek and plays whatever it finds
+     * there, so repeat one has to be answered here as well as in
+     * playlist_next -- upstream gets this by routing both through
+     * get_next_index(). Without it the next track is buffered and the
+     * player advances to it at the end of the current one. */
+    if(hold_for_repeat_one(steps))
+        index = normalize_index(queue_index, false);
+    else
+        index = normalize_index(queue_index + steps, true);
     if(index < 0) {
         queue_unlock();
         return NULL;
@@ -248,7 +268,10 @@ bool playlist_check(int steps)
     bool valid;
 
     queue_lock();
-    valid = normalize_index(queue_index + steps, false) >= 0;
+    if(hold_for_repeat_one(steps))
+        valid = queue_length > 0;
+    else
+        valid = normalize_index(queue_index + steps, false) >= 0;
     queue_unlock();
     return valid;
 }
@@ -258,7 +281,7 @@ int playlist_next(int steps)
     int next;
 
     queue_lock();
-    if(global_settings.repeat_mode == REPEAT_ONE && steps != 0)
+    if(hold_for_repeat_one(steps))
         next = queue_index;
     else
         next = normalize_index(queue_index + steps, true);
@@ -268,6 +291,13 @@ int playlist_next(int steps)
         return -1;
     }
 
+    /* Playback commits an automatic track change through here. Every
+     * other writer of queue_index bumps the generation; without it the
+     * Now Playing screen and the home capsule never learn the track
+     * moved, which is why only the lock screen -- fed separately by
+     * PLAYBACK_EVENT_TRACK_CHANGE -- changed its title. */
+    if(queue_index != next)
+        ++queue_generation;
     queue_index = next;
     queue_info.index = next;
     queue_unlock();
@@ -336,6 +366,8 @@ void playlist_start(int start_index, unsigned long elapsed,
         return;
     }
 
+    if(queue_index != index || !queue_started)
+        ++queue_generation;
     queue_index = index;
     queue_started = true;
     queue_info.index = index;
