@@ -1,5 +1,7 @@
 #include "config.h"
 
+#include <string.h>
+
 #include "../../crazypod_l10n.h"
 
 #ifdef HAVE_CRAZYPOD_UI
@@ -156,10 +158,38 @@ void crazypod_menu_preview_configure(
         preview.host = *host;
 }
 
+/*
+ * The Reduce Effects preview is the same three objects on every route, so
+ * it is built once and then updated in place. Rebuilding it per wheel step
+ * was the object churn the log still showed: creating an object invalidates
+ * it several times before it has a size, which is where the thousands of
+ * empty-area invalidations came from.
+ */
+static struct {
+    lv_obj_t *parent;
+    lv_obj_t *badge;
+    lv_obj_t *icon;
+    lv_obj_t *caption;
+    const lv_image_dsc_t *asset;
+    uint32_t tint;
+} simple;
+static bool simple_active;
+
+static void simple_discard(void)
+{
+    if(simple.badge != NULL && lv_obj_is_valid(simple.badge))
+        lv_obj_delete(simple.badge);
+    if(simple.caption != NULL && lv_obj_is_valid(simple.caption))
+        lv_obj_delete(simple.caption);
+    memset(&simple, 0, sizeof(simple));
+}
+
 void crazypod_menu_preview_reset(void)
 {
     preview.motion_ready = false;
     preview.defer_media = false;
+    memset(&simple, 0, sizeof(simple));
+    simple_active = false;
 }
 
 static void render_simple(const struct route_state *state)
@@ -167,28 +197,58 @@ static void render_simple(const struct route_state *state)
     const char *title = preview.host.item_title(state, state->selected);
     const lv_image_dsc_t *asset = crazypod_menu_icon_asset(
         crazypod_route_query_item_icon(state, state->selected));
-    lv_obj_t *parent = preview_parent();
-    lv_obj_t *badge = crazypod_ui_widget_box(
-        parent, 212, 74, 56, 56, LV_RADIUS_CIRCLE,
-        primary_color(), 200);
+    lv_obj_t *parent = preview.host.parent;
+    lv_obj_t *label;
+    uint32_t tint = primary_color();
 
-    lv_obj_set_style_border_width(badge, 1, 0);
-    lv_obj_set_style_border_color(badge, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_border_opa(badge, 90, 0);
-    if(asset != NULL) {
-        lv_obj_t *icon = lv_image_create(badge);
+    /* A route change rebuilds the page these hang from, taking them with
+     * it; the pointers are stale rather than owned. */
+    if(simple.parent != parent ||
+       (simple.badge != NULL && !lv_obj_is_valid(simple.badge)) ||
+       (simple.caption != NULL && !lv_obj_is_valid(simple.caption)))
+        memset(&simple, 0, sizeof(simple));
 
-        lv_image_set_src(icon, asset);
-        lv_image_set_scale(icon, 512);
+    if(simple.badge == NULL) {
+        simple.parent = parent;
+        simple.badge = crazypod_ui_widget_box(
+            parent, 212, 74, 56, 56, LV_RADIUS_CIRCLE, tint, 200);
+        lv_obj_set_style_border_width(simple.badge, 1, 0);
+        lv_obj_set_style_border_color(
+            simple.badge, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_border_opa(simple.badge, 90, 0);
+        simple.tint = tint;
+        simple.icon = lv_image_create(simple.badge);
+        lv_image_set_scale(simple.icon, 512);
         lv_obj_set_style_image_recolor(
-            icon, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_set_style_image_recolor_opa(icon, LV_OPA_COVER, 0);
-        lv_obj_center(icon);
-        lv_obj_remove_flag(icon, LV_OBJ_FLAG_CLICKABLE);
+            simple.icon, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_image_recolor_opa(
+            simple.icon, LV_OPA_COVER, 0);
+        lv_obj_remove_flag(simple.icon, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(simple.icon, LV_OBJ_FLAG_HIDDEN);
+        simple.caption = crazypod_preview_make_caption(
+            parent, title != NULL ? title : "",
+            preview.host.metadata_font, "", &lv_font_montserrat_8);
     }
-    crazypod_preview_make_caption(
-        parent, title != NULL ? title : "",
-        preview.host.metadata_font, "", &lv_font_montserrat_8);
+
+    if(simple.tint != tint) {
+        simple.tint = tint;
+        lv_obj_set_style_bg_color(
+            simple.badge, lv_color_hex(tint), 0);
+    }
+    if(simple.asset != asset) {
+        simple.asset = asset;
+        if(asset != NULL) {
+            lv_image_set_src(simple.icon, asset);
+            lv_obj_center(simple.icon);
+            lv_obj_remove_flag(simple.icon, LV_OBJ_FLAG_HIDDEN);
+        }
+        else
+            lv_obj_add_flag(simple.icon, LV_OBJ_FLAG_HIDDEN);
+    }
+    label = lv_obj_get_child(simple.caption, 0);
+    if(label != NULL)
+        crazypod_ui_widget_set_label_text(
+            label, title != NULL ? title : "");
 }
 
 void crazypod_menu_preview_render(
@@ -220,10 +280,15 @@ void crazypod_menu_preview_render(
 
     preview.defer_media = animate;
     *crazypod_preview_motion_media_deferred_flag() = false;
-    crazypod_preview_motion_reset_root(preview.host.parent);
     if(crazypod_state_reduce_effects() &&
        state->route != MUSIC_ROUTE_SEARCH &&
        state->route != CALENDAR_ROUTE_TITLE_EDITOR) {
+        /* Clear a full preview once on the way in; after that the simple
+         * one is updated in place and the motion root stays empty. */
+        if(!simple_active) {
+            crazypod_preview_motion_reset_root(preview.host.parent);
+            simple_active = true;
+        }
         /*
          * A skeuomorphic preview is twenty to forty objects with bevels,
          * fasteners and motion parts, rebuilt on every wheel step; on the
@@ -235,6 +300,9 @@ void crazypod_menu_preview_render(
         preview.motion_ready = true;
         return;
     }
+    simple_active = false;
+    simple_discard();
+    crazypod_preview_motion_reset_root(preview.host.parent);
     if(state->route == MUSIC_ROUTE_SEARCH) {
         render_editor(
             crazypod_music_search_query(), CP_TR("Any track"),
