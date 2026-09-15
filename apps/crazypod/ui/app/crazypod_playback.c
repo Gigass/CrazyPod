@@ -517,6 +517,9 @@ void crazypod_playback_next(void)
     audio_next();
 }
 
+static int adjacent_queue_index(int index, int direction);
+static void note_lock_seek(uint32_t elapsed_ms);
+
 void crazypod_playback_previous_or_restart(void)
 {
     const struct mp3entry *id3;
@@ -525,10 +528,19 @@ void crazypod_playback_previous_or_restart(void)
        start_adjacent_from_restored_queue(-1))
         return;
     id3 = audio_current_track();
-    if(id3 != NULL &&
-       id3->elapsed >= PREVIOUS_RESTART_THRESHOLD_MS) {
-        audio_pre_ff_rewind();
+    /*
+     * Restart rather than skip when the track is past the threshold, and
+     * also when there is no previous track to go to. A manual skip that
+     * the playlist has to back out of halts the codec and reloads the
+     * same file, which the PortalPlayer targets play back as a second of
+     * buzzing; a plain seek to zero is silent. audio_pre_ff_rewind() is
+     * for interactive scrubbing and only pauses the PCM buffer here.
+     */
+    if((id3 != NULL &&
+        id3->elapsed >= PREVIOUS_RESTART_THRESHOLD_MS) ||
+       adjacent_queue_index(crazypod_queue_index(), -1) < 0) {
         audio_ff_rewind(0);
+        note_lock_seek(0);
     }
     else
         audio_prev();
@@ -612,13 +624,37 @@ static int adjacent_queue_index(int index, int direction)
     return index < 0 ? count - 1 : 0;
 }
 
+/* Seeks do not raise a track event, so the lock screen's extrapolated
+ * clock would keep counting from the old position; re-anchor it. */
+static void note_lock_seek(uint32_t elapsed_ms)
+{
+    mutex_lock(&lock_playback_mutex);
+    if(lock_playback.valid) {
+        lock_playback.elapsed_ms = elapsed_ms;
+        lock_playback.captured_tick = current_tick;
+    }
+    mutex_unlock(&lock_playback_mutex);
+}
+
 static uint32_t cached_lock_elapsed(const char *path, bool playing)
 {
     uint32_t elapsed = 0;
+    const struct mp3entry *live = NULL;
 
+    if((audio_status() & AUDIO_STATUS_PLAY) != 0)
+        live = audio_current_track();
     mutex_lock(&lock_playback_mutex);
     if(lock_playback.valid && path != NULL &&
        strcmp(lock_playback.path, path) == 0) {
+        /* The codec's own clock is authoritative whenever it is for the
+         * same file and no skip is in flight; the tick extrapolation
+         * only bridges the gaps between reads. */
+        if(live != NULL && lock_playback.requested_queue_index < 0 &&
+           strcmp(live->path, lock_playback.path) == 0) {
+            lock_playback.elapsed_ms = live->elapsed > 0
+                ? (uint32_t)live->elapsed : 0;
+            lock_playback.captured_tick = current_tick;
+        }
         elapsed = lock_playback.elapsed_ms;
         if(lock_playback.elapsed_advancing &&
            TIME_AFTER(current_tick, lock_playback.captured_tick)) {
