@@ -70,6 +70,9 @@ uint32_t crazypod_present_sequence(void);
 long crazypod_present_last_tick(void);
 void crazypod_present_note_render(
     enum crazypod_render_source source, uint32_t duration_us);
+/* True while a rendered frame has not reached the panel yet. The UI loop
+ * must not block for long while this holds. */
+bool crazypod_present_is_pending(void);
 void crazypod_present_get_diagnostics(
     struct crazypod_present_diagnostics *diagnostics);
 

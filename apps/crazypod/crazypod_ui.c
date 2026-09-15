@@ -968,6 +968,15 @@ void crazypod_ui_run(void)
            (crazypod_music_is_scanning() || crazypod_artwork_busy() ||
             crazypod_photos_busy() || crazypod_videos_busy()))
             wait_ticks = 1;
+        /*
+         * A frame LVGL has already rendered may still be waiting for the
+         * present clock. Nothing else wakes this loop for it, so with
+         * nothing playing it could sleep a full second on finished pixels.
+         * Come back on the next tick instead.
+         */
+        if(crazypod_present_is_pending() &&
+           (wait_ticks > 1 || wait_ticks == TIMEOUT_BLOCK))
+            wait_ticks = 1;
         button = button_get_w_tmo(wait_ticks);
         process_lock_state();
         while(button != BUTTON_NONE && drained < 16) {

@@ -64,10 +64,13 @@ static struct {
      * frame clock, 2 rendering, 3 waiting for the present. */
     unsigned step_stage;
     unsigned step_mark_us;
-    unsigned steps;
-    unsigned step_gate_us;
+    unsigned step_gate_us;      /* the step in flight */
     unsigned step_render_us;
-    unsigned step_present_us;
+    unsigned steps;             /* window totals */
+    unsigned step_dropped;
+    unsigned step_gate_total;
+    unsigned step_render_total;
+    unsigned step_present_total;
     unsigned step_max_us;
     unsigned step_total_us;
     unsigned draw_start_us;
@@ -246,10 +249,10 @@ void crazypod_perf_log_draw_end(int type)
 
 void crazypod_perf_log_step_begin(void)
 {
-    /* A step still in flight keeps its original start: what matters is
-     * when the screen caught up with the user, not with the last event. */
+    /* A step that never reached the panel would otherwise block every
+     * later measurement; count it and start again. */
     if(perf.step_stage != 0)
-        return;
+        ++perf.step_dropped;
     perf.step_stage = 1;
     perf.step_mark_us = USEC_TIMER;
     perf.step_gate_us = 0;
@@ -266,7 +269,9 @@ void crazypod_perf_log_present_done(void)
     now = USEC_TIMER;
     total = perf.step_gate_us + perf.step_render_us +
         (now - perf.step_mark_us);
-    perf.step_present_us += now - perf.step_mark_us;
+    perf.step_present_total += now - perf.step_mark_us;
+    perf.step_gate_total += perf.step_gate_us;
+    perf.step_render_total += perf.step_render_us;
     perf.step_total_us += total;
     if(total > perf.step_max_us)
         perf.step_max_us = total;
@@ -319,9 +324,10 @@ static void reset_window(void)
     perf.layers = 0;
     memset(perf.layer, 0, sizeof(perf.layer));
     perf.steps = 0;
-    perf.step_gate_us = 0;
-    perf.step_render_us = 0;
-    perf.step_present_us = 0;
+    perf.step_dropped = 0;
+    perf.step_gate_total = 0;
+    perf.step_render_total = 0;
+    perf.step_present_total = 0;
     perf.step_max_us = 0;
     perf.step_total_us = 0;
     perf.samples = 0;
@@ -468,7 +474,7 @@ static void format_line(long now)
                "fl=flushes/pixels pres=presents/full/misses/timeouts "
                "pmax=max_present_us home=renders/timeouts "
                "wr=prev_write_us seek=last_chapter_seek_ms objs=screen_objects "
-               "step=count/avg_ms/gate_ms/render_ms/worst_ms "
+               "step=count/avg_ms/gate_ms/render_ms/present_ms/worst_ms+dropped "
                "dt=type:count/ms,... "
                "inv=count,x1.y1-x2.y2:count@class/caller,... "
                "lay=count,x1.y1-x2.y2:count@class/type "
@@ -516,14 +522,16 @@ static void format_line(long now)
                  ? count_objects(lv_screen_active()) : 0u);
     append(text);
     if(perf.steps > 0)
-        snprintf(text, sizeof(text), " step=%u/%u/%u/%u/%u",
+        snprintf(text, sizeof(text), " step=%u/%u/%u/%u/%u/%u+%u",
                  perf.steps,
                  perf.step_total_us / perf.steps / 1000,
-                 perf.step_gate_us / perf.steps / 1000,
-                 perf.step_render_us / perf.steps / 1000,
-                 perf.step_max_us / 1000);
+                 perf.step_gate_total / perf.steps / 1000,
+                 perf.step_render_total / perf.steps / 1000,
+                 perf.step_present_total / perf.steps / 1000,
+                 perf.step_max_us / 1000,
+                 perf.step_dropped);
     else
-        snprintf(text, sizeof(text), " step=0");
+        snprintf(text, sizeof(text), " step=0+%u", perf.step_dropped);
     append(text);
     append_draw_stats();
     append_invalidations();

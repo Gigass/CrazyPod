@@ -396,6 +396,11 @@ void crazypod_present_tick(void)
     crazypod_frameclock_schedule_next(&present_clock, now);
 }
 
+bool crazypod_present_is_pending(void)
+{
+    return present_pending;
+}
+
 uint32_t crazypod_present_sequence(void)
 {
     return present_sequence;
