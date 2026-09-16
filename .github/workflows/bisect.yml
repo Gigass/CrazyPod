@@ -1,0 +1,120 @@
+name: CrazyPod bisect firmwares
+
+# Builds several commits' firmware in one run, so tracking down a regression
+# costs one CI trigger and one download rather than one of each per step.
+# The artifacts are numbered in commit order: with N of them, try the middle
+# one first, then the middle of whichever half still contains the fault.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commits:
+        description: >-
+          Commits to build, oldest first, separated by spaces or commas.
+          Artifacts come back numbered in this order.
+        type: string
+        required: true
+        default: >-
+          612030eb b9f8402b ff80f68c bd524ac3
+          8287b4e9 b3be1d2f 52c52c5d 2721cdad
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - name: Number the commits
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          list="${{ inputs.commits }}"
+          entries=""
+          index=0
+          for commit in ${list//,/ }; do
+            index=$((index + 1))
+            if [ -n "$entries" ]; then entries="$entries,"; fi
+            entries="$entries{\"order\":\"$(printf '%02d' "$index")\",\"commit\":\"$commit\"}"
+          done
+          if [ -z "$entries" ]; then
+            echo "No commits given." >&2
+            exit 1
+          fi
+          echo "matrix=[$entries]" >> "$GITHUB_OUTPUT"
+
+  firmware:
+    name: ${{ matrix.entry.order }} ${{ matrix.entry.commit }}
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        entry: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Check out ${{ matrix.entry.commit }}
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.entry.commit }}
+          fetch-depth: 0
+
+      # Firmware-only needs no Node or zip, so this installs less than the
+      # full build does and finishes sooner.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils-arm-none-eabi \
+            gcc-arm-none-eabi \
+            libfreetype6-dev \
+            libnewlib-arm-none-eabi \
+            make \
+            perl \
+            pkg-config \
+            python3
+
+      - name: Build host font converter
+        shell: bash
+        run: make -C tools convttf
+
+      - name: Describe the commit
+        id: describe
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "short=$(git rev-parse --short HEAD)"
+            echo "subject=$(git log -1 --pretty=%s)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build iPod Video firmware
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! ./build-hw.sh --target ipodvideo --firmware-only 2>&1 \
+              | tee build-hw.log; then
+            {
+              echo "## ${{ matrix.entry.order }} ${{ steps.describe.outputs.short }} failed"
+              echo '```text'
+              tail -n 120 build-hw.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          {
+            echo "## ${{ matrix.entry.order }} ${{ steps.describe.outputs.short }}"
+            echo "${{ steps.describe.outputs.subject }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Named so a folder of downloads sorts into test order and every file
+      # says which commit it is without anything needing to be written down.
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.entry.order }}-${{ steps.describe.outputs.short }}
+          if-no-files-found: error
+          path: build-hw-ipodvideo/rockbox.ipod
