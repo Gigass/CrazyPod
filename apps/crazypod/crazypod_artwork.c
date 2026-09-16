@@ -22,6 +22,7 @@
 #include "powermgmt.h"
 #include "string-extra.h"
 
+#include "crazypod_diag_log.h"
 #include "crazypod_artwork.h"
 #include "crazypod_image.h"
 
@@ -957,6 +958,8 @@ static bool artwork_cache_store(
     return complete;
 }
 
+static int last_decode_error;
+
 static bool decode_artwork_at(const struct artwork_source *source,
                               int target_size,
                               lv_image_dsc_t *descriptor)
@@ -1003,16 +1006,30 @@ static bool decode_artwork_at(const struct artwork_source *source,
     }
 
     if(result < 0 || bitmap.width <= 0 || bitmap.height <= 0 ||
-       bitmap.data == NULL)
+       bitmap.data == NULL) {
+        /*
+         * The loader's own code says which of its failures this was, and
+         * they are not alike: -4 is a JPEG the decoder will never read --
+         * it is progressive, and this decoder is baseline only -- while
+         * -1 from the scratch check means the buffer was too small for
+         * this source. Guessing between them cost a round.
+         */
+        last_decode_error = result;
         return false;
+    }
     return crazypod_image_configure_rgb565(
         descriptor, (fb_data *)bitmap.data, bitmap.width, bitmap.height);
 }
+
+/* JPEG_ERROR_NOT_BASELINE: the loader's marker switch returns this for
+ * every progressive and arithmetic-coded SOF. */
+#define CRAZYPOD_JPEG_NOT_BASELINE (-4)
 
 static bool decode_artwork(const struct artwork_source *source,
                            int target_size,
                            lv_image_dsc_t *descriptor)
 {
+    last_decode_error = 0;
     if(decode_artwork_at(source, target_size, descriptor)) {
         ++artwork_diagnostics.decoded;
         return true;
@@ -1026,7 +1043,19 @@ static bool decode_artwork(const struct artwork_source *source,
         ++artwork_diagnostics.decoded;
         return true;
     }
-    ++artwork_diagnostics.decode_failed;
+    if(last_decode_error == CRAZYPOD_JPEG_NOT_BASELINE) {
+        /* Not a fault in this cover or this buffer: the format is one the
+         * decoder does not implement, and no retry will change that. */
+        ++artwork_diagnostics.unsupported_type;
+        crazypod_diag_log(
+            "art", "progressive jpeg, baseline only: %s", source->path);
+    }
+    else {
+        ++artwork_diagnostics.decode_failed;
+        crazypod_diag_log(
+            "art", "decode failed rc=%d size=%d: %s",
+            last_decode_error, target_size, source->path);
+    }
     return false;
 }
 

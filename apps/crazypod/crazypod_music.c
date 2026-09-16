@@ -21,6 +21,7 @@
 #include "system.h"
 
 #include "crazypod_collation.h"
+#include "crazypod_diag_log.h"
 #include "crazypod_music.h"
 #include "crazypod_music_storage.h"
 #include "crazypod_playlist.h"
@@ -627,6 +628,89 @@ static void title_from_path(char *title, size_t size, const char *path)
     title[length] = '\0';
 }
 
+/*
+ * What a file's own name and place can say when its tags say nothing.
+ *
+ * A library laid out the usual way is /Music/Artist/Album/NN Title.ext,
+ * so the two directories above a file name its album and its artist far
+ * better than "Unknown Album" does. Downloaded files are commonly named
+ * "NN. Artist - Title", which also carries a real title.
+ *
+ * This is a fallback, never an override: a file with tags uses its tags.
+ */
+static void folder_names(const char *path, char *album, size_t album_size,
+                         char *artist, size_t artist_size)
+{
+    const char *name = path_basename_local(path);
+    const char *album_end;
+    const char *album_start;
+    const char *artist_end;
+    size_t length;
+
+    album[0] = '\0';
+    artist[0] = '\0';
+    if(name <= path + 1)
+        return;
+    album_end = name - 1;
+    album_start = album_end;
+    while(album_start > path && album_start[-1] != '/')
+        --album_start;
+    length = (size_t)(album_end - album_start);
+    if(length == 0 || length >= album_size)
+        return;
+    memcpy(album, album_start, length);
+    album[length] = '\0';
+    if(album_start <= path + 1)
+        return;
+    artist_end = album_start - 1;
+    album_start = artist_end;
+    while(album_start > path && album_start[-1] != '/')
+        --album_start;
+    length = (size_t)(artist_end - album_start);
+    if(length == 0 || length >= artist_size)
+        return;
+    memcpy(artist, album_start, length);
+    artist[length] = '\0';
+}
+
+/*
+ * "06. ROSALIA - Berghain" -> artist "ROSALIA", title "Berghain".
+ * Returns false unless the whole shape is there, so an ordinary title
+ * containing a hyphen is left alone.
+ */
+static bool split_numbered_name(const char *name, char *artist,
+                                size_t artist_size, char *title,
+                                size_t title_size)
+{
+    const char *cursor = name;
+    const char *separator;
+    size_t length;
+
+    while(*cursor >= '0' && *cursor <= '9')
+        ++cursor;
+    if(cursor == name)
+        return false;
+    if(*cursor == '.' || *cursor == ')')
+        ++cursor;
+    while(*cursor == ' ')
+        ++cursor;
+    if(cursor == name || *cursor == '\0')
+        return false;
+    separator = strstr(cursor, " - ");
+    if(separator == NULL || separator == cursor)
+        return false;
+    length = (size_t)(separator - cursor);
+    if(length >= artist_size)
+        return false;
+    memcpy(artist, cursor, length);
+    artist[length] = '\0';
+    separator += 3;
+    if(*separator == '\0' || strlen(separator) >= title_size)
+        return false;
+    snprintf(title, title_size, "%s", separator);
+    return true;
+}
+
 static const char *extension(const char *path)
 {
     const char *dot = strrchr(path_basename_local(path), '.');
@@ -833,17 +917,50 @@ static void NO_INLINE add_track(const char *path, off_t source_size,
         size_t offsets[5];
         unsigned i;
 
-        if(metadata.title != NULL && metadata.title[0] != '\0')
+        char folder_album[CRAZYPOD_MUSIC_NAME_SIZE];
+        char folder_artist[CRAZYPOD_MUSIC_NAME_SIZE];
+        char name_artist[CRAZYPOD_MUSIC_NAME_SIZE];
+        char name_title[CRAZYPOD_MUSIC_TITLE_SIZE];
+        bool tagged_title = metadata.title != NULL &&
+            metadata.title[0] != '\0';
+        bool tagged_artist = metadata.artist != NULL &&
+            metadata.artist[0] != '\0';
+        bool tagged_album = metadata.album != NULL &&
+            metadata.album[0] != '\0';
+        bool split;
+
+        folder_names(path, folder_album, sizeof(folder_album),
+                     folder_artist, sizeof(folder_artist));
+        title_from_path(title, sizeof(title), path);
+        split = split_numbered_name(title, name_artist,
+                                    sizeof(name_artist),
+                                    name_title, sizeof(name_title));
+        if(tagged_title)
             copy_text(title, sizeof(title), metadata.title, "");
+        else if(split)
+            copy_text(title, sizeof(title), name_title, "");
+        if(tagged_artist)
+            copy_text(artist, sizeof(artist), metadata.artist, "");
+        else if(split)
+            copy_text(artist, sizeof(artist), name_artist, "");
         else
-            title_from_path(title, sizeof(title), path);
-        copy_text(artist, sizeof(artist), metadata.artist,
-                  CP_TR("Unknown Artist"));
-        copy_text(album, sizeof(album), metadata.album,
+            copy_text(artist, sizeof(artist), folder_artist,
+                      CP_TR("Unknown Artist"));
+        copy_text(album, sizeof(album),
+                  tagged_album ? metadata.album : folder_album,
                   CP_TR("Unknown Album"));
         copy_text(album_artist, sizeof(album_artist),
                   metadata.albumartist,
                   artist[0] != '\0' ? artist : CP_TR("Unknown Artist"));
+        if(!tagged_title || !tagged_album)
+            crazypod_diag_log(
+                "track",
+                "id3=%d t=%d a=%d al=%d aa=%d fmt=%d %s",
+                (int)metadata.id3version, tagged_title ? 1 : 0,
+                tagged_artist ? 1 : 0, tagged_album ? 1 : 0,
+                metadata.albumartist != NULL &&
+                    metadata.albumartist[0] != '\0' ? 1 : 0,
+                (int)metadata.codectype, path_basename_local(path));
         offsets[0] = add_pool_text(path, MAX_PATH - 1);
         offsets[1] = add_pool_display_text(title, sizeof(title) - 1);
         offsets[2] = add_pool_display_text(artist, sizeof(artist) - 1);
