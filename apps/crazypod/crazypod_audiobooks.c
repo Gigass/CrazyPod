@@ -12,6 +12,7 @@
 #include "storage.h"
 
 #include "crazypod_audiobook_chapters.h"
+#include "crazypod_diag_log.h"
 #include "crazypod_audiobooks.h"
 #include "crazypod_books.h"
 #include "crazypod_checksum.h"
@@ -87,6 +88,7 @@ static struct {
     uint32_t last_saved_ms;
     int published_chapter;  /* chapter shown as the album line */
     long seek_started;      /* tick of the pending chapter seek, or 0 */
+    long last_diag;         /* tick of the last periodic diagnostic */
     uint32_t seek_target_ms;
     uint32_t last_seek_ms;
 } live = { .index = -1, .published_chapter = -2 };
@@ -474,6 +476,20 @@ bool crazypod_audiobook_probe(int index)
     {
         uint32_t duration = container_duration_ms(book->path);
 
+        /*
+         * Four rounds of reading this code have not explained why the
+         * progress bar is wrong, so record what the two duration sources
+         * and the tag parser actually said about this file.
+         */
+        crazypod_diag_log(
+            "book",
+            "id3len=%ld mvhd=%lu freq=%ld codec=%d samples=%ld "
+            "ch=%d title=%s",
+            (long)probe_entry.length, (unsigned long)duration,
+            (long)probe_entry.frequency, (int)probe_entry.codectype,
+            (long)probe_entry.samples,
+            crazypod_audiobook_chapter_count(index),
+            book->title);
         if(duration > 0)
             book->length_ms = duration;
     }
@@ -579,6 +595,13 @@ static bool load_chapters(int index)
         chapters, CRAZYPOD_AUDIOBOOK_CHAPTERS_MAX);
     close(reader.fd);
     chapter_count = count > 0 ? count : 0;
+    if(chapter_count > 0)
+        crazypod_diag_log(
+            "chapters", "n=%d first=%lu second=%lu last=%lu booklen=%lu",
+            chapter_count, (unsigned long)chapters[0].start_ms,
+            (unsigned long)chapters[chapter_count > 1 ? 1 : 0].start_ms,
+            (unsigned long)chapters[chapter_count - 1].start_ms,
+            (unsigned long)books[index].length_ms);
     return count >= 0;
 }
 
@@ -824,6 +847,10 @@ bool crazypod_audiobook_seek_chapter(int index, int chapter)
     target = crazypod_audiobook_chapter_get(index, chapter);
     if(target == NULL)
         return false;
+    crazypod_diag_log(
+        "seek", "chapter=%d/%d target=%lu booklen=%lu",
+        chapter, chapter_count, (unsigned long)target->start_ms,
+        (unsigned long)books[index].length_ms);
     audio_ff_rewind((long)target->start_ms);
     books[index].position_ms = target->start_ms;
     publish_transient(index, target->start_ms);
@@ -916,6 +943,22 @@ void crazypod_audiobooks_tick(long now)
     if(entry->length > 0)
         books[index].length_ms = (uint32_t)entry->length;
     books[index].position_ms = position;
+    /*
+     * The decisive line: the leading field is wall-clock seconds, so two
+     * of these say whether the elapsed time the progress bar is drawn
+     * from advances at the rate the audio is actually playing at. No
+     * amount of reading the code settles that; ten seconds of playback
+     * does.
+     */
+    if(playing && TIME_AFTER(now, live.last_diag + 15 * HZ)) {
+        live.last_diag = now;
+        crazypod_diag_log(
+            "play", "pos=%lu len=%lu id3=%ld/%ld ch=%d",
+            (unsigned long)position,
+            (unsigned long)books[index].length_ms,
+            (long)entry->elapsed, (long)entry->length,
+            crazypod_audiobook_chapter_at(index, position));
+    }
     publish_transient(index, position);
     if(live.seek_started != 0) {
         uint32_t distance = position > live.seek_target_ms

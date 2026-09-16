@@ -7,6 +7,7 @@
 #include "file.h"
 #include "timefuncs.h"
 #include "crazypod_gameboy.h"
+#include "../crazypod_diag_log.h"
 #include "../miniapps/installer/crazypod_sha256.h"
 
 #define GAME_LIMIT 128
@@ -134,8 +135,10 @@ static void load_save(void)
     snprintf(save_detail, sizeof(save_detail),
              "type %02x ram %lu: cartridge cannot save",
              cartridge.type, (unsigned long)cartridge.ram_size);
-    if(!cartridge_saves())
+    if(!cartridge_saves()) {
+        crazypod_diag_log("gb-load", "%s", save_detail);
         return;
+    }
 
     save_state = CRAZYPOD_GAMEBOY_SAVE_ABSENT;
     snprintf(save_detail, sizeof(save_detail),
@@ -148,8 +151,10 @@ static void load_save(void)
      * resolution fails; close() finds a stream it never opened and sets
      * errno to EBADF, burying the ENOENT underneath.
      */
-    if(!file_exists(save_path))
+    if(!file_exists(save_path)) {
+        crazypod_diag_log("gb-load", "%s path=%s", save_detail, save_path);
         return;
+    }
 
     fd = open(save_path, O_RDONLY);
     if(fd < 0)
@@ -188,6 +193,7 @@ static void load_save(void)
         snprintf(save_detail, sizeof(save_detail),
                  "ram %lu file %ld: %s",
                  (unsigned long)cartridge.ram_size, (long)size, step);
+        crazypod_diag_log("gb-load", "%s path=%s", save_detail, save_path);
         return;
     }
 
@@ -195,6 +201,7 @@ static void load_save(void)
     snprintf(save_detail, sizeof(save_detail),
              "ram %lu file %ld: loaded",
              (unsigned long)cartridge.ram_size, (long)size);
+    crazypod_diag_log("gb-load", "%s path=%s", save_detail, save_path);
     saved_at = read_u32(header + 12);
     now = (uint32_t)mktime(get_time());
     if(cartridge.clock && saved_at > 0 && now > saved_at)
@@ -266,6 +273,7 @@ static bool save_gave_up(const char *step)
     snprintf(save_detail, sizeof(save_detail),
              "ram %lu: write %s",
              (unsigned long)cartridge.ram_size, step);
+    crazypod_diag_log("gb-save", "%s path=%s", save_detail, save_path);
     return false;
 }
 
@@ -279,8 +287,10 @@ bool crazypod_gameboy_save(void)
 
     if(!opened)
         return false;
-    if(!cartridge_saves())
+    if(!cartridge_saves()) {
+        crazypod_diag_log("gb-save", "%s", save_detail);
         return true;
+    }
     if((!dir_exists("/.crazypod") && mkdir("/.crazypod") < 0) ||
        (!dir_exists(SAVE_DIRECTORY) && mkdir(SAVE_DIRECTORY) < 0))
         return save_gave_up("mkdir failed");
@@ -330,6 +340,7 @@ bool crazypod_gameboy_save(void)
     snprintf(save_detail, sizeof(save_detail),
              "ram %lu: written",
              (unsigned long)cartridge.ram_size);
+    crazypod_diag_log("gb-save", "%s path=%s", save_detail, save_path);
     return true;
 }
 

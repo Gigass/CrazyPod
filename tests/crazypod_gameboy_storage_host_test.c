@@ -81,6 +81,11 @@ off_t gb_test_lseek(int fd, off_t offset, int origin)
 
 off_t filesize(int fd) { return files[fd].size; }
 bool file_exists(const char *path) { return find_file(path) >= 0; }
+void crazypod_diag_log(const char *tag, const char *format, ...)
+{
+    (void)tag;
+    (void)format;
+}
 int gb_test_close(int fd) { (void)fd; --handles; return 0; }
 int gb_test_fsync(int fd) { (void)fd; return fail_sync ? -1 : 0; }
 int gb_test_remove(const char *path)
