@@ -1965,6 +1965,11 @@
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:205"
       ]
     },
+    "No bookmark saved": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_feature.c"
+      ]
+    },
     "Remove Bookmark": {
       "locations": [
         "apps/crazypod/ui/app/crazypod_choice_coordinator.c:250"
@@ -2819,6 +2824,11 @@
     "Resume listening": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_preview.c:508"
+      ]
+    },
+    "Saved position  ·  %u%%": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_feature.c"
       ]
     },
     "Spoken books with chapters": {

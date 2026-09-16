@@ -632,6 +632,88 @@ bool crazypod_books_feature_toggle_reader_bookmark(void)
         crazypod_book_session_offset());
 }
 
+/*
+ * Chapters and the saved bookmark, reachable from inside the reader.
+ * Both were only on the route the reader is opened from, so changing
+ * chapter meant leaving the book and coming back to it.
+ */
+int crazypod_books_feature_reader_chapter_count(void)
+{
+    return crazypod_book_chapter_count(crazypod_book_session_index());
+}
+
+const char *crazypod_books_feature_reader_chapter_title(int chapter)
+{
+    static char title[64];
+
+    if(!crazypod_book_chapter_get(
+           crazypod_book_session_index(), chapter,
+           title, sizeof(title), NULL))
+        return "";
+    return title;
+}
+
+int crazypod_books_feature_reader_current_chapter(void)
+{
+    int count = crazypod_books_feature_reader_chapter_count();
+    uint32_t here = crazypod_book_session_offset();
+    int current = -1;
+    int chapter;
+
+    for(chapter = 0; chapter < count; ++chapter) {
+        uint32_t offset;
+
+        if(crazypod_book_chapter_get(
+               crazypod_book_session_index(), chapter,
+               NULL, 0, &offset) && offset <= here)
+            current = chapter;
+    }
+    return current;
+}
+
+bool crazypod_books_feature_reader_go_to_chapter(int chapter)
+{
+    int index = crazypod_book_session_index();
+    uint32_t offset;
+
+    return crazypod_book_chapter_get(index, chapter, NULL, 0, &offset) &&
+        crazypod_book_session_load(index, offset);
+}
+
+bool crazypod_books_feature_reader_has_bookmark(void)
+{
+    const struct crazypod_book *book =
+        crazypod_book_get(crazypod_book_session_index());
+
+    return book != NULL && book->bookmark != CRAZYPOD_BOOKMARK_NONE;
+}
+
+const char *crazypod_books_feature_reader_bookmark_label(void)
+{
+    static char label[64];
+    const struct crazypod_book *book =
+        crazypod_book_get(crazypod_book_session_index());
+    unsigned percent;
+
+    if(book == NULL || book->bookmark == CRAZYPOD_BOOKMARK_NONE)
+        return CP_TR("No bookmark saved");
+    percent = book->content_size > 0
+        ? (unsigned)((uint64_t)book->bookmark * 100u / book->content_size)
+        : 0;
+    snprintf(label, sizeof(label), CP_FMT("Saved position  ·  %u%%"),
+             percent > 100u ? 100u : percent);
+    return label;
+}
+
+bool crazypod_books_feature_reader_go_to_bookmark(void)
+{
+    int index = crazypod_book_session_index();
+    const struct crazypod_book *book = crazypod_book_get(index);
+
+    return book != NULL && book->bookmark != CRAZYPOD_BOOKMARK_NONE &&
+        crazypod_book_session_load(index, book->bookmark);
+}
+
 bool crazypod_books_feature_handle_input(
     const struct route_state *state,
     const struct crazypod_input_event *event,

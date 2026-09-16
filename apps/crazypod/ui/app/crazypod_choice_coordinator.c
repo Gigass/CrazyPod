@@ -123,7 +123,11 @@ static int choice_count(int kind_value, int id, void *context)
     case CRAZYPOD_CHOICE_BOOK_THEME:
         return 4;
     case CRAZYPOD_CHOICE_BOOK_READER_ACTIONS:
-        return 2;
+        return 4;
+    case CRAZYPOD_CHOICE_BOOK_CHAPTERS:
+        return crazypod_books_feature_reader_chapter_count();
+    case CRAZYPOD_CHOICE_BOOK_BOOKMARKS:
+        return 1;
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME:
         return crazypod_now_playing_theme_choice_count();
     case CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS:
@@ -171,7 +175,10 @@ static int current_index(int kind_value, int id, void *context)
     case CRAZYPOD_CHOICE_BOOK_THEME:
         return crazypod_books_theme();
     case CRAZYPOD_CHOICE_BOOK_READER_ACTIONS:
+    case CRAZYPOD_CHOICE_BOOK_BOOKMARKS:
         return -1;
+    case CRAZYPOD_CHOICE_BOOK_CHAPTERS:
+        return crazypod_books_feature_reader_current_chapter();
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME: {
         int index;
         int count = crazypod_now_playing_theme_choice_count();
@@ -219,6 +226,10 @@ static const char *choice_title(
         return CP_TR("PAGE THEME");
     case CRAZYPOD_CHOICE_BOOK_READER_ACTIONS:
         return CP_TR("BOOK ACTIONS");
+    case CRAZYPOD_CHOICE_BOOK_CHAPTERS:
+        return CP_TR("CHAPTERS");
+    case CRAZYPOD_CHOICE_BOOK_BOOKMARKS:
+        return CP_TR("BOOKMARKS");
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME:
         return CP_TR("Themes");
     case CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS: {
@@ -278,10 +289,18 @@ static const char *item_title(
     }
     case CRAZYPOD_CHOICE_BOOK_READER_ACTIONS:
         if(index == 0)
+            return CP_TR("Chapters");
+        if(index == 1)
+            return CP_TR("Bookmarks");
+        if(index == 2)
             return crazypod_books_feature_reader_page_bookmarked()
                 ? CP_TR("Remove Bookmark")
                 : CP_TR("Add Bookmark");
-        return index == 1 ? CP_TR("Playback Queue") : "";
+        return index == 3 ? CP_TR("Playback Queue") : "";
+    case CRAZYPOD_CHOICE_BOOK_CHAPTERS:
+        return crazypod_books_feature_reader_chapter_title(index);
+    case CRAZYPOD_CHOICE_BOOK_BOOKMARKS:
+        return crazypod_books_feature_reader_bookmark_label();
     case CRAZYPOD_CHOICE_NOW_PLAYING_THEME:
         return crazypod_now_playing_theme_choice_title(index);
     case CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS: {
@@ -355,7 +374,7 @@ static bool item_color(
         return true;
     }
     if(kind == CRAZYPOD_CHOICE_BOOK_READER_ACTIONS) {
-        *color = index == 0 ? 0x47E69A : 0x2EBFFF;
+        *color = index == 2 ? 0x47E69A : 0x2EBFFF;
         return true;
     }
     if(kind == CRAZYPOD_CHOICE_ROUTE_ACTIONS) {
@@ -391,6 +410,8 @@ static bool action_layout(
     (void)id;
     (void)context;
     return kind == CRAZYPOD_CHOICE_BOOK_READER_ACTIONS ||
+        kind == CRAZYPOD_CHOICE_BOOK_CHAPTERS ||
+        kind == CRAZYPOD_CHOICE_BOOK_BOOKMARKS ||
         kind == CRAZYPOD_CHOICE_MAIN_MENU_ITEM_ACTIONS ||
         kind == CRAZYPOD_CHOICE_ROUTE_ACTIONS;
 }
@@ -509,7 +530,7 @@ bool crazypod_choice_coordinator_handle_select_repeat(void)
         return false;
     if(crazypod_choice_overlay_kind() ==
            CRAZYPOD_CHOICE_BOOK_READER_ACTIONS)
-        return crazypod_choice_overlay_selected() == 0;
+        return crazypod_choice_overlay_selected() == 2;
     if(crazypod_choice_overlay_kind() !=
            CRAZYPOD_CHOICE_ROUTE_ACTIONS)
         return false;
@@ -677,6 +698,19 @@ void crazypod_choice_coordinator_activate(long now)
     }
     if(kind == CRAZYPOD_CHOICE_BOOK_READER_ACTIONS) {
         if(selected == 0) {
+            /* Both sub-lists replace this overlay rather than stacking on
+             * it, so MENU from a chapter list leaves the reader alone. */
+            crazypod_choice_coordinator_show(
+                CRAZYPOD_CHOICE_BOOK_CHAPTERS, -1,
+                crazypod_books_feature_reader_current_chapter());
+            return;
+        }
+        if(selected == 1) {
+            crazypod_choice_coordinator_show(
+                CRAZYPOD_CHOICE_BOOK_BOOKMARKS, -1, 0);
+            return;
+        }
+        if(selected == 2) {
             begin_hold(CHOICE_HOLD_BOOKMARK, now);
             return;
         }
@@ -684,6 +718,28 @@ void crazypod_choice_coordinator_activate(long now)
         host.push_selected(
             MUSIC_ROUTE_QUEUE, -1,
             crazypod_queue_index());
+        return;
+    }
+    if(kind == CRAZYPOD_CHOICE_BOOK_CHAPTERS) {
+        bool moved =
+            crazypod_books_feature_reader_go_to_chapter(selected);
+
+        crazypod_choice_coordinator_dismiss(false);
+        if(moved && host.render != NULL)
+            host.render(false);
+        return;
+    }
+    if(kind == CRAZYPOD_CHOICE_BOOK_BOOKMARKS) {
+        if(!crazypod_books_feature_reader_has_bookmark()) {
+            crazypod_choice_coordinator_show_receipt(
+                CP_TR("No bookmark saved"), false, now, false);
+            return;
+        }
+        if(crazypod_books_feature_reader_go_to_bookmark()) {
+            crazypod_choice_coordinator_dismiss(false);
+            if(host.render != NULL)
+                host.render(false);
+        }
         return;
     }
     if(kind == CRAZYPOD_CHOICE_ICON_THEME) {

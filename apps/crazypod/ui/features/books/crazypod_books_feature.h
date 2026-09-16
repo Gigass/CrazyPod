@@ -91,6 +91,15 @@ void crazypod_books_feature_begin_reader(
     int index, uint32_t offset);
 void crazypod_books_feature_turn_page(int direction);
 bool crazypod_books_feature_reader_page_bookmarked(void);
+/* Chapters and the saved bookmark, from inside the reader: both used to
+ * live only on the route the book is opened from. */
+int crazypod_books_feature_reader_chapter_count(void);
+const char *crazypod_books_feature_reader_chapter_title(int chapter);
+int crazypod_books_feature_reader_current_chapter(void);
+bool crazypod_books_feature_reader_go_to_chapter(int chapter);
+bool crazypod_books_feature_reader_has_bookmark(void);
+const char *crazypod_books_feature_reader_bookmark_label(void);
+bool crazypod_books_feature_reader_go_to_bookmark(void);
 bool crazypod_books_feature_toggle_reader_bookmark(void);
 struct crazypod_books_confirmation_result
 crazypod_books_feature_confirm(
