@@ -5,6 +5,7 @@
 #ifdef HAVE_CRAZYPOD_UI
 
 #include <stdio.h>
+#include <string.h>
 
 #include "../../../crazypod_workouts.h"
 #include "../../presentation/crazypod_ui_widgets.h"
@@ -12,6 +13,8 @@
 
 #define CRAZYPOD_WORKOUT_FONT (&lv_font_source_han_sans_sc_14_cjk)
 #define CRAZYPOD_WORKOUT_WHITE 0xFFFFFF
+#define CRAZYPOD_WORKOUT_RUNNING 0xA8F12D
+#define CRAZYPOD_WORKOUT_PAUSED 0xFFB340
 
 static void format_duration(
     char *text, size_t size, uint32_t seconds)
@@ -20,6 +23,73 @@ static void format_duration(
              (unsigned long)(seconds / 3600u),
              (unsigned long)(seconds / 60u % 60u),
              (unsigned long)(seconds % 60u));
+}
+
+
+/*
+ * The active workout is a stopwatch that logs what it timed, and it was
+ * rebuilt ten times a second for the same reason the stopwatch was: a
+ * tick asked for a route render, and a route render cleans the pane and
+ * builds it again. Only the elapsed time moves, and the ring and the
+ * status line only when the timer is paused or resumed.
+ *
+ * Cleared by crazypod_workout_screen_forget() before the pane is cleaned.
+ */
+static struct {
+    lv_obj_t *backdrop;
+    lv_obj_t *ring;
+    lv_obj_t *ring_icon;
+    lv_obj_t *elapsed;
+    lv_obj_t *status;
+    uint32_t shown_seconds;
+    int activity;
+    bool running;
+} face;
+
+void crazypod_workout_screen_forget(void)
+{
+    memset(&face, 0, sizeof(face));
+}
+
+static bool face_usable(int activity)
+{
+    return face.backdrop != NULL && lv_obj_is_valid(face.backdrop) &&
+           face.activity == activity && face.ring != NULL &&
+           face.ring_icon != NULL && face.elapsed != NULL &&
+           face.status != NULL;
+}
+
+static void set_running_look(bool running)
+{
+    uint32_t color = running
+        ? CRAZYPOD_WORKOUT_RUNNING : CRAZYPOD_WORKOUT_PAUSED;
+
+    lv_obj_set_style_border_color(face.ring, lv_color_hex(color), 0);
+    CP_LV_LABEL_SET_TEXT(
+        face.ring_icon, running ? LV_SYMBOL_PLAY : CP_TR("II"));
+    lv_obj_set_style_text_color(face.ring_icon, lv_color_hex(color), 0);
+    CP_LV_LABEL_SET_TEXT(
+        face.status, running ? CP_TR("RUNNING") : CP_TR("PAUSED"));
+    lv_obj_set_style_text_color(face.status, lv_color_hex(color), 0);
+}
+
+bool crazypod_workout_screen_refresh_active(
+    int activity, bool running, uint32_t seconds)
+{
+    char elapsed[24];
+
+    if(!face_usable(activity))
+        return false;
+    if(seconds != face.shown_seconds) {
+        face.shown_seconds = seconds;
+        format_duration(elapsed, sizeof(elapsed), seconds);
+        CP_LV_LABEL_SET_TEXT(face.elapsed, elapsed);
+    }
+    if(running != face.running) {
+        face.running = running;
+        set_running_look(running);
+    }
+    return true;
 }
 
 void crazypod_workout_screen_render_ready(
@@ -63,24 +133,28 @@ void crazypod_workout_screen_render_ready(
 void crazypod_workout_screen_render_active(
     lv_obj_t *content, int activity, bool running, uint32_t seconds)
 {
+    lv_obj_t *backdrop;
     lv_obj_t *ring;
     lv_obj_t *label;
     char elapsed[24];
 
-    crazypod_ui_widget_box(
+    if(crazypod_workout_screen_refresh_active(activity, running, seconds))
+        return;
+    memset(&face, 0, sizeof(face));
+
+    backdrop = crazypod_ui_widget_box(
         content, 0, 32, 320, 208, 0, 0x050505, LV_OPA_COVER);
     ring = crazypod_ui_widget_box(
         content, 26, 49, 126, 126, LV_RADIUS_CIRCLE,
         0x0A0A0A, LV_OPA_COVER);
     lv_obj_set_style_border_width(ring, 5, 0);
-    lv_obj_set_style_border_color(
-        ring, lv_color_hex(running ? 0xA8F12D : 0xFFB340), 0);
     lv_obj_set_style_border_opa(ring, 235, 0);
     label = crazypod_ui_widget_label(
-        ring, running ? LV_SYMBOL_PLAY : CP_TR("II"),
-        &lv_font_montserrat_24,
-        running ? 0xA8F12D : 0xFFB340, LV_OPA_COVER);
+        ring, LV_SYMBOL_PLAY, &lv_font_montserrat_24,
+        CRAZYPOD_WORKOUT_RUNNING, LV_OPA_COVER);
     lv_obj_center(label);
+    face.ring = ring;
+    face.ring_icon = label;
     label = crazypod_ui_widget_label(
         content, crazypod_workout_activity_title(activity),
         &lv_font_montserrat_10, CRAZYPOD_WORKOUT_WHITE, 165);
@@ -90,19 +164,35 @@ void crazypod_workout_screen_render_active(
         content, elapsed, &lv_font_montserrat_24,
         CRAZYPOD_WORKOUT_WHITE, LV_OPA_COVER);
     lv_obj_set_pos(label, 174, 76);
+    face.elapsed = label;
     crazypod_ui_widget_box(
         content, 174, 108, 126, 1, 0,
         CRAZYPOD_WORKOUT_WHITE, 90);
     label = crazypod_ui_widget_label(
-        content, running ? CP_TR("RUNNING") : CP_TR("PAUSED"),
-        &lv_font_montserrat_10,
-        running ? 0xA8F12D : 0xFFB340, 235);
+        content, CP_TR("RUNNING"), &lv_font_montserrat_10,
+        CRAZYPOD_WORKOUT_RUNNING, 235);
     lv_obj_set_pos(label, 174, 119);
+    face.status = label;
     label = crazypod_ui_widget_label(
         content,
         CP_TR("CENTER  PAUSE / RESUME\nPLAY  FINISH\nTIME-ONLY LOG"),
         &lv_font_montserrat_8, CRAZYPOD_WORKOUT_WHITE, 125);
     lv_obj_set_pos(label, 174, 145);
+
+    face.backdrop = backdrop;
+    face.activity = activity;
+    face.shown_seconds = seconds;
+    /* Built as running, then corrected: one place decides the look. */
+    face.running = true;
+    if(!running) {
+        face.running = false;
+        set_running_look(false);
+    }
+    lv_obj_null_on_delete(&face.backdrop);
+    lv_obj_null_on_delete(&face.ring);
+    lv_obj_null_on_delete(&face.ring_icon);
+    lv_obj_null_on_delete(&face.elapsed);
+    lv_obj_null_on_delete(&face.status);
 }
 
 void crazypod_workout_screen_render_summary(lv_obj_t *content)

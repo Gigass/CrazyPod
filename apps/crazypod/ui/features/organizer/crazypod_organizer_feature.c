@@ -461,7 +461,7 @@ bool crazypod_organizer_feature_service(
         due = crazypod_activity_service_stopwatch(
             now, ticks_per_second);
     else if(route == WORKOUT_ROUTE_ACTIVE)
-        return crazypod_activity_service_workout(
+        due = crazypod_activity_service_workout(
             now, ticks_per_second);
     else if(route != CLOCK_ROUTE_VIEW &&
             route != CLOCK_ROUTE_SLEEP_TIMER)
@@ -736,6 +736,7 @@ void crazypod_organizer_feature_reset_view(void)
 {
     crazypod_calendar_screen_forget();
     crazypod_clock_screen_forget();
+    crazypod_workout_screen_forget();
 }
 
 /* A clock tick only moves the hands and the numbers, so try that before
@@ -766,6 +767,11 @@ static bool tick_in_place(enum crazypod_route route, long now,
             now, ticks_per_second, &model);
         return crazypod_stopwatch_screen_refresh(&model);
     }
+    if(route == WORKOUT_ROUTE_ACTIVE)
+        return crazypod_workout_screen_refresh_active(
+            crazypod_activity_workout_type(),
+            crazypod_activity_workout_running(),
+            crazypod_activity_workout_seconds(now, ticks_per_second));
     return false;
 }
 
