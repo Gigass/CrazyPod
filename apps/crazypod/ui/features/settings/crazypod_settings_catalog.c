@@ -55,6 +55,7 @@ static const int date_time_items[] = {
     SETTINGS_ITEM_TIME_HOUR,
     SETTINGS_ITEM_TIME_MINUTE,
     SETTINGS_ITEM_TIME_SECOND,
+    SETTINGS_ITEM_TIME_FORMAT,
 };
 
 static const int power_items[] = {

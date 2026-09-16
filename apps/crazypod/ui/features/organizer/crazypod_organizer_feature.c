@@ -9,6 +9,7 @@
 #include "powermgmt.h"
 #include "kernel.h"
 #include "timefuncs.h"
+#include "settings.h"
 
 #include "../../../crazypod_organizer.h"
 #include "../../../crazypod_workouts.h"
@@ -291,7 +292,8 @@ bool crazypod_organizer_feature_item_title(
                      editor.date % 100);
         else if(index == 2) {
             crazypod_ui_calendar_format_time(
-                time, sizeof(time), editor.minutes);
+                time, sizeof(time), editor.minutes,
+                global_settings.timeformat != 0);
             snprintf(text, sizeof(text), CP_FMT("Time: %s"),
                      time[0] != '\0' ? time : CP_FMT("All Day"));
         }

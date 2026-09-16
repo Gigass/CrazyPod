@@ -21,6 +21,7 @@
 #include "../../../crazypod_state.h"
 #include "../../../platform/crazypod_platform_display.h"
 #include "crazypod_settings_model.h"
+#include "../../presentation/crazypod_ui_text.h"
 
 static const int setting_timeout_values[] = {
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
@@ -102,6 +103,7 @@ const char *crazypod_ui_settings_item_title(int item)
     case SETTINGS_ITEM_TIME_HOUR: return CP_TR("Hour");
     case SETTINGS_ITEM_TIME_MINUTE: return CP_TR("Minute");
     case SETTINGS_ITEM_TIME_SECOND: return CP_TR("Second");
+    case SETTINGS_ITEM_TIME_FORMAT: return CP_TR("Time Format");
     case SETTINGS_ITEM_SHUFFLE: return CP_TR("Shuffle");
     case SETTINGS_ITEM_REPEAT: return CP_TR("Repeat");
     case SETTINGS_ITEM_ORIGINAL_IPOD_MUSIC:
@@ -151,6 +153,7 @@ const char *crazypod_ui_settings_item_symbol(int item)
     case SETTINGS_ITEM_TIME_HOUR:
     case SETTINGS_ITEM_TIME_MINUTE:
     case SETTINGS_ITEM_TIME_SECOND:
+    case SETTINGS_ITEM_TIME_FORMAT:
         return LV_SYMBOL_SETTINGS;
     case SETTINGS_ITEM_SHUFFLE:
         return LV_SYMBOL_SHUFFLE;
@@ -189,8 +192,9 @@ const char *crazypod_ui_settings_group_detail(int index)
             return CP_TR("Date & Time");
         snprintf(date, sizeof(date), CP_FMT("%04d-%02d-%02d"),
                  now.tm_year + 1900, now.tm_mon + 1, now.tm_mday);
-        snprintf(time, sizeof(time), CP_FMT("%02d:%02d"),
-                 now.tm_hour, now.tm_min);
+        crazypod_ui_text_clock(time, sizeof(time), now.tm_hour,
+                               now.tm_min, 0, false,
+                               global_settings.timeformat != 0);
         snprintf(date_time, sizeof(date_time), CP_FMT("%s · %s"), date, time);
         return date_time;
     case 3: return CP_TR("Shuffle and repeat");
@@ -314,6 +318,8 @@ static int settings_item_current_value(int item)
         return crazypod_state_reduce_motion() ? 1 : 0;
     case SETTINGS_ITEM_REDUCE_EFFECTS:
         return crazypod_state_reduce_effects_level();
+    case SETTINGS_ITEM_TIME_FORMAT:
+        return global_settings.timeformat != 0 ? 1 : 0;
     case SETTINGS_ITEM_DATE_YEAR:
     case SETTINGS_ITEM_DATE_MONTH:
     case SETTINGS_ITEM_DATE_DAY:
@@ -378,6 +384,8 @@ int crazypod_ui_settings_choice_count(int item)
         return CRAZYPOD_LANGUAGE_COUNT;
     case SETTINGS_ITEM_REDUCE_EFFECTS:
         return CRAZYPOD_REDUCE_EFFECTS_LEVELS;
+    case SETTINGS_ITEM_TIME_FORMAT:
+        return 2;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
@@ -467,6 +475,8 @@ static int settings_choice_value(int item, int index)
             return CRAZYPOD_REDUCE_EFFECTS_OFF;
         return index < CRAZYPOD_REDUCE_EFFECTS_LEVELS
             ? index : CRAZYPOD_REDUCE_EFFECTS_LEVELS - 1;
+    case SETTINGS_ITEM_TIME_FORMAT:
+        return index > 0 ? 1 : 0;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
@@ -565,6 +575,7 @@ int crazypod_ui_settings_choice_index(int item)
     switch(item) {
     case SETTINGS_ITEM_LANGUAGE:
     case SETTINGS_ITEM_REDUCE_EFFECTS:
+    case SETTINGS_ITEM_TIME_FORMAT:
         return current;
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
@@ -729,6 +740,13 @@ const char *crazypod_ui_settings_choice_title(int item, int index)
         return value >= 0 && value < CRAZYPOD_REDUCE_EFFECTS_LEVELS
             ? levels[value] : levels[0];
     }
+    case SETTINGS_ITEM_TIME_FORMAT: {
+        static const char *const formats[] = {
+            CP_TR("24-Hour"), CP_TR("12-Hour")
+        };
+
+        return value > 0 ? formats[1] : formats[0];
+    }
     case SETTINGS_ITEM_EQ_ENABLED:
     case SETTINGS_ITEM_REDUCE_MOTION:
     case SETTINGS_ITEM_SHUFFLE:
@@ -887,6 +905,9 @@ bool crazypod_ui_settings_apply_choice(int item, int index)
         break;
     case SETTINGS_ITEM_REDUCE_MOTION:
         crazypod_state_set_reduce_motion(value != 0);
+        break;
+    case SETTINGS_ITEM_TIME_FORMAT:
+        global_settings.timeformat = value != 0 ? 1 : 0;
         break;
     case SETTINGS_ITEM_REDUCE_EFFECTS:
         crazypod_state_set_reduce_effects_level(value);

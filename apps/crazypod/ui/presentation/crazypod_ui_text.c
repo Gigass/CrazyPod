@@ -1,7 +1,35 @@
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "crazypod_ui_text.h"
+
+const char *crazypod_ui_text_clock(char *output, size_t size,
+                                   int hour, int minute, int second,
+                                   bool with_seconds, bool twelve_hour)
+{
+    const char *meridiem = "";
+    int shown = hour;
+
+    if(output == NULL || size == 0)
+        return "";
+    if(twelve_hour) {
+        meridiem = hour < 12 ? " AM" : " PM";
+        shown = hour % 12;
+        /* Midnight and noon are the twelfth hour, not the zeroth. */
+        if(shown == 0)
+            shown = 12;
+    }
+    if(with_seconds)
+        snprintf(output, size, twelve_hour
+                     ? "%d:%02d:%02d%s" : "%02d:%02d:%02d%s",
+                 shown, minute, second, meridiem);
+    else
+        snprintf(output, size, twelve_hour
+                     ? "%d:%02d%s" : "%02d:%02d%s",
+                 shown, minute, meridiem);
+    return output;
+}
 
 #define CRAZYPOD_NOTE_WRAP_COLUMNS 34
 #define CRAZYPOD_NOTE_WINDOW_LINES 9

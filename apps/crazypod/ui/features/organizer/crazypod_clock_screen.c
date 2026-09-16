@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "settings.h"
+
+#include "../../presentation/crazypod_ui_text.h"
 #include "../../presentation/crazypod_ui_widgets.h"
 #include "crazypod_clock_screen.h"
 
@@ -165,8 +168,9 @@ void crazypod_clock_screen_render(
         0x5C5C5C, LV_OPA_COVER);
     lv_obj_set_style_text_letter_space(label, 2, 0);
     lv_obj_set_pos(label, 170, 34);
-    snprintf(text, sizeof(text), CP_FMT("%02d:%02d:%02d"),
-             time->hour, time->minute, time->second);
+    crazypod_ui_text_clock(text, sizeof(text), time->hour, time->minute,
+                           time->second, true,
+                           global_settings.timeformat != 0);
     label = crazypod_ui_widget_label(
         panel, text, &lv_font_montserrat_24,
         0x0E0E0E, LV_OPA_COVER);
@@ -225,8 +229,9 @@ bool crazypod_clock_screen_refresh(
     clock_time = (time->hour * 60 + time->minute) * 60 + time->second;
     if(clock_time != face.shown_time) {
         face.shown_time = clock_time;
-        snprintf(text, sizeof(text), CP_FMT("%02d:%02d:%02d"),
-                 time->hour, time->minute, time->second);
+        crazypod_ui_text_clock(text, sizeof(text), time->hour,
+                               time->minute, time->second, true,
+                               global_settings.timeformat != 0);
         CP_LV_LABEL_SET_TEXT(face.digital, text);
     }
     if(time->month_day != face.shown_date) {

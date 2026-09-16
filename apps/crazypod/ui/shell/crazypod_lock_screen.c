@@ -1,3 +1,6 @@
+#include "settings.h"
+
+#include "../presentation/crazypod_ui_text.h"
 #include "config.h"
 
 #include "../../crazypod_l10n.h"
@@ -643,7 +646,8 @@ void crazypod_lock_screen_refresh_clock(void)
         CP_TR("JUL"), CP_TR("AUG"), CP_TR("SEP"), CP_TR("OCT"), CP_TR("NOV"), CP_TR("DEC")
     };
     struct tm *now;
-    char time_text[8];
+    /* "12:05 AM" needs nine bytes; the old 24-hour-only five fit in eight. */
+    char time_text[16];
     char date_text[32];
     int weekday;
     int month;
@@ -656,8 +660,9 @@ void crazypod_lock_screen_refresh_clock(void)
         ? now->tm_wday : 0;
     month = now->tm_mon >= 0 && now->tm_mon < 12
         ? now->tm_mon : 0;
-    snprintf(time_text, sizeof(time_text), CP_FMT("%02d:%02d"),
-             now->tm_hour, now->tm_min);
+    crazypod_ui_text_clock(time_text, sizeof(time_text), now->tm_hour,
+                           now->tm_min, 0, false,
+                           global_settings.timeformat != 0);
     snprintf(date_text, sizeof(date_text), "%s  \xE2\x80\xA2  %s %d",
              crazypod_l10n_text(days[weekday]),
              crazypod_l10n_text(months[month]), now->tm_mday);

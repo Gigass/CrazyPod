@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../../presentation/crazypod_ui_text.h"
 #include "crazypod_calendar_model.h"
 
 int crazypod_ui_calendar_days_in_month(int year, int month)
@@ -66,11 +67,11 @@ int crazypod_ui_calendar_parse_minutes(const char *time)
 }
 
 void crazypod_ui_calendar_format_time(char *buffer, size_t size,
-                                      int minutes)
+                                      int minutes, bool twelve_hour)
 {
     if(minutes < 0)
         buffer[0] = '\0';
     else
-        snprintf(buffer, size, CP_FMT("%02d:%02d"),
-                 minutes / 60, minutes % 60);
+        crazypod_ui_text_clock(buffer, size, minutes / 60,
+                               minutes % 60, 0, false, twelve_hour);
 }

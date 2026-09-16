@@ -182,8 +182,10 @@ uint32_t crazypod_calendar_controller_commit(void)
         editor_error = 1;
         return 0;
     }
+    /* Stored, not shown: events keep a canonical 24-hour time whatever
+     * the clock setting says. */
     crazypod_ui_calendar_format_time(
-        time, sizeof(time), editor_minutes);
+        time, sizeof(time), editor_minutes, false);
     if(editor_id != 0) {
         if(!crazypod_calendar_event_update(
                editor_id, editor_date, time, editor_summary)) {

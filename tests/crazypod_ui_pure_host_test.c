@@ -20,7 +20,7 @@ const char *crazypod_l10n_text(const char *text)
 
 static void test_calendar(void)
 {
-    char time[6];
+    char time[16];
 
     assert(crazypod_ui_calendar_days_in_month(2024, 1) == 29);
     assert(crazypod_ui_calendar_days_in_month(2100, 1) == 28);
@@ -29,8 +29,35 @@ static void test_calendar(void)
     assert(crazypod_ui_calendar_shift_date(20240301, -1) == 20240229);
     assert(crazypod_ui_calendar_parse_minutes("09:30") == 570);
     assert(crazypod_ui_calendar_parse_minutes("bad") == -1);
-    crazypod_ui_calendar_format_time(time, sizeof(time), 570);
+    crazypod_ui_calendar_format_time(time, sizeof(time), 570, false);
     assert(strcmp(time, "09:30") == 0);
+    crazypod_ui_calendar_format_time(time, sizeof(time), 570, true);
+    assert(strcmp(time, "9:30 AM") == 0);
+}
+
+/* Midnight and noon are where hand-rolled twelve-hour clocks go wrong. */
+static void test_clock_format(void)
+{
+    char text[24];
+
+    assert(strcmp(crazypod_ui_text_clock(text, sizeof(text),
+                                         0, 5, 0, false, false),
+                  "00:05") == 0);
+    assert(strcmp(crazypod_ui_text_clock(text, sizeof(text),
+                                         0, 5, 0, false, true),
+                  "12:05 AM") == 0);
+    assert(strcmp(crazypod_ui_text_clock(text, sizeof(text),
+                                         12, 0, 0, false, true),
+                  "12:00 PM") == 0);
+    assert(strcmp(crazypod_ui_text_clock(text, sizeof(text),
+                                         11, 59, 0, false, true),
+                  "11:59 AM") == 0);
+    assert(strcmp(crazypod_ui_text_clock(text, sizeof(text),
+                                         13, 7, 9, true, true),
+                  "1:07:09 PM") == 0);
+    assert(strcmp(crazypod_ui_text_clock(text, sizeof(text),
+                                         23, 59, 59, true, false),
+                  "23:59:59") == 0);
 }
 
 static void test_note_layout(void)
@@ -326,6 +353,7 @@ static void test_feature_input_dispatcher(void)
 int main(void)
 {
     test_calendar();
+    test_clock_format();
     test_note_layout();
     test_editor();
     test_menu_layout();

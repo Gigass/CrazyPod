@@ -1,7 +1,22 @@
 #ifndef CRAZYPOD_UI_TEXT_H
 #define CRAZYPOD_UI_TEXT_H
 
+#include <stdbool.h>
 #include <stddef.h>
+
+/*
+ * Writes a wall-clock time, either "14:05" or "2:05 PM", according to the
+ * clock setting the caller passes in. Kept here, away from the settings
+ * header, so the six places that draw a clock agree without each one
+ * growing its own copy of the twelve-hour arithmetic -- midnight and noon
+ * are where hand-rolled versions go wrong.
+ *
+ * The meridiem is the plain English AM/PM the original firmware used; it
+ * is not translated.
+ */
+const char *crazypod_ui_text_clock(char *output, size_t size,
+                                   int hour, int minute, int second,
+                                   bool with_seconds, bool twelve_hour);
 
 int crazypod_ui_text_character_size(const char *text);
 int crazypod_ui_text_note_line_count(const char *body);

@@ -26,19 +26,6 @@
         "apps/crazypod/ui/features/organizer/crazypod_clock_screen.c:206"
       ]
     },
-    "%02d:%02d": {
-      "locations": [
-        "apps/crazypod/miniapps/runtime/crazypod_miniapp_host_system.c:136",
-        "apps/crazypod/ui/features/organizer/crazypod_calendar_model.c:72",
-        "apps/crazypod/ui/shell/crazypod_lock_screen.c:103",
-        "apps/crazypod/ui/shell/crazypod_status_bar.c:104"
-      ]
-    },
-    "%02d:%02d:%02d": {
-      "locations": [
-        "apps/crazypod/ui/features/organizer/crazypod_clock_screen.c:101"
-      ]
-    },
     "%04d-%02d-%02d": {
       "locations": [
         "apps/crazypod/miniapps/runtime/crazypod_miniapp_host_system.c:132",
@@ -298,6 +285,11 @@
         "apps/crazypod/ui/features/settings/crazypod_eq_studio_controller.c:179"
       ]
     },
+    "12-Hour": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c"
+      ]
+    },
     "125Hz": {
       "locations": [
         "apps/crazypod/ui/features/settings/crazypod_settings_feature.c:108"
@@ -331,6 +323,11 @@
     "1kHz": {
       "locations": [
         "apps/crazypod/ui/features/settings/crazypod_settings_feature.c:109"
+      ]
+    },
+    "24-Hour": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c"
       ]
     },
     "250Hz": {
@@ -4066,6 +4063,11 @@
     "Thursday": {
       "locations": [
         "apps/crazypod/ui/features/organizer/crazypod_clock_screen.c:74"
+      ]
+    },
+    "Time Format": {
+      "locations": [
+        "apps/crazypod/ui/features/settings/crazypod_settings_model.c"
       ]
     },
     "Time: %s": {

@@ -1,3 +1,6 @@
+#include "settings.h"
+
+#include "../presentation/crazypod_ui_text.h"
 #include "config.h"
 
 #include "../../crazypod_l10n.h"
@@ -89,7 +92,8 @@ void crazypod_status_bar_create(int index, lv_obj_t *screen)
 
 void crazypod_status_bars_update(void)
 {
-    char time_text[8];
+    /* Nine bytes for "12:05 AM", not the five a 24-hour clock needs. */
+    char time_text[16];
     struct tm *now = get_time();
     int minute = now->tm_hour * 60 + now->tm_min;
     int level = battery_level();
@@ -131,8 +135,10 @@ void crazypod_status_bars_update(void)
             continue;
         if(bar->rendered_minute != minute) {
             if(!time_formatted) {
-                snprintf(time_text, sizeof(time_text), CP_FMT("%02d:%02d"),
-                         now->tm_hour, now->tm_min);
+                crazypod_ui_text_clock(
+                    time_text, sizeof(time_text), now->tm_hour,
+                    now->tm_min, 0, false,
+                    global_settings.timeformat != 0);
                 time_formatted = true;
             }
             CP_LV_LABEL_SET_TEXT(bar->time, time_text);
