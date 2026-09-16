@@ -5,6 +5,7 @@
 
 #include "../../crazypod_menu_icon.h"
 #include "../../navigation/crazypod_ui_routes.h"
+#include "../../presentation/crazypod_search_screen.h"
 #include "../crazypod_feature.h"
 
 /* One entry of the merged Recents list: a text book or an audiobook. */
@@ -24,6 +25,35 @@ bool crazypod_books_feature_recent_at(
 /* The newest entry, when it has a position to resume from. */
 bool crazypod_books_feature_continue_entry(
     struct crazypod_books_recent_entry *entry);
+
+/*
+ * Search across both halves of the library -- text books first, then
+ * audiobooks -- matching title and author. The query is typed on the
+ * wheel, so matching folds ASCII case and nothing else.
+ */
+const char *crazypod_books_feature_query(void);
+void crazypod_books_feature_append_query(const char *text);
+void crazypod_books_feature_backspace_query(void);
+void crazypod_books_feature_clear_query(void);
+int crazypod_books_feature_search_key_count(void);
+const char *crazypod_books_feature_search_key_title(int index);
+bool crazypod_books_feature_search_key(int index);
+int crazypod_books_feature_search_count(const char *query);
+const char *crazypod_books_feature_search_title(
+    const char *query, int index);
+const char *crazypod_books_feature_search_subtitle(
+    const char *query, int index);
+bool crazypod_books_feature_search_at(
+    const char *query, int index,
+    struct crazypod_books_recent_entry *entry);
+bool crazypod_books_feature_render_search(
+    lv_obj_t *parent, const struct route_state *state,
+    const lv_font_t *metadata_font, int item_count,
+    const char *(*item_title)(
+        const struct route_state *state, int index),
+    uint32_t primary_color, uint32_t secondary_color,
+    uint32_t panel_color, bool gradient_highlight,
+    crazypod_search_panel_factory make_panel);
 
 struct crazypod_books_activation_host {
     void (*render)(bool transition);

@@ -12,6 +12,7 @@
 #include "file.h"
 
 #include "crazypod_checksum.h"
+#include "crazypod_collation.h"
 #include "crazypod_notes.h"
 
 #define NOTES_DIRECTORY "/.crazypod/notes"
@@ -526,42 +527,16 @@ const struct crazypod_note *crazypod_note_find(uint32_t id)
     return &result;
 }
 
-static char fold_ascii(char value)
-{
-    return value >= 'A' && value <= 'Z'
-        ? (char)(value - 'A' + 'a') : value;
-}
-
-static bool contains_text(const char *text, const char *query)
-{
-    const char *start;
-
-    if(query == NULL || query[0] == '\0')
-        return true;
-    for(start = text; start != NULL && *start != '\0'; ++start) {
-        const char *left = start;
-        const char *right = query;
-        while(*left != '\0' && *right != '\0' &&
-              fold_ascii(*left) == fold_ascii(*right)) {
-            ++left;
-            ++right;
-        }
-        if(*right == '\0')
-            return true;
-    }
-    return false;
-}
-
 static bool note_matches(const struct crazypod_note *note,
                          const char *query)
 {
     if(note == NULL || note->deleted)
         return false;
-    if(contains_text(note->title, query))
+    if(crazypod_collation_contains(note->title, query))
         return true;
     return crazypod_note_read_body(
                note->id, body_work, sizeof(body_work)) &&
-           contains_text(body_work, query);
+           crazypod_collation_contains(body_work, query);
 }
 
 int crazypod_notes_search_count(const char *query)

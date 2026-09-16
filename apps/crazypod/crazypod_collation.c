@@ -63,6 +63,35 @@ static char table_initial(
     return (char)table[codepoint - first];
 }
 
+static char fold_ascii(char value)
+{
+    return value >= 'A' && value <= 'Z'
+        ? (char)(value - 'A' + 'a') : value;
+}
+
+bool crazypod_collation_contains(const char *text, const char *query)
+{
+    const char *start;
+
+    if(query == NULL || query[0] == '\0')
+        return true;
+    if(text == NULL)
+        return false;
+    for(start = text; *start != '\0'; ++start) {
+        const char *left = start;
+        const char *right = query;
+
+        while(*left != '\0' && *right != '\0' &&
+              fold_ascii(*left) == fold_ascii(*right)) {
+            ++left;
+            ++right;
+        }
+        if(*right == '\0')
+            return true;
+    }
+    return false;
+}
+
 char crazypod_collation_initial(const char *text)
 {
     const unsigned char *cursor = skip_ascii_space(text);

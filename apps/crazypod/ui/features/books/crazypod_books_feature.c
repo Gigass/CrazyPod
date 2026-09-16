@@ -15,6 +15,10 @@
 #include "crazypod_books_preview.h"
 #include "crazypod_books_screen.h"
 #include "crazypod_books_workflow.h"
+#include "button.h"
+
+#include "../../../crazypod_collation.h"
+#include "../../presentation/crazypod_ui_text.h"
 #include "crazypod_books_feature.h"
 
 static void ensure_audiobooks(void)
@@ -63,6 +67,195 @@ static void collect_recents(void)
         offer_recent(false, i, crazypod_books_recent_sequence(i));
     for(i = 0; i < crazypod_audiobooks_count(); ++i)
         offer_recent(true, i, crazypod_audiobook_recent_sequence(i));
+}
+
+/*
+ * One search over both halves of the library. Text books come first and
+ * keep their catalogue order, then audiobooks, so a result's position
+ * maps back to a book without a second pass over the query.
+ */
+static char search_query[64];
+
+/* The same wheel-typed editor the Music and Notes searches use: letters,
+ * digits, then space, backspace and the search itself. */
+#define SEARCH_ACTION_COUNT 3
+#define SEARCH_CHARACTER_COUNT 36
+
+static const char *const search_characters[SEARCH_CHARACTER_COUNT] = {
+    CP_TR("A"), CP_TR("B"), CP_TR("C"), CP_TR("D"), CP_TR("E"), CP_TR("F"), CP_TR("G"), CP_TR("H"), CP_TR("I"), CP_TR("J"),
+    CP_TR("K"), CP_TR("L"), CP_TR("M"), CP_TR("N"), CP_TR("O"), CP_TR("P"), CP_TR("Q"), CP_TR("R"), CP_TR("S"), CP_TR("T"),
+    CP_TR("U"), CP_TR("V"), CP_TR("W"), "X", CP_TR("Y"), CP_TR("Z"),
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
+};
+
+int crazypod_books_feature_search_key_count(void)
+{
+    return SEARCH_CHARACTER_COUNT + SEARCH_ACTION_COUNT;
+}
+
+const char *crazypod_books_feature_search_key_title(int index)
+{
+    if(index >= 0 && index < SEARCH_CHARACTER_COUNT)
+        return search_characters[index];
+    if(index == SEARCH_CHARACTER_COUNT)
+        return CP_TR("Space");
+    if(index == SEARCH_CHARACTER_COUNT + 1)
+        return CP_TR("Backspace");
+    if(index == SEARCH_CHARACTER_COUNT + 2)
+        return CP_TR("Search");
+    return "";
+}
+
+/* True when the press was a key; false when it asks for the results. */
+bool crazypod_books_feature_search_key(int index)
+{
+    if(index >= 0 && index < SEARCH_CHARACTER_COUNT) {
+        crazypod_books_feature_append_query(
+            crazypod_l10n_text(search_characters[index]));
+        return true;
+    }
+    if(index == SEARCH_CHARACTER_COUNT) {
+        crazypod_books_feature_append_query(" ");
+        return true;
+    }
+    if(index == SEARCH_CHARACTER_COUNT + 1) {
+        crazypod_books_feature_backspace_query();
+        return true;
+    }
+    return false;
+}
+
+const char *crazypod_books_feature_query(void)
+{
+    return search_query;
+}
+
+void crazypod_books_feature_append_query(const char *text)
+{
+    crazypod_ui_text_append(
+        search_query, sizeof(search_query), text);
+}
+
+void crazypod_books_feature_backspace_query(void)
+{
+    crazypod_ui_text_backspace(search_query);
+}
+
+void crazypod_books_feature_clear_query(void)
+{
+    search_query[0] = '\0';
+}
+
+static bool book_matches(int index, const char *query)
+{
+    const struct crazypod_book *book = crazypod_book_get(index);
+
+    return book != NULL &&
+        (crazypod_collation_contains(book->title, query) ||
+         crazypod_collation_contains(book->author, query));
+}
+
+static bool audiobook_matches(int index, const char *query)
+{
+    const struct crazypod_audiobook *book =
+        crazypod_audiobook_get(index);
+
+    return book != NULL &&
+        (crazypod_collation_contains(book->title, query) ||
+         crazypod_collation_contains(book->author, query));
+}
+
+bool crazypod_books_feature_search_at(
+    const char *query, int index,
+    struct crazypod_books_recent_entry *entry)
+{
+    int seen = 0;
+    int i;
+
+    if(index < 0 || query == NULL || query[0] == '\0')
+        return false;
+    for(i = 0; i < crazypod_books_count(); ++i) {
+        if(!book_matches(i, query))
+            continue;
+        if(seen++ == index) {
+            entry->audiobook = false;
+            entry->index = i;
+            entry->sequence = 0;
+            return true;
+        }
+    }
+    ensure_audiobooks();
+    for(i = 0; i < crazypod_audiobooks_count(); ++i) {
+        if(!audiobook_matches(i, query))
+            continue;
+        if(seen++ == index) {
+            entry->audiobook = true;
+            entry->index = i;
+            entry->sequence = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
+int crazypod_books_feature_search_count(const char *query)
+{
+    int count = 0;
+    int i;
+
+    if(query == NULL || query[0] == '\0')
+        return 0;
+    for(i = 0; i < crazypod_books_count(); ++i)
+        count += book_matches(i, query) ? 1 : 0;
+    ensure_audiobooks();
+    for(i = 0; i < crazypod_audiobooks_count(); ++i)
+        count += audiobook_matches(i, query) ? 1 : 0;
+    return count;
+}
+
+const char *crazypod_books_feature_search_title(
+    const char *query, int index)
+{
+    struct crazypod_books_recent_entry entry;
+
+    if(!crazypod_books_feature_search_at(query, index, &entry))
+        return "";
+    if(entry.audiobook) {
+        const struct crazypod_audiobook *book =
+            crazypod_audiobook_get(entry.index);
+
+        return book != NULL ? book->title : "";
+    }
+    {
+        const struct crazypod_book *book =
+            crazypod_book_get(entry.index);
+
+        return book != NULL ? book->title : "";
+    }
+}
+
+const char *crazypod_books_feature_search_subtitle(
+    const char *query, int index)
+{
+    struct crazypod_books_recent_entry entry;
+    const char *author = "";
+
+    if(!crazypod_books_feature_search_at(query, index, &entry))
+        return "";
+    if(entry.audiobook) {
+        const struct crazypod_audiobook *book =
+            crazypod_audiobook_get(entry.index);
+
+        author = book != NULL ? book->author : "";
+        return author[0] != '\0' ? author : CP_TR("Audiobook");
+    }
+    {
+        const struct crazypod_book *book =
+            crazypod_book_get(entry.index);
+
+        author = book != NULL ? book->author : "";
+    }
+    return author[0] != '\0' ? author : CP_TR("Book");
 }
 
 int crazypod_books_feature_recent_count(void)
@@ -174,7 +367,7 @@ int crazypod_books_feature_item_count(
 {
     switch(state->route) {
     case BOOKS_ROUTE_MENU:
-        return has_continue() ? 7 : 6;
+        return has_continue() ? 8 : 7;
     case BOOKS_ROUTE_AUDIOBOOKS:
         ensure_audiobooks();
         return crazypod_audiobooks_count();
@@ -202,6 +395,10 @@ int crazypod_books_feature_item_count(
     }
     case BOOKS_ROUTE_READING_SETTINGS:
         return 2;
+    case BOOKS_ROUTE_SEARCH:
+        return crazypod_books_feature_search_key_count();
+    case BOOKS_ROUTE_SEARCH_RESULTS:
+        return crazypod_books_feature_search_count(search_query);
     default:
         return 0;
     }
@@ -241,6 +438,10 @@ const char *crazypod_books_feature_title(
         return CP_TR("BOOK INFO");
     case BOOKS_ROUTE_AUDIOBOOKS:
         return CP_TR("AUDIOBOOKS");
+    case BOOKS_ROUTE_SEARCH:
+        return CP_TR("SEARCH");
+    case BOOKS_ROUTE_SEARCH_RESULTS:
+        return CP_TR("RESULTS");
     default:
         return "";
     }
@@ -285,7 +486,8 @@ bool crazypod_books_feature_item_title(
     case BOOKS_ROUTE_MENU: {
         static const char *const titles[] = {
             CP_TR("Recents"), CP_TR("Books"), CP_TR("Audiobooks"),
-            CP_TR("Favorites"), CP_TR("Stats"), CP_TR("Reading")
+            CP_TR("Favorites"), CP_TR("Search"), CP_TR("Stats"),
+            CP_TR("Reading")
         };
         bool can_continue = has_continue();
         int logical;
@@ -294,7 +496,8 @@ bool crazypod_books_feature_item_title(
             *title = CP_TR("Continue");
         else {
             logical = index - (can_continue ? 1 : 0);
-            *title = logical >= 0 && logical < 6
+            *title = logical >= 0 &&
+                logical < (int)(sizeof(titles) / sizeof(titles[0]))
                 ? titles[logical] : "";
         }
         return true;
@@ -366,6 +569,13 @@ bool crazypod_books_feature_item_title(
     }
     case BOOKS_ROUTE_BOOKMARKS:
         *title = CP_TR("Saved Page");
+        return true;
+    case BOOKS_ROUTE_SEARCH:
+        *title = crazypod_books_feature_search_key_title(index);
+        return true;
+    case BOOKS_ROUTE_SEARCH_RESULTS:
+        *title = crazypod_books_feature_search_title(
+            search_query, index);
         return true;
     case BOOKS_ROUTE_DELETE_CONFIRM:
         *title = CP_TR("Hold Center to Delete");
@@ -518,6 +728,38 @@ bool crazypod_books_feature_activate(
     default:
         break;
     }
+    return true;
+}
+
+bool crazypod_books_feature_render_search(
+    lv_obj_t *parent, const struct route_state *state,
+    const lv_font_t *metadata_font, int item_count,
+    const char *(*item_title)(
+        const struct route_state *state, int index),
+    uint32_t primary_color, uint32_t secondary_color,
+    uint32_t panel_color, bool gradient_highlight,
+    crazypod_search_panel_factory make_panel)
+{
+    const struct crazypod_search_screen_context context = {
+        .parent = parent,
+        .query = search_query,
+        .item_count = item_count,
+        .primary_color = primary_color,
+        .secondary_color = secondary_color,
+        .panel_color = panel_color,
+        .gradient_highlight = gradient_highlight,
+        .metadata_font = metadata_font,
+        .item_title = item_title,
+        .make_panel = make_panel,
+        .result_count = crazypod_books_feature_search_count,
+        .result_title = crazypod_books_feature_search_title,
+        .result_subtitle = crazypod_books_feature_search_subtitle,
+        .empty_hint = CP_TR("No book title or author matched."),
+    };
+
+    if(state->route != BOOKS_ROUTE_SEARCH)
+        return false;
+    crazypod_search_screen_render(state, &context);
     return true;
 }
 
@@ -727,6 +969,35 @@ bool crazypod_books_feature_handle_input(
         .leave = context->pop,
     };
 
+    /*
+     * The search editor is a twelve-column grid, so a wheel step has to
+     * move a row rather than a key, and MENU has to rub out a character
+     * before it leaves. The default menu handling does neither.
+     */
+    if(state->route == BOOKS_ROUTE_SEARCH) {
+        if(event->base == BUTTON_SCROLL_FWD)
+            context->move(crazypod_input_wheel_steps(event, 12));
+        else if(event->base == BUTTON_SCROLL_BACK)
+            context->move(-crazypod_input_wheel_steps(event, 12));
+        else if(event->base == BUTTON_RIGHT)
+            context->move(1);
+        else if(event->base == BUTTON_LEFT)
+            context->move(-1);
+        else if(event->base == BUTTON_SELECT && !event->repeated)
+            context->activate();
+        else if(event->base == BUTTON_MENU && !event->repeated) {
+            if(search_query[0] != '\0') {
+                crazypod_books_feature_backspace_query();
+                context->render(false);
+            }
+            else
+                context->pop();
+        }
+        else if(event->base == BUTTON_PLAY && !event->repeated &&
+                search_query[0] != '\0')
+            context->push(BOOKS_ROUTE_SEARCH_RESULTS, -1);
+        return true;
+    }
     if(state->route != BOOKS_ROUTE_READER)
         return false;
     book_input_context = *context;

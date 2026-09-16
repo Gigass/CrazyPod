@@ -651,6 +651,11 @@
         "apps/crazypod/ui/features/music/crazypod_music_library.c:52"
       ]
     },
+    "Audiobook": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_feature.c"
+      ]
+    },
     "Audiobooks": {
       "locations": [
         "apps/crazypod/ui/features/books/crazypod_books_feature.c:166"
@@ -792,6 +797,11 @@
     "Blue": {
       "locations": [
         "apps/crazypod/crazypod_appearance.c:85"
+      ]
+    },
+    "Book": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_feature.c"
       ]
     },
     "Book Details": {
@@ -1963,6 +1973,11 @@
     "Hold Center to Erase": {
       "locations": [
         "apps/crazypod/ui/features/notes/crazypod_notes_feature.c:205"
+      ]
+    },
+    "No book title or author matched.": {
+      "locations": [
+        "apps/crazypod/ui/features/books/crazypod_books_feature.c"
       ]
     },
     "No bookmark saved": {

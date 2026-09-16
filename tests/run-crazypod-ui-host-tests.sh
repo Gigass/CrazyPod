@@ -63,6 +63,7 @@ cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-notes-stubs" \
     -I"$repo_root/apps/crazypod" \
     "$repo_root/apps/crazypod/crazypod_notes.c" \
+    "$repo_root/apps/crazypod/crazypod_collation.c" \
     "$repo_root/tests/crazypod_notes_host_test.c" \
     -o "$test_root/crazypod_notes_host_test"
 

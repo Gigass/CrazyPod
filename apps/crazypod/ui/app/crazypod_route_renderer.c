@@ -236,6 +236,17 @@ static void render_feature(
         render_now_playing(state);
         return;
     case CRAZYPOD_FEATURE_BOOKS:
+        if(state->route == BOOKS_ROUTE_SEARCH) {
+            create_panel_backgrounds();
+            if(crazypod_books_feature_render_search(
+                   crazypod_shell_product_content(), state,
+                   host.metadata_font, host.item_count(state),
+                   host.item_title, primary_color(),
+                   secondary_color(), COLOR_PANEL,
+                   crazypod_appearance_get()->highlight_style != 0,
+                   make_search_panel))
+                return;
+        }
         if(crazypod_books_feature_render(
                state, crazypod_shell_product_content()))
             return;
