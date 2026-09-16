@@ -70,6 +70,17 @@ uint32_t crazypod_present_sequence(void);
 long crazypod_present_last_tick(void);
 void crazypod_present_note_render(
     enum crazypod_render_source source, uint32_t duration_us);
+/*
+ * Present the next queued frame as soon as it is rendered, without
+ * waiting for the frame clock.
+ *
+ * The clock exists to cap how often an animation reaches the panel. A
+ * frame rendered because the wheel moved is already paced by the hand
+ * turning it, so holding it back is latency with nothing bought: the
+ * render finished, and the step then waited out most of a 20 ms period
+ * before any of it was visible.
+ */
+void crazypod_present_request_immediate(void);
 /* True while a rendered frame has not reached the panel yet. The UI loop
  * must not block for long while this holds. */
 bool crazypod_present_is_pending(void);

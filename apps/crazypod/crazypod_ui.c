@@ -1046,6 +1046,8 @@ void crazypod_ui_run(void)
          */
         if(drained > 0 ||
            crazypod_frameclock_due(&lvgl_clock, current_tick)) {
+            if(drained > 0)
+                crazypod_present_request_immediate();
             crazypod_perf_log_lv_begin();
             lv_timer_handler();
             crazypod_perf_log_lv_end();

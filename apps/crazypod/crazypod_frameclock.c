@@ -29,6 +29,7 @@ extern struct frame_buffer_t lcd_framebuffer_default;
 #endif
 
 static struct crazypod_frameclock present_clock;
+static bool present_immediate;
 static bool present_initialized;
 static bool home_interaction_active;
 static bool present_pending;
@@ -97,6 +98,7 @@ void crazypod_present_init(long now)
     present_initialized = true;
     home_interaction_active = false;
     present_pending = false;
+    present_immediate = false;
     present_sync = PRESENT_SYNC_NONE;
     deferred_present_pending = false;
     memset(&present_diagnostics, 0, sizeof(present_diagnostics));
@@ -359,13 +361,21 @@ void crazypod_present_now(void)
     promote_deferred_present();
 }
 
+void crazypod_present_request_immediate(void)
+{
+    present_immediate = true;
+}
+
 void crazypod_present_tick(void)
 {
     long now = current_tick;
     uint32_t late_ticks;
 
-    if(!present_pending)
+    if(!present_pending) {
+        /* Nothing was queued, so the request had nothing to hurry. */
+        present_immediate = false;
         return;
+    }
 
     /* While a finger remains on the Home wheel, ordinary LVGL dirt can
        continue to arrive from playback progress, status timers, or a frame
@@ -378,6 +388,15 @@ void crazypod_present_tick(void)
     /* Full-screen updates bypass the software frame clock. The LCD driver
        still waits for TE/FMARK when hardware synchronization is available. */
     if(crazypod_present_is_full()) {
+        crazypod_present_now();
+        crazypod_frameclock_reset(&present_clock, now);
+        return;
+    }
+
+    /* An input-driven frame goes now. The wheel sets the rate, and a
+     * present costs enough on this panel to cap it on its own. */
+    if(present_immediate) {
+        present_immediate = false;
         crazypod_present_now();
         crazypod_frameclock_reset(&present_clock, now);
         return;

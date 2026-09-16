@@ -114,11 +114,13 @@ void crazypod_ui_widget_set_label_text(lv_obj_t *label, const char *text)
 
     /* lv_label_set_text() invalidates even when the text is unchanged, and
      * status and playback timers re-set the same text several times a
-     * second. */
+     * second. The font setter invalidates unconditionally too, and the
+     * font almost never changes between two texts in the same place. */
     if(strcmp(lv_label_get_text(label), resolved) != 0)
         lv_label_set_text(label, resolved);
     font = crazypod_ui_widget_resolve_font(text, font);
-    lv_obj_set_style_text_font(label, font, 0);
+    if(lv_obj_get_style_text_font(label, LV_PART_MAIN) != font)
+        lv_obj_set_style_text_font(label, font, 0);
 }
 
 void crazypod_ui_widget_align_row_label(
