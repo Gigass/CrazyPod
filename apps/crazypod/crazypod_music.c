@@ -876,11 +876,30 @@ static bool count_directory_tracks(
         scan_failure == CRAZYPOD_MUSIC_SCAN_OK;
 }
 
-/* Keep the large metadata frame out of recursive scan_directory frames. */
+/*
+ * Keep the scanner's large buffers off the stack entirely.
+ *
+ * add_track is called from scan_directory, which recurses to
+ * CRAZYPOD_SCAN_DEPTH, so its frame sits on top of sixteen of those. An
+ * mp3entry alone is most of three kilobytes and the scan thread has
+ * thirteen, leaving a thin margin for get_metadata's own parsers below.
+ * Static rather than automatic because only the scan thread runs this,
+ * and the scan and validation threads share one stack and so can never
+ * overlap.
+ */
+static struct mp3entry scan_metadata;
+static char scan_title[CRAZYPOD_MUSIC_TITLE_SIZE];
+static char scan_artist[CRAZYPOD_MUSIC_NAME_SIZE];
+static char scan_album[CRAZYPOD_MUSIC_NAME_SIZE];
+static char scan_album_artist[CRAZYPOD_MUSIC_NAME_SIZE];
+static char scan_folder_album[CRAZYPOD_MUSIC_NAME_SIZE];
+static char scan_folder_artist[CRAZYPOD_MUSIC_NAME_SIZE];
+static char scan_name_artist[CRAZYPOD_MUSIC_NAME_SIZE];
+static char scan_name_title[CRAZYPOD_MUSIC_TITLE_SIZE];
+
 static void NO_INLINE add_track(const char *path, off_t source_size,
                                 time_t source_mtime, int format)
 {
-    struct mp3entry metadata;
     struct crazypod_track_record *track;
     int fd;
 
@@ -900,73 +919,65 @@ static void NO_INLINE add_track(const char *path, off_t source_size,
     if(fd < 0)
         return;
 
-    memset(&metadata, 0, sizeof(metadata));
-    if(!get_metadata(&metadata, fd, path)) {
+    memset(&scan_metadata, 0, sizeof(scan_metadata));
+    if(!get_metadata(&scan_metadata, fd, path)) {
         close(fd);
         return;
     }
-    if(metadata.has_video) {
+    if(scan_metadata.has_video) {
         close(fd);
         return;
     }
     {
-        char title[CRAZYPOD_MUSIC_TITLE_SIZE];
-        char artist[CRAZYPOD_MUSIC_NAME_SIZE];
-        char album[CRAZYPOD_MUSIC_NAME_SIZE];
-        char album_artist[CRAZYPOD_MUSIC_NAME_SIZE];
         size_t offsets[5];
         unsigned i;
 
-        char folder_album[CRAZYPOD_MUSIC_NAME_SIZE];
-        char folder_artist[CRAZYPOD_MUSIC_NAME_SIZE];
-        char name_artist[CRAZYPOD_MUSIC_NAME_SIZE];
-        char name_title[CRAZYPOD_MUSIC_TITLE_SIZE];
-        bool tagged_title = metadata.title != NULL &&
-            metadata.title[0] != '\0';
-        bool tagged_artist = metadata.artist != NULL &&
-            metadata.artist[0] != '\0';
-        bool tagged_album = metadata.album != NULL &&
-            metadata.album[0] != '\0';
+        bool tagged_title = scan_metadata.title != NULL &&
+            scan_metadata.title[0] != '\0';
+        bool tagged_artist = scan_metadata.artist != NULL &&
+            scan_metadata.artist[0] != '\0';
+        bool tagged_album = scan_metadata.album != NULL &&
+            scan_metadata.album[0] != '\0';
         bool split;
 
-        folder_names(path, folder_album, sizeof(folder_album),
-                     folder_artist, sizeof(folder_artist));
-        title_from_path(title, sizeof(title), path);
-        split = split_numbered_name(title, name_artist,
-                                    sizeof(name_artist),
-                                    name_title, sizeof(name_title));
+        folder_names(path, scan_folder_album, sizeof(scan_folder_album),
+                     scan_folder_artist, sizeof(scan_folder_artist));
+        title_from_path(scan_title, sizeof(scan_title), path);
+        split = split_numbered_name(scan_title, scan_name_artist,
+                                    sizeof(scan_name_artist),
+                                    scan_name_title, sizeof(scan_name_title));
         if(tagged_title)
-            copy_text(title, sizeof(title), metadata.title, "");
+            copy_text(scan_title, sizeof(scan_title), scan_metadata.title, "");
         else if(split)
-            copy_text(title, sizeof(title), name_title, "");
+            copy_text(scan_title, sizeof(scan_title), scan_name_title, "");
         if(tagged_artist)
-            copy_text(artist, sizeof(artist), metadata.artist, "");
+            copy_text(scan_artist, sizeof(scan_artist), scan_metadata.artist, "");
         else if(split)
-            copy_text(artist, sizeof(artist), name_artist, "");
+            copy_text(scan_artist, sizeof(scan_artist), scan_name_artist, "");
         else
-            copy_text(artist, sizeof(artist), folder_artist,
+            copy_text(scan_artist, sizeof(scan_artist), scan_folder_artist,
                       CP_TR("Unknown Artist"));
-        copy_text(album, sizeof(album),
-                  tagged_album ? metadata.album : folder_album,
+        copy_text(scan_album, sizeof(scan_album),
+                  tagged_album ? scan_metadata.album : scan_folder_album,
                   CP_TR("Unknown Album"));
-        copy_text(album_artist, sizeof(album_artist),
-                  metadata.albumartist,
-                  artist[0] != '\0' ? artist : CP_TR("Unknown Artist"));
+        copy_text(scan_album_artist, sizeof(scan_album_artist),
+                  scan_metadata.albumartist,
+                  scan_artist[0] != '\0' ? scan_artist : CP_TR("Unknown Artist"));
         if(!tagged_title || !tagged_album)
             crazypod_diag_log(
                 "track",
                 "id3=%d t=%d a=%d al=%d aa=%d fmt=%d %s",
-                (int)metadata.id3version, tagged_title ? 1 : 0,
+                (int)scan_metadata.id3version, tagged_title ? 1 : 0,
                 tagged_artist ? 1 : 0, tagged_album ? 1 : 0,
-                metadata.albumartist != NULL &&
-                    metadata.albumartist[0] != '\0' ? 1 : 0,
-                (int)metadata.codectype, path_basename_local(path));
+                scan_metadata.albumartist != NULL &&
+                    scan_metadata.albumartist[0] != '\0' ? 1 : 0,
+                (int)scan_metadata.codectype, path_basename_local(path));
         offsets[0] = add_pool_text(path, MAX_PATH - 1);
-        offsets[1] = add_pool_display_text(title, sizeof(title) - 1);
-        offsets[2] = add_pool_display_text(artist, sizeof(artist) - 1);
-        offsets[3] = add_pool_display_text(album, sizeof(album) - 1);
-        offsets[4] = add_pool_display_text(album_artist,
-                                           sizeof(album_artist) - 1);
+        offsets[1] = add_pool_display_text(scan_title, sizeof(scan_title) - 1);
+        offsets[2] = add_pool_display_text(scan_artist, sizeof(scan_artist) - 1);
+        offsets[3] = add_pool_display_text(scan_album, sizeof(scan_album) - 1);
+        offsets[4] = add_pool_display_text(scan_album_artist,
+                                           sizeof(scan_album_artist) - 1);
         for(i = 0; i < 5; ++i) {
             if(offsets[i] == SIZE_MAX) {
                 /* Publishing a library with missing names would be worse
@@ -984,20 +995,20 @@ static void NO_INLINE add_track(const char *path, off_t source_size,
         track->album_offset = (uint32_t)offsets[3];
         track->album_artist_offset = (uint32_t)offsets[4];
     }
-    track->duration_ms = metadata.length;
+    track->duration_ms = scan_metadata.length;
     track->source_size = source_size > 0
         ? (uint32_t)source_size : 0;
     track->source_mtime = source_mtime > 0
         ? (uint32_t)source_mtime : 0;
-    track->year = metadata.year > 0 ? metadata.year : 0;
-    track->track_number = metadata.tracknum > 0 ? metadata.tracknum : 0;
-    track->disc_number = metadata.discnum > 0 ? metadata.discnum : 0;
-    track->format = metadata.codectype < 256 ? metadata.codectype : 0;
-    if(metadata.has_embedded_albumart) {
+    track->year = scan_metadata.year > 0 ? scan_metadata.year : 0;
+    track->track_number = scan_metadata.tracknum > 0 ? scan_metadata.tracknum : 0;
+    track->disc_number = scan_metadata.discnum > 0 ? scan_metadata.discnum : 0;
+    track->format = scan_metadata.codectype < 256 ? scan_metadata.codectype : 0;
+    if(scan_metadata.has_embedded_albumart) {
         track->artwork_embedded = 1;
-        track->artwork_offset = metadata.albumart.pos;
-        track->artwork_size = metadata.albumart.size;
-        track->artwork_type = metadata.albumart.type;
+        track->artwork_offset = scan_metadata.albumart.pos;
+        track->artwork_size = scan_metadata.albumart.size;
+        track->artwork_type = scan_metadata.albumart.type;
     }
     close(fd);
 }
