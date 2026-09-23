@@ -305,8 +305,13 @@ static void set_prescaled_volume(void)
 #endif /* AUDIOHW_HAVE_MONO_VOLUME */
 
 #if defined(AUDIOHW_HAVE_LINEOUT)
+#ifdef IPOD_6G
+    /* The dock headphone output follows the player's volume and balance. */
+    audiohw_set_lineout_volume(l, r);
+#else
     /* For now, lineout stays at unity */
     audiohw_set_lineout_volume(0, 0);
+#endif
 #endif /* AUDIOHW_HAVE_LINEOUT */
 }
 #endif /* AUDIOIHW_HAVE_CLIPPING */
