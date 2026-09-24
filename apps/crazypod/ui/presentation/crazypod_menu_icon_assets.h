@@ -10,4 +10,8 @@
 const lv_image_dsc_t *crazypod_menu_icon_asset(
     enum crazypod_menu_icon icon);
 
+/* Native 28 px assets for QUEUE, BRIGHTNESS and SPEAKER. */
+const lv_image_dsc_t *crazypod_home_action_icon_asset(
+    enum crazypod_menu_icon icon);
+
 #endif

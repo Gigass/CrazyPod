@@ -26,7 +26,6 @@
 #define COLOR_WHITE 0xFFFFFF
 #define COLOR_ACCENT 0xDBD1BD
 #define HOME_ACTION_COUNT 3
-#define HOME_ACTION_ICON_SIZE 28
 #define HOME_ACTION_ICON_CIRCLE_SIZE 42
 
 enum home_action {
@@ -149,7 +148,7 @@ static void refresh_action_selection(void)
         lv_obj_set_style_border_opa(
             actions.cells[index], selected ? 160 : 28, 0);
         lv_obj_set_style_opa(
-            actions.icons[index], selected ? 250 : 120, 0);
+            actions.icons[index], selected ? LV_OPA_COVER : 200, 0);
     }
 }
 
@@ -180,7 +179,7 @@ static void show_action_list(void)
     for(index = 0; index < HOME_ACTION_COUNT; ++index) {
         const enum home_action action = (enum home_action)index;
         const lv_image_dsc_t *asset =
-            crazypod_menu_icon_asset(action_icon(action));
+            crazypod_home_action_icon_asset(action_icon(action));
         lv_obj_t *circle;
         int x = inset + index * (cell_width + gap);
 
@@ -196,9 +195,6 @@ static void show_action_list(void)
         lv_obj_center(circle);
         actions.icons[index] = lv_image_create(circle);
         lv_image_set_src(actions.icons[index], asset);
-        lv_image_set_scale(
-            actions.icons[index],
-            HOME_ACTION_ICON_SIZE * LV_SCALE_NONE / asset->header.w);
         lv_obj_set_style_image_recolor(
             actions.icons[index], lv_color_hex(COLOR_WHITE), 0);
         lv_obj_set_style_image_recolor_opa(

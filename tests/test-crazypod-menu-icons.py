@@ -51,6 +51,22 @@ def test_generated_assets() -> None:
     assert len(set(symbol for _, symbol in table)) == len(arrays)
 
 
+def test_home_action_assets() -> None:
+    text = (DATA.parent / "crazypod_home_action_icon_data.inc").read_text()
+    arrays = re.findall(
+        r"const uint8_t menu_icon_([a-z0-9_]+)_data\[\] = \{"
+        r"(.*?)\n\};", text, re.S)
+    assert {name for name, _ in arrays} == {
+        "queue_large", "brightness_large", "speaker_large"}
+    for name, values in arrays:
+        alpha = [int(value, 16) for value in re.findall(r"0x([0-9a-f]{2})", values)]
+        assert len(alpha) == 28 * 28, name
+        assert max(alpha) == 255, name
+    assert text.count(".header.w = 28,") == 3
+    assert text.count(".header.h = 28,") == 3
+    assert text.count(".header.stride = 28,") == 3
+
+
 def test_semantic_route_coverage() -> None:
     mapping_bodies = []
     for path in (UI / "features").glob("*/crazypod_*_feature.c"):
@@ -136,6 +152,7 @@ def test_renderer_has_no_route_fallback() -> None:
 
 if __name__ == "__main__":
     test_generated_assets()
+    test_home_action_assets()
     test_semantic_route_coverage()
     test_renderer_has_no_route_fallback()
     print("CrazyPod menu icon checks passed")
