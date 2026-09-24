@@ -656,6 +656,8 @@ static void configure_app_input(void)
                 crazypod_system_prompts_show_usb,
             .usb_prompt_done =
                 crazypod_system_prompts_usb_done,
+            .usb_prompt_extracted =
+                crazypod_system_prompts_usb_extracted,
             .usb_connected =
                 crazypod_system_prompts_usb_connected,
             .usb_disconnected =
@@ -1004,6 +1006,8 @@ void crazypod_ui_run(void)
             crazypod_playback_tick_wave(current_tick);
         }
         if(crazypod_frameclock_due(&lvgl_clock, current_tick)) {
+            if(!locked)
+                crazypod_render_scheduler_refresh_rows();
             lv_timer_handler();
             crazypod_frameclock_schedule_next(&lvgl_clock, current_tick);
         }

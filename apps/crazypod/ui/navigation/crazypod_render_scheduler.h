@@ -7,11 +7,14 @@ struct crazypod_render_scheduler_host {
     bool (*route_available)(void);
     struct route_state *(*current_route)(void);
     void (*render_route)(bool transition);
+    void (*refresh_menu_rows)(const struct route_state *state);
 };
 
 void crazypod_render_scheduler_configure(
     const struct crazypod_render_scheduler_host *host);
 void crazypod_render_scheduler_reset(void);
+void crazypod_render_scheduler_schedule_rows(void);
+void crazypod_render_scheduler_refresh_rows(void);
 void crazypod_render_scheduler_schedule_route(long due);
 void crazypod_render_scheduler_schedule_preview(long due);
 void crazypod_render_scheduler_cancel_preview(void);

@@ -34,6 +34,7 @@ bool crazypod_system_prompts_handle_headphone(
 void crazypod_system_prompts_headphone_changed(bool inserted);
 void crazypod_system_prompts_show_usb(unsigned request);
 void crazypod_system_prompts_usb_done(unsigned request);
+void crazypod_system_prompts_usb_extracted(unsigned request);
 bool crazypod_system_prompts_prepare_dock(void);
 void crazypod_system_prompts_usb_connected(intptr_t data);
 void crazypod_system_prompts_usb_disconnected(void);

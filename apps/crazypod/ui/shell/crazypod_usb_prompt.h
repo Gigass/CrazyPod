@@ -13,6 +13,8 @@
     MAKE_SYS_EVENT(SYS_EVENT_CLS_PRIVATE, 0x31)
 #define CRAZYPOD_USB_PROMPT_DONE \
     MAKE_SYS_EVENT(SYS_EVENT_CLS_PRIVATE, 0x32)
+#define CRAZYPOD_USB_PROMPT_EXTRACTED \
+    MAKE_SYS_EVENT(SYS_EVENT_CLS_PRIVATE, 0x33)
 
 struct crazypod_usb_prompt_callbacks {
     void (*before_show)(void);

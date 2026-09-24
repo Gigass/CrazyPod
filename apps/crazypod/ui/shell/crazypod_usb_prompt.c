@@ -468,14 +468,26 @@ static void inserted_event(unsigned short id, void *data)
     button_queue_post(CRAZYPOD_USB_PROMPT_DONE, prompt.request_id);
 }
 
+static void extracted_event(unsigned short id, void *data)
+{
+    (void)id;
+    (void)data;
+    /* This callback runs on the USB worker, never on the LVGL thread. */
+    button_queue_post(CRAZYPOD_USB_PROMPT_EXTRACTED, prompt.request_id);
+}
+
 void crazypod_usb_prompt_register(void)
 {
     if(prompt.registered)
         return;
     semaphore_init(&prompt.response, 1, 0);
     prompt.result = USB_MODE_CHARGE;
+    if(!add_event(SYS_EVENT_USB_EXTRACTED, extracted_event))
+        return;
     prompt.registered =
         add_event(SYS_EVENT_USB_INSERTED, inserted_event) != 0;
+    if(!prompt.registered)
+        remove_event(SYS_EVENT_USB_EXTRACTED, extracted_event);
 }
 
 void crazypod_usb_prompt_set_ui_ready(bool ready)

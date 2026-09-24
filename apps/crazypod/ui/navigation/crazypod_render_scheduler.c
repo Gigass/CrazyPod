@@ -11,6 +11,7 @@
 
 static struct {
     struct crazypod_render_scheduler_host host;
+    bool rows_pending;
     bool route_pending;
     bool preview_pending;
     long route_due;
@@ -26,8 +27,27 @@ void crazypod_render_scheduler_configure(
 
 void crazypod_render_scheduler_reset(void)
 {
+    scheduler.rows_pending = false;
     scheduler.route_pending = false;
     scheduler.preview_pending = false;
+}
+
+void crazypod_render_scheduler_schedule_rows(void)
+{
+    scheduler.rows_pending = true;
+}
+
+void crazypod_render_scheduler_refresh_rows(void)
+{
+    if(!scheduler.rows_pending)
+        return;
+    scheduler.rows_pending = false;
+    if(scheduler.host.route_available()) {
+        struct route_state *state = scheduler.host.current_route();
+
+        if(crazypod_menu_list_matches(state->route))
+            scheduler.host.refresh_menu_rows(state);
+    }
 }
 
 void crazypod_render_scheduler_schedule_route(long due)
