@@ -9,8 +9,6 @@
 struct crazypod_route_actions_host {
     void (*render)(bool transition);
     void (*close_product)(void);
-    void (*refresh_menu_rows)(
-        const struct route_state *state);
     int (*item_count)(const struct route_state *state);
     void (*boost)(int ticks);
     int (*initial_album_index)(void);

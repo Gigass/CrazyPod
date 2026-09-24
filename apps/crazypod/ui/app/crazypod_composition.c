@@ -222,6 +222,7 @@ void crazypod_composition_configure(
         .route_available = route_available,
         .current_route = current_route,
         .render_route = new_host->render,
+        .refresh_menu_rows = new_host->refresh_menu_rows,
     };
     const struct crazypod_app_launcher_host launcher = {
         .boost = new_host->set_boost,
@@ -234,8 +235,6 @@ void crazypod_composition_configure(
     const struct crazypod_route_actions_host actions = {
         .render = new_host->render,
         .close_product = new_host->close_product,
-        .refresh_menu_rows =
-            new_host->refresh_menu_rows,
         .item_count = new_host->item_count,
         .boost = new_host->boost,
         .initial_album_index =

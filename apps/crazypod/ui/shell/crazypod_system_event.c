@@ -19,6 +19,8 @@ bool crazypod_system_event_handle(
 #if defined(HAVE_USB_POWER) && !defined(USB_NONE)
     if(event == CRAZYPOD_USB_PROMPT_REQUEST)
         actions->usb_prompt_request((unsigned)data);
+    else if(event == CRAZYPOD_USB_PROMPT_EXTRACTED)
+        actions->usb_prompt_extracted((unsigned)data);
     else if(event == CRAZYPOD_USB_PROMPT_DONE)
         actions->usb_prompt_done((unsigned)data);
     else

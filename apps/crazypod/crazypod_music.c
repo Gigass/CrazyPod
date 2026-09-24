@@ -41,7 +41,7 @@
     CRAZYPOD_STATE_DIRECTORY "/favorites.tmp"
 #define CRAZYPOD_FAVORITES_NAME CP_TR("My Favorites")
 #define CRAZYPOD_MUSIC_CACHE_MAGIC 0x43504d4cu
-#define CRAZYPOD_MUSIC_CACHE_VERSION 7u
+#define CRAZYPOD_MUSIC_CACHE_VERSION 8u
 
 struct music_source_fingerprint {
     uint32_t file_count;
@@ -1326,7 +1326,9 @@ void crazypod_music_scan(void)
         !count_directory_tracks(
             "/iPod_Control/Music", 0, &candidate_count)) ||
        (!scan_abort_requested &&
-        !count_directory_tracks("/Podcasts", 0, &candidate_count))) {
+        !count_directory_tracks("/Podcasts", 0, &candidate_count)) ||
+       (!scan_abort_requested &&
+        !count_directory_tracks("/Playlists", 0, &candidate_count))) {
         if(!scan_abort_requested &&
            scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
             scan_failure = CRAZYPOD_MUSIC_SCAN_LIBRARY_CHANGED;
@@ -1346,6 +1348,9 @@ void crazypod_music_scan(void)
     if(!scan_abort_requested &&
        scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
         scan_directory("/Podcasts", 0, true);
+    if(!scan_abort_requested &&
+       scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
+        scan_directory("/Playlists", 0, true);
     if(!scan_abort_requested &&
        scan_failure == CRAZYPOD_MUSIC_SCAN_OK)
         scan_directory(ROCKBOX_DIR "/albumart", 0, false);
@@ -1448,6 +1453,8 @@ static void validation_thread(void)
             "/iPod_Control/Music", 0, &fingerprint, true)) &&
         validate_directory(
             "/Podcasts", 0, &fingerprint, true) &&
+        validate_directory(
+            "/Playlists", 0, &fingerprint, true) &&
         validate_directory(
             ROCKBOX_DIR "/albumart", 0, &fingerprint, false);
     mutex_lock(&catalog_mutex);

@@ -326,7 +326,16 @@ static struct font* font_load_cached(struct font* pf,
     else
         pf->file_width_offset = 0;
 
-    /* Create the cache */
+#ifdef IPOD_6G
+    /* Text layout must not populate the bitmap cache or perform disk I/O.
+     * Reserve the width table at the end of the font's movable allocation. */
+    if(nwidth) {
+        pf->width = pf->buffer_end;
+        if(lseek(pf->fd, pf->file_width_offset, SEEK_SET) < 0 ||
+           read(pf->fd, pf->buffer_end, nwidth) != nwidth)
+            return NULL;
+    }
+#endif
     cache_create(pf);
 
     return pf;
@@ -473,6 +482,12 @@ int font_load_ex( const char *path, size_t buf_size, int glyphs )
     else
         bufsize = file_size;
 
+    size_t widthsize = 0;
+#ifdef IPOD_6G
+    if(cached)
+        widthsize = nwidth;
+#endif
+
     /* check already loaded */
     int font_id = find_font_index(path);
 
@@ -541,7 +556,7 @@ int font_load_ex( const char *path, size_t buf_size, int glyphs )
     size_t path_bufsz = MAX(path_len + 1, 64); /* enough size for common case */
     /* allocate mem */
     int handle = core_alloc_ex(
-                     bufsize + path_bufsz + sizeof( struct buflib_alloc_data ),
+                     bufsize + widthsize + path_bufsz + sizeof( struct buflib_alloc_data ),
                      &buflibops );
     if ( handle <= 0 )
     {
@@ -552,7 +567,7 @@ int font_load_ex( const char *path, size_t buf_size, int glyphs )
 
     pdata = core_get_data_pinned(handle);
     pdata->refcount     = 1;
-    pdata->path = pdata->buffer + bufsize;
+    pdata->path = pdata->buffer + bufsize + widthsize;
     /* save load path so we can recognize this font later */
     memcpy(pdata->path, path, path_len+1);
 
@@ -574,6 +589,7 @@ int font_load_ex( const char *path, size_t buf_size, int glyphs )
     {
         if ( ! font_load_cached( pf, nwidth, noffset ) )
         {
+            close(fd);
             core_free( handle );
             return -1;
         }
@@ -751,7 +767,9 @@ load_cache_entry(struct font_cache_entry* p, void* callback_data)
     int fd;
 
     lock_font_handle(pf->handle, true);
-    if (pf->file_width_offset)
+    if (pf->width)
+        p->width = pf->width[char_code];
+    else if (pf->file_width_offset)
     {
         int width_offset = pf->file_width_offset + char_code;
         /* load via different fd to get this file section cached */
@@ -831,7 +849,13 @@ int font_get_width(struct font* pf, ucschar_t char_code)
         char_code = pf->defaultchar;
     char_code -= pf->firstchar;
 
-    if (pf->fd >= 0 && pf != &sysfont)
+    if (pf->width)
+        width = pf->width[char_code];
+#ifdef IPOD_6G
+    else if (pf->file_width_offset == 0)
+        width = pf->maxwidth;
+#endif
+    else if (pf->fd >= 0 && pf != &sysfont)
         width = font_cache_get(&pf->cache,char_code,false,load_cache_entry,pf)->width;
     else if (pf->disabled &&
         (e = font_cache_get(&pf->cache,char_code,true,load_cache_entry,pf)))

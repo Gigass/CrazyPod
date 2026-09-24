@@ -835,16 +835,15 @@ void crazypod_route_actions_move(int direction, long now)
     if(next == state->selected)
         return;
     state->selected = next;
-    crazypod_menu_preview_prefetch(state);
     if(crazypod_menu_preview_is_skeuomorphic_route(
            state->route))
         crazypod_preview_motion_set_direction(direction);
     if(state->route == MUSIC_ROUTE_SEARCH) {
-        host.refresh_menu_rows(state);
+        crazypod_render_scheduler_schedule_rows();
         return;
     }
     if(crazypod_menu_list_matches(state->route)) {
-        host.refresh_menu_rows(state);
+        crazypod_render_scheduler_schedule_rows();
         crazypod_render_scheduler_schedule_preview(
             now + PREVIEW_SETTLE_TICKS);
     }
@@ -866,13 +865,11 @@ bool crazypod_route_actions_alpha_jump(
         return false;
     host.boost(HZ / 3);
     state->selected = target;
-    if(crazypod_menu_preview_is_music_route(state->route))
-        crazypod_menu_preview_prefetch(state);
     if(crazypod_menu_preview_is_skeuomorphic_route(
            state->route))
         crazypod_preview_motion_set_direction(direction);
     if(crazypod_menu_list_matches(state->route)) {
-        host.refresh_menu_rows(state);
+        crazypod_render_scheduler_schedule_rows();
         crazypod_render_scheduler_schedule_preview(
             now + PREVIEW_SETTLE_TICKS);
     }

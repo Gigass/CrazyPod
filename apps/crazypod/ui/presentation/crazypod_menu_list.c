@@ -116,8 +116,10 @@ void crazypod_menu_list_refresh_row(
         }
     }
     if(view.markers[row] != NULL) {
-        CP_LV_LABEL_SET_TEXT(
-            view.markers[row], marker_text != NULL ? marker_text : "");
+        const char *text = marker_text != NULL ? marker_text : "";
+
+        if(strcmp(lv_label_get_text(view.markers[row]), text) != 0)
+            CP_LV_LABEL_SET_TEXT(view.markers[row], text);
         lv_obj_set_style_text_opa(view.markers[row], marker_opa, 0);
     }
 }

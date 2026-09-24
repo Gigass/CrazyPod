@@ -187,5 +187,15 @@ cc -std=c99 -Wall -Wextra -Werror \
 
 "$test_root/crazypod_runtime_font_host_test"
 
+cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/tests/crazypod-frameclock-stubs" \
+    "$repo_root/tests/crazypod_render_scheduler_host_test.c" \
+    -o "$test_root/crazypod_render_scheduler_host_test"
+
+"$test_root/crazypod_render_scheduler_host_test"
+
+python3 "$repo_root/tests/test-crazypod-font-width-io.py"
+python3 "$repo_root/tests/test-crazypod-usb-disconnect.py"
+
 python3 "$repo_root/tests/test-crazypod-menu-icons.py"
 python3 "$repo_root/tests/test-crazypod-photo-cache-policy.py"

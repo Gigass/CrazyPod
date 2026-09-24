@@ -343,6 +343,19 @@ void crazypod_system_prompts_usb_done(unsigned request)
 #endif
 }
 
+void crazypod_system_prompts_usb_extracted(unsigned request)
+{
+#if defined(HAVE_USB_POWER) && !defined(USB_NONE)
+    /* Physical removal also occurs when enumeration never acquired storage.
+     * An active storage session must wait for SYS_USB_DISCONNECTED/remount. */
+    if(!prompts.storage_active &&
+       crazypod_usb_prompt_matches_request(request))
+        crazypod_usb_prompt_dismiss();
+#else
+    (void)request;
+#endif
+}
+
 void crazypod_system_prompts_usb_connected(intptr_t data)
 {
     crazypod_headphone_popup_dismiss(false);
