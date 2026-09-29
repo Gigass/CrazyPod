@@ -2,6 +2,7 @@
 
 #ifdef IPOD_6G
 
+#include "audio.h"
 #include "backlight.h"
 #include "button.h"
 #include "file.h"
@@ -120,7 +121,12 @@ static void execute(enum shutdown_type type)
         crazypod_miniapps_feature_reset_input();
         crazypod_miniapps_feature_close();
     }
+    /* Save first so the resume position still reflects live playback. */
     crazypod_state_save(true);
+    /* shutdown_hw() skips audio_stop() on iPod 6G and then waits for the
+     * disk to spin down. While the audio thread keeps buffering from the
+     * disk that wait never ends, freezing the device. */
+    audio_stop();
     shutdown_hw(type);
 }
 

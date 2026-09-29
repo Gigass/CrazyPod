@@ -178,6 +178,10 @@
 #define HAVE_USB_CHARGING_ENABLE
 #define TARGET_USB_CHARGING_DEFAULT USB_CHARGING_FORCE
 
+/* The LTC4066 CHRG pin (charging_state()) tells when charging has finished,
+   so a plugged-in but full battery can be reported as 100% */
+#define HAVE_CHARGE_COMPLETE_DETECT
+
 /* The size of the flash ROM */
 #define FLASH_SIZE 0x100000
 

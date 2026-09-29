@@ -279,6 +279,8 @@ void crazypod_menu_preview_render(
     preview.motion_ready = true;
     if(animate)
         crazypod_preview_motion_start_entrance();
+    else
+        crazypod_preview_motion_start_ambient();
 }
 
 void crazypod_menu_preview_prefetch(

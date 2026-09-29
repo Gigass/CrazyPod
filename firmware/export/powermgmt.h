@@ -49,6 +49,10 @@ enum charge_state_type
 /* tells what the charger is doing */
 extern enum charge_state_type charge_state;
 
+/* true when a charger is connected but the battery has finished charging
+   (only targets defining HAVE_CHARGE_COMPLETE_DETECT ever report this) */
+bool charge_complete(void);
+
 #if CONFIG_CHARGING
 /*
  * Flag that the charger has been plugged in/removed: this is set for exactly

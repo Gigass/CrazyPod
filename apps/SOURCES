@@ -131,6 +131,7 @@ crazypod/ui/presentation/crazypod_choice_overlay.c
 crazypod/ui/presentation/crazypod_popup_layout.c
 crazypod/ui/presentation/crazypod_popup_motion.c
 crazypod/ui/presentation/crazypod_scene_motion.c
+crazypod/ui/presentation/crazypod_preview_ambient.c
 crazypod/ui/presentation/crazypod_preview_motion.c
 crazypod/ui/presentation/crazypod_overlay_glass.c
 crazypod/ui/presentation/crazypod_screen_corners.c
