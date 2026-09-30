@@ -10,6 +10,7 @@
 #include "../../../crazypod_artwork.h"
 #include "../../../crazypod_music.h"
 #include "../../../crazypod_playlist.h"
+#include "../../presentation/crazypod_preview_ambient.h"
 #include "../../presentation/crazypod_preview_motion.h"
 #include "../../presentation/crazypod_preview_primitives.h"
 #include "../../presentation/crazypod_ui_widgets.h"
@@ -60,6 +61,38 @@ static bool copy_current_track(struct crazypod_track *track)
             crazypod_queue_index(), path, sizeof(path))
         ? crazypod_music_find_track(path) : -1;
     return crazypod_music_copy_track(index, track);
+}
+
+typedef struct crazypod_preview_ambient_spec ambient_spec;
+
+static void center_pivot(lv_obj_t *object)
+{
+    lv_obj_set_style_transform_pivot_x(object, LV_PCT(50), 0);
+    lv_obj_set_style_transform_pivot_y(object, LV_PCT(50), 0);
+}
+
+/* A soft light band that glides across a sleeve and is clipped by it. */
+static void add_gloss(lv_obj_t *sleeve, int size, int phase)
+{
+    lv_obj_t *band = crazypod_ui_widget_box(
+        sleeve, -18, 0, 12, size, 0, 0xFFFFFF, 30);
+
+    crazypod_ui_widget_box(band, 4, 0, 3, size, 0, 0xFFFFFF, 64);
+    crazypod_preview_ambient_add(band, &(const ambient_spec){
+        .period_ms = 3600, .phase = phase,
+        .sweep_from = -18, .sweep_to = size + 6, .sweep_ms = 1000,
+    });
+}
+
+/* Asymmetric ticks so a spinning disc or reel visibly turns. */
+static void add_spin_marks(
+    lv_obj_t *disc, int size, int mark, uint32_t color)
+{
+    crazypod_ui_widget_box(
+        disc, size / 2 - 1, size / 6, 3, mark, 1, color, 215);
+    crazypod_ui_widget_box(
+        disc, size / 2 - 1, size - size / 6 - mark / 2, 3,
+        mark / 2, 1, 0xFFFFFF, 90);
 }
 
 static lv_obj_t *make_procedural_record_sleeve(
@@ -274,6 +307,7 @@ void crazypod_music_root_preview_render(
                  0x101820, LV_OPA_COVER);
         crazypod_ui_widget_box(disc, 27, 27, 5, 5, LV_RADIUS_CIRCLE,
                  0xE9F2F5, 195);
+        add_spin_marks(disc, 59, 12, COLOR_CYAN);
         crazypod_preview_make_plinth(
             parent, 184, 143, 118, 0xB9C3C7, 0x283035);
         stage = crazypod_ui_widget_box(parent, 190, 50, 82, 91, 5,
@@ -286,23 +320,38 @@ void crazypod_music_root_preview_render(
             stage, 82, 91, 0xF4FBFD, 0x182025);
         crazypod_preview_add_fastener(stage, 3, 3, 0xB7C1C5);
         crazypod_preview_add_fastener(stage, 74, 3, 0xB7C1C5);
-        make_procedural_record_sleeve(
+        part = make_procedural_record_sleeve(
             stage, track, 7, 7, CRAZYPOD_MENU_NOW_ARTWORK_SIZE, 0,
             CRAZYPOD_PREVIEW_ARTWORK_SLOT, false);
+        add_gloss(part, CRAZYPOD_MENU_NOW_ARTWORK_SIZE, 0);
         part = crazypod_ui_widget_box(stage, 8, 80, 66, 4,
                         LV_RADIUS_CIRCLE, 0x20313A, 95);
-        crazypod_ui_widget_box(part, 0, 0, track != NULL ? 24 : 3, 4,
+        part = crazypod_ui_widget_box(part, 0, 0, track != NULL ? 24 : 3, 4,
                  LV_RADIUS_CIRCLE, COLOR_CYAN, 225);
-        for(i = 0; i < 4; ++i)
-            crazypod_ui_widget_box(parent, 199 + i * 18, 146, 10, 3,
-                     LV_RADIUS_CIRCLE, COLOR_CYAN,
-                     i < 2 ? 210 : 55);
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .period_ms = 900, .opa_lo = 120, .opa_hi = 255,
+        });
+        for(i = 0; i < 4; ++i) {
+            part = crazypod_ui_widget_box(
+                parent, 199 + i * 18, 146, 10, 3,
+                LV_RADIUS_CIRCLE, COLOR_CYAN, i < 2 ? 210 : 55);
+            crazypod_preview_ambient_add(part, &(const ambient_spec){
+                .period_ms = 1200, .phase = i * 90,
+                .opa_lo = 40, .opa_hi = 240,
+            });
+        }
         crazypod_preview_motion_register(
             disc, 24, 0, 214, 110, 0, 20, 260,
             -24, 0, 214, -80);
         crazypod_preview_motion_register(
             stage, 10, -8, 230, -25, 0, 0, 240,
             -9, 5, 230, 20);
+        crazypod_preview_ambient_add(disc, &(const ambient_spec){
+            .spin_turns = 6,
+        });
+        crazypod_preview_ambient_add(stage, &(const ambient_spec){
+            .period_ms = 2600, .dy = 2,
+        });
         count = crazypod_music_track_count();
         break;
     }
@@ -332,6 +381,11 @@ void crazypod_music_root_preview_render(
                 i * 40, 280,
                 (i - 1) * -20, 8, 184,
                 rotations[i] + (i - 1) * -60);
+            crazypod_preview_ambient_add(part, &(const ambient_spec){
+                .period_ms = 2800, .phase = i * 120,
+                .dy = i == 1 ? 4 : 2, .rock = 40,
+            });
+            add_gloss(part, CRAZYPOD_MENU_FLOW_ARTWORK_SIZE, i * 120);
         }
         part = crazypod_ui_widget_box(parent, 257, 108, 34, 34,
                         LV_RADIUS_CIRCLE, 0xD7E2E8, 205);
@@ -345,9 +399,13 @@ void crazypod_music_root_preview_render(
                  LV_RADIUS_CIRCLE, 0x25313A, 245);
         crazypod_ui_widget_box(part, 15, 15, 4, 4,
                  LV_RADIUS_CIRCLE, 0xE8EFF1, 210);
+        crazypod_ui_widget_box(part, 16, 3, 3, 8, 1, 0x25313A, 200);
         crazypod_preview_motion_register(
             part, 20, 0, 190, 180, 0, 80, 260,
             18, 0, 190, 260);
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .spin_turns = -2,
+        });
         break;
     }
     case 2: {
@@ -382,6 +440,9 @@ void crazypod_music_root_preview_render(
         lv_obj_set_style_text_align(
             title, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_pos(title, 32, 10);
+        crazypod_preview_ambient_add(title, &(const ambient_spec){
+            .period_ms = 1800, .opa_lo = 95, .opa_hi = 235,
+        });
         cavity = crazypod_ui_widget_box(
             stage, 5, 20, 118, 77, 5,
             0x07090A, 238);
@@ -413,6 +474,10 @@ void crazypod_music_root_preview_render(
                 i * 35, 260,
                 (i - 1) * 7, 28,
                 210, rotations[i]);
+            crazypod_preview_ambient_add(part, &(const ambient_spec){
+                .period_ms = 2200, .phase = i * 90,
+                .dy = 3, .rock = 40,
+            });
         }
         rail = crazypod_ui_widget_box(stage, 5, 78, 118, 20, 4,
                         0x2C3438, LV_OPA_COVER);
@@ -429,8 +494,11 @@ void crazypod_music_root_preview_render(
         crazypod_preview_add_fastener(rail, 107, 7, 0xAAB4B8);
         crazypod_ui_widget_box(rail, 28, 8, 62, 4, 2,
                  0x060809, 210);
-        crazypod_ui_widget_box(rail, 39, 9, 40, 2, 1,
-                 COLOR_CYAN, 105);
+        part = crazypod_ui_widget_box(rail, 39, 9, 40, 2, 1,
+                        COLOR_CYAN, 105);
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .period_ms = 1800, .dx = 11, .opa_lo = 90, .opa_hi = 235,
+        });
         crazypod_preview_motion_register(
             stage, 0, 13, 232, 0, 0, 0, 260,
             -8, 8, 232, 0);
@@ -470,10 +538,21 @@ void crazypod_music_root_preview_render(
                      LV_RADIUS_CIRCLE, 0x34312C, 240);
             crazypod_ui_widget_box(reel, 10, 10, 4, 4,
                      LV_RADIUS_CIRCLE, 0xE6DDC8, 185);
+            crazypod_ui_widget_box(reel, 11, 1, 2, 8, 1,
+                     0x8F7651, 235);
+            crazypod_ui_widget_box(reel, 11, 15, 2, 8, 1,
+                     0x34312C, 150);
+            crazypod_ui_widget_box(reel, 1, 11, 8, 2, 1,
+                     0x34312C, 150);
+            crazypod_ui_widget_box(reel, 15, 11, 8, 2, 1,
+                     0x34312C, 150);
             crazypod_preview_motion_register(
                 reel, 0, -5, 184, (i ? 120 : -120), 0,
                 60 + i * 30, 240,
                 0, 4, 184, i ? 140 : -140);
+            crazypod_preview_ambient_add(reel, &(const ambient_spec){
+                .spin_turns = 5 + i,
+            });
         }
         crazypod_ui_widget_box(part, 30, 16, 22, 2,
                  LV_RADIUS_CIRCLE, 0x8F7651, 115);
@@ -481,17 +560,42 @@ void crazypod_music_root_preview_render(
                  0xBFC6C8, 220);
         crazypod_ui_widget_box(stage, 54, 70, 3, 8, 1,
                  0x34383A, 190);
-        crazypod_ui_widget_box(stage, 27, 76, 58, 2,
-                 LV_RADIUS_CIRCLE, 0xF4D35E, 145);
+        part = crazypod_ui_widget_box(stage, 27, 76, 58, 2,
+                        LV_RADIUS_CIRCLE, 0xF4D35E, 145);
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .period_ms = 1000, .opa_lo = 70, .opa_hi = 225,
+        });
         crazypod_preview_motion_register(
             stage, 0, -13, 228, -18, 0, 0, 260,
             0, -9, 228, 15);
+        crazypod_preview_ambient_add(stage, &(const ambient_spec){
+            .period_ms = 3000, .dy = 2,
+        });
         break;
     }
     case 4: {
         count = crazypod_music_artist_count();
-        crazypod_ui_widget_box(parent, 184, 55, 112, 92, 46,
-                 0xD8B96B, 22);
+        part = crazypod_ui_widget_box(parent, 184, 55, 112, 92, 46,
+                        0xD8B96B, 22);
+        center_pivot(part);
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .period_ms = 1800, .pulse = 22, .opa_lo = 12, .opa_hi = 56,
+        });
+        for(i = 0; i < 2; ++i) {
+            part = crazypod_ui_widget_box(
+                parent, 218, 60, 44, 44, LV_RADIUS_CIRCLE,
+                COLOR_CYAN, LV_OPA_TRANSP);
+            lv_obj_set_style_border_width(part, 2, 0);
+            lv_obj_set_style_border_color(
+                part, lv_color_hex(COLOR_CYAN), 0);
+            lv_obj_set_style_border_opa(part, LV_OPA_COVER, 0);
+            lv_obj_set_style_opa(part, LV_OPA_TRANSP, 0);
+            center_pivot(part);
+            crazypod_preview_ambient_add(part, &(const ambient_spec){
+                .period_ms = 2000, .phase = i * 180,
+                .ripple_from = 220, .ripple_to = 450, .ripple_opa = 150,
+            });
+        }
         stage = crazypod_ui_widget_box(
             parent, 211, 47, 58, 70, 25,
             0xC7D0D4, LV_OPA_TRANSP);
@@ -499,6 +603,10 @@ void crazypod_music_root_preview_render(
         lv_obj_set_style_border_color(
             stage, lv_color_hex(0x818B90), 0);
         lv_obj_set_style_border_opa(stage, 165, 0);
+        center_pivot(stage);
+        crazypod_preview_ambient_add(stage, &(const ambient_spec){
+            .period_ms = 2600, .dy = 1, .rock = 22,
+        });
         part = crazypod_ui_widget_box(parent, 218, 53, 44, 58, 21,
                         0xB8C1C6, 245);
         lv_obj_set_style_bg_grad_color(
@@ -524,6 +632,9 @@ void crazypod_music_root_preview_render(
         crazypod_preview_motion_register(
             stage, 0, 15, 224, 0, 0, 0, 240,
             0, 12, 224, 0);
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .period_ms = 2600, .dy = 1, .rock = 22,
+        });
         break;
     }
     case 5: {
@@ -556,9 +667,13 @@ void crazypod_music_root_preview_render(
                  LV_RADIUS_CIRCLE, 0xD8A94D, 245);
         crazypod_ui_widget_box(part, 29, 29, 4, 4,
                  LV_RADIUS_CIRCLE, 0xF5E8CA, 225);
+        add_spin_marks(part, 62, 12, 0xD8A94D);
         crazypod_preview_motion_register(
             part, 0, 0, 192, -180, 0, 20, 300,
             0, 0, 192, 180);
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .spin_turns = 6,
+        });
         part = make_procedural_record_sleeve(
             parent, track, 183, 54,
             CRAZYPOD_MENU_ALBUM_ARTWORK_SIZE, 23,
@@ -566,6 +681,10 @@ void crazypod_music_root_preview_render(
         crazypod_preview_motion_register(
             part, -28, 0, 224, -35, 0, 0, 280,
             -25, 0, 224, -45);
+        add_gloss(part, CRAZYPOD_MENU_ALBUM_ARTWORK_SIZE, 120);
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .period_ms = 3200, .dy = 1, .rock = 12,
+        });
         part = crazypod_ui_widget_box(stage, 105, 8, 4, 54, 2,
                         0xD8D4C8, 240);
         lv_obj_set_style_transform_rotation(part, 160, 0);
@@ -577,6 +696,12 @@ void crazypod_music_root_preview_render(
         crazypod_preview_motion_register(
             part, 8, -7, 220, 310, 0, 80, 240,
             8, -7, 220, 310);
+        /* The arm swings from its pivot, not from its middle. */
+        lv_obj_set_style_transform_pivot_x(part, 2, 0);
+        lv_obj_set_style_transform_pivot_y(part, 2, 0);
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .period_ms = 3600, .rock = 38,
+        });
         break;
     }
     case 6: {
@@ -615,6 +740,10 @@ void crazypod_music_root_preview_render(
                 part, 0, 18 + i * 5, 230, i * 12, 0,
                 (3 - i) * 30, 240,
                 0, 19 + i * 4, 230, i * -12);
+            crazypod_preview_ambient_add(part, &(const ambient_spec){
+                .period_ms = 2400, .phase = i * 80,
+                .dy = 5, .rock = 45,
+            });
         }
         crazypod_preview_motion_register(
             stage, 0, 8, 238, 0, 0, 0, 220,
@@ -633,6 +762,11 @@ void crazypod_music_root_preview_render(
             stage, 99, 91, 0xFFFFFF, 0x8D806D);
         crazypod_preview_add_paper_rules(
             stage, 99, 18, 5, 13, 0x6E7780);
+        part = crazypod_ui_widget_box(stage, 13, 43, 62, 5, 1,
+                        COLOR_CYAN, LV_OPA_TRANSP);
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .period_ms = 1700, .opa_lo = 0, .opa_hi = 95,
+        });
         crazypod_ui_widget_box(stage, 13, 9, 42, 3, 1,
                  0x384A58, 120);
         crazypod_ui_widget_box(stage, 84, 3, 10, 10, 1,
@@ -662,6 +796,13 @@ void crazypod_music_root_preview_render(
         crazypod_preview_motion_register(
             part, 38, -4, 190, 120, 0, 40, 300,
             34, 5, 190, 160);
+        /* Lens and handle share one orbit so they stay attached. */
+        crazypod_preview_ambient_add(part, &(const ambient_spec){
+            .period_ms = 3400, .dx = 14, .dy = 9, .dy_phase = 90,
+        });
+        crazypod_preview_ambient_add(title, &(const ambient_spec){
+            .period_ms = 3400, .dx = 14, .dy = 9, .dy_phase = 90,
+        });
         break;
     }
     }

@@ -36,6 +36,8 @@ void crazypod_preview_motion_reset_root(lv_obj_t *parent);
 lv_obj_t *crazypod_preview_motion_parent(lv_obj_t *fallback);
 void crazypod_preview_motion_start_entrance(void);
 void crazypod_preview_motion_start_exit(void);
+/* Begin the idle "living" motion once a preview has settled. */
+void crazypod_preview_motion_start_ambient(void);
 bool crazypod_preview_motion_active(void);
 bool crazypod_preview_motion_reduced(void);
 void crazypod_preview_motion_settle(void);

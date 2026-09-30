@@ -306,7 +306,11 @@ static void set_prescaled_volume(void)
 
 #if defined(AUDIOHW_HAVE_LINEOUT)
 #ifdef IPOD_6G
-    /* The dock headphone output follows the player's volume and balance. */
+    /* Add 26 dB to the dock output, preserving muted channels and HW limits. */
+    if (l > minvol)
+        l = MIN(l + 260, maxvol);
+    if (r > minvol)
+        r = MIN(r + 260, maxvol);
     audiohw_set_lineout_volume(l, r);
 #else
     /* For now, lineout stays at unity */

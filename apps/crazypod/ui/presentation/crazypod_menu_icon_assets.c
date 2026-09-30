@@ -6,6 +6,7 @@
 
 /* Generated from Material Symbols Rounded. See the generator for sources. */
 #include "crazypod_menu_icon_data.inc"
+#include "crazypod_home_action_icon_data.inc"
 
 const lv_image_dsc_t *crazypod_menu_icon_asset(
     enum crazypod_menu_icon icon)
@@ -14,6 +15,12 @@ const lv_image_dsc_t *crazypod_menu_icon_asset(
        icon >= CRAZYPOD_MENU_ICON_COUNT)
         return NULL;
     return crazypod_menu_icon_assets[icon];
+}
+
+const lv_image_dsc_t *crazypod_home_action_icon_asset(
+    enum crazypod_menu_icon icon)
+{
+    return crazypod_home_action_icon_assets[icon];
 }
 
 #endif

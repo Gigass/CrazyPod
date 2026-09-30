@@ -15,8 +15,6 @@ static struct route_state route;
 static bool crazypod_menu_list_matches(enum crazypod_route id)
 { (void)id; return matching; }
 static bool crazypod_menu_preview_motion_ready(void) { return false; }
-static bool crazypod_menu_preview_is_skeuomorphic_route(enum crazypod_route id)
-{ (void)id; return false; }
 static bool crazypod_preview_motion_has_content(void) { return false; }
 static bool crazypod_preview_motion_active(void) { return false; }
 static bool crazypod_preview_motion_media_refresh_pending(void) { return false; }

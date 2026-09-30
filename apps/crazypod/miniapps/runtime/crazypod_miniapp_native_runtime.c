@@ -415,7 +415,8 @@ static int host_service_call(
         status[2] = now->tm_min % 10;
         status[3] = level;
 #if CONFIG_CHARGING >= CHARGING_MONITOR
-        status[4] = charge_state > DISCHARGING ? 1 : 0;
+        status[4] = charge_state > DISCHARGING &&
+                    !charge_complete() ? 1 : 0;
 #else
         status[4] = 0;
 #endif

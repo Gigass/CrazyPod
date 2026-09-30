@@ -19,15 +19,33 @@
 #define STATUS_DARK 0x08080D
 #define STATUS_RECORDING 0xFF3B30
 
+/* Battery glyph is 27px wide at BATTERY_X; the fill spans the 24px inside it */
+#define BATTERY_X 258
+#define BATTERY_FILL_MIN 3
+#define BATTERY_FILL_MAX 24
+/* Battery number: montserrat_10 digits are 7px tall and start on row 2 of
+ * their 11px line. crazypod_ui_widget_label() would swap a plain-text
+ * montserrat font for the taller runtime font, which no longer fits the
+ * 10px fill, so the font is pinned after creation. The line is shifted up
+ * by 1px so the digits get 1px above and 2px below inside the fill. */
+#define BATTERY_DIGIT_FONT (&lv_font_montserrat_10)
+#define BATTERY_DIGIT_Y (-1)
+
+/* The charging bolt sits left of the glyph so it never overlaps the number */
+#define BATTERY_CHARGE_X (BATTERY_X - 9)
+
 struct status_bar {
     lv_obj_t *time;
     lv_obj_t *battery;
     lv_obj_t *battery_fill;
     lv_obj_t *battery_cap;
+    lv_obj_t *battery_percent;      /* number over the empty part */
+    lv_obj_t *battery_percent_fill; /* same number, clipped to the fill */
     lv_obj_t *charge;
     lv_obj_t *playing;
     int rendered_minute;
     int rendered_battery_width;
+    int rendered_battery_percent;
     int rendered_charging;
     int rendered_playing;
     bool visible;
@@ -58,30 +76,52 @@ void crazypod_status_bar_create(int index, lv_obj_t *screen)
     bar->playing = crazypod_ui_widget_label(
         screen, LV_SYMBOL_PLAY, &lv_font_montserrat_10,
         STATUS_WHITE, LV_OPA_COVER);
-    lv_obj_set_pos(bar->playing, 241, 11);
+    lv_obj_set_pos(bar->playing, BATTERY_X - 25, 11);
     lv_obj_add_flag(bar->playing, LV_OBJ_FLAG_HIDDEN);
 
     if(recording_indicator == NULL) {
         recording_indicator = crazypod_ui_widget_box(
-            lv_layer_top(), 228, 14, 7, 7,
+            lv_layer_top(), BATTERY_X - 38, 14, 7, 7,
             LV_RADIUS_CIRCLE, STATUS_RECORDING, LV_OPA_COVER);
         lv_obj_add_flag(
             recording_indicator, LV_OBJ_FLAG_HIDDEN);
     }
 
     bar->battery = crazypod_ui_widget_box(
-        screen, 258, 11, 27, 12, 3, STATUS_WHITE, 64);
+        screen, BATTERY_X, 11, 27, 12, 3, STATUS_WHITE, 64);
+    /* The number is drawn twice at the same spot: light text on the empty
+     * part of the glyph, and dark text inside the fill. The fill clips its
+     * children, so each digit changes colour exactly where the fill ends. */
+    bar->battery_percent = crazypod_ui_widget_label(
+        bar->battery, "100", BATTERY_DIGIT_FONT,
+        STATUS_WHITE, LV_OPA_COVER);
+    lv_obj_set_style_text_font(
+        bar->battery_percent, BATTERY_DIGIT_FONT, 0);
+    lv_obj_set_width(bar->battery_percent, BATTERY_FILL_MAX);
+    lv_obj_set_style_text_align(
+        bar->battery_percent, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(bar->battery_percent, 1, 1 + BATTERY_DIGIT_Y);
     bar->battery_fill = crazypod_ui_widget_box(
         bar->battery, 1, 1, 24, 10, 2,
         STATUS_WHITE, LV_OPA_COVER);
-    bar->charge = crazypod_ui_widget_label(
-        bar->battery, LV_SYMBOL_CHARGE, &lv_font_montserrat_8,
+    bar->battery_percent_fill = crazypod_ui_widget_label(
+        bar->battery_fill, "100", BATTERY_DIGIT_FONT,
         STATUS_DARK, LV_OPA_COVER);
-    lv_obj_center(bar->charge);
+    lv_obj_set_style_text_font(
+        bar->battery_percent_fill, BATTERY_DIGIT_FONT, 0);
+    lv_obj_set_width(bar->battery_percent_fill, BATTERY_FILL_MAX);
+    lv_obj_set_style_text_align(
+        bar->battery_percent_fill, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(bar->battery_percent_fill, 0, BATTERY_DIGIT_Y);
+    bar->charge = crazypod_ui_widget_label(
+        screen, LV_SYMBOL_CHARGE, &lv_font_montserrat_8,
+        STATUS_WHITE, LV_OPA_COVER);
+    lv_obj_set_pos(bar->charge, BATTERY_CHARGE_X, 12);
     bar->battery_cap = crazypod_ui_widget_box(
-        screen, 287, 15, 2, 5, 1, STATUS_WHITE, 128);
+        screen, BATTERY_X + 29, 15, 2, 5, 1, STATUS_WHITE, 128);
     bar->rendered_minute = -1;
     bar->rendered_battery_width = -1;
+    bar->rendered_battery_percent = -1;
     bar->rendered_charging = -1;
     bar->rendered_playing = -1;
     bar->visible = true;
@@ -90,6 +130,7 @@ void crazypod_status_bar_create(int index, lv_obj_t *screen)
 void crazypod_status_bars_update(void)
 {
     char time_text[8];
+    char percent_text[8];
     struct tm *now = get_time();
     int minute = now->tm_hour * 60 + now->tm_min;
     int level = battery_level();
@@ -100,6 +141,7 @@ void crazypod_status_bars_update(void)
                    (status & AUDIO_STATUS_PAUSE) == 0;
     bool screen_recording = crazypod_screen_recording_active();
     bool time_formatted = false;
+    bool percent_formatted = false;
     int i;
 
     if(recording_indicator != NULL &&
@@ -117,9 +159,14 @@ void crazypod_status_bars_update(void)
         level = 0;
     if(level > 100)
         level = 100;
-    battery_width = level > 0 ? 3 + (21 * level / 100) : 0;
+    /* Round, so a near-full battery does not leave a visible gap */
+    battery_width = level > 0
+        ? BATTERY_FILL_MIN +
+          ((BATTERY_FILL_MAX - BATTERY_FILL_MIN) * level + 50) / 100
+        : 0;
 #if CONFIG_CHARGING >= CHARGING_MONITOR
-    charging = charge_state > DISCHARGING;
+    /* Fully charged but still plugged in is not "charging" */
+    charging = charge_state > DISCHARGING && !charge_complete();
 #endif
 
     for(i = 0; i < CRAZYPOD_STATUS_BAR_COUNT; ++i) {
@@ -137,6 +184,15 @@ void crazypod_status_bars_update(void)
             }
             CP_LV_LABEL_SET_TEXT(bar->time, time_text);
             bar->rendered_minute = minute;
+        }
+        if(bar->rendered_battery_percent != level) {
+            if(!percent_formatted) {
+                snprintf(percent_text, sizeof(percent_text), "%d", level);
+                percent_formatted = true;
+            }
+            lv_label_set_text(bar->battery_percent, percent_text);
+            lv_label_set_text(bar->battery_percent_fill, percent_text);
+            bar->rendered_battery_percent = level;
         }
         if(bar->rendered_battery_width != battery_width) {
             lv_obj_set_width(bar->battery_fill, battery_width);
@@ -174,6 +230,10 @@ void crazypod_status_bar_set_palette(
         bar->time, lv_color_hex(foreground), 0);
     lv_obj_set_style_text_color(
         bar->playing, lv_color_hex(foreground), 0);
+    lv_obj_set_style_text_color(
+        bar->battery_percent, lv_color_hex(foreground), 0);
+    lv_obj_set_style_text_color(
+        bar->battery_percent_fill, lv_color_hex(background), 0);
     lv_obj_set_style_bg_color(
         bar->battery, lv_color_hex(foreground), 0);
     lv_obj_set_style_bg_color(
@@ -181,7 +241,7 @@ void crazypod_status_bar_set_palette(
     lv_obj_set_style_bg_color(
         bar->battery_cap, lv_color_hex(foreground), 0);
     lv_obj_set_style_text_color(
-        bar->charge, lv_color_hex(background), 0);
+        bar->charge, lv_color_hex(foreground), 0);
 }
 
 void crazypod_status_bar_foreground(int index)

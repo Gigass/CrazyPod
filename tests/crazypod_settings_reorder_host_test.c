@@ -71,20 +71,23 @@ static void test_reorder_respects_bounds(void)
         CRAZYPOD_APP_MUSIC);
 }
 
-static void test_gameboy_is_visible_after_legacy_restore(void)
+static void test_retired_gameboy_slot_is_dropped(void)
 {
-    uint8_t legacy_order[CRAZYPOD_APP_LEGACY_COUNT];
+    uint8_t stored[CRAZYPOD_APP_STORAGE_COUNT];
     uint32_t enabled_mask;
+    int i;
 
     crazypod_apps_reset();
-    assert(crazypod_apps_is_enabled(CRAZYPOD_APP_GAMEBOY));
-    assert(crazypod_apps_visible_index(CRAZYPOD_APP_GAMEBOY) >= 0);
-
-    crazypod_apps_export(legacy_order, sizeof(legacy_order), &enabled_mask);
-    enabled_mask &= ~((uint32_t)1u << CRAZYPOD_APP_GAMEBOY);
-    crazypod_apps_restore(legacy_order, sizeof(legacy_order), enabled_mask);
-    assert(crazypod_apps_is_enabled(CRAZYPOD_APP_GAMEBOY));
-    assert(crazypod_apps_visible_index(CRAZYPOD_APP_GAMEBOY) >= 0);
+    assert(!crazypod_apps_is_known(CRAZYPOD_APP_GAMEBOY_RETIRED));
+    crazypod_apps_export(stored, CRAZYPOD_APP_COUNT, &enabled_mask);
+    stored[CRAZYPOD_APP_COUNT] = CRAZYPOD_APP_GAMEBOY_RETIRED;
+    stored[3] = CRAZYPOD_APP_GAMEBOY_RETIRED;
+    crazypod_apps_restore(stored, sizeof(stored), enabled_mask);
+    assert(crazypod_apps_count() == CRAZYPOD_APP_COUNT);
+    for(i = 0; i < crazypod_apps_count(); ++i)
+        assert(crazypod_apps_ordered_id(i) !=
+               CRAZYPOD_APP_GAMEBOY_RETIRED);
+    assert(crazypod_apps_order_index(CRAZYPOD_APP_MUSIC) >= 0);
 }
 
 int main(void)
@@ -92,6 +95,6 @@ int main(void)
     test_main_menu_opens_actions_overlay();
     test_direct_reorder_transaction();
     test_reorder_respects_bounds();
-    test_gameboy_is_visible_after_legacy_restore();
+    test_retired_gameboy_slot_is_dropped();
     return 0;
 }

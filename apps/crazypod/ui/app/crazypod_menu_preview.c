@@ -164,9 +164,7 @@ void crazypod_menu_preview_render(
 {
     struct crazypod_track track;
     bool have_track;
-    bool animate = animated && preview.motion_ready &&
-        crazypod_menu_preview_is_skeuomorphic_route(
-            state->route);
+    bool animate = animated && preview.motion_ready;
 
     if(state->route == MUSIC_ROUTE_MENU)
         crazypod_preview_motion_set_profile(
@@ -279,6 +277,8 @@ void crazypod_menu_preview_render(
     preview.motion_ready = true;
     if(animate)
         crazypod_preview_motion_start_entrance();
+    else
+        crazypod_preview_motion_start_ambient();
 }
 
 void crazypod_menu_preview_prefetch(

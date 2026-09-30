@@ -34,7 +34,7 @@
 #define COLOR_CYAN 0x26CFF5
 #define UNLOCK_HOLD_TICKS ((HZ / 2) > 0 ? (HZ / 2) : 1)
 #define UNLOCK_OPEN_TICKS \
-    ((HZ * 13 / 50) > 0 ? (HZ * 13 / 50) : 1)
+    ((HZ * 8 / 25) > 0 ? (HZ * 8 / 25) : 1)
 #define MEDIA_PANEL_SIDE_MARGIN 12
 #define MEDIA_PANEL_BOTTOM_MARGIN 12
 #define MEDIA_PANEL_X MEDIA_PANEL_SIDE_MARGIN

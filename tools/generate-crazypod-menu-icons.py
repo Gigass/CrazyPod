@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the 14 px CrazyPod menu icon A8 atlas.
+"""Generate CrazyPod menu icons and native-size Home action icons.
 
 The icon IDs were selected with better-icons. The source collection is
 Google Material Symbols (Apache-2.0):
@@ -48,6 +48,8 @@ ASSET_SOURCE = (
 COLLECTION = "material-symbols"
 SOURCE_SIZE = 56
 OUTPUT_SIZE = 14
+HOME_ACTION_ICONS = ("QUEUE", "BRIGHTNESS", "SPEAKER")
+HOME_OUTPUT = OUTPUT.with_name("crazypod_home_action_icon_data.inc")
 
 # Keep this in exactly the same order as enum crazypod_menu_icon, excluding
 # NONE. Similar meanings intentionally reuse a semantic icon at the route
@@ -183,7 +185,7 @@ def fetch_collection() -> dict[str, object]:
         return json.load(response)
 
 
-def render_alpha(body: str, width: int, height: int) -> bytes:
+def render_alpha(body: str, width: int, height: int, size: int) -> bytes:
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{SOURCE_SIZE}" '
         f'height="{SOURCE_SIZE}" viewBox="0 0 {width} {height}">'
@@ -196,7 +198,7 @@ def render_alpha(body: str, width: int, height: int) -> bytes:
     )
     image = Image.open(io.BytesIO(png)).convert("RGBA")
     alpha = image.getchannel("A").resize(
-        (OUTPUT_SIZE, OUTPUT_SIZE), Image.Resampling.LANCZOS
+        (size, size), Image.Resampling.LANCZOS
     )
     return bytes(alpha.getdata())
 
@@ -209,8 +211,8 @@ def format_bytes(data: bytes) -> str:
     return "\n".join(lines)
 
 
-def generate() -> str:
-    collection = fetch_collection()
+def generate(collection, icons=ICONS, size=OUTPUT_SIZE,
+             table="crazypod_menu_icon_assets") -> str:
     source_icons = collection.get("icons", {})
     default_width = int(collection.get("width", 24))
     default_height = int(collection.get("height", 24))
@@ -225,7 +227,7 @@ def generate() -> str:
     ]
     asset_names = []
     source_assets = {}
-    for semantic, source_name in ICONS.items():
+    for semantic, source_name in icons.items():
         if source_name in source_assets:
             asset_names.append((semantic, source_assets[source_name]))
             chunks.extend([
@@ -237,8 +239,8 @@ def generate() -> str:
         icon = source_icons[source_name]
         width = int(icon.get("width", default_width))
         height = int(icon.get("height", default_height))
-        data = render_alpha(str(icon["body"]), width, height)
-        symbol = semantic.lower()
+        data = render_alpha(str(icon["body"]), width, height, size)
+        symbol = semantic.lower() + ("_large" if size == 28 else "")
         source_assets[source_name] = symbol
         asset_names.append((semantic, symbol))
         chunks.extend([
@@ -250,9 +252,9 @@ def generate() -> str:
             f"static const lv_image_dsc_t menu_icon_{symbol} = {{",
             "    .header.magic = LV_IMAGE_HEADER_MAGIC,",
             "    .header.cf = LV_COLOR_FORMAT_A8,",
-            f"    .header.w = {OUTPUT_SIZE},",
-            f"    .header.h = {OUTPUT_SIZE},",
-            f"    .header.stride = {OUTPUT_SIZE},",
+            f"    .header.w = {size},",
+            f"    .header.h = {size},",
+            f"    .header.stride = {size},",
             f"    .data_size = sizeof(menu_icon_{symbol}_data),",
             f"    .data = menu_icon_{symbol}_data,",
             "};",
@@ -261,7 +263,7 @@ def generate() -> str:
 
     chunks.extend([
         "static const lv_image_dsc_t *const",
-        "crazypod_menu_icon_assets[CRAZYPOD_MENU_ICON_COUNT] = {",
+        f"{table}[CRAZYPOD_MENU_ICON_COUNT] = {{",
     ])
     for semantic, symbol in asset_names:
         chunks.append(
@@ -273,11 +275,16 @@ def generate() -> str:
 
 def main() -> int:
     try:
-        generated = generate()
+        collection = fetch_collection()
+        generated = generate(collection)
+        home_generated = generate(
+            collection, {name: ICONS[name] for name in HOME_ACTION_ICONS},
+            28, "crazypod_home_action_icon_assets")
     except Exception as error:
         print(f"menu icon generation failed: {error}", file=sys.stderr)
         return 1
     OUTPUT.write_text(generated, encoding="utf-8")
+    HOME_OUTPUT.write_text(home_generated, encoding="utf-8")
     # Rockbox's incremental build does not track included .inc files.
     ASSET_SOURCE.touch()
     print(f"generated {len(ICONS)} menu icons in {OUTPUT}")

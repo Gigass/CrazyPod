@@ -8,6 +8,7 @@
 #include "lvgl.h"
 
 #include "../presentation/crazypod_ui_widgets.h"
+#include "crazypod_preview_ambient.h"
 #include "crazypod_preview_primitives.h"
 #include "crazypod_preview_motion.h"
 
@@ -17,6 +18,9 @@
 #define CRAZYPOD_PREVIEW_REDUCED_DURATION_MS 80
 #define CRAZYPOD_PREVIEW_PART_TIME_NUMERATOR 3
 #define CRAZYPOD_PREVIEW_PART_TIME_DENOMINATOR 2
+/* Rotating or scaling a layer costs a redraw of its whole bounding box, so
+ * the music profile only transforms small pieces; large stages just glide. */
+#define CRAZYPOD_PREVIEW_TRANSFORM_MAX_AREA 6000
 
 struct menu_preview_motion_part {
     lv_obj_t *object;
@@ -36,6 +40,11 @@ struct menu_preview_motion_part {
     int exit_rotation;
     int enter_delay;
     int enter_duration;
+    bool transformable;
+    int from_x;
+    int from_y;
+    int from_rotation;
+    int from_scale;
 };
 
 struct menu_preview_scene {
@@ -104,6 +113,20 @@ static void menu_preview_register_motion(
     part->exit_rotation = exit_rotation;
     part->enter_delay = enter_delay;
     part->enter_duration = enter_duration;
+    part->from_x = part->final_x;
+    part->from_y = part->final_y;
+    part->from_rotation = part->final_rotation;
+    part->from_scale = part->final_scale;
+    part->transformable =
+        menu_preview_motion_profile == CRAZYPOD_PREVIEW_PROFILE_MUSIC &&
+        lv_obj_get_style_width(object, 0) *
+            lv_obj_get_style_height(object, 0) <=
+        CRAZYPOD_PREVIEW_TRANSFORM_MAX_AREA;
+    if(part->transformable) {
+        /* Spin and pop around the middle of the piece, not its corner. */
+        lv_obj_set_style_transform_pivot_x(object, LV_PCT(50), 0);
+        lv_obj_set_style_transform_pivot_y(object, LV_PCT(50), 0);
+    }
 }
 
 static void settle_menu_preview_scene(struct menu_preview_scene *scene)
@@ -266,17 +289,31 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
         int content_opacity_progress =
             menu_preview_smooth_step(content_raw_progress);
 
-        lv_obj_set_pos(
-            content,
-            menu_preview_lerp(
-                -CRAZYPOD_PREVIEW_PANE_X + 8,
-                -CRAZYPOD_PREVIEW_PANE_X,
-                content_position_progress),
-            menu_preview_lerp(
-                -CRAZYPOD_PREVIEW_PANE_Y +
-                    menu_preview_navigation_direction * 5,
-                -CRAZYPOD_PREVIEW_PANE_Y,
-                menu_preview_ease_out(content_raw_progress)));
+        if(!menu_preview_motion_reduced) {
+            /* Fly in from beyond the right edge; the pane root clips it. */
+            content_opacity_progress = menu_preview_smooth_step(
+                content_raw_progress * 3);
+            lv_obj_set_pos(
+                content,
+                menu_preview_lerp(
+                    -CRAZYPOD_PREVIEW_PANE_X + CRAZYPOD_PREVIEW_PANE_WIDTH,
+                    -CRAZYPOD_PREVIEW_PANE_X,
+                    menu_preview_ease_out(content_raw_progress)),
+                -CRAZYPOD_PREVIEW_PANE_Y);
+        }
+        else {
+            lv_obj_set_pos(
+                content,
+                menu_preview_lerp(
+                    -CRAZYPOD_PREVIEW_PANE_X + 8,
+                    -CRAZYPOD_PREVIEW_PANE_X,
+                    content_position_progress),
+                menu_preview_lerp(
+                    -CRAZYPOD_PREVIEW_PANE_Y +
+                        menu_preview_navigation_direction * 5,
+                    -CRAZYPOD_PREVIEW_PANE_Y,
+                    menu_preview_ease_out(content_raw_progress)));
+        }
         lv_obj_set_style_opa(
             content,
             (lv_opa_t)menu_preview_lerp(
@@ -322,6 +359,20 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
                     part->enter_opacity,
                     part->final_opacity, opacity_progress),
                 0);
+            if(part->transformable) {
+                lv_obj_set_style_transform_scale(
+                    object,
+                    menu_preview_lerp(
+                        part->enter_scale, part->final_scale,
+                        position_progress),
+                    0);
+                lv_obj_set_style_transform_rotation(
+                    object,
+                    menu_preview_lerp(
+                        part->enter_rotation, part->final_rotation,
+                        position_progress),
+                    0);
+            }
         }
     }
     else if(menu_preview_motion_phase == MENU_PREVIEW_MOTION_EXITING) {
@@ -333,21 +384,26 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
         int raw_progress = menu_preview_clamp_progress(
             elapsed * 1024 / duration);
 
+        bool fly = !menu_preview_motion_reduced;
+
         lv_obj_set_pos(
             content,
             menu_preview_lerp(
                 -CRAZYPOD_PREVIEW_PANE_X,
-                -CRAZYPOD_PREVIEW_PANE_X - 6,
+                fly ? -CRAZYPOD_PREVIEW_PANE_X +
+                        CRAZYPOD_PREVIEW_PANE_WIDTH
+                    : -CRAZYPOD_PREVIEW_PANE_X - 6,
                 progress),
-            menu_preview_lerp(
-                -CRAZYPOD_PREVIEW_PANE_Y,
-                -CRAZYPOD_PREVIEW_PANE_Y -
-                    menu_preview_navigation_direction * 4,
-                progress));
+            fly ? -CRAZYPOD_PREVIEW_PANE_Y
+                : menu_preview_lerp(
+                    -CRAZYPOD_PREVIEW_PANE_Y,
+                    -CRAZYPOD_PREVIEW_PANE_Y -
+                        menu_preview_navigation_direction * 4,
+                    progress));
         lv_obj_set_style_opa(
             content,
-            (lv_opa_t)menu_preview_lerp(
-                LV_OPA_COVER, 0, progress),
+            (lv_opa_t)(fly ? LV_OPA_COVER : menu_preview_lerp(
+                LV_OPA_COVER, 0, progress)),
             0);
         if(menu_preview_motion_reduced)
             return;
@@ -367,13 +423,26 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
             lv_obj_set_pos(
                 object,
                 menu_preview_lerp(
-                    part->final_x,
+                    part->from_x,
                     part->final_x + part->exit_dx,
                     progress) + arc_x,
                 menu_preview_lerp(
-                    part->final_y,
+                    part->from_y,
                     part->final_y + part->exit_dy,
                     progress) + arc_y);
+            if(part->transformable) {
+                lv_obj_set_style_transform_scale(
+                    object,
+                    menu_preview_lerp(
+                        part->from_scale, part->exit_scale, progress),
+                    0);
+                lv_obj_set_style_transform_rotation(
+                    object,
+                    menu_preview_lerp(
+                        part->from_rotation, part->exit_rotation,
+                        progress),
+                    0);
+            }
         }
     }
 }
@@ -383,6 +452,7 @@ static void settle_menu_preview_motion(void)
     menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
     menu_preview_media_deferred = false;
     menu_preview_media_refresh_pending = false;
+    crazypod_preview_ambient_stop(true);
     settle_menu_preview_scene(&menu_preview_scene);
 }
 
@@ -403,15 +473,20 @@ static void menu_preview_timeline_completed(lv_anim_t *animation)
     if(completed_phase == MENU_PREVIEW_MOTION_ENTERING) {
         settle_menu_preview_scene(&menu_preview_scene);
         if(menu_preview_media_deferred) {
+            /* The artwork re-render is one tick away and rebuilds the
+             * scene; the ambient session starts there instead. */
             menu_preview_media_deferred = false;
             menu_preview_media_refresh_pending = true;
             menu_preview_media_due = motion_host.now() + 1;
         }
+        else
+            crazypod_preview_motion_start_ambient();
         return;
     }
     if(completed_phase != MENU_PREVIEW_MOTION_EXITING)
         return;
 
+    crazypod_preview_ambient_reset();
     if(lv_obj_is_valid(content))
         lv_obj_delete(content);
     menu_preview_content = NULL;
@@ -443,6 +518,7 @@ static bool start_menu_preview_timeline(int duration)
 static void reset_menu_preview_root(void)
 {
     menu_preview_motion_phase = MENU_PREVIEW_MOTION_IDLE;
+    crazypod_preview_ambient_reset();
     if(menu_preview_root == NULL) {
         menu_preview_root = lv_obj_create(motion_parent);
         crazypod_ui_widget_make_plain(menu_preview_root);
@@ -520,8 +596,28 @@ static void start_menu_preview_scene_exit(void)
     int duration = reduced
         ? CRAZYPOD_PREVIEW_REDUCED_DURATION_MS
         : CRAZYPOD_PREVIEW_EXIT_DURATION_MS;
+    int index;
+
     if(menu_preview_content == NULL)
         return;
+    /* Leave the ambient pose where it is and exit from there. */
+    crazypod_preview_ambient_stop(false);
+    for(index = 0; index < menu_preview_scene.part_count; ++index) {
+        struct menu_preview_motion_part *part =
+            &menu_preview_scene.parts[index];
+
+        if(part->object == NULL || !lv_obj_is_valid(part->object) ||
+           menu_preview_motion_profile != CRAZYPOD_PREVIEW_PROFILE_MUSIC)
+            continue;
+        part->from_x = lv_obj_get_style_x(part->object, 0);
+        part->from_y = lv_obj_get_style_y(part->object, 0);
+        if(!part->transformable)
+            continue;
+        part->from_rotation =
+            lv_obj_get_style_transform_rotation(part->object, 0);
+        part->from_scale =
+            lv_obj_get_style_transform_scale_x(part->object, 0);
+    }
     motion_host.boost((duration * HZ + 999) / 1000 + HZ / 10);
     menu_preview_motion_reduced = reduced;
     menu_preview_motion_phase = MENU_PREVIEW_MOTION_EXITING;
@@ -587,6 +683,16 @@ void crazypod_preview_motion_start_exit(void)
     start_menu_preview_scene_exit();
 }
 
+void crazypod_preview_motion_start_ambient(void)
+{
+    if(menu_preview_content == NULL ||
+       menu_preview_motion_phase != MENU_PREVIEW_MOTION_IDLE ||
+       menu_preview_motion_profile != CRAZYPOD_PREVIEW_PROFILE_MUSIC ||
+       crazypod_preview_motion_reduced())
+        return;
+    (void)crazypod_preview_ambient_start(menu_preview_content);
+}
+
 bool crazypod_preview_motion_active(void)
 {
     return menu_preview_motion_active();
@@ -630,6 +736,7 @@ bool crazypod_preview_motion_has_content(void)
 
 void crazypod_preview_motion_forget(void)
 {
+    crazypod_preview_ambient_reset();
     menu_preview_root = NULL;
     menu_preview_content = NULL;
     memset(&menu_preview_scene, 0, sizeof(menu_preview_scene));

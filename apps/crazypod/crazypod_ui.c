@@ -738,6 +738,11 @@ static void platform_queue_present(
 {
     if(crazypod_scene_transition_owns_framebuffer())
         crazypod_present_queue_full();
+    else if(crazypod_lock_screen_is_locked() &&
+            crazypod_lock_screen_motion_active())
+        /* The unlock hold and opening animation move a small region
+         * continuously; commit it on the panel's TE phase like Home. */
+        crazypod_present_queue_home_rect(x, y, width, height);
     else
         crazypod_present_queue_rect(x, y, width, height);
 }
@@ -932,6 +937,19 @@ void crazypod_ui_run(void)
             if(crazypod_playback_refresh_after_unlock_pending() &&
                wait_ticks > 1)
                 wait_ticks = 1;
+            /* Sleep until the next frame deadline instead of a fixed
+             * frame interval after the work, which stretches 2-tick
+             * frames to 3 ticks and makes the unlock motion judder. */
+            if(crazypod_lock_screen_is_locked() &&
+               crazypod_lock_screen_motion_active()) {
+                long until_frame =
+                    lvgl_clock.next_tick - current_tick;
+
+                if(until_frame < 0)
+                    until_frame = 0;
+                if(until_frame < wait_ticks)
+                    wait_ticks = (int)until_frame;
+            }
 #ifdef SIMULATOR
             if(simulator_snapshot_pending) {
                 long snapshot_wait =

@@ -4,6 +4,66 @@ Entries are point-in-time records. Use the newest entry and
 [PROJECT_STATUS.md](PROJECT_STATUS.md) for current status; older open items may
 have been completed later.
 
+## 2026-09-29 (Power menu freezes while music is playing)
+
+Root cause:
+- `execute()` in `crazypod_system_prompts.c` called `shutdown_hw()` without
+  stopping audio. On iPod 6G `shutdown_hw()` skips `audio_stop()`, then loops
+  on `storage_disk_is_active()` waiting for spindown. Playing audio keeps
+  refilling its buffer from the disk, so the wait never ended and the device
+  hung until a forced restart. Paused or stopped audio does not touch the disk,
+  which is why pausing first worked.
+
+Changes:
+- `execute()` now saves state (resume position first), then calls
+  `audio_stop()` before `shutdown_hw()`, matching stock Rockbox's
+  `shutdown()` path. This covers Shutdown, Restart, `SYS_POWEROFF` and
+  `SYS_REBOOT`.
+
+Verified: incremental iPod 6G build compiles and packages. Not tested on
+hardware: play music, lock, wait for the screen to turn off, hold Play, then
+choose Shutdown and Restart.
+
+## 2026-09-29 (Battery shows 99% when full; status bar percentage)
+
+Root cause:
+- `ipod6g` uses `CHARGING_MONITOR`, where `charge_state` is `CHARGING` for as
+  long as a charger is plugged in, and `voltage_to_battery_level()` caps the
+  level at 99% in that state. A full battery on a cable therefore never read
+  100% and kept the charging bolt. The LTC4066 CHRG pin (`charging_state()`)
+  was not used to detect the end of charge.
+- The status-bar fill was `3 + 21 * level / 100`, so 99% was 23px against a
+  24px full fill.
+
+Changes:
+- `ipod6g.h`: `HAVE_CHARGE_COMPLETE_DETECT`.
+- `firmware/powermgmt.c`: with a charger present, CHRG idle for 10 consecutive
+  power-thread steps (~5s) and filtered voltage >= `percent_to_volt_charge[8]`
+  (4170mV) sets `charge_done`; the level is then 100%. New
+  `charge_complete()` accessor (always false on other targets).
+- Status bar and Mini App system status: the charging bolt / charging flag is
+  suppressed once `charge_complete()`; fill width is rounded.
+- Status bar: battery number drawn inside the glyph. It is drawn twice at the
+  same spot (light text on the empty part, dark text in the fill, which clips
+  its children) so it stays readable at any level. The charging bolt moved to
+  the left of the glyph; the playing and recording indicators moved 8px left.
+- Vertical centring root cause: `crazypod_ui_widget_label()` swaps a plain-text
+  `montserrat_8` for the 12px runtime font, whose line is taller than the 10px
+  fill, so the number sat low. The font is now pinned to `montserrat_10`
+  (7px digits, top row 2 of an 11px line) and the line is shifted up 1px:
+  1px above / 2px below the digits inside the fill (7px cannot centre in 10px).
+
+Verified:
+- `sh tests/check-crazypod-ui-architecture.sh`, `tests/run-crazypod-ui-host-tests.sh`,
+  `python3 tools/check-crazypod-l10n.py --strict-bare`: pass
+- incremental `make` in `build-hw-ipod6g`: OK, `rockbox.ipod` produced
+- not verified: real hardware (charge-done detection) and any rendered
+  screenshot of the number inside the battery; the layout comes from font
+  glyph metrics only
+
+Not changed: the discharge table still needs >= 4170mV for 100%, so a full
+battery just unplugged may still read 96-99% under load.
+
 ## 2026-08-22 (Home and Music CoverFlow LCD tearing)
 
 Goal: eliminate partial-update tearing during CoverFlow motion, including
@@ -6293,8 +6353,10 @@ Verified vs assumed:
 Goal: stabilize the Apple2026 filesystem two-tier font selection, removing a state regression where visiting a tracklist (dense font) could force the root menus (normal font) into the dense size when backing out.
 
 Changed:
-- pps/tree.c: explicitly defaulted ockpod_list_font_tier to ROCKPOD_LIST_FONT_NORMAL at the start of directory drawing, overriding any leaked state from previous screens.
-- pps/menu.c: added ockpod_list_font_tier = ROCKPOD_LIST_FONT_NORMAL; explicitly on menu startup, guaranteeing that native screens never incorrectly inherit tracklist density.
+- pps/tree.c: explicitly defaulted 
+ockpod_list_font_tier to ROCKPOD_LIST_FONT_NORMAL at the start of directory drawing, overriding any leaked state from previous screens.
+- pps/menu.c: added 
+ockpod_list_font_tier = ROCKPOD_LIST_FONT_NORMAL; explicitly on menu startup, guaranteeing that native screens never incorrectly inherit tracklist density.
 - pps/root_menu.c: cleaned up obsolete font resets.
 
 Verified:

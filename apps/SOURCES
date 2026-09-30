@@ -64,6 +64,7 @@ crazypod/crazypod_video_mpeg_misc.c
 crazypod/crazypod_artwork.c
 crazypod/crazypod_artwork_palette.c
 crazypod/crazypod_coverflow.c
+crazypod/crazypod_coverflow_motion.c
 crazypod/crazypod_music.c
 crazypod/crazypod_music_storage.c
 crazypod/crazypod_collation.c
@@ -131,6 +132,7 @@ crazypod/ui/presentation/crazypod_choice_overlay.c
 crazypod/ui/presentation/crazypod_popup_layout.c
 crazypod/ui/presentation/crazypod_popup_motion.c
 crazypod/ui/presentation/crazypod_scene_motion.c
+crazypod/ui/presentation/crazypod_preview_ambient.c
 crazypod/ui/presentation/crazypod_preview_motion.c
 crazypod/ui/presentation/crazypod_overlay_glass.c
 crazypod/ui/presentation/crazypod_screen_corners.c

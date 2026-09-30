@@ -1,3 +1,58 @@
+# CrazyPod V1.5.0
+
+Released: 2026-09-30
+
+## What's New
+
+### New
+
+- Right-hand preview panes now fly in from the right and fly out to the right
+  on every menu that has a preview: Music, Settings, Extras, Tools, Customize,
+  and their sub-lists. Music keeps its per-widget spring, rotate, and scale
+  entrances.
+- Music previews stay alive after they settle. Now Playing spins the record and
+  chases the LEDs, Album Flow sways and sweeps the covers, All Music flips its
+  cards, Playlists turns the cassette reels, Artists emits sound waves, Albums
+  swings the tonearm, Songs lifts cards in turn, and Search scans with the
+  magnifier. Each run lasts at most 12 s, fades in and eases out, and is
+  skipped when Reduce Motion is on.
+- The battery icon now shows the charge percentage inside the fill, and a new
+  full-charge detection shows 100% and clears the charging bolt once the
+  battery is actually full.
+
+### Improved
+
+- Game Boy / GBC moved into Mini Apps as the first, default-selected entry with
+  its own handheld preview. It no longer takes a slot on the main menu or in the
+  hidden-apps and reorder screens. Existing saved state is unaffected; the old
+  GB slot is safely ignored.
+- Music Cover Flow now settles crisply. Coasting keeps a minimum approach speed
+  until about 0.15 cover from the stop point and then eases to zero, and the
+  snap spring finishes within about one pixel instead of crawling.
+- Cover Flow song title and artist now refresh while you scroll and coast,
+  instead of only after the animation ends.
+- Lock-screen unlock animation is smoother: the loop sleeps to the next frame
+  deadline, partial frames are aligned to the display scan phase to reduce
+  tearing, and the unlock stage is lengthened from 26 to 32 ticks.
+
+### Fixed
+
+- Fixed a hang when choosing Shut Down or Restart from the lock screen while
+  music was playing. Audio is now stopped before hardware shutdown so the disk
+  can spin down.
+
+## Validation
+
+- iPod 6G firmware, simulator builds, and host tests pass for the Music preview,
+  Mini Apps, and battery changes. Architecture, localization, and layer-budget
+  checks pass.
+- All changes in this release, including the all-menu fly-in/out previews,
+  battery percentage and full-charge detection, Cover Flow settling and title
+  refresh, the lock-screen unlock animation, and the shutdown-while-playing fix,
+  have been tested on device.
+
+---
+
 # CrazyPod V1.3.1
 
 Released: 2026-09-02

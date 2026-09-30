@@ -559,7 +559,7 @@ struct crazypod_state_disk {
     struct crazypod_state_eq_band_disk eq_bands[EQ_NUM_BANDS];
     uint32_t menu_count;
     uint32_t menu_enabled_mask;
-    uint8_t menu_order[CRAZYPOD_APP_COUNT];
+    uint8_t menu_order[CRAZYPOD_APP_STORAGE_COUNT];
     int32_t reduce_motion;
     int32_t storage_mode;
     int32_t language;
@@ -738,7 +738,7 @@ static void expand_legacy_menu_order(
             (unsigned char *)state + old_suffix_offset, suffix_size);
     memset((unsigned char *)state + old_suffix_offset, 0,
            new_suffix_offset - old_suffix_offset);
-    state->menu_order[CRAZYPOD_APP_LEGACY_COUNT] = CRAZYPOD_APP_GAMEBOY;
+    state->menu_order[CRAZYPOD_APP_LEGACY_COUNT] = CRAZYPOD_APP_GAMEBOY_RETIRED;
 }
 
 static bool read_exact(int fd, void *buffer, size_t size)
@@ -1383,7 +1383,7 @@ void crazypod_state_load(void)
         : CRAZYPOD_LANGUAGE_ENGLISH);
     clamp_and_apply_settings(&state);
     if(state.menu_count > 0 &&
-       state.menu_count <= CRAZYPOD_APP_COUNT)
+       state.menu_count <= CRAZYPOD_APP_STORAGE_COUNT)
         crazypod_apps_restore(state.menu_order, state.menu_count,
                               state.menu_enabled_mask);
     crazypod_queue_restore_begin();
@@ -1617,7 +1617,8 @@ void crazypod_state_save(bool force)
         state.eq_bands[i].q = global_settings.eq_band_settings[i].q;
         state.eq_bands[i].gain = global_settings.eq_band_settings[i].gain;
     }
-    state.menu_count = CRAZYPOD_APP_COUNT;
+    state.menu_count = CRAZYPOD_APP_STORAGE_COUNT;
+    memset(state.menu_order, 0, sizeof(state.menu_order));
     crazypod_apps_export(state.menu_order, sizeof(state.menu_order),
                          &state.menu_enabled_mask);
     state.reduce_motion = reduce_motion ? 1 : 0;

@@ -104,8 +104,21 @@ unsigned int power_thread_inputs;
 #if CONFIG_CHARGING >= CHARGING_MONITOR
 /* Charging state (mode) as seen by the power thread */
 enum charge_state_type charge_state = DISCHARGING;
+#ifdef HAVE_CHARGE_COMPLETE_DETECT
+/* Charger present, but the charger IC reports charging has finished */
+static bool charge_done = false;
+#endif
 #endif
 #endif /* CONFIG_CHARGING */
+
+bool charge_complete(void)
+{
+#if defined(HAVE_CHARGE_COMPLETE_DETECT) && CONFIG_CHARGING >= CHARGING_MONITOR
+    return charge_done;
+#else
+    return false;
+#endif
+}
 
 static int shutdown_timeout = 0;
 
@@ -364,6 +377,13 @@ static int voltage_to_battery_level(int millivolts)
         return -1;
 
 #if CONFIG_CHARGING >= CHARGING_MONITOR
+#ifdef HAVE_CHARGE_COMPLETE_DETECT
+    if (charge_state > DISCHARGING && charge_done) {
+        /* charging is finished, battery is full */
+        level = 100;
+    }
+    else
+#endif
     if (charge_state > DISCHARGING) {
         /* battery level is defined to be < 100% until charging is finished */
         level = voltage_to_percent(millivolts, percent_to_volt_charge);
@@ -592,6 +612,30 @@ static inline void powermgmt_init_target(void)
     /* Nothing to do */
 }
 
+#ifdef HAVE_CHARGE_COMPLETE_DETECT
+/* Consecutive power thread steps the charger IC must report "not charging"
+ * before the battery is treated as full. Rides out the CHRG pin settling
+ * after plug-in and around charge restarts. */
+#define CHARGE_COMPLETE_STEPS 10
+
+/* Charging finished: the charger IC stopped charging while the battery
+ * sits near the charge voltage. The voltage check keeps a suspended or
+ * faulted charger (empty battery, CHRG pin idle) from reading as full. */
+static bool charge_complete_step(void)
+{
+    static int idle_steps;
+
+    if (charging_state() || voltage_now < percent_to_volt_charge[8]) {
+        idle_steps = 0;
+        return false;
+    }
+
+    if (idle_steps < CHARGE_COMPLETE_STEPS)
+        idle_steps++;
+    return idle_steps >= CHARGE_COMPLETE_STEPS;
+}
+#endif /* HAVE_CHARGE_COMPLETE_DETECT */
+
 static inline void charging_algorithm_step(void)
 {
     switch (charger_input_state)
@@ -599,10 +643,16 @@ static inline void charging_algorithm_step(void)
     case CHARGER_PLUGGED:
     case CHARGER:
         charge_state = CHARGING;
+#ifdef HAVE_CHARGE_COMPLETE_DETECT
+        charge_done = charge_complete_step();
+#endif
         break;
     case CHARGER_UNPLUGGED:
     case NO_CHARGER:
         charge_state = DISCHARGING;
+#ifdef HAVE_CHARGE_COMPLETE_DETECT
+        charge_done = false;
+#endif
         break;
     }
 }

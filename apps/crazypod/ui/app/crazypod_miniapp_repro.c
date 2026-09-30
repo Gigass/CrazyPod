@@ -1090,6 +1090,8 @@ void crazypod_miniapp_repro_service(long now)
 
     case REPRO_MOVE_TO_GAME:
         target = crazypod_miniapps_find("game2048");
+        if(target >= 0)
+            ++target; /* GB / GBC is row 0 */
         if(target < 0 || route == NULL)
             finish(false, "game2048-catalog");
         else if(route->selected < target) {
@@ -1215,6 +1217,8 @@ void crazypod_miniapp_repro_service(long now)
 
     case REPRO_MOVE_TO_LAB:
         target = crazypod_miniapps_find("capability-lab");
+        if(target >= 0)
+            ++target; /* GB / GBC is row 0 */
         if(target < 0 || route == NULL)
             finish(false, "capability-lab-catalog");
         else if(route->selected < target) {

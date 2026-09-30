@@ -23,6 +23,9 @@
 #include "../../presentation/crazypod_ui_widgets.h"
 
 #define MINIAPP_MENU_HOLD_MS 900
+/* GB / GBC is the first row of the Mini Apps list; packages follow it. */
+#define MINIAPP_GAMEBOY_ROW 0
+#define MINIAPP_PACKAGE_ROW_OFFSET 1
 
 static enum crazypod_gameboy_result gameboy_result;
 
@@ -30,7 +33,7 @@ int crazypod_miniapps_feature_item_count(
     const struct route_state *state)
 {
     if(state->route == UTILITIES_ROUTE_MENU)
-        return crazypod_miniapps_count();
+        return crazypod_miniapps_count() + MINIAPP_PACKAGE_ROW_OFFSET;
     if(state->route == GAMEBOY_ROUTE_LIBRARY)
         return crazypod_gameboy_count();
     return state->route == MINIAPP_ROUTE_VIEW ? 1 : 0;
@@ -63,9 +66,14 @@ bool crazypod_miniapps_feature_item_title(
         *title = crazypod_gameboy_title(index);
         return true;
     }
+    if(state->route == UTILITIES_ROUTE_MENU &&
+       index == MINIAPP_GAMEBOY_ROW) {
+        *title = "GB / GBC";
+        return true;
+    }
     metadata = crazypod_miniapps_metadata(
             state->route == MINIAPP_ROUTE_VIEW
-                ? state->group : index);
+                ? state->group : index - MINIAPP_PACKAGE_ROW_OFFSET);
 
     *title = metadata != NULL
         ? metadata->name
@@ -110,8 +118,11 @@ bool crazypod_miniapps_feature_render_gameboy_preview(
     const struct route_state *state, lv_obj_t *parent)
 {
     lv_obj_t *console;
+    bool library = state->route == GAMEBOY_ROUTE_LIBRARY;
 
-    if(state->route != GAMEBOY_ROUTE_LIBRARY)
+    if(!library &&
+       !(state->route == UTILITIES_ROUTE_MENU &&
+         state->selected == MINIAPP_GAMEBOY_ROW))
         return false;
     console = crazypod_ui_widget_box(
         parent, crazypod_preview_centered_x(92), 46,
@@ -125,9 +136,9 @@ bool crazypod_miniapps_feature_render_gameboy_preview(
     crazypod_ui_widget_box(console, 71, 70, 12, 12, 6, 0x8c344b, 255);
     crazypod_preview_make_caption(
         parent, "GB / GBC", &lv_font_montserrat_16,
-        state->route == GAMEBOY_ROUTE_LIBRARY
+        library
             ? crazypod_gameboy_title(state->selected)
-            : CP_TR("Add .gb or .gbc files to /MiniApps/Games"),
+            : CP_TR("Game Boy / Game Boy Color"),
         &lv_font_montserrat_12);
     return true;
 }
@@ -320,6 +331,18 @@ bool crazypod_miniapps_feature_activate(
             gameboy_result = crazypod_gameboy_screen_run(state->selected);
         host->render(false);
         return true;
+    }
+    if(state->route == UTILITIES_ROUTE_MENU) {
+        struct route_state package = *state;
+
+        if(state->selected == MINIAPP_GAMEBOY_ROW) {
+            crazypod_miniapps_feature_open_gameboy();
+            host->push(GAMEBOY_ROUTE_LIBRARY, -1);
+            return true;
+        }
+        package.selected -= MINIAPP_PACKAGE_ROW_OFFSET;
+        return crazypod_miniapp_runtime_activate(
+            &package, &internal);
     }
     return crazypod_miniapp_runtime_activate(
         state, &internal);
