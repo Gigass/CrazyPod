@@ -289,17 +289,31 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
         int content_opacity_progress =
             menu_preview_smooth_step(content_raw_progress);
 
-        lv_obj_set_pos(
-            content,
-            menu_preview_lerp(
-                -CRAZYPOD_PREVIEW_PANE_X + 8,
-                -CRAZYPOD_PREVIEW_PANE_X,
-                content_position_progress),
-            menu_preview_lerp(
-                -CRAZYPOD_PREVIEW_PANE_Y +
-                    menu_preview_navigation_direction * 5,
-                -CRAZYPOD_PREVIEW_PANE_Y,
-                menu_preview_ease_out(content_raw_progress)));
+        if(!menu_preview_motion_reduced) {
+            /* Fly in from beyond the right edge; the pane root clips it. */
+            content_opacity_progress = menu_preview_smooth_step(
+                content_raw_progress * 3);
+            lv_obj_set_pos(
+                content,
+                menu_preview_lerp(
+                    -CRAZYPOD_PREVIEW_PANE_X + CRAZYPOD_PREVIEW_PANE_WIDTH,
+                    -CRAZYPOD_PREVIEW_PANE_X,
+                    menu_preview_ease_out(content_raw_progress)),
+                -CRAZYPOD_PREVIEW_PANE_Y);
+        }
+        else {
+            lv_obj_set_pos(
+                content,
+                menu_preview_lerp(
+                    -CRAZYPOD_PREVIEW_PANE_X + 8,
+                    -CRAZYPOD_PREVIEW_PANE_X,
+                    content_position_progress),
+                menu_preview_lerp(
+                    -CRAZYPOD_PREVIEW_PANE_Y +
+                        menu_preview_navigation_direction * 5,
+                    -CRAZYPOD_PREVIEW_PANE_Y,
+                    menu_preview_ease_out(content_raw_progress)));
+        }
         lv_obj_set_style_opa(
             content,
             (lv_opa_t)menu_preview_lerp(
@@ -370,21 +384,26 @@ static void menu_preview_timeline_anim(void *target, int32_t elapsed)
         int raw_progress = menu_preview_clamp_progress(
             elapsed * 1024 / duration);
 
+        bool fly = !menu_preview_motion_reduced;
+
         lv_obj_set_pos(
             content,
             menu_preview_lerp(
                 -CRAZYPOD_PREVIEW_PANE_X,
-                -CRAZYPOD_PREVIEW_PANE_X - 6,
+                fly ? -CRAZYPOD_PREVIEW_PANE_X +
+                        CRAZYPOD_PREVIEW_PANE_WIDTH
+                    : -CRAZYPOD_PREVIEW_PANE_X - 6,
                 progress),
-            menu_preview_lerp(
-                -CRAZYPOD_PREVIEW_PANE_Y,
-                -CRAZYPOD_PREVIEW_PANE_Y -
-                    menu_preview_navigation_direction * 4,
-                progress));
+            fly ? -CRAZYPOD_PREVIEW_PANE_Y
+                : menu_preview_lerp(
+                    -CRAZYPOD_PREVIEW_PANE_Y,
+                    -CRAZYPOD_PREVIEW_PANE_Y -
+                        menu_preview_navigation_direction * 4,
+                    progress));
         lv_obj_set_style_opa(
             content,
-            (lv_opa_t)menu_preview_lerp(
-                LV_OPA_COVER, 0, progress),
+            (lv_opa_t)(fly ? LV_OPA_COVER : menu_preview_lerp(
+                LV_OPA_COVER, 0, progress)),
             0);
         if(menu_preview_motion_reduced)
             return;

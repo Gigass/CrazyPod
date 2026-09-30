@@ -181,6 +181,14 @@ cc -std=c99 -Wall -Wextra -Werror \
 "$test_root/crazypod_frameclock_host_test"
 
 cc -std=c99 -Wall -Wextra -Werror \
+    -I"$repo_root/apps/crazypod" \
+    "$repo_root/apps/crazypod/crazypod_coverflow_motion.c" \
+    "$repo_root/tests/crazypod_coverflow_motion_host_test.c" \
+    -o "$test_root/crazypod_coverflow_motion_host_test"
+
+"$test_root/crazypod_coverflow_motion_host_test"
+
+cc -std=c99 -Wall -Wextra -Werror \
     -I"$repo_root/tests/crazypod-font-stubs" \
     "$repo_root/tests/crazypod_runtime_font_host_test.c" \
     -o "$test_root/crazypod_runtime_font_host_test"

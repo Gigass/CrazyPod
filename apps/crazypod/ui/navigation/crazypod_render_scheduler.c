@@ -135,8 +135,6 @@ void crazypod_render_scheduler_service(long now)
             if(crazypod_menu_list_matches(state->route)) {
                 scheduler.preview_pending = false;
                 if(crazypod_menu_preview_motion_ready() &&
-                   crazypod_menu_preview_is_skeuomorphic_route(
-                       state->route) &&
                    crazypod_preview_motion_has_content())
                     crazypod_preview_motion_start_exit();
                 else

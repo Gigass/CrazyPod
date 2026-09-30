@@ -266,7 +266,7 @@ static bool open_miniapp_snapshot(
     app_index = crazypod_miniapps_find(id);
     if(app_index < 0)
         return false;
-    current_route()->selected = app_index;
+    current_route()->selected = app_index + 1;
     host->activate_selected();
     if(current_route()->route != MINIAPP_ROUTE_VIEW) {
         fprintf(

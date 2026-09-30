@@ -91,7 +91,7 @@ void crazypod_utility_preview_render(
 
     if(state->route == UTILITIES_ROUTE_MENU) {
         const struct crazypod_miniapp_metadata *metadata =
-            crazypod_miniapps_metadata(state->selected);
+            crazypod_miniapps_metadata(state->selected - 1);
 
         if(metadata != NULL) {
             symbol = miniapp_symbol(metadata);
