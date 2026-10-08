@@ -34,6 +34,9 @@
 #include "crazypod_choice_coordinator.h"
 #include "crazypod_menu_preview.h"
 #include "crazypod_playback.h"
+#ifdef HAVE_MIKEY_REMOTE
+#include "mikey-target.h"
+#endif
 #include "crazypod_route_actions.h"
 
 static struct crazypod_app_input_host host;
@@ -90,7 +93,7 @@ static bool remote_home_select_held;
 #define ALPHA_JUMP_WINDOW_TICKS \
     ((HZ * 320 / 1000) > 0 ? (HZ * 320 / 1000) : 1)
 #define ALPHA_JUMP_STEP_THRESHOLD 7
-#define REMOTE_MULTITAP_WINDOW_MS 500
+#define REMOTE_MULTITAP_WINDOW_MS 650
 #define REMOTE_MULTITAP_WINDOW_TICKS \
     ((HZ * REMOTE_MULTITAP_WINDOW_MS / 1000) > 0 \
         ? (HZ * REMOTE_MULTITAP_WINDOW_MS / 1000) : 1)
@@ -204,7 +207,9 @@ static void execute_remote_multitap(
 
     if(action == CRAZYPOD_REMOTE_MULTITAP_NONE)
         return;
-    backlight_on();
+    /* Headset gestures never wake a dark display. */
+    if(is_backlight_on(true))
+        backlight_on();
     locked = host.locked != NULL && host.locked();
     if(locked) {
         if(action == CRAZYPOD_REMOTE_MULTITAP_PLAY_PAUSE)
@@ -623,6 +628,57 @@ void crazypod_app_input_cancel_pending(void)
     remote_home_select_held = false;
 }
 
+/* Time a headset click by when the driver saw it, not by when a busy UI
+ * loop got to it, so multi-click gaps are not stretched by rendering. */
+static long headset_event_tick(long button, long now)
+{
+#ifdef HAVE_MIKEY_REMOTE
+    static long press_tick;
+    static bool press_stamped;
+
+    if(button == BUTTON_MULTIMEDIA_PLAYPAUSE) {
+        long tick = mikey_take_center_tick(now, HZ);
+
+        press_tick = tick != 0 ? tick : now;
+        press_stamped = true;
+        return press_tick;
+    }
+    if(button == (BUTTON_MULTIMEDIA_PLAYPAUSE | BUTTON_REL) &&
+       press_stamped) {
+        long release = press_tick + HZ / 25;
+
+        return (long)(release - now) > 0 ? now : release;
+    }
+#else
+    (void)button;
+#endif
+    return now;
+}
+
+int crazypod_app_input_headset_wait_ticks(long now, int fallback)
+{
+    fallback = crazypod_remote_multitap_wait_ticks(
+        &remote_down_multitap, now, fallback);
+    return crazypod_remote_multitap_wait_ticks(
+        &headset_multitap, now, fallback);
+}
+
+bool crazypod_app_input_headset_pending(void)
+{
+    return headset_multitap.press_active ||
+        headset_multitap.tap_count > 0 ||
+        remote_down_multitap.press_active ||
+        remote_down_multitap.tap_count > 0;
+}
+
+void crazypod_app_input_headset_tick(long now)
+{
+    execute_remote_multitap(crazypod_remote_multitap_tick(
+        &remote_down_multitap, now));
+    execute_remote_multitap(crazypod_remote_multitap_tick(
+        &headset_multitap, now));
+}
+
 int crazypod_app_input_wait_ticks(long now)
 {
     long next_deadline;
@@ -818,8 +874,9 @@ void crazypod_app_input_handle(
         case BUTTON_MULTIMEDIA_PLAYPAUSE | BUTTON_REPEAT:
             execute_remote_multitap(crazypod_multitap_handle_button(
                 &headset_multitap, button,
-                BUTTON_MULTIMEDIA_PLAYPAUSE, now,
-                REMOTE_MULTITAP_WINDOW_TICKS));
+                BUTTON_MULTIMEDIA_PLAYPAUSE,
+                headset_event_tick(button, now),
+                remote_down_multitap_window_ticks()));
             break;
         case BUTTON_MULTIMEDIA_VOLUME_UP:
         case BUTTON_MULTIMEDIA_VOLUME_UP | BUTTON_REPEAT:

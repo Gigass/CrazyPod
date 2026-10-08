@@ -197,6 +197,28 @@ static bool filter_first_remote_keypress_enabled(int button, int data)
 #endif /* def HAVE_REMOTE_LCD */
 #endif /* def HAVE_BACKLIGHT */
 
+#ifdef HAVE_BACKLIGHT
+/* Headset remote keys must neither wake a dark display nor be eaten by
+ * the "first keypress only wakes" filter. They still extend the timeout
+ * of a display that is already lit. */
+static bool headset_keeps_dark(int btn)
+{
+#if defined(BUTTON_MULTIMEDIA) || defined(IPOD_ACCESSORY_PROTOCOL)
+    int mask = 0;
+#ifdef BUTTON_MULTIMEDIA
+    mask |= BUTTON_MULTIMEDIA;
+#endif
+#ifdef BUTTON_REMOTE
+    mask |= BUTTON_REMOTE;
+#endif
+    return (btn & mask) != 0 && !is_backlight_on(true);
+#else
+    (void)btn;
+    return false;
+#endif
+}
+#endif
+
 static void button_tick(void)
 {
     static int count = 0;
@@ -372,6 +394,7 @@ static void button_tick(void)
                         }
                         else
 #endif
+                        if (!headset_keeps_dark(btn))
                         {
                             backlight_on();
                             buttonlight_on();
@@ -389,6 +412,9 @@ static void button_tick(void)
                     }
                     else
 #endif
+                    if (headset_keeps_dark(btn))
+                        button_queue_try_post(btn, data);
+                    else
                     {
                         skip_release = keypress_filter_fn(btn, data);
                         backlight_on();

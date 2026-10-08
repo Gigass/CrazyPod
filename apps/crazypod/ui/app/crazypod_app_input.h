@@ -45,5 +45,11 @@ void crazypod_app_input_handle(
 void crazypod_app_input_cancel_pending(void);
 int crazypod_app_input_wait_ticks(long now);
 void crazypod_app_input_tick(long now, bool locked);
+/* Headset gestures must resolve while the UI loop idles with the screen
+ * off, where the full input tick does not run. */
+int crazypod_app_input_headset_wait_ticks(long now, int fallback);
+void crazypod_app_input_headset_tick(long now);
+/* True while a headset click sequence is waiting to be resolved. */
+bool crazypod_app_input_headset_pending(void);
 
 #endif

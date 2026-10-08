@@ -971,6 +971,9 @@ void crazypod_ui_run(void)
             }
 #endif
         }
+        if(screen_off)
+            wait_ticks = crazypod_app_input_headset_wait_ticks(
+                current_tick, wait_ticks);
         button = button_get_w_tmo(wait_ticks);
         process_lock_state();
         while(button != BUTTON_NONE && drained < 16) {
@@ -990,6 +993,7 @@ void crazypod_ui_run(void)
         crazypod_coverflow_set_compositing_suspended(
             coverflow_overlay_visible(locked));
         if(crazypod_runtime_services_screen_off_tick()) {
+            crazypod_app_input_headset_tick(current_tick);
             set_cpu_boost(false);
             continue;
         }
@@ -1023,7 +1027,10 @@ void crazypod_ui_run(void)
         if(!locked) {
             crazypod_playback_tick_wave(current_tick);
         }
-        if(crazypod_frameclock_due(&lvgl_clock, current_tick)) {
+        /* A locked screen redraw can stall the loop long enough to delay
+         * the next headset click; hold it until the gesture resolves. */
+        if(crazypod_frameclock_due(&lvgl_clock, current_tick) &&
+           !(locked && crazypod_app_input_headset_pending())) {
             if(!locked)
                 crazypod_render_scheduler_refresh_rows();
             lv_timer_handler();

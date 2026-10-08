@@ -40,6 +40,11 @@ void mikey_set_mic_capture(bool enable);
 void mikey_init(void);
 int  mikey_button_read(void);
 
+/* Detection tick of the oldest unconsumed center click (0 if none or all
+ * older than max_age ticks); lets the UI time multi-clicks independently
+ * of how late it gets to process the queued button events. */
+long mikey_take_center_tick(long now, long max_age);
+
 /* True once the controller has ever ACKed the bus (it only responds
  * while the jack is occupied, so this latches on first insertion;
  * stays false on the early 2007 models, which lack the chip). Shown

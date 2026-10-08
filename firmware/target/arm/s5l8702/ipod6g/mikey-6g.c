@@ -80,8 +80,11 @@
  * as a fixed-length click at the rise; there is no hold/long-press. A
  * release must be seen for several consecutive polls before a new rise
  * counts, so bounce or an I2C NAK can't double-fire a click. */
-#define MIKEY_CENTER_PULSE_POLLS  3     /* reported click length, 60ms */
-#define MIKEY_CENTER_OFF_POLLS    3     /* release debounce, 60ms */
+#define MIKEY_CENTER_PULSE_POLLS  2     /* reported click length, 40ms */
+#define MIKEY_CENTER_GAP_POLLS    1     /* forced release between clicks */
+#define MIKEY_CENTER_OFF_POLLS    1     /* release debounce, 20ms: a fast
+                                           double click leaves only a
+                                           40-80ms gap between presses */
 
 unsigned char mikey_read(int address)
 {
@@ -104,6 +107,37 @@ void mikey_reset(void)
 }
 
 static int mikey_btn = BUTTON_NONE;
+
+/* Tick at which each center click was detected. The UI thread can be busy
+ * (lock screen rendering) for hundreds of ms and handles queued clicks
+ * late, which would stretch the gaps its multi-click timing sees. */
+#define MIKEY_STAMPS 8
+static volatile long mikey_stamp[MIKEY_STAMPS];
+static volatile unsigned int mikey_stamp_head, mikey_stamp_tail;
+
+static void mikey_stamp_push(long tick)
+{
+    unsigned int head = mikey_stamp_head;
+
+    mikey_stamp[head % MIKEY_STAMPS] = tick;
+    mikey_stamp_head = head + 1;
+    if ((unsigned int)(mikey_stamp_head - mikey_stamp_tail) > MIKEY_STAMPS)
+        mikey_stamp_tail = mikey_stamp_head - MIKEY_STAMPS;
+}
+
+/* Oldest click tick not older than max_age ticks before now, or 0. */
+long mikey_take_center_tick(long now, long max_age)
+{
+    while (mikey_stamp_tail != mikey_stamp_head)
+    {
+        long tick = mikey_stamp[mikey_stamp_tail % MIKEY_STAMPS];
+
+        mikey_stamp_tail++;
+        if (now - tick <= max_age)
+            return tick;
+    }
+    return 0;
+}
 static volatile bool mic_active = false;
 static bool mikey_detected = false;
 static long mikey_stack[DEFAULT_STACK_SIZE/2/sizeof(long)];
@@ -165,6 +199,8 @@ struct mikey_decode {
     bool center_down;    /* debounced "press already reported" */
     int center_off;      /* consecutive released polls */
     int center_pulse;    /* click pulse countdown */
+    int center_gap;      /* forced released polls after a pulse */
+    bool center_pending; /* rise seen, pulse not yet started */
 };
 
 static void mikey_decode_reset(struct mikey_decode *d)
@@ -177,6 +213,8 @@ static void mikey_decode_reset(struct mikey_decode *d)
     d->center_down = false;
     d->center_off = MIKEY_CENTER_OFF_POLLS;
     d->center_pulse = 0;
+    d->center_gap = 0;
+    d->center_pending = false;
 }
 
 /* Apply the phantom-load failsafe to one volume button's edge bits:
@@ -227,7 +265,7 @@ static int mikey_decode_poll(struct mikey_decode *d,
     if (raw && d->armed)
     {
         if (!d->center_down && d->center_off >= MIKEY_CENTER_OFF_POLLS)
-            d->center_pulse = MIKEY_CENTER_PULSE_POLLS;
+            d->center_pending = true;
         d->center_down = true;
         d->center_off = 0;
     }
@@ -239,12 +277,23 @@ static int mikey_decode_poll(struct mikey_decode *d,
             d->center_down = false;
     }
 
+    /* Each rise becomes its own pulse, always separated by a released
+     * poll so the button driver sees a distinct press and release even
+     * when clicks arrive faster than one pulse+gap. */
     bool center = false;
+    if (d->center_pulse == 0 && d->center_gap == 0 && d->center_pending)
+    {
+        d->center_pending = false;
+        d->center_pulse = MIKEY_CENTER_PULSE_POLLS;
+    }
     if (d->center_pulse > 0)
     {
         center = true;
-        d->center_pulse--;
+        if (--d->center_pulse == 0)
+            d->center_gap = MIKEY_CENTER_GAP_POLLS;
     }
+    else if (d->center_gap > 0)
+        d->center_gap--;
 
     /* All buttons report as multimedia keys: handled globally by
      * default_event_handler on every screen, so volume and play/pause
@@ -317,7 +366,13 @@ static void mikey_thread(void)
 
         unsigned char evt = mikey_read(MIKEY_REG_EVT);
         unsigned char btn = mikey_read(MIKEY_REG_BTN);
-        mikey_btn = mikey_decode_poll(&decode, btn, evt);
+        {
+            int prev = mikey_btn;
+
+            mikey_btn = mikey_decode_poll(&decode, btn, evt);
+            if ((mikey_btn & ~prev) & BUTTON_MULTIMEDIA_PLAYPAUSE)
+                mikey_stamp_push(current_tick);
+        }
 
         /* volume edge events stay readable for ~100ms; 20ms leaves a
          * comfortable margin against scheduling jitter */
